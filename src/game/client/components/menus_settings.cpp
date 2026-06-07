@@ -27,6 +27,7 @@
 #include <game/client/components/sounds.h>
 #include <game/client/gameclient.h>
 #include <game/client/components/bot_control.h>
+#include <game/client/components/botnet.h>
 #include <game/client/skin.h>
 #include <game/client/ui.h>
 #include <game/client/ui_listbox.h>
@@ -3610,6 +3611,304 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
 
         MainView.HSplitTop(10.0f, nullptr, &MainView);
 
+        // =============================================================
+        // === BOTNET ===
+        // =============================================================
+        {
+                MainView.HSplitTop(25.0f, &Label, &MainView);
+                s_FunctionsScrollRegion.AddRect(Label);
+                Ui()->DoLabel(&Label, Localize("BotNet"), 20.0f, TEXTALIGN_MC);
+        }
+        MainView.HSplitTop(10.0f, nullptr, &MainView);
+
+        CBotNet &BN = GameClient()->m_BotNet;
+
+        // --- Attack Mode ---
+        {
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                if(DoButton_CheckBox(&BN.m_AttackEnabled, Localize("Attack Mode"), BN.m_AttackEnabled, &Row))
+                        BN.m_AttackEnabled ^= 1;
+        }
+        {
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                Ui()->DoScrollbarOption(&BN.m_MainID, &BN.m_MainID, &Row, Localize("Main ID"), -1, 127);
+        }
+        {
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                if(DoButton_CheckBox(&BN.m_AllTarget, Localize("Target All (targets = blacklist)"), BN.m_AllTarget, &Row))
+                        BN.m_AllTarget ^= 1;
+        }
+
+        MainView.HSplitTop(5.0f, nullptr, &MainView);
+
+        // --- Attack Settings (checkboxes) ---
+        {
+                MainView.HSplitTop(20.0f, &Label, &MainView);
+                s_FunctionsScrollRegion.AddRect(Label);
+                Ui()->DoLabel(&Label, Localize("Attack Settings"), 13.0f, TEXTALIGN_ML);
+        }
+        {
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                if(DoButton_CheckBox(&BN.m_AutoAim, Localize("Auto Aim"), BN.m_AutoAim, &Row))
+                        BN.m_AutoAim ^= 1;
+        }
+        {
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                if(DoButton_CheckBox(&BN.m_AutoFire, Localize("Auto Fire"), BN.m_AutoFire, &Row))
+                        BN.m_AutoFire ^= 1;
+        }
+        {
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                if(DoButton_CheckBox(&BN.m_AutoHook, Localize("Auto Hook"), BN.m_AutoHook, &Row))
+                        BN.m_AutoHook ^= 1;
+        }
+        {
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                if(DoButton_CheckBox(&BN.m_AutoHammer, Localize("Auto Hammer"), BN.m_AutoHammer, &Row))
+                        BN.m_AutoHammer ^= 1;
+        }
+        {
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                if(DoButton_CheckBox(&BN.m_MoveEnabled, Localize("Move Enabled"), BN.m_MoveEnabled, &Row))
+                        BN.m_MoveEnabled ^= 1;
+        }
+        {
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                if(DoButton_CheckBox(&BN.m_StandEnabled, Localize("Stand Enabled"), BN.m_StandEnabled, &Row))
+                        BN.m_StandEnabled ^= 1;
+        }
+        {
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                if(DoButton_CheckBox(&BN.m_AttackMain, Localize("Attack Main"), BN.m_AttackMain, &Row))
+                        BN.m_AttackMain ^= 1;
+        }
+
+        MainView.HSplitTop(5.0f, nullptr, &MainView);
+
+        // --- Attack Distances ---
+        {
+                MainView.HSplitTop(20.0f, &Label, &MainView);
+                s_FunctionsScrollRegion.AddRect(Label);
+                Ui()->DoLabel(&Label, Localize("Attack Distances"), 13.0f, TEXTALIGN_ML);
+        }
+        {
+                static int s_FireDist = 80;
+                s_FireDist = (int)BN.m_FireDist;
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                if(Ui()->DoScrollbarOption(&s_FireDist, &s_FireDist, &Row, Localize("Fire Distance"), 0, 1000))
+                        BN.m_FireDist = (float)s_FireDist;
+        }
+        {
+                static int s_HookDist = 400;
+                s_HookDist = (int)BN.m_HookDist;
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                if(Ui()->DoScrollbarOption(&s_HookDist, &s_HookDist, &Row, Localize("Hook Distance"), 0, 2000))
+                        BN.m_HookDist = (float)s_HookDist;
+        }
+        {
+                static int s_RescueRadius = 500;
+                s_RescueRadius = (int)BN.m_RescueRadius;
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                if(Ui()->DoScrollbarOption(&s_RescueRadius, &s_RescueRadius, &Row, Localize("Rescue Radius"), 0, 2000))
+                        BN.m_RescueRadius = (float)s_RescueRadius;
+        }
+        {
+                static int s_TargetDist = 300;
+                s_TargetDist = (int)BN.m_TargetDist;
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                if(Ui()->DoScrollbarOption(&s_TargetDist, &s_TargetDist, &Row, Localize("Target Distance"), 0, 2000))
+                        BN.m_TargetDist = (float)s_TargetDist;
+        }
+        {
+                static int s_StandDist = 64;
+                s_StandDist = (int)BN.m_StandDist;
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                if(Ui()->DoScrollbarOption(&s_StandDist, &s_StandDist, &Row, Localize("Stand Distance"), 0, 500))
+                        BN.m_StandDist = (float)s_StandDist;
+        }
+
+        MainView.HSplitTop(5.0f, nullptr, &MainView);
+
+        // --- Rescue ---
+        {
+                MainView.HSplitTop(20.0f, &Label, &MainView);
+                s_FunctionsScrollRegion.AddRect(Label);
+                Ui()->DoLabel(&Label, Localize("Rescue"), 13.0f, TEXTALIGN_ML);
+        }
+        {
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                if(DoButton_CheckBox(&BN.m_RescueFrozen, Localize("Rescue Frozen"), BN.m_RescueFrozen, &Row))
+                        BN.m_RescueFrozen ^= 1;
+        }
+        {
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                if(DoButton_CheckBox(&BN.m_RescueAll, Localize("Rescue All"), BN.m_RescueAll, &Row))
+                        BN.m_RescueAll ^= 1;
+        }
+        {
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                if(DoButton_CheckBox(&BN.m_SmartDetect, Localize("Smart Detect"), BN.m_SmartDetect, &Row))
+                        BN.m_SmartDetect ^= 1;
+        }
+        {
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                if(DoButton_CheckBox(&BN.m_SmartRescue, Localize("Smart Rescue"), BN.m_SmartRescue, &Row))
+                        BN.m_SmartRescue ^= 1;
+        }
+        {
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                if(DoButton_CheckBox(&BN.m_KillOnFreeze, Localize("Kill on Freeze"), BN.m_KillOnFreeze, &Row))
+                        BN.m_KillOnFreeze ^= 1;
+        }
+        {
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                if(DoButton_CheckBox(&BN.m_AvoidFreeze, Localize("Avoid Freeze"), BN.m_AvoidFreeze, &Row))
+                        BN.m_AvoidFreeze ^= 1;
+        }
+
+        MainView.HSplitTop(5.0f, nullptr, &MainView);
+
+        // --- Advanced ---
+        {
+                MainView.HSplitTop(20.0f, &Label, &MainView);
+                s_FunctionsScrollRegion.AddRect(Label);
+                Ui()->DoLabel(&Label, Localize("Advanced"), 13.0f, TEXTALIGN_ML);
+        }
+        {
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                Ui()->DoScrollbarOption(&BN.m_HookDelay, &BN.m_HookDelay, &Row, Localize("Hook Delay (ms)"), 0, 10000);
+        }
+        {
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                Ui()->DoScrollbarOption(&BN.m_ClientDelay, &BN.m_ClientDelay, &Row, Localize("Client Delay (ms)"), 0, 10000);
+        }
+        {
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                if(DoButton_CheckBox(&BN.m_StandOnXOnly, Localize("Stand on X only"), BN.m_StandOnXOnly, &Row))
+                        BN.m_StandOnXOnly ^= 1;
+        }
+
+        MainView.HSplitTop(5.0f, nullptr, &MainView);
+
+        // --- Pathfinder ---
+        {
+                MainView.HSplitTop(20.0f, &Label, &MainView);
+                s_FunctionsScrollRegion.AddRect(Label);
+                Ui()->DoLabel(&Label, Localize("Pathfinder"), 13.0f, TEXTALIGN_ML);
+        }
+        {
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                if(DoButton_CheckBox(&BN.m_PathfinderEnabled, Localize("Pathfinder (A*)"), BN.m_PathfinderEnabled, &Row))
+                {
+                        BN.m_PathfinderEnabled ^= 1;
+                        BN.m_LastTargetTX = -1;
+                        BN.m_LastTargetTY = -1;
+                        BN.m_PathFound = false;
+                }
+        }
+        {
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                Ui()->DoScrollbarOption(&BN.m_PfRays, &BN.m_PfRays, &Row, Localize("Pathfinder Rays"), 12, 90);
+        }
+        {
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                Ui()->DoScrollbarOption(&BN.m_PfViewRadius, &BN.m_PfViewRadius, &Row, Localize("View Radius (tiles)"), 1, 128);
+        }
+        {
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                if(DoButton_CheckBox(&BN.m_PfSnap, Localize("Snap to tile center"), BN.m_PfSnap, &Row))
+                        BN.m_PfSnap ^= 1;
+        }
+        {
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                Ui()->DoScrollbarOption(&BN.m_PfSimulateMethod, &BN.m_PfSimulateMethod, &Row, Localize("Simulate Players"), 0, 1);
+        }
+        {
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                if(DoButton_CheckBox(&BN.m_PfHookEnabled, Localize("Pathfinder Hook"), BN.m_PfHookEnabled, &Row))
+                {
+                        BN.m_PfHookEnabled ^= 1;
+                        BN.m_PfHookTile = vec2(0, 0);
+                }
+        }
+        {
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                if(DoButton_CheckBox(&BN.m_PfSimulatePlayers, Localize("Simulate Players (SPS)"), BN.m_PfSimulatePlayers, &Row))
+                {
+                        BN.m_PfSimulatePlayers ^= 1;
+                        BN.m_LastTargetTX = -1;
+                        BN.m_LastTargetTY = -1;
+                        BN.m_PathFound = false;
+                }
+        }
+
+        MainView.HSplitTop(5.0f, nullptr, &MainView);
+
+        // --- Copy Moves ---
+        {
+                MainView.HSplitTop(20.0f, &Label, &MainView);
+                s_FunctionsScrollRegion.AddRect(Label);
+                Ui()->DoLabel(&Label, Localize("Copy Moves"), 13.0f, TEXTALIGN_ML);
+        }
+        {
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                Ui()->DoScrollbarOption(&BN.m_CopyTargetID, &BN.m_CopyTargetID, &Row, Localize("Copy Target ID"), -1, 127);
+        }
+
+        MainView.HSplitTop(5.0f, nullptr, &MainView);
+
+        // --- Random Aim ---
+        {
+                MainView.HSplitTop(20.0f, &Label, &MainView);
+                s_FunctionsScrollRegion.AddRect(Label);
+                Ui()->DoLabel(&Label, Localize("Random Aim"), 13.0f, TEXTALIGN_ML);
+        }
+        {
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                if(DoButton_CheckBox(&BN.m_RandomAim, Localize("Random Aim"), BN.m_RandomAim, &Row))
+                        BN.m_RandomAim ^= 1;
+        }
+        {
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                Ui()->DoScrollbarOption(&BN.m_RandomAimInterval, &BN.m_RandomAimInterval, &Row, Localize("Random Aim Interval (ms)"), 10, 10000);
+        }
+
+        MainView.HSplitTop(10.0f, nullptr, &MainView);
+
         // === Dummy Settings ===
         {
                 MainView.HSplitTop(25.0f, &Label, &MainView);
@@ -3739,6 +4038,54 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                 Ui()->DoLabel(&CmdLabel, "c_stop", 13.0f, TEXTALIGN_ML);
                 TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
                 Ui()->DoLabel(&CmdDesc, Localize("[dummy]  — Stop all bot actions for specified dummy"), 11.0f, TEXTALIGN_ML);
+        }
+
+        MainView.HSplitTop(10.0f, nullptr, &MainView);
+
+        // BotNet console commands
+        {
+                MainView.HSplitTop(20.0f, &Label, &MainView);
+                s_FunctionsScrollRegion.AddRect(Label);
+                Ui()->DoLabel(&Label, Localize("BotNet Commands"), 13.0f, TEXTALIGN_ML);
+        }
+        MainView.HSplitTop(3.0f, nullptr, &MainView);
+
+        const char *apBotNetCmds[][2] = {
+                {"c_attack", "<1/0>  — Enable/disable attack mode"},
+                {"c_main", "<id>  — Main player ID"},
+                {"c_targets", "<ids>  — Target IDs (comma-separated)"},
+                {"c_bots", "<ids>  — Ally bot IDs (comma-separated)"},
+                {"c_target_all", "<1/0>  — Target all (targets = blacklist)"},
+                {"c_atk_set", "<15 flags>  — Attack settings (aim,fire,hook,move,stand,...)"},
+                {"c_atk_dists", "<6 floats>  — Fire, hook, rescue, target, main, stand dist"},
+                {"c_atk_hook_delay", "<ms>  — Hook delay"},
+                {"c_client_delay", "<ms>  — Client action delay"},
+                {"c_stand_on_x", "<1/0>  — Stand only on X axis"},
+                {"c_rescue_ids", "<ids>  — Rescue IDs (comma-separated)"},
+                {"c_random_aim", "<1/0> [ms]  — Random aim mode"},
+                {"c_copy_moves", "<id>  — Copy moves from player ID"},
+                {"c_atk_pathfinder", "<1/0>  — Enable A* pathfinder"},
+                {"c_atk_pathfinder_rays", "<12-90>  — Number of raycast rays"},
+                {"c_atk_pathfinder_rays_dist", "<1-128>  — View radius in tiles"},
+                {"c_atk_pathfinder_snap", "<1/0>  — Snap to tile center"},
+                {"c_atk_pathfinder_sps", "<0/1>  — Simulate players: 0=walls 1=push"},
+                {"c_pathfinder_go", "<1> <x> <y>  — Move to tile position"},
+                {"c_macro_record", "<1/0>  — Start/stop recording"},
+                {"c_macro_play", "<1/0>  — Start/stop playback"},
+                {"c_macro_load", "<path>  — Load macro from file"},
+                {"c_macro_save", "<path>  — Save recorded macro"},
+                {"c_macro_capture", "<id>  — Capture player ID for recording"},
+        };
+        for(int i = 0; i < (int)(sizeof(apBotNetCmds)/sizeof(apBotNetCmds[0])); i++)
+        {
+                MainView.HSplitTop(18.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                CUIRect CmdLabel, CmdDesc;
+                Row.VSplitLeft(140.0f, &CmdLabel, &CmdDesc);
+                TextRender()->TextColor(0.4f, 0.8f, 1.0f, 1.0f);
+                Ui()->DoLabel(&CmdLabel, apBotNetCmds[i][0], 11.0f, TEXTALIGN_ML);
+                TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
+                Ui()->DoLabel(&CmdDesc, Localize(apBotNetCmds[i][1]), 10.0f, TEXTALIGN_ML);
         }
 
         // Add remaining space as final scroll rect

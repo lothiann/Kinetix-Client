@@ -31,6 +31,7 @@
 #include "components/background.h"
 #include "components/binds.h"
 #include "components/bot_control.h"
+#include "components/botnet.h"
 #include "components/broadcast.h"
 #include "components/camera.h"
 #include "components/censor.h"
@@ -153,6 +154,7 @@ public:
         CGameConsole m_GameConsole;
         CBinds m_Binds;
         CBotControl m_BotControl;
+        CBotNet m_BotNet;
         CKeyBinder m_KeyBinder;
         CParticles m_Particles;
         CMenus m_Menus;

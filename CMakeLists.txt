@@ -2495,6 +2495,8 @@ if(CLIENT)
     components/background.h
     components/bot_control.cpp
     components/bot_control.h
+    components/botnet.cpp
+    components/botnet.h
     components/binds.cpp
     components/binds.h
     components/broadcast.cpp
