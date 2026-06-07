@@ -7,6 +7,7 @@
 #include <engine/shared/config.h>
 
 #include <game/client/component.h>
+#include <generated/protocol.h>
 
 #include <string>
 #include <vector>
