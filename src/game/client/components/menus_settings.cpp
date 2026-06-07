@@ -3612,13 +3612,14 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                 const float PanelPad = 8.0f;
                 const float PanelGap = 5.0f;
                 const float LineSize = 20.0f;
+                const float RowGap = 2.0f;
                 const float ColGap = 10.0f;
                 const ColorRGBA PanelBgColor = ColorRGBA(0.0f, 0.0f, 0.0f, 0.15f);
                 CUIRect Left, Right, PanelBg, Panel;
 
                 // === BotNet Panel ===
                 {
-                        const float SectionH = PanelPad + 25.0f + 5.0f + 7*LineSize + PanelPad;
+                        const float SectionH = PanelPad + 25.0f + 5.0f + 7*LineSize + 6*RowGap + PanelPad;
                         MainView.HSplitTop(SectionH, &PanelBg, &MainView);
                         PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
                         s_FunctionsScrollRegion.AddRect(PanelBg);
@@ -3631,6 +3632,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
 
                         // Row: Enable + Auto main
                         Panel.HSplitTop(LineSize, &Row, &Panel);
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
                         Row.VSplitMid(&Left, &Right, ColGap);
                         if(DoButton_CheckBox(&BN.m_AttackEnabled, Localize("Enable"), BN.m_AttackEnabled, &Left))
                         {
@@ -3642,6 +3644,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
 
                         // Row: Main ID + Target IDs
                         Panel.HSplitTop(LineSize, &Row, &Panel);
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
                         Row.VSplitMid(&Left, &Right, ColGap);
                         {
                                 static CLineInputBuffered<32> s_MainIDInput;
@@ -3680,6 +3683,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
 
                         // Row: Auto aim + Auto fire
                         Panel.HSplitTop(LineSize, &Row, &Panel);
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
                         Row.VSplitMid(&Left, &Right, ColGap);
                         if(DoButton_CheckBox(&BN.m_AutoAim, Localize("Auto aim"), BN.m_AutoAim, &Left))
                         { BN.m_AutoAim ^= 1; if(!BN.m_AutoAim) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
@@ -3688,6 +3692,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
 
                         // Row: Auto hook + Move
                         Panel.HSplitTop(LineSize, &Row, &Panel);
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
                         Row.VSplitMid(&Left, &Right, ColGap);
                         if(DoButton_CheckBox(&BN.m_AutoHook, Localize("Auto hook"), BN.m_AutoHook, &Left))
                         { BN.m_AutoHook ^= 1; if(!BN.m_AutoHook) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
@@ -3696,6 +3701,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
 
                         // Row: Stand + Auto hammer
                         Panel.HSplitTop(LineSize, &Row, &Panel);
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
                         Row.VSplitMid(&Left, &Right, ColGap);
                         if(DoButton_CheckBox(&BN.m_StandEnabled, Localize("Stand"), BN.m_StandEnabled, &Left))
                         { BN.m_StandEnabled ^= 1; if(!BN.m_StandEnabled) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
@@ -3704,6 +3710,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
 
                         // Row: Attack main + All target
                         Panel.HSplitTop(LineSize, &Row, &Panel);
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
                         Row.VSplitMid(&Left, &Right, ColGap);
                         if(DoButton_CheckBox(&BN.m_AttackMain, Localize("Attack main"), BN.m_AttackMain, &Left))
                         { BN.m_AttackMain ^= 1; if(!BN.m_AttackMain) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
@@ -3723,7 +3730,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
 
                 // === Distances Panel ===
                 {
-                        const float SectionH = PanelPad + 25.0f + 5.0f + 3*LineSize + PanelPad;
+                        const float SectionH = PanelPad + 25.0f + 5.0f + 3*LineSize + 2*RowGap + PanelPad;
                         MainView.HSplitTop(SectionH, &PanelBg, &MainView);
                         PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
                         s_FunctionsScrollRegion.AddRect(PanelBg);
@@ -3736,6 +3743,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
 
                         // Fire dist + Hook dist
                         Panel.HSplitTop(LineSize, &Row, &Panel);
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
                         Row.VSplitMid(&Left, &Right, ColGap);
                         {
                                 static CLineInputBuffered<32> s_FireDistInput;
@@ -3756,6 +3764,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
 
                         // Target dist + Main dist
                         Panel.HSplitTop(LineSize, &Row, &Panel);
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
                         Row.VSplitMid(&Left, &Right, ColGap);
                         {
                                 static CLineInputBuffered<32> s_TargetDistInput;
@@ -3799,7 +3808,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
 
                 // === Pathfinder Panel ===
                 {
-                        const float SectionH = PanelPad + 25.0f + 5.0f + 5*LineSize + PanelPad;
+                        const float SectionH = PanelPad + 25.0f + 5.0f + 5*LineSize + 4*RowGap + PanelPad;
                         MainView.HSplitTop(SectionH, &PanelBg, &MainView);
                         PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
                         s_FunctionsScrollRegion.AddRect(PanelBg);
@@ -3812,6 +3821,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
 
                         // Pathfinder + Avoid Freeze
                         Panel.HSplitTop(LineSize, &Row, &Panel);
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
                         Row.VSplitMid(&Left, &Right, ColGap);
                         if(DoButton_CheckBox(&BN.m_PathfinderEnabled, Localize("Pathfinder"), BN.m_PathfinderEnabled, &Left))
                         {
@@ -3829,6 +3839,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
 
                         // Simulate Players + SPS (push)
                         Panel.HSplitTop(LineSize, &Row, &Panel);
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
                         Row.VSplitMid(&Left, &Right, ColGap);
                         if(DoButton_CheckBox(&BN.m_PfSimulatePlayers, Localize("Simulate Players"), BN.m_PfSimulatePlayers, &Left))
                         {
@@ -3846,6 +3857,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
 
                         // Fix Snap + Pf Hook
                         Panel.HSplitTop(LineSize, &Row, &Panel);
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
                         Row.VSplitMid(&Left, &Right, ColGap);
                         if(DoButton_CheckBox(&BN.m_PfSnap, Localize("Fix Snap"), BN.m_PfSnap, &Left))
                                 BN.m_PfSnap ^= 1;
@@ -3861,6 +3873,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
 
                         // Rays + Dist
                         Panel.HSplitTop(LineSize, &Row, &Panel);
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
                         Row.VSplitMid(&Left, &Right, ColGap);
                         {
                                 static CLineInputBuffered<32> s_RaysInput;
@@ -3913,7 +3926,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
 
                 // === Other Panel ===
                 {
-                        const float SectionH = PanelPad + 25.0f + 5.0f + 2*LineSize + PanelPad;
+                        const float SectionH = PanelPad + 25.0f + 5.0f + 2*LineSize + 1*RowGap + PanelPad;
                         MainView.HSplitTop(SectionH, &PanelBg, &MainView);
                         PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
                         s_FunctionsScrollRegion.AddRect(PanelBg);
@@ -3926,6 +3939,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
 
                         // Random Aim
                         Panel.HSplitTop(LineSize, &Row, &Panel);
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
                         if(DoButton_CheckBox(&BN.m_RandomAim, Localize("Random Aim"), BN.m_RandomAim, &Row))
                         { BN.m_RandomAim ^= 1; if(!BN.m_RandomAim) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
 
