@@ -2551,32 +2551,49 @@ static std::string ReplacePlaceholders(const std::string &Cmd, int DummyIndex, C
 {
         std::string Result = Cmd;
 
-        // {i} — rank of this dummy among connected local dummies (1-based)
+        // {i} — rank of this dummy among connected dummies (1-based)
+        // Original: online = sorted(control_clients.keys()); rank = online.index(client_index) + 1
         {
-                int Rank = 1;
-                int MyId = pGame->m_aLocalIds[DummyIndex];
+                // Collect connected dummy indices (sorted ascending, which they already are)
+                int Online[MAX_DUMMIES];
+                int Count = 0;
                 for(int d = 0; d < MAX_DUMMIES; ++d)
                 {
-                        if(d == DummyIndex) continue;
-                        if(pGame->m_aLocalIds[d] >= 0 && pGame->m_aLocalIds[d] < MyId)
-                                ++Rank;
+                        if(d != 0 && !pGame->Client()->DummyConnected(d))
+                                continue;
+                        if(pGame->m_aLocalIds[d] < 0)
+                                continue;
+                        Online[Count++] = d;
+                }
+                int Rank = DummyIndex + 1; // fallback if not found
+                for(int a = 0; a < Count; ++a)
+                {
+                        if(Online[a] == DummyIndex)
+                        {
+                                Rank = a + 1;
+                                break;
+                        }
                 }
                 size_t Pos;
                 while((Pos = Result.find("{i}")) != std::string::npos)
                         Result.replace(Pos, 3, std::to_string(Rank));
         }
 
-        // {r} — random lowercase letter
+        // {r} — random char from a-zA-Z0-9._-
+        // Original: random.choice(string.ascii_letters + string.digits + "._-")
         {
+                static const char RAND_CHARS[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-";
+                static const int RAND_CHARS_LEN = sizeof(RAND_CHARS) - 1;
                 size_t Pos;
                 while((Pos = Result.find("{r}")) != std::string::npos)
                 {
-                        char Ch = 'a' + (rand() % 26);
+                        char Ch = RAND_CHARS[rand() % RAND_CHARS_LEN];
                         Result.replace(Pos, 3, 1, Ch);
                 }
         }
 
-        // {ri-N} — random integer from 0 to N
+        // {ri-N} — random integer from 0 to N (inclusive)
+        // Original: re.sub(r'{ri-(\d+)}', lambda m: str(random.randint(0, int(m.group(1)))), cmd)
         {
                 size_t Pos;
                 while((Pos = Result.find("{ri-")) != std::string::npos)
@@ -2597,13 +2614,13 @@ static std::string ReplacePlaceholders(const std::string &Cmd, int DummyIndex, C
                 }
         }
 
-        // {n} — random player name from the server
+        // {n} — random name from server players
+        // Original: names_list = shared_state.get('names', []); random.choice(names_list) or "lol"
         {
                 size_t Pos;
                 while((Pos = Result.find("{n}")) != std::string::npos)
                 {
-                        const char *pName = "player";
-                        // Collect active client names
+                        const char *pName = "lol";
                         int ActiveCount = 0;
                         const char *aNames[MAX_CLIENTS];
                         for(int i = 0; i < MAX_CLIENTS; ++i)
@@ -2619,13 +2636,13 @@ static std::string ReplacePlaceholders(const std::string &Cmd, int DummyIndex, C
                 }
         }
 
-        // {d} — random word from dictionary file
+        // {d} — random word from dictionary
+        // Original: dict_list = shared_state.get('dictionary', []); random.choice(dict_list) or "lol"
         {
                 size_t Pos;
                 while((Pos = Result.find("{d}")) != std::string::npos)
                 {
                         const char *pWord = "lol";
-                        // Try to load from dictionary.txt (cached on first use)
                         static std::vector<std::string> s_vDict;
                         static bool s_Loaded = false;
                         if(!s_Loaded)
@@ -2648,14 +2665,14 @@ static std::string ReplacePlaceholders(const std::string &Cmd, int DummyIndex, C
                 }
         }
 
-        // {c} — random Chinese character (CJK Unified Ideographs U+4E00–U+9FFF)
+        // {c} — random CJK character U+4E00–U+9FFF
+        // Original: chr(random.randint(0x4E00, 0x9FFF))
         {
                 size_t Pos;
                 while((Pos = Result.find("{c}")) != std::string::npos)
                 {
                         int Codepoint = 0x4E00 + (rand() % (0x9FFF - 0x4E00 + 1));
                         char Utf8[5];
-                        // Encode UTF-8 for U+4E00..U+9FFF (3-byte sequence)
                         Utf8[0] = (char)(0xE0 | ((Codepoint >> 12) & 0x0F));
                         Utf8[1] = (char)(0x80 | ((Codepoint >> 6) & 0x3F));
                         Utf8[2] = (char)(0x80 | (Codepoint & 0x3F));
