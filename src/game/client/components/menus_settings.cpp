@@ -3378,12 +3378,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
         CUIRect Row, Label, Button;
         int TargetDummy = g_Config.m_ClBotTargetDummy;
 
-        // Header
-        MainView.HSplitTop(20.0f, &Row, &MainView);
-        s_FunctionsScrollRegion.AddRect(Row);
-        Ui()->DoLabel(&Row, Localize("Bot Control"), 20.0f, TEXTALIGN_MC);
-
-        MainView.HSplitTop(10.0f, nullptr, &MainView);
+        MainView.HSplitTop(5.0f, nullptr, &MainView);
 
         // === Target Dummy Selector ===
         {
@@ -3609,16 +3604,6 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                 }
         }
 
-        MainView.HSplitTop(10.0f, nullptr, &MainView);
-
-        // =============================================================
-        // === BOTNET ===
-        // =============================================================
-        {
-                MainView.HSplitTop(25.0f, &Label, &MainView);
-                s_FunctionsScrollRegion.AddRect(Label);
-                Ui()->DoLabel(&Label, Localize("BotNet"), 20.0f, TEXTALIGN_MC);
-        }
         MainView.HSplitTop(5.0f, nullptr, &MainView);
 
         CBotNet &BN = GameClient()->m_BotNet;
@@ -3794,11 +3779,8 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                         if(Ui()->DoEditBox(&s_HookDelayInput, &Field, 12.0f)) BN.m_HookDelay = atoi(s_HookDelayInput.GetString());
                 }
 
-                // --- Rescue ---
+                // --- Rescue (no header, just checkboxes) ---
                 MainView.HSplitTop(SectionGap, nullptr, &MainView);
-                MainView.HSplitTop(LineSize, &Label, &MainView);
-                s_FunctionsScrollRegion.AddRect(Label);
-                Ui()->DoLabel(&Label, Localize("Rescue"), 13.0f, TEXTALIGN_ML);
 
                 // Rescue frozen + Rescue all
                 MainView.HSplitTop(LineSize, &Row, &MainView);
@@ -3988,201 +3970,6 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                         if(!s_CopyIDInput.IsActive()) { char b[16]; str_format(b,16,"%d",BN.m_CopyTargetID); s_CopyIDInput.Set(b); }
                         if(Ui()->DoEditBox(&s_CopyIDInput, &Field, 12.0f)) { BN.m_CopyTargetID = atoi(s_CopyIDInput.GetString()); }
                 }
-        }
-
-        MainView.HSplitTop(10.0f, nullptr, &MainView);
-
-        // === Dummy Settings ===
-        {
-                MainView.HSplitTop(25.0f, &Label, &MainView);
-                s_FunctionsScrollRegion.AddRect(Label);
-                Ui()->DoLabel(&Label, Localize("Dummy Settings"), 16.0f, TEXTALIGN_ML);
-        }
-        MainView.HSplitTop(5.0f, nullptr, &MainView);
-
-        // Copy moves
-        MainView.HSplitTop(20.0f, &Row, &MainView);
-        s_FunctionsScrollRegion.AddRect(Row);
-        if(DoButton_CheckBox(&g_Config.m_ClDummyCopyMoves, Localize("Copy moves"), g_Config.m_ClDummyCopyMoves, &Row))
-                g_Config.m_ClDummyCopyMoves ^= 1;
-        GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyCopyMoves, &Row, Localize("All dummies copy your movement"));
-
-        // Hammer
-        MainView.HSplitTop(20.0f, &Row, &MainView);
-        s_FunctionsScrollRegion.AddRect(Row);
-        if(DoButton_CheckBox(&g_Config.m_ClDummyHammer, Localize("Dummy hammer"), g_Config.m_ClDummyHammer, &Row))
-                g_Config.m_ClDummyHammer ^= 1;
-        GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyHammer, &Row, Localize("All dummies will hammer towards you for hammerfly"));
-
-        // Restore weapon
-        MainView.HSplitTop(20.0f, &Row, &MainView);
-        s_FunctionsScrollRegion.AddRect(Row);
-        if(DoButton_CheckBox(&g_Config.m_ClDummyRestoreWeapon, Localize("Restore weapon after hammer"), g_Config.m_ClDummyRestoreWeapon, &Row))
-                g_Config.m_ClDummyRestoreWeapon ^= 1;
-
-        // Dummy control
-        MainView.HSplitTop(20.0f, &Row, &MainView);
-        s_FunctionsScrollRegion.AddRect(Row);
-        if(DoButton_CheckBox(&g_Config.m_ClDummyControl, Localize("Dummy control"), g_Config.m_ClDummyControl, &Row))
-                g_Config.m_ClDummyControl ^= 1;
-        GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyControl, &Row, Localize("Control dummies independently (jump/fire/hook below)"));
-
-        if(g_Config.m_ClDummyControl)
-        {
-                MainView.HSplitTop(20.0f, &Row, &MainView);
-                s_FunctionsScrollRegion.AddRect(Row);
-                if(DoButton_CheckBox(&g_Config.m_ClDummyJump, Localize("Dummy jump"), g_Config.m_ClDummyJump, &Row))
-                        g_Config.m_ClDummyJump ^= 1;
-
-                MainView.HSplitTop(20.0f, &Row, &MainView);
-                s_FunctionsScrollRegion.AddRect(Row);
-                if(DoButton_CheckBox(&g_Config.m_ClDummyFire, Localize("Dummy fire"), g_Config.m_ClDummyFire, &Row))
-                        g_Config.m_ClDummyFire ^= 1;
-
-                MainView.HSplitTop(20.0f, &Row, &MainView);
-                s_FunctionsScrollRegion.AddRect(Row);
-                if(DoButton_CheckBox(&g_Config.m_ClDummyHook, Localize("Dummy hook"), g_Config.m_ClDummyHook, &Row))
-                        g_Config.m_ClDummyHook ^= 1;
-        }
-
-        // Reset on switch
-        {
-                MainView.HSplitTop(15.0f, nullptr, &MainView);
-                MainView.HSplitTop(20.0f, &Row, &MainView);
-                s_FunctionsScrollRegion.AddRect(Row);
-                CUIRect LabelRect, ButtonRect;
-                Row.VSplitLeft(200.0f, &LabelRect, &ButtonRect);
-                Ui()->DoLabel(&LabelRect, Localize("Reset on switch"), 13.0f, TEXTALIGN_ML);
-
-                static CButtonContainer s_ResetButton;
-                static const char *s_apResetNames[] = {"Off", "Dummy", "Player"};
-                if(DoButton_MenuTab(&s_ResetButton, s_apResetNames[g_Config.m_ClDummyResetOnSwitch], 0, &ButtonRect, IGraphics::CORNER_ALL))
-                {
-                        g_Config.m_ClDummyResetOnSwitch = (g_Config.m_ClDummyResetOnSwitch + 1) % 3;
-                }
-        }
-
-        MainView.HSplitTop(10.0f, nullptr, &MainView);
-
-        // === Console Commands Reference ===
-        {
-                MainView.HSplitTop(25.0f, &Label, &MainView);
-                s_FunctionsScrollRegion.AddRect(Label);
-                Ui()->DoLabel(&Label, Localize("Console Commands"), 16.0f, TEXTALIGN_ML);
-        }
-        MainView.HSplitTop(5.0f, nullptr, &MainView);
-
-        // c_input
-        {
-                MainView.HSplitTop(20.0f, &Row, &MainView);
-                s_FunctionsScrollRegion.AddRect(Row);
-                CUIRect CmdLabel, CmdDesc;
-                Row.VSplitLeft(80.0f, &CmdLabel, &CmdDesc);
-                TextRender()->TextColor(0.4f, 0.8f, 1.0f, 1.0f);
-                Ui()->DoLabel(&CmdLabel, "c_input", 13.0f, TEXTALIGN_ML);
-                TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
-                Ui()->DoLabel(&CmdDesc, Localize("<action> <ms> [dummy]  — Actions: jump, hook, fire, left, right"), 11.0f, TEXTALIGN_ML);
-        }
-        MainView.HSplitTop(3.0f, nullptr, &MainView);
-
-        // c_aim
-        {
-                MainView.HSplitTop(20.0f, &Row, &MainView);
-                s_FunctionsScrollRegion.AddRect(Row);
-                CUIRect CmdLabel, CmdDesc;
-                Row.VSplitLeft(80.0f, &CmdLabel, &CmdDesc);
-                TextRender()->TextColor(0.4f, 0.8f, 1.0f, 1.0f);
-                Ui()->DoLabel(&CmdLabel, "c_aim", 13.0f, TEXTALIGN_ML);
-                TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
-                Ui()->DoLabel(&CmdDesc, Localize("<dx> <dy> [dummy]  — Relative aim offset"), 11.0f, TEXTALIGN_ML);
-        }
-        MainView.HSplitTop(3.0f, nullptr, &MainView);
-
-        // c_oaim
-        {
-                MainView.HSplitTop(20.0f, &Row, &MainView);
-                s_FunctionsScrollRegion.AddRect(Row);
-                CUIRect CmdLabel, CmdDesc;
-                Row.VSplitLeft(80.0f, &CmdLabel, &CmdDesc);
-                TextRender()->TextColor(0.4f, 0.8f, 1.0f, 1.0f);
-                Ui()->DoLabel(&CmdLabel, "c_oaim", 13.0f, TEXTALIGN_ML);
-                TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
-                Ui()->DoLabel(&CmdDesc, Localize("<x> <y> [dummy]  — Absolute aim position"), 11.0f, TEXTALIGN_ML);
-        }
-        MainView.HSplitTop(3.0f, nullptr, &MainView);
-
-        // c_stop
-        {
-                MainView.HSplitTop(20.0f, &Row, &MainView);
-                s_FunctionsScrollRegion.AddRect(Row);
-                CUIRect CmdLabel, CmdDesc;
-                Row.VSplitLeft(80.0f, &CmdLabel, &CmdDesc);
-                TextRender()->TextColor(0.4f, 0.8f, 1.0f, 1.0f);
-                Ui()->DoLabel(&CmdLabel, "c_stop", 13.0f, TEXTALIGN_ML);
-                TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
-                Ui()->DoLabel(&CmdDesc, Localize("[dummy]  — Stop all bot actions for specified dummy"), 11.0f, TEXTALIGN_ML);
-        }
-
-        MainView.HSplitTop(10.0f, nullptr, &MainView);
-
-        // BotNet console commands
-        {
-                MainView.HSplitTop(20.0f, &Label, &MainView);
-                s_FunctionsScrollRegion.AddRect(Label);
-                Ui()->DoLabel(&Label, Localize("BotNet Commands"), 13.0f, TEXTALIGN_ML);
-        }
-        MainView.HSplitTop(3.0f, nullptr, &MainView);
-
-        const char *apBotNetCmds[][2] = {
-                {"c_attack", "<1/0>  — Enable/disable attack mode"},
-                {"c_main", "<id>  — Main player ID"},
-                {"c_targets", "<ids>  — Target IDs (comma-separated)"},
-                {"c_bots", "<ids>  — Ally bot IDs (comma-separated)"},
-                {"c_target_all", "<1/0>  — Target all (targets = blacklist)"},
-                {"c_atk_set", "<15 flags>  — Attack settings (aim,fire,hook,move,stand,...)"},
-                {"c_atk_dists", "<6 floats>  — Fire, hook, rescue, target, main, stand dist"},
-                {"c_atk_hook_delay", "<ms>  — Hook delay"},
-                {"c_client_delay", "<ms>  — Client action delay"},
-                {"c_stand_on_x", "<1/0>  — Stand only on X axis"},
-                {"c_rescue_ids", "<ids>  — Rescue IDs (comma-separated)"},
-                {"c_random_aim", "<1/0> [ms]  — Random aim mode"},
-                {"c_copy_moves", "<id>  — Copy moves from player ID"},
-                {"c_atk_pathfinder", "<1/0>  — Enable A* pathfinder"},
-                {"c_atk_pathfinder_rays", "<12-90>  — Number of raycast rays"},
-                {"c_atk_pathfinder_rays_dist", "<1-128>  — View radius in tiles"},
-                {"c_atk_pathfinder_snap", "<1/0>  — Snap to tile center"},
-                {"c_atk_pathfinder_sps", "<0/1>  — Simulate players: 0=walls 1=push"},
-                {"c_pathfinder_go", "<1> <x> <y>  — Move to tile position"},
-                {"c_macro_record", "<1/0>  — Start/stop recording"},
-                {"c_macro_play", "<1/0>  — Start/stop playback"},
-                {"c_macro_load", "<path>  — Load macro from file"},
-                {"c_macro_save", "<path>  — Save recorded macro"},
-                {"c_macro_capture", "<id>  — Capture player ID for recording"},
-                {"c_stand", "<1/0>  — Stand when close to target"},
-                {"c_autoaim", "<1/0>  — Auto aim at target"},
-                {"c_autofire", "<1/0>  — Auto fire at target"},
-                {"c_autohook", "<1/0>  — Auto hook target"},
-                {"c_move", "<1/0>  — Move towards target"},
-                {"c_rescue", "<1/0>  — Rescue frozen allies"},
-                {"c_kill_frz", "<1/0>  — Kill on freeze"},
-                {"c_atk_main", "<1/0>  — Attack main target"},
-                {"c_auto_main", "<1/0>  — Auto-set main to active dummy"},
-                {"c_hammer", "<1/0>  — Auto hammer"},
-                {"c_smart_detect", "<1/0>  — Smart detect for rescue"},
-                {"c_smart_rescue", "<1/0>  — Smart rescue pathfinder"},
-                {"c_avoid_freeze", "<1/0>  — Avoid freeze tiles"},
-                {"c_pf_hook", "<1/0>  — Pathfinder hook to walls"},
-        };
-        for(int i = 0; i < (int)(sizeof(apBotNetCmds)/sizeof(apBotNetCmds[0])); i++)
-        {
-                MainView.HSplitTop(18.0f, &Row, &MainView);
-                s_FunctionsScrollRegion.AddRect(Row);
-                CUIRect CmdLabel, CmdDesc;
-                Row.VSplitLeft(140.0f, &CmdLabel, &CmdDesc);
-                TextRender()->TextColor(0.4f, 0.8f, 1.0f, 1.0f);
-                Ui()->DoLabel(&CmdLabel, apBotNetCmds[i][0], 11.0f, TEXTALIGN_ML);
-                TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
-                Ui()->DoLabel(&CmdDesc, Localize(apBotNetCmds[i][1]), 10.0f, TEXTALIGN_ML);
         }
 
         // Add remaining space as final scroll rect
