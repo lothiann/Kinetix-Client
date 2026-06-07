@@ -1030,6 +1030,22 @@ void CBotNet::ProcessDummy(int Dummy)
         int LocalID = pGame->m_aLocalIds[Dummy];
         int64_t CurTick = Client()->GameTick(0);
 
+        // Skip frozen dummies — they can't move/act, processing them wastes CPU
+        if(pGame->m_aClients[LocalID].m_FreezeEnd > 0 || pGame->m_aClients[LocalID].m_DeepFrozen)
+        {
+                // Only keep kill-on-freeze check
+                if(m_KillOnFreeze && pGame->m_aClients[LocalID].m_FreezeEnd > 0)
+                        Console()->ExecuteLine("kill", -1, -1);
+                pInput->m_Direction = 0;
+                pInput->m_Jump = 0;
+                pInput->m_Hook = 0;
+                if((pInput->m_Fire & 1) != 0)
+                        pInput->m_Fire++;
+                pInput->m_Fire &= INPUT_STATE_MASK;
+                pGame->m_Controls.m_aInputData[Dummy] = *pInput;
+                return;
+        }
+
         // Early return if no feature active — reset inputs
         if(!m_AttackEnabled && !m_CopyMoves && !m_RandomAim && !State.m_MacroPlaying && !State.m_PathfinderGoActive)
         {

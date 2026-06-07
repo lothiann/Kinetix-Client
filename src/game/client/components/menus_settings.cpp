@@ -3647,7 +3647,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                 Row.VSplitMid(&Left, &Right, ColGap);
                 {
                         static CLineInputBuffered<32> s_MainIDInput;
-                        if(Ui()->ActiveItem() != &s_MainIDInput)
+                        if(!s_MainIDInput.IsActive())
                         {
                                 char aBuf[16];
                                 str_format(aBuf, sizeof(aBuf), "%d", BN.m_MainID);
@@ -3665,7 +3665,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                 }
                 {
                         static CLineInputBuffered<256> s_TargetIDsInput;
-                        if(Ui()->ActiveItem() != &s_TargetIDsInput)
+                        if(!s_TargetIDsInput.IsActive())
                         {
                                 BN.SyncIDsToStr(BN.m_TargetList, BN.m_aTargetIDsStr, sizeof(BN.m_aTargetIDsStr));
                                 s_TargetIDsInput.Set(BN.m_aTargetIDsStr);
@@ -3740,7 +3740,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                         CUIRect Lab, Field;
                         Left.VSplitLeft(75.0f, &Lab, &Field);
                         Ui()->DoLabel(&Lab, Localize("Fire dist"), 12.0f, TEXTALIGN_ML);
-                        if(Ui()->ActiveItem() != &s_FireDistInput) { char b[16]; str_format(b,16,"%.0f",BN.m_FireDist); s_FireDistInput.Set(b); }
+                        if(!s_FireDistInput.IsActive()) { char b[16]; str_format(b,16,"%.0f",BN.m_FireDist); s_FireDistInput.Set(b); }
                         if(Ui()->DoEditBox(&s_FireDistInput, &Field, 12.0f)) BN.m_FireDist = (float)atof(s_FireDistInput.GetString());
                 }
                 {
@@ -3748,7 +3748,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                         CUIRect Lab, Field;
                         Right.VSplitLeft(75.0f, &Lab, &Field);
                         Ui()->DoLabel(&Lab, Localize("Hook dist"), 12.0f, TEXTALIGN_ML);
-                        if(Ui()->ActiveItem() != &s_HookDistInput) { char b[16]; str_format(b,16,"%.0f",BN.m_HookDist); s_HookDistInput.Set(b); }
+                        if(!s_HookDistInput.IsActive()) { char b[16]; str_format(b,16,"%.0f",BN.m_HookDist); s_HookDistInput.Set(b); }
                         if(Ui()->DoEditBox(&s_HookDistInput, &Field, 12.0f)) BN.m_HookDist = (float)atof(s_HookDistInput.GetString());
                 }
 
@@ -3761,7 +3761,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                         CUIRect Lab, Field;
                         Left.VSplitLeft(75.0f, &Lab, &Field);
                         Ui()->DoLabel(&Lab, Localize("Target dist"), 12.0f, TEXTALIGN_ML);
-                        if(Ui()->ActiveItem() != &s_TargetDistInput) { char b[16]; str_format(b,16,"%.0f",BN.m_TargetDist); s_TargetDistInput.Set(b); }
+                        if(!s_TargetDistInput.IsActive()) { char b[16]; str_format(b,16,"%.0f",BN.m_TargetDist); s_TargetDistInput.Set(b); }
                         if(Ui()->DoEditBox(&s_TargetDistInput, &Field, 12.0f)) BN.m_TargetDist = (float)atof(s_TargetDistInput.GetString());
                 }
                 {
@@ -3769,7 +3769,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                         CUIRect Lab, Field;
                         Right.VSplitLeft(75.0f, &Lab, &Field);
                         Ui()->DoLabel(&Lab, Localize("Main dist"), 12.0f, TEXTALIGN_ML);
-                        if(Ui()->ActiveItem() != &s_MainDistInput) { char b[16]; str_format(b,16,"%s",BN.m_MainDist>=1e17f?"inf":""); s_MainDistInput.Set(b); }
+                        if(!s_MainDistInput.IsActive()) { char b[16]; str_format(b,16,"%s",BN.m_MainDist>=1e17f?"inf":""); s_MainDistInput.Set(b); }
                         if(Ui()->DoEditBox(&s_MainDistInput, &Field, 12.0f)) { const char *s=s_MainDistInput.GetString(); BN.m_MainDist = (s[0]=='i') ? INFINITY : (float)atof(s); }
                 }
 
@@ -3782,7 +3782,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                         CUIRect Lab, Field;
                         Left.VSplitLeft(75.0f, &Lab, &Field);
                         Ui()->DoLabel(&Lab, Localize("Stand dist"), 12.0f, TEXTALIGN_ML);
-                        if(Ui()->ActiveItem() != &s_StandDistInput) { char b[16]; str_format(b,16,"%.0f",BN.m_StandDist); s_StandDistInput.Set(b); }
+                        if(!s_StandDistInput.IsActive()) { char b[16]; str_format(b,16,"%.0f",BN.m_StandDist); s_StandDistInput.Set(b); }
                         if(Ui()->DoEditBox(&s_StandDistInput, &Field, 12.0f)) BN.m_StandDist = (float)atof(s_StandDistInput.GetString());
                 }
                 {
@@ -3790,7 +3790,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                         CUIRect Lab, Field;
                         Right.VSplitLeft(75.0f, &Lab, &Field);
                         Ui()->DoLabel(&Lab, Localize("Hook delay"), 12.0f, TEXTALIGN_ML);
-                        if(Ui()->ActiveItem() != &s_HookDelayInput) { char b[16]; str_format(b,16,"%d",BN.m_HookDelay); s_HookDelayInput.Set(b); }
+                        if(!s_HookDelayInput.IsActive()) { char b[16]; str_format(b,16,"%d",BN.m_HookDelay); s_HookDelayInput.Set(b); }
                         if(Ui()->DoEditBox(&s_HookDelayInput, &Field, 12.0f)) BN.m_HookDelay = atoi(s_HookDelayInput.GetString());
                 }
 
@@ -3827,12 +3827,12 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                         CUIRect Lab, Field;
                         Left.VSplitLeft(90.0f, &Lab, &Field);
                         Ui()->DoLabel(&Lab, Localize("Rescue radius"), 12.0f, TEXTALIGN_ML);
-                        if(Ui()->ActiveItem() != &s_RescueRadInput) { char b[16]; str_format(b,16,"%.0f",BN.m_RescueRadius); s_RescueRadInput.Set(b); }
+                        if(!s_RescueRadInput.IsActive()) { char b[16]; str_format(b,16,"%.0f",BN.m_RescueRadius); s_RescueRadInput.Set(b); }
                         if(Ui()->DoEditBox(&s_RescueRadInput, &Field, 12.0f)) BN.m_RescueRadius = (float)atof(s_RescueRadInput.GetString());
                 }
                 {
                         static CLineInputBuffered<256> s_RescueIDsInput;
-                        if(Ui()->ActiveItem() != &s_RescueIDsInput)
+                        if(!s_RescueIDsInput.IsActive())
                         {
                                 BN.SyncIDsToStr(BN.m_RescueList, BN.m_aRescueIDsStr, sizeof(BN.m_aRescueIDsStr));
                                 s_RescueIDsInput.Set(BN.m_aRescueIDsStr);
@@ -3914,7 +3914,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                         CUIRect Lab, Field;
                         Left.VSplitLeft(50.0f, &Lab, &Field);
                         Ui()->DoLabel(&Lab, Localize("Rays"), 12.0f, TEXTALIGN_ML);
-                        if(Ui()->ActiveItem() != &s_RaysInput) { char b[16]; str_format(b,16,"%d",BN.m_PfRays); s_RaysInput.Set(b); }
+                        if(!s_RaysInput.IsActive()) { char b[16]; str_format(b,16,"%d",BN.m_PfRays); s_RaysInput.Set(b); }
                         if(Ui()->DoEditBox(&s_RaysInput, &Field, 12.0f)) { int v=atoi(s_RaysInput.GetString()); if(v>=12&&v<=90) BN.m_PfRays=v; }
                 }
                 {
@@ -3922,7 +3922,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                         CUIRect Lab, Field;
                         Right.VSplitLeft(50.0f, &Lab, &Field);
                         Ui()->DoLabel(&Lab, Localize("Dist"), 12.0f, TEXTALIGN_ML);
-                        if(Ui()->ActiveItem() != &s_PfDistInput) { char b[16]; str_format(b,16,"%d",BN.m_PfViewRadius); s_PfDistInput.Set(b); }
+                        if(!s_PfDistInput.IsActive()) { char b[16]; str_format(b,16,"%d",BN.m_PfViewRadius); s_PfDistInput.Set(b); }
                         if(Ui()->DoEditBox(&s_PfDistInput, &Field, 12.0f)) { int v=atoi(s_PfDistInput.GetString()); if(v>=1&&v<=128) BN.m_PfViewRadius=v; }
                 }
 
@@ -3949,10 +3949,10 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                 }
                         }
                         Ui()->DoLabel(&XLbl, "X", 12.0f, TEXTALIGN_ML);
-                        if(Ui()->ActiveItem() != &s_GoXInput) { char b[16]; str_format(b,16,"%d",s_PfGoX); s_GoXInput.Set(b); }
+                        if(!s_GoXInput.IsActive()) { char b[16]; str_format(b,16,"%d",s_PfGoX); s_GoXInput.Set(b); }
                         if(Ui()->DoEditBox(&s_GoXInput, &XField, 12.0f)) { int v=atoi(s_GoXInput.GetString()); if(v>=0&&v<=999) s_PfGoX=v; }
                         Ui()->DoLabel(&YLbl, "Y", 12.0f, TEXTALIGN_ML);
-                        if(Ui()->ActiveItem() != &s_GoYInput) { char b[16]; str_format(b,16,"%d",s_PfGoY); s_GoYInput.Set(b); }
+                        if(!s_GoYInput.IsActive()) { char b[16]; str_format(b,16,"%d",s_PfGoY); s_GoYInput.Set(b); }
                         if(Ui()->DoEditBox(&s_GoYInput, &YField, 12.0f)) { int v=atoi(s_GoYInput.GetString()); if(v>=0&&v<=999) s_PfGoY=v; }
                 }
 
@@ -3977,7 +3977,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                         CUIRect Lab, Field;
                         Left.VSplitLeft(65.0f, &Lab, &Field);
                         Ui()->DoLabel(&Lab, Localize("Interval"), 12.0f, TEXTALIGN_ML);
-                        if(Ui()->ActiveItem() != &s_RndIntInput) { char b[16]; str_format(b,16,"%d",BN.m_RandomAimInterval); s_RndIntInput.Set(b); }
+                        if(!s_RndIntInput.IsActive()) { char b[16]; str_format(b,16,"%d",BN.m_RandomAimInterval); s_RndIntInput.Set(b); }
                         if(Ui()->DoEditBox(&s_RndIntInput, &Field, 12.0f)) { int v=atoi(s_RndIntInput.GetString()); if(v>=10&&v<=10000) BN.m_RandomAimInterval=v; }
                 }
                 {
@@ -3985,7 +3985,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                         CUIRect Lab, Field;
                         Right.VSplitLeft(65.0f, &Lab, &Field);
                         Ui()->DoLabel(&Lab, Localize("Copy ID"), 12.0f, TEXTALIGN_ML);
-                        if(Ui()->ActiveItem() != &s_CopyIDInput) { char b[16]; str_format(b,16,"%d",BN.m_CopyTargetID); s_CopyIDInput.Set(b); }
+                        if(!s_CopyIDInput.IsActive()) { char b[16]; str_format(b,16,"%d",BN.m_CopyTargetID); s_CopyIDInput.Set(b); }
                         if(Ui()->DoEditBox(&s_CopyIDInput, &Field, 12.0f)) { BN.m_CopyTargetID = atoi(s_CopyIDInput.GetString()); }
                 }
         }
