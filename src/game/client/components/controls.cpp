@@ -20,6 +20,9 @@
 #include <game/client/gameclient.h>
 #include <game/collision.h>
 
+// bot_control integration
+#include <game/client/components/bot_control.h>
+
 CControls::CControls()
 {
         mem_zero(&m_aLastData, sizeof(m_aLastData));
@@ -314,6 +317,54 @@ int CControls::SnapInput(int *pData)
 
                                 pDummyInput->m_Hook = g_Config.m_ClDummyHook;
                                 m_aInputData[D] = *pDummyInput;
+                        }
+                }
+
+                // bot control — apply per-dummy bot input
+                {
+                        CBotControl &Bot = GameClient()->m_BotControl;
+                        for(int D = 0; D < MAX_DUMMIES; D++)
+                        {
+                                if(!Bot.IsBotActiveAny(D))
+                                        continue;
+
+                                CNetObj_PlayerInput *pInput;
+                                if(D == g_Config.m_ClDummy)
+                                        pInput = &m_aInputData[D];
+                                else
+                                        pInput = &GameClient()->m_aDummyInput[D];
+
+                                if(Bot.IsBotActiveJump(D))
+                                        pInput->m_Jump = Bot.State(D).m_Jump ? 1 : 0;
+                                if(Bot.IsBotActiveHook(D))
+                                        pInput->m_Hook = Bot.State(D).m_Hook ? 1 : 0;
+                                if(Bot.IsBotActiveMove(D))
+                                        pInput->m_Direction = Bot.State(D).m_Direction;
+                                if(Bot.IsBotActiveFire(D) && Bot.State(D).m_Fire)
+                                {
+                                        pInput->m_Fire++;
+                                        pInput->m_Fire &= INPUT_STATE_MASK;
+                                }
+
+                                // Aim: absolute (c_oaim) takes priority over relative (c_aim)
+                                if(Bot.IsBotActiveOverrideAim(D))
+                                {
+                                        m_aMousePos[D].x = (float)Bot.State(D).m_OverrideTargetX;
+                                        m_aMousePos[D].y = (float)Bot.State(D).m_OverrideTargetY;
+                                        pInput->m_TargetX = Bot.State(D).m_OverrideTargetX;
+                                        pInput->m_TargetY = Bot.State(D).m_OverrideTargetY;
+                                }
+                                else if(Bot.IsBotActiveAim(D))
+                                {
+                                        m_aMousePos[D].x += (float)Bot.State(D).m_TargetX;
+                                        m_aMousePos[D].y += (float)Bot.State(D).m_TargetY;
+                                        pInput->m_TargetX = (int)m_aMousePos[D].x;
+                                        pInput->m_TargetY = (int)m_aMousePos[D].y;
+                                }
+
+                                // Copy bot-controlled dummy input back
+                                if(D != g_Config.m_ClDummy)
+                                        m_aInputData[D] = *pInput;
                         }
                 }
 

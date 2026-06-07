@@ -30,6 +30,7 @@
 // components
 #include "components/background.h"
 #include "components/binds.h"
+#include "components/bot_control.h"
 #include "components/broadcast.h"
 #include "components/camera.h"
 #include "components/censor.h"
@@ -151,6 +152,7 @@ public:
         CBroadcast m_Broadcast;
         CGameConsole m_GameConsole;
         CBinds m_Binds;
+        CBotControl m_BotControl;
         CKeyBinder m_KeyBinder;
         CParticles m_Particles;
         CMenus m_Menus;
