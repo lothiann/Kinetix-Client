@@ -3383,10 +3383,368 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
 
         MainView.HSplitTop(10.0f, nullptr, &MainView);
 
-        // Description
-        MainView.HSplitTop(40.0f, &Row, &MainView);
+        // === Target Dummy Selector ===
+        static int s_TargetDummy = 1; // default to dummy 1
+        {
+                MainView.HSplitTop(25.0f, &Label, &MainView);
+                s_FunctionsScrollRegion.AddRect(Label);
+                Ui()->DoLabel(&Label, Localize("Target Dummy"), 16.0f, TEXTALIGN_ML);
+        }
+        MainView.HSplitTop(5.0f, nullptr, &MainView);
+
+        // Dummy selector buttons — one per dummy + main
+        {
+                MainView.HSplitTop(25.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+
+                static CButtonContainer s_aDummyButtons[MAX_DUMMIES];
+                const int NumBtns = MAX_DUMMIES;
+                float BtnW = (Row.w - 5.0f * (NumBtns - 1)) / NumBtns;
+                CUIRect Btn;
+
+                for(int D = 0; D < NumBtns; D++)
+                {
+                        Row.VSplitLeft(BtnW, &Btn, &Row);
+                        if(D < NumBtns - 1)
+                                Row.VSplitLeft(5.0f, nullptr, &Row);
+
+                        char aName[16];
+                        if(D == 0)
+                                str_copy(aName, "Main");
+                        else
+                                str_format(aName, sizeof(aName), "D%d", D);
+
+                        bool Active = (s_TargetDummy == D);
+                        bool Connected = (D == 0) || Client()->DummyConnected(D);
+
+                        if(DoButton_MenuTab(&s_aDummyButtons[D], aName, Active ? 1 : 0, &Btn, IGraphics::CORNER_ALL))
+                        {
+                                s_TargetDummy = D;
+                        }
+
+                        // Dim unconnected dummies
+                        if(!Connected && D != 0)
+                        {
+                                TextRender()->TextColor(0.5f, 0.5f, 0.5f, 0.5f);
+                        }
+                }
+                TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
+        }
+        MainView.HSplitTop(5.0f, nullptr, &MainView);
+
+        // Show active state for target
+        {
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+
+                CBotControl &Bot = GameClient()->m_BotControl;
+                bool AnyActive = Bot.IsBotActiveAny(s_TargetDummy);
+
+                char aStatus[128];
+                if(AnyActive)
+                {
+                        str_format(aStatus, sizeof(aStatus), Localize("Status: Active"));
+                        TextRender()->TextColor(0.4f, 1.0f, 0.4f, 1.0f);
+                }
+                else
+                {
+                        str_copy(aStatus, Localize("Status: Idle"));
+                        TextRender()->TextColor(0.6f, 0.6f, 0.6f, 1.0f);
+                }
+                Ui()->DoLabel(&Row, aStatus, 13.0f, TEXTALIGN_ML);
+                TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
+
+                // Active actions detail
+                CUIRect StatusRight;
+                Row.VSplitRight(300.0f, nullptr, &StatusRight);
+                char aDetail[128] = "";
+                if(Bot.IsBotActiveJump(s_TargetDummy))
+                        str_append(aDetail, "JUMP ");
+                if(Bot.IsBotActiveHook(s_TargetDummy))
+                        str_append(aDetail, "HOOK ");
+                if(Bot.IsBotActiveFire(s_TargetDummy))
+                        str_append(aDetail, "FIRE ");
+                if(Bot.IsBotActiveMove(s_TargetDummy))
+                        str_append(aDetail, "MOVE ");
+                if(Bot.IsBotActiveAim(s_TargetDummy))
+                        str_append(aDetail, "AIM ");
+                if(Bot.IsBotActiveOverrideAim(s_TargetDummy))
+                        str_append(aDetail, "OAIM ");
+                if(aDetail[0] != '\0')
+                        Ui()->DoLabel(&StatusRight, aDetail, 11.0f, TEXTALIGN_ML);
+        }
+
+        MainView.HSplitTop(10.0f, nullptr, &MainView);
+
+        // === Duration Setting ===
+        static int s_ActionDuration = 500;
+        {
+                MainView.HSplitTop(25.0f, &Label, &MainView);
+                s_FunctionsScrollRegion.AddRect(Label);
+                Ui()->DoLabel(&Label, Localize("Action Duration (ms)"), 16.0f, TEXTALIGN_ML);
+        }
+        MainView.HSplitTop(5.0f, nullptr, &MainView);
+
+        {
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                CUIRect LabelRect, MinusBtn, PlusBtn;
+                Row.VSplitLeft(80.0f, &LabelRect, &Row);
+                Row.VSplitRight(40.0f, &PlusBtn, nullptr);
+                Row.VSplitRight(40.0f, &MinusBtn, &Row);
+
+                char aDurStr[32];
+                str_format(aDurStr, sizeof(aDurStr), "%d ms", s_ActionDuration);
+                Ui()->DoLabel(&LabelRect, aDurStr, 13.0f, TEXTALIGN_ML);
+
+                static CButtonContainer s_DurMinus;
+                static CButtonContainer s_DurPlus;
+                if(DoButton_Menu(&s_DurMinus, "-100", 0, &MinusBtn))
+                        s_ActionDuration = maximum(100, s_ActionDuration - 100);
+                if(DoButton_Menu(&s_DurPlus, "+100", 0, &PlusBtn))
+                        s_ActionDuration = minimum(10000, s_ActionDuration + 100);
+
+                // Preset buttons
+                static CButtonContainer s_aDurPresets[4];
+                const int aPresetValues[] = {100, 500, 1000, 2000};
+                CUIRect PresetBtn;
+                float PresetW = Row.w / 4.0f;
+                for(int i = 0; i < 4; i++)
+                {
+                        Row.VSplitLeft(PresetW, &PresetBtn, &Row);
+                        char aPreset[16];
+                        str_format(aPreset, sizeof(aPreset), "%d", aPresetValues[i]);
+                        if(DoButton_MenuTab(&s_aDurPresets[i], aPreset, s_ActionDuration == aPresetValues[i] ? 1 : 0, &PresetBtn, IGraphics::CORNER_ALL))
+                                s_ActionDuration = aPresetValues[i];
+                }
+        }
+
+        MainView.HSplitTop(10.0f, nullptr, &MainView);
+
+        // === Input Actions ===
+        {
+                MainView.HSplitTop(25.0f, &Label, &MainView);
+                s_FunctionsScrollRegion.AddRect(Label);
+                Ui()->DoLabel(&Label, Localize("Input Actions"), 16.0f, TEXTALIGN_ML);
+        }
+        MainView.HSplitTop(5.0f, nullptr, &MainView);
+
+        // Action buttons row: Jump, Hook, Fire, Left, Right
+        {
+                MainView.HSplitTop(25.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+
+                static CButtonContainer s_JumpButton;
+                static CButtonContainer s_HookButton;
+                static CButtonContainer s_FireButton;
+                static CButtonContainer s_LeftButton;
+                static CButtonContainer s_RightButton;
+
+                CUIRect Btn;
+                float BtnWidth = Row.w / 5.0f;
+                const char *apActions[] = {"Jump", "Hook", "Fire", "Left", "Right"};
+                const char *apCmdNames[] = {"jump", "hook", "fire", "left", "right"};
+                CButtonContainer *apBtnIds[] = {&s_JumpButton, &s_HookButton, &s_FireButton, &s_LeftButton, &s_RightButton};
+
+                for(int i = 0; i < 5; i++)
+                {
+                        Row.VSplitLeft(BtnWidth, &Btn, &Row);
+                        if(i < 4)
+                                Row.VSplitLeft(5.0f, nullptr, &Row);
+
+                        // Highlight if action is active for this target
+                        bool Active = false;
+                        const CBotControl &Bot = GameClient()->m_BotControl;
+                        if(i == 0) Active = Bot.IsBotActiveJump(s_TargetDummy);
+                        else if(i == 1) Active = Bot.IsBotActiveHook(s_TargetDummy);
+                        else if(i == 2) Active = Bot.IsBotActiveFire(s_TargetDummy);
+                        else if(i == 3 || i == 4) Active = Bot.IsBotActiveMove(s_TargetDummy);
+
+                        if(DoButton_Menu(apBtnIds[i], Localize(apActions[i]), Active ? 1 : 0, &Btn))
+                        {
+                                GameClient()->m_BotControl.ActionInput(apCmdNames[i], s_ActionDuration, s_TargetDummy);
+                        }
+                }
+        }
+
+        MainView.HSplitTop(10.0f, nullptr, &MainView);
+
+        // === Aim Control ===
+        {
+                MainView.HSplitTop(25.0f, &Label, &MainView);
+                s_FunctionsScrollRegion.AddRect(Label);
+                Ui()->DoLabel(&Label, Localize("Aim Control"), 16.0f, TEXTALIGN_ML);
+        }
+        MainView.HSplitTop(5.0f, nullptr, &MainView);
+
+        // Relative aim (c_aim) — preset offsets
+        {
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+
+                Ui()->DoLabel(&Row, Localize("Relative aim (c_aim)"), 11.0f, TEXTALIGN_ML);
+        }
+        {
+                MainView.HSplitTop(25.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+
+                static CButtonContainer s_aAimBtns[8];
+                const int aAimDx[] = {0, 0, -200, 200, -100, 100, -50, 50};
+                const int aAimDy[] = {-200, 200, 0, 0, -100, -100, 100, 100};
+                const char *aAimLabels[] = {"Up", "Down", "Left", "Right", "UpL", "UpR", "DnL", "DnR"};
+
+                CUIRect Btn;
+                float BtnW = Row.w / 8.0f;
+                for(int i = 0; i < 8; i++)
+                {
+                        Row.VSplitLeft(BtnW, &Btn, &Row);
+                        if(i < 7)
+                                Row.VSplitLeft(3.0f, nullptr, &Row);
+                        if(DoButton_Menu(&s_aAimBtns[i], aAimLabels[i], 0, &Btn))
+                        {
+                                GameClient()->m_BotControl.ActionAim(aAimDx[i], aAimDy[i], s_TargetDummy);
+                        }
+                }
+        }
+        MainView.HSplitTop(5.0f, nullptr, &MainView);
+
+        // Absolute aim (c_oaim) — custom X/Y
+        {
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+
+                Ui()->DoLabel(&Row, Localize("Absolute aim (c_oaim)"), 11.0f, TEXTALIGN_ML);
+        }
+        {
+                static int s_OaimX = 0;
+                static int s_OaimY = 0;
+
+                MainView.HSplitTop(25.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+
+                CUIRect LabelX, MinusX, PlusX, LabelY, MinusY, PlusY, ApplyBtn;
+
+                // X control
+                Row.VSplitLeft(30.0f, &LabelX, &Row);
+                Row.VSplitLeft(30.0f, &MinusX, &Row);
+                Row.VSplitLeft(50.0f, &PlusX, &Row);
+                // Y control
+                Row.VSplitLeft(30.0f, &LabelY, &Row);
+                Row.VSplitLeft(30.0f, &MinusY, &Row);
+                Row.VSplitLeft(50.0f, &PlusY, &Row);
+                // Apply button
+                Row.VSplitLeft(10.0f, nullptr, &Row);
+                Row.VSplitLeft(80.0f, &ApplyBtn, &Row);
+
+                char aXStr[16], aYStr[16];
+                str_format(aXStr, sizeof(aXStr), "X:%d", s_OaimX);
+                str_format(aYStr, sizeof(aYStr), "Y:%d", s_OaimY);
+                Ui()->DoLabel(&LabelX, aXStr, 11.0f, TEXTALIGN_ML);
+
+                static CButtonContainer s_XMinus, s_XPlus, s_YMinus, s_YPlus, s_OaimApply;
+                if(DoButton_Menu(&s_XMinus, "--", 0, &MinusX))
+                        s_OaimX -= 50;
+                if(DoButton_Menu(&s_XPlus, "++", 0, &PlusX))
+                        s_OaimX += 50;
+
+                Ui()->DoLabel(&LabelY, aYStr, 11.0f, TEXTALIGN_ML);
+
+                if(DoButton_Menu(&s_YMinus, "--", 0, &MinusY))
+                        s_OaimY -= 50;
+                if(DoButton_Menu(&s_YPlus, "++", 0, &PlusY))
+                        s_OaimY += 50;
+
+                if(DoButton_Menu(&s_OaimApply, Localize("Apply"), 0, &ApplyBtn))
+                {
+                        GameClient()->m_BotControl.ActionOverrideAim(s_OaimX, s_OaimY, s_TargetDummy);
+                }
+        }
+
+        MainView.HSplitTop(10.0f, nullptr, &MainView);
+
+        // === Stop ===
+        {
+                MainView.HSplitTop(25.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+
+                static CButtonContainer s_StopBtn;
+                if(DoButton_Menu(&s_StopBtn, Localize("Stop All Actions"), 0, &Row))
+                {
+                        GameClient()->m_BotControl.ActionStop(s_TargetDummy);
+                }
+        }
+
+        MainView.HSplitTop(10.0f, nullptr, &MainView);
+
+        // === Dummy Settings ===
+        {
+                MainView.HSplitTop(25.0f, &Label, &MainView);
+                s_FunctionsScrollRegion.AddRect(Label);
+                Ui()->DoLabel(&Label, Localize("Dummy Settings"), 16.0f, TEXTALIGN_ML);
+        }
+        MainView.HSplitTop(5.0f, nullptr, &MainView);
+
+        // Copy moves
+        MainView.HSplitTop(20.0f, &Row, &MainView);
         s_FunctionsScrollRegion.AddRect(Row);
-        Ui()->DoLabel(&Row, Localize("Control dummies programmatically via console commands. Use c_input, c_aim, c_oaim, c_stop with optional dummy ID (0=main, 1-7=dummies). If no dummy ID is specified, the current player is used."), 11.0f, TEXTALIGN_TL, SLabelProperties{.m_MaxWidth = Row.w - 10.0f});
+        if(DoButton_CheckBox(&g_Config.m_ClDummyCopyMoves, Localize("Copy moves"), g_Config.m_ClDummyCopyMoves, &Row))
+                g_Config.m_ClDummyCopyMoves ^= 1;
+        GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyCopyMoves, &Row, Localize("All dummies copy your movement"));
+
+        // Hammer
+        MainView.HSplitTop(20.0f, &Row, &MainView);
+        s_FunctionsScrollRegion.AddRect(Row);
+        if(DoButton_CheckBox(&g_Config.m_ClDummyHammer, Localize("Dummy hammer"), g_Config.m_ClDummyHammer, &Row))
+                g_Config.m_ClDummyHammer ^= 1;
+        GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyHammer, &Row, Localize("All dummies will hammer towards you for hammerfly"));
+
+        // Restore weapon
+        MainView.HSplitTop(20.0f, &Row, &MainView);
+        s_FunctionsScrollRegion.AddRect(Row);
+        if(DoButton_CheckBox(&g_Config.m_ClDummyRestoreWeapon, Localize("Restore weapon after hammer"), g_Config.m_ClDummyRestoreWeapon, &Row))
+                g_Config.m_ClDummyRestoreWeapon ^= 1;
+
+        // Dummy control
+        MainView.HSplitTop(20.0f, &Row, &MainView);
+        s_FunctionsScrollRegion.AddRect(Row);
+        if(DoButton_CheckBox(&g_Config.m_ClDummyControl, Localize("Dummy control"), g_Config.m_ClDummyControl, &Row))
+                g_Config.m_ClDummyControl ^= 1;
+        GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyControl, &Row, Localize("Control dummies independently (jump/fire/hook below)"));
+
+        if(g_Config.m_ClDummyControl)
+        {
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                if(DoButton_CheckBox(&g_Config.m_ClDummyJump, Localize("Dummy jump"), g_Config.m_ClDummyJump, &Row))
+                        g_Config.m_ClDummyJump ^= 1;
+
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                if(DoButton_CheckBox(&g_Config.m_ClDummyFire, Localize("Dummy fire"), g_Config.m_ClDummyFire, &Row))
+                        g_Config.m_ClDummyFire ^= 1;
+
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                if(DoButton_CheckBox(&g_Config.m_ClDummyHook, Localize("Dummy hook"), g_Config.m_ClDummyHook, &Row))
+                        g_Config.m_ClDummyHook ^= 1;
+        }
+
+        // Reset on switch
+        {
+                MainView.HSplitTop(15.0f, nullptr, &MainView);
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                CUIRect LabelRect, ButtonRect;
+                Row.VSplitLeft(200.0f, &LabelRect, &ButtonRect);
+                Ui()->DoLabel(&LabelRect, Localize("Reset on switch"), 13.0f, TEXTALIGN_ML);
+
+                static CButtonContainer s_ResetButton;
+                static const char *s_apResetNames[] = {"Off", "Dummy", "Player"};
+                if(DoButton_MenuTab(&s_ResetButton, s_apResetNames[g_Config.m_ClDummyResetOnSwitch], 0, &ButtonRect, IGraphics::CORNER_ALL))
+                {
+                        g_Config.m_ClDummyResetOnSwitch = (g_Config.m_ClDummyResetOnSwitch + 1) % 3;
+                }
+        }
 
         MainView.HSplitTop(10.0f, nullptr, &MainView);
 
@@ -3409,7 +3767,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                 TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
                 Ui()->DoLabel(&CmdDesc, Localize("<action> <ms> [dummy]  — Actions: jump, hook, fire, left, right"), 11.0f, TEXTALIGN_ML);
         }
-        MainView.HSplitTop(5.0f, nullptr, &MainView);
+        MainView.HSplitTop(3.0f, nullptr, &MainView);
 
         // c_aim
         {
@@ -3422,7 +3780,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                 TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
                 Ui()->DoLabel(&CmdDesc, Localize("<dx> <dy> [dummy]  — Relative aim offset"), 11.0f, TEXTALIGN_ML);
         }
-        MainView.HSplitTop(5.0f, nullptr, &MainView);
+        MainView.HSplitTop(3.0f, nullptr, &MainView);
 
         // c_oaim
         {
@@ -3435,7 +3793,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                 TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
                 Ui()->DoLabel(&CmdDesc, Localize("<x> <y> [dummy]  — Absolute aim position"), 11.0f, TEXTALIGN_ML);
         }
-        MainView.HSplitTop(5.0f, nullptr, &MainView);
+        MainView.HSplitTop(3.0f, nullptr, &MainView);
 
         // c_stop
         {
@@ -3447,114 +3805,6 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                 Ui()->DoLabel(&CmdLabel, "c_stop", 13.0f, TEXTALIGN_ML);
                 TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
                 Ui()->DoLabel(&CmdDesc, Localize("[dummy]  — Stop all bot actions for specified dummy"), 11.0f, TEXTALIGN_ML);
-        }
-
-        MainView.HSplitTop(15.0f, nullptr, &MainView);
-
-        // === Quick Actions ===
-        {
-                MainView.HSplitTop(25.0f, &Label, &MainView);
-                s_FunctionsScrollRegion.AddRect(Label);
-                Ui()->DoLabel(&Label, Localize("Quick Actions (Current Player)"), 16.0f, TEXTALIGN_ML);
-        }
-        MainView.HSplitTop(5.0f, nullptr, &MainView);
-
-        // Target dummy selector
-        static int s_TargetDummy = 0;
-        {
-                MainView.HSplitTop(20.0f, &Row, &MainView);
-                s_FunctionsScrollRegion.AddRect(Row);
-                CUIRect LabelRect, ButtonRect;
-                Row.VSplitLeft(120.0f, &LabelRect, &ButtonRect);
-                Ui()->DoLabel(&LabelRect, Localize("Target:"), 13.0f, TEXTALIGN_ML);
-
-                char aDummyName[32];
-                if(s_TargetDummy == 0)
-                        str_copy(aDummyName, Localize("Main"));
-                else
-                        str_format(aDummyName, sizeof(aDummyName), Localize("Dummy %d"), s_TargetDummy);
-
-                static CButtonContainer s_TargetDummyButton;
-                if(DoButton_MenuTab(&s_TargetDummyButton, aDummyName, 0, &ButtonRect, IGraphics::CORNER_ALL))
-                {
-                        s_TargetDummy = (s_TargetDummy + 1) % MAX_DUMMIES;
-                }
-        }
-        MainView.HSplitTop(5.0f, nullptr, &MainView);
-
-        // Stop all button
-        {
-                MainView.HSplitTop(25.0f, &Row, &MainView);
-                s_FunctionsScrollRegion.AddRect(Row);
-                static CButtonContainer s_StopAllButton;
-                if(DoButton_Menu(&s_StopAllButton, Localize("Stop All Actions"), 0, &Row))
-                {
-                        GameClient()->m_BotControl.ActionStop(s_TargetDummy);
-                }
-        }
-        MainView.HSplitTop(5.0f, nullptr, &MainView);
-
-        // Quick input buttons — Jump 500ms, Hook 500ms, Fire 500ms, Left 500ms, Right 500ms
-        {
-                MainView.HSplitTop(25.0f, &Row, &MainView);
-                s_FunctionsScrollRegion.AddRect(Row);
-
-                static CButtonContainer s_JumpButton;
-                static CButtonContainer s_HookButton;
-                static CButtonContainer s_FireButton;
-                static CButtonContainer s_LeftButton;
-                static CButtonContainer s_RightButton;
-
-                CUIRect Btn;
-                float BtnWidth = Row.w / 5.0f;
-                const char *apActions[] = {"Jump", "Hook", "Fire", "Left", "Right"};
-                const char *apCmdNames[] = {"jump", "hook", "fire", "left", "right"};
-                CButtonContainer *apBtnIds[] = {&s_JumpButton, &s_HookButton, &s_FireButton, &s_LeftButton, &s_RightButton};
-
-                for(int i = 0; i < 5; i++)
-                {
-                        Row.VSplitLeft(BtnWidth, &Btn, &Row);
-                        if(i < 4)
-                                Row.VSplitLeft(5.0f, nullptr, &Row);
-                        if(DoButton_Menu(apBtnIds[i], Localize(apActions[i]), 0, &Btn))
-                        {
-                                GameClient()->m_BotControl.ActionInput(apCmdNames[i], 500, s_TargetDummy);
-                        }
-                }
-        }
-
-        MainView.HSplitTop(10.0f, nullptr, &MainView);
-
-        // === Examples ===
-        {
-                MainView.HSplitTop(25.0f, &Label, &MainView);
-                s_FunctionsScrollRegion.AddRect(Label);
-                Ui()->DoLabel(&Label, Localize("Examples"), 16.0f, TEXTALIGN_ML);
-        }
-        MainView.HSplitTop(5.0f, nullptr, &MainView);
-
-        {
-                MainView.HSplitTop(20.0f, &Row, &MainView);
-                s_FunctionsScrollRegion.AddRect(Row);
-                TextRender()->TextColor(0.6f, 0.6f, 0.6f, 1.0f);
-                Ui()->DoLabel(&Row, "c_input hook 1000 4", 11.0f, TEXTALIGN_ML);
-                TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
-        }
-        MainView.HSplitTop(3.0f, nullptr, &MainView);
-        {
-                MainView.HSplitTop(20.0f, &Row, &MainView);
-                s_FunctionsScrollRegion.AddRect(Row);
-                TextRender()->TextColor(0.6f, 0.6f, 0.6f, 1.0f);
-                Ui()->DoLabel(&Row, "c_aim 100 -50 2", 11.0f, TEXTALIGN_ML);
-                TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
-        }
-        MainView.HSplitTop(3.0f, nullptr, &MainView);
-        {
-                MainView.HSplitTop(20.0f, &Row, &MainView);
-                s_FunctionsScrollRegion.AddRect(Row);
-                TextRender()->TextColor(0.6f, 0.6f, 0.6f, 1.0f);
-                Ui()->DoLabel(&Row, "c_stop 4", 11.0f, TEXTALIGN_ML);
-                TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
         }
 
         // Add remaining space as final scroll rect
