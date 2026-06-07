@@ -128,6 +128,7 @@ void CGameClient::OnConsoleInit()
                                               &m_Binds,
                                               &m_Binds.m_SpecialBinds,
                                               &m_BotControl,
+                                              &m_BotNet,
                                               &m_Controls,
                                               &m_Camera,
                                               &m_Sounds,
