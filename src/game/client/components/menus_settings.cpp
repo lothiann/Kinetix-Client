@@ -3481,37 +3481,26 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
         {
                 MainView.HSplitTop(25.0f, &Label, &MainView);
                 s_FunctionsScrollRegion.AddRect(Label);
-                Ui()->DoLabel(&Label, Localize("Action Duration (ms)"), 16.0f, TEXTALIGN_ML);
+
+                char aDurStr[64];
+                str_format(aDurStr, sizeof(aDurStr), "%s: %d ms", Localize("Action Duration"), s_ActionDuration);
+                Ui()->DoLabel(&Label, aDurStr, 16.0f, TEXTALIGN_ML);
         }
         MainView.HSplitTop(5.0f, nullptr, &MainView);
 
         {
-                MainView.HSplitTop(20.0f, &Row, &MainView);
+                MainView.HSplitTop(25.0f, &Row, &MainView);
                 s_FunctionsScrollRegion.AddRect(Row);
-                CUIRect LabelRect, MinusBtn, PlusBtn;
-                Row.VSplitLeft(80.0f, &LabelRect, &Row);
-                Row.VSplitRight(40.0f, &PlusBtn, nullptr);
-                Row.VSplitRight(40.0f, &MinusBtn, &Row);
 
-                char aDurStr[32];
-                str_format(aDurStr, sizeof(aDurStr), "%d ms", s_ActionDuration);
-                Ui()->DoLabel(&LabelRect, aDurStr, 13.0f, TEXTALIGN_ML);
-
-                static CButtonContainer s_DurMinus;
-                static CButtonContainer s_DurPlus;
-                if(DoButton_Menu(&s_DurMinus, "-100", 0, &MinusBtn))
-                        s_ActionDuration = maximum(100, s_ActionDuration - 100);
-                if(DoButton_Menu(&s_DurPlus, "+100", 0, &PlusBtn))
-                        s_ActionDuration = minimum(10000, s_ActionDuration + 100);
-
-                // Preset buttons
-                static CButtonContainer s_aDurPresets[4];
-                const int aPresetValues[] = {100, 500, 1000, 2000};
+                static CButtonContainer s_aDurPresets[6];
+                const int aPresetValues[] = {100, 250, 500, 1000, 2000, 5000};
                 CUIRect PresetBtn;
-                float PresetW = Row.w / 4.0f;
-                for(int i = 0; i < 4; i++)
+                float PresetW = Row.w / 6.0f;
+                for(int i = 0; i < 6; i++)
                 {
                         Row.VSplitLeft(PresetW, &PresetBtn, &Row);
+                        if(i < 5)
+                                Row.VSplitLeft(3.0f, nullptr, &Row);
                         char aPreset[16];
                         str_format(aPreset, sizeof(aPreset), "%d", aPresetValues[i]);
                         if(DoButton_MenuTab(&s_aDurPresets[i], aPreset, s_ActionDuration == aPresetValues[i] ? 1 : 0, &PresetBtn, IGraphics::CORNER_ALL))
