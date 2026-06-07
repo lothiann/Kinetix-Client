@@ -175,6 +175,22 @@ void CBotControl::ActionStop(int Dummy)
                 return;
 
         m_aState[Dummy].Reset();
+
+        // Also clear the actual input data so HUD/visuals update immediately,
+        // even when the menu/ESC is open and the normal input flow is frozen
+        CNetObj_PlayerInput *pInput;
+        if(Dummy == g_Config.m_ClDummy)
+                pInput = &GameClient()->m_Controls.m_aInputData[Dummy];
+        else
+                pInput = &GameClient()->m_aDummyInput[Dummy];
+
+        pInput->m_Jump = 0;
+        pInput->m_Hook = 0;
+        // Simulate fire release (increment so server sees the "let go" transition)
+        if((pInput->m_Fire & 1) != 0)
+                pInput->m_Fire++;
+        pInput->m_Fire &= INPUT_STATE_MASK;
+        pInput->m_Direction = 0;
 }
 
 // Resolve dummy ID from console argument, defaulting to current g_Config.m_ClDummy

@@ -3497,7 +3497,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                 static CButtonContainer s_RightButton;
 
                 CUIRect Btn;
-                float BtnWidth = Row.w / 5.0f;
+                float BtnWidth = (Row.w - 4.0f * 5.0f) / 5.0f;
                 const char *apActions[] = {"Jump", "Hook", "Fire", "Left", "Right"};
                 const char *apCmdNames[] = {"jump", "hook", "fire", "left", "right"};
                 CButtonContainer *apBtnIds[] = {&s_JumpButton, &s_HookButton, &s_FireButton, &s_LeftButton, &s_RightButton};
@@ -3532,7 +3532,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
         }
         MainView.HSplitTop(5.0f, nullptr, &MainView);
 
-        // Relative aim (c_aim) — preset offsets
+        // Relative aim (c_aim) — sliders for dx/dy
         {
                 MainView.HSplitTop(20.0f, &Row, &MainView);
                 s_FunctionsScrollRegion.AddRect(Row);
@@ -3540,25 +3540,26 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                 Ui()->DoLabel(&Row, Localize("Relative aim (c_aim)"), 11.0f, TEXTALIGN_ML);
         }
         {
+                static int s_AimDx = 0;
+                static int s_AimDy = 0;
+
+                // dX slider
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                Ui()->DoScrollbarOption(&s_AimDx, &s_AimDx, &Row, Localize("Aim dX"), -1000, 1000);
+
+                // dY slider
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                Ui()->DoScrollbarOption(&s_AimDy, &s_AimDy, &Row, Localize("Aim dY"), -1000, 1000);
+
+                // Apply button
                 MainView.HSplitTop(25.0f, &Row, &MainView);
                 s_FunctionsScrollRegion.AddRect(Row);
-
-                static CButtonContainer s_aAimBtns[8];
-                const int aAimDx[] = {0, 0, -200, 200, -100, 100, -50, 50};
-                const int aAimDy[] = {-200, 200, 0, 0, -100, -100, 100, 100};
-                const char *aAimLabels[] = {"Up", "Down", "Left", "Right", "UpL", "UpR", "DnL", "DnR"};
-
-                CUIRect Btn;
-                float BtnW = Row.w / 8.0f;
-                for(int i = 0; i < 8; i++)
+                static CButtonContainer s_AimApply;
+                if(DoButton_Menu(&s_AimApply, Localize("Apply relative aim"), 0, &Row))
                 {
-                        Row.VSplitLeft(BtnW, &Btn, &Row);
-                        if(i < 7)
-                                Row.VSplitLeft(3.0f, nullptr, &Row);
-                        if(DoButton_Menu(&s_aAimBtns[i], aAimLabels[i], 0, &Btn))
-                        {
-                                GameClient()->m_BotControl.ActionAim(aAimDx[i], aAimDy[i], TargetDummy);
-                        }
+                        GameClient()->m_BotControl.ActionAim(s_AimDx, s_AimDy, TargetDummy);
                 }
         }
         MainView.HSplitTop(5.0f, nullptr, &MainView);
