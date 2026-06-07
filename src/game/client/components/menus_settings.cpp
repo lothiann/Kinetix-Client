@@ -3623,336 +3623,396 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
 
         CBotNet &BN = GameClient()->m_BotNet;
 
-        // --- Row 1: Enable + Auto main + Main ID + Target IDs ---
         {
-                MainView.HSplitTop(20.0f, &Row, &MainView);
-                s_FunctionsScrollRegion.AddRect(Row);
-                CUIRect EnableBtn, AutoMainBtn, MainIdBox, TargetIdsBox;
-                Row.VSplitLeft(80.0f, &EnableBtn, &Row);
-                Row.VSplitLeft(90.0f, &AutoMainBtn, &Row);
-                Row.VSplitLeft(120.0f, &MainIdBox, &TargetIdsBox);
+                const float LineSize = 20.0f;
+                const float SectionGap = 15.0f;
+                const float ColGap = 20.0f;
+                CUIRect LeftView, RightView;
+                MainView.VSplitMid(&LeftView, &RightView, ColGap);
 
-                // Enable checkbox
-                if(DoButton_CheckBox(&BN.m_AttackEnabled, Localize("Enable"), BN.m_AttackEnabled, &EnableBtn))
+                // ============ LEFT COLUMN ============
+
+                // --- Top row: Enable + Auto main ---
                 {
-                        BN.m_AttackEnabled ^= 1;
-                        if(!BN.m_AttackEnabled) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); }
-                }
-
-                // Auto main checkbox
-                if(DoButton_CheckBox(&BN.m_AutoMain, Localize("Auto main"), BN.m_AutoMain, &AutoMainBtn))
-                        BN.m_AutoMain ^= 1;
-
-                // Main ID input field
-                {
-                        int64_t val = BN.m_MainID;
-                        int64_t newval = Ui()->DoValueSelector(&BN.m_MainID, &MainIdBox, Localize("Main ID"), val, -1, 127);
-                        if(newval != val)
-                                BN.m_MainID = (int)newval;
-                }
-
-                // Target IDs text input
-                {
-                        static CLineInputBuffered<256> s_TargetIDsInput;
-                        // Sync from bool array to string if not being edited
-                        if(Ui()->ActiveItem() != &s_TargetIDsInput)
+                        LeftView.HSplitTop(LineSize, &Row, &LeftView);
+                        s_FunctionsScrollRegion.AddRect(Row);
+                        CUIRect EnableBtn, AutoMainBtn;
+                        Row.VSplitMid(&EnableBtn, &AutoMainBtn, 10.0f);
+                        if(DoButton_CheckBox(&BN.m_AttackEnabled, Localize("Enable"), BN.m_AttackEnabled, &EnableBtn))
                         {
-                                BN.SyncIDsToStr(BN.m_TargetList, BN.m_aTargetIDsStr, sizeof(BN.m_aTargetIDsStr));
-                                s_TargetIDsInput.Set(BN.m_aTargetIDsStr);
+                                BN.m_AttackEnabled ^= 1;
+                                if(!BN.m_AttackEnabled) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); }
                         }
-                        CUIRect TidLabel, TidField;
-                        TargetIdsBox.VSplitLeft(65.0f, &TidLabel, &TidField);
-                        Ui()->DoLabel(&TidLabel, Localize("Target IDs"), 10.0f, TEXTALIGN_ML);
-                        if(Ui()->DoEditBox(&s_TargetIDsInput, &TidField, 12.0f))
-                        {
-                                str_copy(BN.m_aTargetIDsStr, s_TargetIDsInput.GetString(), sizeof(BN.m_aTargetIDsStr));
-                                BN.SyncStrToIDs(BN.m_aTargetIDsStr, BN.m_TargetList);
-                        }
+                        if(DoButton_CheckBox(&BN.m_AutoMain, Localize("Auto main"), BN.m_AutoMain, &AutoMainBtn))
+                                BN.m_AutoMain ^= 1;
                 }
-        }
 
-        // --- Row 2: Core checkboxes (Aim, Hook, Fire, Move, Stand, Pathfinder) ---
-        {
-                MainView.HSplitTop(20.0f, &Row, &MainView);
-                s_FunctionsScrollRegion.AddRect(Row);
-                CUIRect Btn1, Btn2, Btn3, Btn4, Btn5, Btn6;
-                float w6 = Row.w / 6.0f;
-                Row.VSplitLeft(w6, &Btn1, &Row);
-                Row.VSplitLeft(w6, &Btn2, &Row);
-                Row.VSplitLeft(w6, &Btn3, &Row);
-                Row.VSplitLeft(w6, &Btn4, &Row);
-                Row.VSplitLeft(w6, &Btn5, &Btn6);
-
-                if(DoButton_CheckBox(&BN.m_AutoAim, Localize("Aim"), BN.m_AutoAim, &Btn1))
-                { BN.m_AutoAim ^= 1; if(!BN.m_AutoAim) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
-                if(DoButton_CheckBox(&BN.m_AutoHook, Localize("Hook"), BN.m_AutoHook, &Btn2))
-                { BN.m_AutoHook ^= 1; if(!BN.m_AutoHook) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
-                if(DoButton_CheckBox(&BN.m_AutoFire, Localize("Fire"), BN.m_AutoFire, &Btn3))
-                { BN.m_AutoFire ^= 1; if(!BN.m_AutoFire) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
-                if(DoButton_CheckBox(&BN.m_MoveEnabled, Localize("Move"), BN.m_MoveEnabled, &Btn4))
-                { BN.m_MoveEnabled ^= 1; if(!BN.m_MoveEnabled) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
-                if(DoButton_CheckBox(&BN.m_StandEnabled, Localize("Stand"), BN.m_StandEnabled, &Btn5))
-                { BN.m_StandEnabled ^= 1; if(!BN.m_StandEnabled) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
-                if(DoButton_CheckBox(&BN.m_PathfinderEnabled, Localize("Pathfinder"), BN.m_PathfinderEnabled, &Btn6))
+                // --- Main ID + Target IDs ---
                 {
-                        BN.m_PathfinderEnabled ^= 1;
-                        for(int i = 0; i < MAX_DUMMIES; i++)
+                        LeftView.HSplitTop(LineSize, &Row, &LeftView);
+                        s_FunctionsScrollRegion.AddRect(Row);
+                        CUIRect MainIdBox, TargetIdsBox;
+                        Row.VSplitLeft(160.0f, &MainIdBox, &TargetIdsBox);
                         {
-                                BN.m_aDummies[i].m_LastTargetTX = -1;
-                                BN.m_aDummies[i].m_LastTargetTY = -1;
-                                BN.m_aDummies[i].m_PathFound = false;
-                                BN.ResetDummyInputs(i);
+                                static CLineInputBuffered<32> s_MainIDInput;
+                                if(Ui()->ActiveItem() != &s_MainIDInput)
+                                {
+                                        char aBuf[16];
+                                        str_format(aBuf, sizeof(aBuf), "%d", BN.m_MainID);
+                                        s_MainIDInput.Set(aBuf);
+                                }
+                                CUIRect Lab, Field;
+                                MainIdBox.VSplitLeft(60.0f, &Lab, &Field);
+                                Ui()->DoLabel(&Lab, Localize("Main ID"), 12.0f, TEXTALIGN_ML);
+                                if(Ui()->DoEditBox(&s_MainIDInput, &Field, 12.0f))
+                                {
+                                        BN.m_MainID = atoi(s_MainIDInput.GetString());
+                                        if(BN.m_MainID < -1) BN.m_MainID = -1;
+                                        if(BN.m_MainID > 127) BN.m_MainID = 127;
+                                }
+                        }
+                        {
+                                static CLineInputBuffered<256> s_TargetIDsInput;
+                                if(Ui()->ActiveItem() != &s_TargetIDsInput)
+                                {
+                                        BN.SyncIDsToStr(BN.m_TargetList, BN.m_aTargetIDsStr, sizeof(BN.m_aTargetIDsStr));
+                                        s_TargetIDsInput.Set(BN.m_aTargetIDsStr);
+                                }
+                                CUIRect Lab, Field;
+                                TargetIdsBox.VSplitLeft(70.0f, &Lab, &Field);
+                                Ui()->DoLabel(&Lab, Localize("Target IDs"), 12.0f, TEXTALIGN_ML);
+                                if(Ui()->DoEditBox(&s_TargetIDsInput, &Field, 12.0f))
+                                {
+                                        str_copy(BN.m_aTargetIDsStr, s_TargetIDsInput.GetString(), sizeof(BN.m_aTargetIDsStr));
+                                        BN.SyncStrToIDs(BN.m_aTargetIDsStr, BN.m_TargetList);
+                                }
                         }
                 }
-        }
 
-        // --- Row 3: Secondary checkboxes (Atk main, Kill frz, All target, Hammer, Stand on X) ---
-        {
-                MainView.HSplitTop(20.0f, &Row, &MainView);
-                s_FunctionsScrollRegion.AddRect(Row);
-                CUIRect Btn1, Btn2, Btn3, Btn4, Btn5;
-                float w5 = Row.w / 5.0f;
-                Row.VSplitLeft(w5, &Btn1, &Row);
-                Row.VSplitLeft(w5, &Btn2, &Row);
-                Row.VSplitLeft(w5, &Btn3, &Row);
-                Row.VSplitLeft(w5, &Btn4, &Btn5);
-
-                if(DoButton_CheckBox(&BN.m_AttackMain, Localize("Attack main"), BN.m_AttackMain, &Btn1))
-                { BN.m_AttackMain ^= 1; if(!BN.m_AttackMain) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
-                if(DoButton_CheckBox(&BN.m_KillOnFreeze, Localize("Kill frz"), BN.m_KillOnFreeze, &Btn2))
-                { BN.m_KillOnFreeze ^= 1; if(!BN.m_KillOnFreeze) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
-                if(DoButton_CheckBox(&BN.m_AllTarget, Localize("All target"), BN.m_AllTarget, &Btn3))
-                        BN.m_AllTarget ^= 1;
-                if(DoButton_CheckBox(&BN.m_AutoHammer, Localize("Auto hammer"), BN.m_AutoHammer, &Btn4))
-                { BN.m_AutoHammer ^= 1; if(!BN.m_AutoHammer) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
-                if(DoButton_CheckBox(&BN.m_StandOnXOnly, Localize("Stand on X [Exp]"), BN.m_StandOnXOnly, &Btn5))
-                        BN.m_StandOnXOnly ^= 1;
-        }
-
-        // --- Row 4: Distance input fields (Fire, Hook, Target, Hook delay, Main, Stand) ---
-        {
-                MainView.HSplitTop(20.0f, &Row, &MainView);
-                s_FunctionsScrollRegion.AddRect(Row);
-                CUIRect D1, D2, D3, D4, D5, D6;
-                float w6 = Row.w / 6.0f;
-                Row.VSplitLeft(w6, &D1, &Row);
-                Row.VSplitLeft(w6, &D2, &Row);
-                Row.VSplitLeft(w6, &D3, &Row);
-                Row.VSplitLeft(w6, &D4, &Row);
-                Row.VSplitLeft(w6, &D5, &D6);
-
+                // --- Core checkboxes ---
                 {
-                        int64_t val = (int64_t)BN.m_FireDist;
-                        int64_t newval = Ui()->DoValueSelector(&BN.m_FireDist, &D1, Localize("Fire dist"), val, 0, 1000);
-                        if(newval != val) BN.m_FireDist = (float)newval;
+                        LeftView.HSplitTop(LineSize, &Row, &LeftView);
+                        s_FunctionsScrollRegion.AddRect(Row);
+                        if(DoButton_CheckBox(&BN.m_AutoAim, Localize("Auto aim"), BN.m_AutoAim, &Row))
+                        { BN.m_AutoAim ^= 1; if(!BN.m_AutoAim) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
                 }
                 {
-                        int64_t val = (int64_t)BN.m_HookDist;
-                        int64_t newval = Ui()->DoValueSelector(&BN.m_HookDist, &D2, Localize("Hook dist"), val, 0, 2000);
-                        if(newval != val) BN.m_HookDist = (float)newval;
+                        LeftView.HSplitTop(LineSize, &Row, &LeftView);
+                        s_FunctionsScrollRegion.AddRect(Row);
+                        if(DoButton_CheckBox(&BN.m_AutoFire, Localize("Auto fire"), BN.m_AutoFire, &Row))
+                        { BN.m_AutoFire ^= 1; if(!BN.m_AutoFire) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
                 }
                 {
-                        int64_t val = (int64_t)BN.m_TargetDist;
-                        int64_t newval = Ui()->DoValueSelector(&BN.m_TargetDist, &D3, Localize("Target dist"), val, 0, 2000);
-                        if(newval != val) BN.m_TargetDist = (float)newval;
+                        LeftView.HSplitTop(LineSize, &Row, &LeftView);
+                        s_FunctionsScrollRegion.AddRect(Row);
+                        if(DoButton_CheckBox(&BN.m_AutoHook, Localize("Auto hook"), BN.m_AutoHook, &Row))
+                        { BN.m_AutoHook ^= 1; if(!BN.m_AutoHook) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
                 }
                 {
-                        int64_t val = (int64_t)BN.m_HookDelay;
-                        int64_t newval = Ui()->DoValueSelector(&BN.m_HookDelay, &D4, Localize("Hook delay"), val, 0, 10000);
-                        if(newval != val) BN.m_HookDelay = (int)newval;
+                        LeftView.HSplitTop(LineSize, &Row, &LeftView);
+                        s_FunctionsScrollRegion.AddRect(Row);
+                        if(DoButton_CheckBox(&BN.m_MoveEnabled, Localize("Move"), BN.m_MoveEnabled, &Row))
+                        { BN.m_MoveEnabled ^= 1; if(!BN.m_MoveEnabled) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
                 }
                 {
-                        int64_t val = (BN.m_MainDist >= 1e17f) ? 9999 : (int64_t)BN.m_MainDist;
-                        int64_t newval = Ui()->DoValueSelector(&BN.m_MainDist, &D5, Localize("Main dist"), val, 0, 9999);
-                        if(newval != val) BN.m_MainDist = (newval >= 9999) ? INFINITY : (float)newval;
+                        LeftView.HSplitTop(LineSize, &Row, &LeftView);
+                        s_FunctionsScrollRegion.AddRect(Row);
+                        if(DoButton_CheckBox(&BN.m_StandEnabled, Localize("Stand"), BN.m_StandEnabled, &Row))
+                        { BN.m_StandEnabled ^= 1; if(!BN.m_StandEnabled) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
                 }
                 {
-                        int64_t val = (int64_t)BN.m_StandDist;
-                        int64_t newval = Ui()->DoValueSelector(&BN.m_StandDist, &D6, Localize("Stand dist"), val, 0, 500);
-                        if(newval != val) BN.m_StandDist = (float)newval;
+                        LeftView.HSplitTop(LineSize, &Row, &LeftView);
+                        s_FunctionsScrollRegion.AddRect(Row);
+                        if(DoButton_CheckBox(&BN.m_AutoHammer, Localize("Auto hammer"), BN.m_AutoHammer, &Row))
+                        { BN.m_AutoHammer ^= 1; if(!BN.m_AutoHammer) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
                 }
-        }
-
-        // === Rescue ===
-        {
-                MainView.HSplitTop(18.0f, &Label, &MainView);
-                s_FunctionsScrollRegion.AddRect(Label);
-                Ui()->DoLabel(&Label, Localize("Rescue"), 13.0f, TEXTALIGN_ML);
-        }
-
-        // --- Row 5: Rescue settings (Rescue frozen, Rescue radius, Rescue all, Smart Detect, Smart Rescue, Rescue IDs) ---
-        {
-                MainView.HSplitTop(20.0f, &Row, &MainView);
-                s_FunctionsScrollRegion.AddRect(Row);
-                CUIRect R1, R2, R3, R4, R5, R6;
-                float w6 = Row.w / 6.0f;
-                Row.VSplitLeft(w6, &R1, &Row);
-                Row.VSplitLeft(w6, &R2, &Row);
-                Row.VSplitLeft(w6, &R3, &Row);
-                Row.VSplitLeft(w6, &R4, &Row);
-                Row.VSplitLeft(w6, &R5, &R6);
-
-                if(DoButton_CheckBox(&BN.m_RescueFrozen, Localize("Rescue"), BN.m_RescueFrozen, &R1))
-                { BN.m_RescueFrozen ^= 1; if(!BN.m_RescueFrozen) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
-
                 {
-                        int64_t val = (int64_t)BN.m_RescueRadius;
-                        int64_t newval = Ui()->DoValueSelector(&BN.m_RescueRadius, &R2, Localize("Rescue radius"), val, 0, 2000);
-                        if(newval != val) BN.m_RescueRadius = (float)newval;
+                        LeftView.HSplitTop(LineSize, &Row, &LeftView);
+                        s_FunctionsScrollRegion.AddRect(Row);
+                        if(DoButton_CheckBox(&BN.m_AttackMain, Localize("Attack main"), BN.m_AttackMain, &Row))
+                        { BN.m_AttackMain ^= 1; if(!BN.m_AttackMain) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
+                }
+                {
+                        LeftView.HSplitTop(LineSize, &Row, &LeftView);
+                        s_FunctionsScrollRegion.AddRect(Row);
+                        if(DoButton_CheckBox(&BN.m_AllTarget, Localize("All target"), BN.m_AllTarget, &Row))
+                                BN.m_AllTarget ^= 1;
+                }
+                {
+                        LeftView.HSplitTop(LineSize, &Row, &LeftView);
+                        s_FunctionsScrollRegion.AddRect(Row);
+                        if(DoButton_CheckBox(&BN.m_KillOnFreeze, Localize("Kill on freeze"), BN.m_KillOnFreeze, &Row))
+                        { BN.m_KillOnFreeze ^= 1; if(!BN.m_KillOnFreeze) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
+                }
+                {
+                        LeftView.HSplitTop(LineSize, &Row, &LeftView);
+                        s_FunctionsScrollRegion.AddRect(Row);
+                        if(DoButton_CheckBox(&BN.m_StandOnXOnly, Localize("Stand on X only"), BN.m_StandOnXOnly, &Row))
+                                BN.m_StandOnXOnly ^= 1;
                 }
 
-                if(DoButton_CheckBox(&BN.m_RescueAll, Localize("Rescue all"), BN.m_RescueAll, &R3))
-                { BN.m_RescueAll ^= 1; if(!BN.m_RescueAll) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
-
-                if(DoButton_CheckBox(&BN.m_SmartDetect, Localize("S. detect"), BN.m_SmartDetect, &R4))
-                { BN.m_SmartDetect ^= 1; if(!BN.m_SmartDetect) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
-
-                if(DoButton_CheckBox(&BN.m_SmartRescue, Localize("S. rescue"), BN.m_SmartRescue, &R5))
-                { BN.m_SmartRescue ^= 1; if(!BN.m_SmartRescue) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
-
-                // Rescue IDs text input
+                // --- Distances section ---
+                LeftView.HSplitTop(SectionGap, nullptr, &LeftView);
                 {
+                        LeftView.HSplitTop(LineSize, &Label, &LeftView);
+                        s_FunctionsScrollRegion.AddRect(Label);
+                        Ui()->DoLabel(&Label, Localize("Distances"), 13.0f, TEXTALIGN_ML);
+                }
+                {
+                        LeftView.HSplitTop(LineSize, &Row, &LeftView);
+                        s_FunctionsScrollRegion.AddRect(Row);
+                        static CLineInputBuffered<32> s_FireDistInput, s_HookDistInput;
+                        CUIRect L1, L2;
+                        Row.VSplitMid(&L1, &L2, 10.0f);
+                        { CUIRect Lab, Field; L1.VSplitLeft(75.0f, &Lab, &Field);
+                          Ui()->DoLabel(&Lab, Localize("Fire dist"), 12.0f, TEXTALIGN_ML);
+                          if(Ui()->ActiveItem() != &s_FireDistInput) { char b[16]; str_format(b,16,"%.0f",BN.m_FireDist); s_FireDistInput.Set(b); }
+                          if(Ui()->DoEditBox(&s_FireDistInput, &Field, 12.0f)) BN.m_FireDist = (float)atof(s_FireDistInput.GetString()); }
+                        { CUIRect Lab, Field; L2.VSplitLeft(75.0f, &Lab, &Field);
+                          Ui()->DoLabel(&Lab, Localize("Hook dist"), 12.0f, TEXTALIGN_ML);
+                          if(Ui()->ActiveItem() != &s_HookDistInput) { char b[16]; str_format(b,16,"%.0f",BN.m_HookDist); s_HookDistInput.Set(b); }
+                          if(Ui()->DoEditBox(&s_HookDistInput, &Field, 12.0f)) BN.m_HookDist = (float)atof(s_HookDistInput.GetString()); }
+                }
+                {
+                        LeftView.HSplitTop(LineSize, &Row, &LeftView);
+                        s_FunctionsScrollRegion.AddRect(Row);
+                        static CLineInputBuffered<32> s_TargetDistInput, s_MainDistInput;
+                        CUIRect L1, L2;
+                        Row.VSplitMid(&L1, &L2, 10.0f);
+                        { CUIRect Lab, Field; L1.VSplitLeft(75.0f, &Lab, &Field);
+                          Ui()->DoLabel(&Lab, Localize("Target dist"), 12.0f, TEXTALIGN_ML);
+                          if(Ui()->ActiveItem() != &s_TargetDistInput) { char b[16]; str_format(b,16,"%.0f",BN.m_TargetDist); s_TargetDistInput.Set(b); }
+                          if(Ui()->DoEditBox(&s_TargetDistInput, &Field, 12.0f)) BN.m_TargetDist = (float)atof(s_TargetDistInput.GetString()); }
+                        { CUIRect Lab, Field; L2.VSplitLeft(75.0f, &Lab, &Field);
+                          Ui()->DoLabel(&Lab, Localize("Main dist"), 12.0f, TEXTALIGN_ML);
+                          if(Ui()->ActiveItem() != &s_MainDistInput) { char b[16]; str_format(b,16,"%s",BN.m_MainDist>=1e17f?"inf":""); s_MainDistInput.Set(b); }
+                          if(Ui()->DoEditBox(&s_MainDistInput, &Field, 12.0f)) { const char *s=s_MainDistInput.GetString(); BN.m_MainDist = (s[0]=='i') ? INFINITY : (float)atof(s); } }
+                }
+                {
+                        LeftView.HSplitTop(LineSize, &Row, &LeftView);
+                        s_FunctionsScrollRegion.AddRect(Row);
+                        static CLineInputBuffered<32> s_StandDistInput, s_HookDelayInput;
+                        CUIRect L1, L2;
+                        Row.VSplitMid(&L1, &L2, 10.0f);
+                        { CUIRect Lab, Field; L1.VSplitLeft(75.0f, &Lab, &Field);
+                          Ui()->DoLabel(&Lab, Localize("Stand dist"), 12.0f, TEXTALIGN_ML);
+                          if(Ui()->ActiveItem() != &s_StandDistInput) { char b[16]; str_format(b,16,"%.0f",BN.m_StandDist); s_StandDistInput.Set(b); }
+                          if(Ui()->DoEditBox(&s_StandDistInput, &Field, 12.0f)) BN.m_StandDist = (float)atof(s_StandDistInput.GetString()); }
+                        { CUIRect Lab, Field; L2.VSplitLeft(75.0f, &Lab, &Field);
+                          Ui()->DoLabel(&Lab, Localize("Hook delay"), 12.0f, TEXTALIGN_ML);
+                          if(Ui()->ActiveItem() != &s_HookDelayInput) { char b[16]; str_format(b,16,"%d",BN.m_HookDelay); s_HookDelayInput.Set(b); }
+                          if(Ui()->DoEditBox(&s_HookDelayInput, &Field, 12.0f)) BN.m_HookDelay = atoi(s_HookDelayInput.GetString()); }
+                }
+
+                // ============ RIGHT COLUMN ============
+
+                // --- Pathfinder ---
+                {
+                        RightView.HSplitTop(LineSize, &Label, &RightView);
+                        s_FunctionsScrollRegion.AddRect(Label);
+                        Ui()->DoLabel(&Label, Localize("Pathfinder"), 13.0f, TEXTALIGN_ML);
+                }
+                {
+                        RightView.HSplitTop(LineSize, &Row, &RightView);
+                        s_FunctionsScrollRegion.AddRect(Row);
+                        if(DoButton_CheckBox(&BN.m_PathfinderEnabled, Localize("Pathfinder"), BN.m_PathfinderEnabled, &Row))
+                        {
+                                BN.m_PathfinderEnabled ^= 1;
+                                for(int i = 0; i < MAX_DUMMIES; i++)
+                                {
+                                        BN.m_aDummies[i].m_LastTargetTX = -1;
+                                        BN.m_aDummies[i].m_LastTargetTY = -1;
+                                        BN.m_aDummies[i].m_PathFound = false;
+                                        BN.ResetDummyInputs(i);
+                                }
+                        }
+                }
+                {
+                        RightView.HSplitTop(LineSize, &Row, &RightView);
+                        s_FunctionsScrollRegion.AddRect(Row);
+                        if(DoButton_CheckBox(&BN.m_PfSimulatePlayers, Localize("Simulate Players"), BN.m_PfSimulatePlayers, &Row))
+                        {
+                                BN.m_PfSimulatePlayers ^= 1;
+                                for(int i = 0; i < MAX_DUMMIES; i++)
+                                {
+                                        BN.m_aDummies[i].m_LastTargetTX = -1;
+                                        BN.m_aDummies[i].m_LastTargetTY = -1;
+                                        BN.m_aDummies[i].m_PathFound = false;
+                                        BN.ResetDummyInputs(i);
+                                }
+                        }
+                }
+                {
+                        RightView.HSplitTop(LineSize, &Row, &RightView);
+                        s_FunctionsScrollRegion.AddRect(Row);
+                        if(DoButton_CheckBox(&BN.m_PfSimulateMethod, Localize("SPS (push)"), BN.m_PfSimulateMethod, &Row))
+                                BN.m_PfSimulateMethod = BN.m_PfSimulateMethod ? 0 : 1;
+                }
+                {
+                        RightView.HSplitTop(LineSize, &Row, &RightView);
+                        s_FunctionsScrollRegion.AddRect(Row);
+                        if(DoButton_CheckBox(&BN.m_PfSnap, Localize("Fix Snap"), BN.m_PfSnap, &Row))
+                                BN.m_PfSnap ^= 1;
+                }
+                {
+                        RightView.HSplitTop(LineSize, &Row, &RightView);
+                        s_FunctionsScrollRegion.AddRect(Row);
+                        if(DoButton_CheckBox(&BN.m_PfHookEnabled, Localize("Pf Hook"), BN.m_PfHookEnabled, &Row))
+                        {
+                                BN.m_PfHookEnabled ^= 1;
+                                for(int i = 0; i < MAX_DUMMIES; i++)
+                                {
+                                        BN.m_aDummies[i].m_PfHookTile = vec2(0, 0);
+                                        BN.ResetDummyInputs(i);
+                                }
+                        }
+                }
+                {
+                        RightView.HSplitTop(LineSize, &Row, &RightView);
+                        s_FunctionsScrollRegion.AddRect(Row);
+                        if(DoButton_CheckBox(&BN.m_AvoidFreeze, Localize("Avoid Freeze"), BN.m_AvoidFreeze, &Row))
+                        { BN.m_AvoidFreeze ^= 1; if(!BN.m_AvoidFreeze) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
+                }
+                // Pathfinder values
+                {
+                        RightView.HSplitTop(LineSize, &Row, &RightView);
+                        s_FunctionsScrollRegion.AddRect(Row);
+                        static CLineInputBuffered<32> s_RaysInput, s_DistInput;
+                        CUIRect L1, L2;
+                        Row.VSplitMid(&L1, &L2, 10.0f);
+                        { CUIRect Lab, Field; L1.VSplitLeft(50.0f, &Lab, &Field);
+                          Ui()->DoLabel(&Lab, Localize("Rays"), 12.0f, TEXTALIGN_ML);
+                          if(Ui()->ActiveItem() != &s_RaysInput) { char b[16]; str_format(b,16,"%d",BN.m_PfRays); s_RaysInput.Set(b); }
+                          if(Ui()->DoEditBox(&s_RaysInput, &Field, 12.0f)) { int v=atoi(s_RaysInput.GetString()); if(v>=12&&v<=90) BN.m_PfRays=v; } }
+                        { CUIRect Lab, Field; L2.VSplitLeft(50.0f, &Lab, &Field);
+                          Ui()->DoLabel(&Lab, Localize("Dist"), 12.0f, TEXTALIGN_ML);
+                          if(Ui()->ActiveItem() != &s_DistInput) { char b[16]; str_format(b,16,"%d",BN.m_PfViewRadius); s_DistInput.Set(b); }
+                          if(Ui()->DoEditBox(&s_DistInput, &Field, 12.0f)) { int v=atoi(s_DistInput.GetString()); if(v>=1&&v<=128) BN.m_PfViewRadius=v; } }
+                }
+                // Go
+                {
+                        static int s_PfGoX = 0, s_PfGoY = 0;
+                        static bool s_PfGoActive = false;
+                        RightView.HSplitTop(LineSize, &Row, &RightView);
+                        s_FunctionsScrollRegion.AddRect(Row);
+                        static CLineInputBuffered<32> s_GoXInput, s_GoYInput;
+                        CUIRect GoBtn, XLbl, XField, YLbl, YField;
+                        Row.VSplitLeft(60.0f, &GoBtn, &Row);
+                        Row.VSplitLeft(15.0f, &XLbl, &XField);
+                        XField.VSplitLeft(40.0f, &XField, &YLbl);
+                        YLbl.VSplitLeft(15.0f, &YLbl, &YField);
+                        if(DoButton_CheckBox(&s_PfGoActive, Localize("Go"), s_PfGoActive, &GoBtn))
+                        {
+                                s_PfGoActive = !s_PfGoActive;
+                                for(int i = 0; i < MAX_DUMMIES; i++)
+                                {
+                                        BN.m_aDummies[i].m_PathfinderGoActive = s_PfGoActive;
+                                        BN.m_aDummies[i].m_PathfinderGoPos = vec2((float)s_PfGoX * 32.0f, (float)s_PfGoY * 32.0f);
+                                        if(!s_PfGoActive) BN.ResetDummyInputs(i);
+                                }
+                        }
+                        Ui()->DoLabel(&XLbl, "X", 12.0f, TEXTALIGN_ML);
+                        if(Ui()->ActiveItem() != &s_GoXInput) { char b[16]; str_format(b,16,"%d",s_PfGoX); s_GoXInput.Set(b); }
+                        if(Ui()->DoEditBox(&s_GoXInput, &XField, 12.0f)) { int v=atoi(s_GoXInput.GetString()); if(v>=0&&v<=999) s_PfGoX=v; }
+                        Ui()->DoLabel(&YLbl, "Y", 12.0f, TEXTALIGN_ML);
+                        if(Ui()->ActiveItem() != &s_GoYInput) { char b[16]; str_format(b,16,"%d",s_PfGoY); s_GoYInput.Set(b); }
+                        if(Ui()->DoEditBox(&s_GoYInput, &YField, 12.0f)) { int v=atoi(s_GoYInput.GetString()); if(v>=0&&v<=999) s_PfGoY=v; }
+                }
+
+                // --- Rescue ---
+                RightView.HSplitTop(SectionGap, nullptr, &RightView);
+                {
+                        RightView.HSplitTop(LineSize, &Label, &RightView);
+                        s_FunctionsScrollRegion.AddRect(Label);
+                        Ui()->DoLabel(&Label, Localize("Rescue"), 13.0f, TEXTALIGN_ML);
+                }
+                {
+                        RightView.HSplitTop(LineSize, &Row, &RightView);
+                        s_FunctionsScrollRegion.AddRect(Row);
+                        if(DoButton_CheckBox(&BN.m_RescueFrozen, Localize("Rescue frozen"), BN.m_RescueFrozen, &Row))
+                        { BN.m_RescueFrozen ^= 1; if(!BN.m_RescueFrozen) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
+                }
+                {
+                        RightView.HSplitTop(LineSize, &Row, &RightView);
+                        s_FunctionsScrollRegion.AddRect(Row);
+                        if(DoButton_CheckBox(&BN.m_RescueAll, Localize("Rescue all"), BN.m_RescueAll, &Row))
+                        { BN.m_RescueAll ^= 1; if(!BN.m_RescueAll) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
+                }
+                {
+                        RightView.HSplitTop(LineSize, &Row, &RightView);
+                        s_FunctionsScrollRegion.AddRect(Row);
+                        if(DoButton_CheckBox(&BN.m_SmartDetect, Localize("Smart Detect"), BN.m_SmartDetect, &Row))
+                        { BN.m_SmartDetect ^= 1; if(!BN.m_SmartDetect) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
+                }
+                {
+                        RightView.HSplitTop(LineSize, &Row, &RightView);
+                        s_FunctionsScrollRegion.AddRect(Row);
+                        if(DoButton_CheckBox(&BN.m_SmartRescue, Localize("Smart Rescue"), BN.m_SmartRescue, &Row))
+                        { BN.m_SmartRescue ^= 1; if(!BN.m_SmartRescue) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
+                }
+                // Rescue values
+                {
+                        RightView.HSplitTop(LineSize, &Row, &RightView);
+                        s_FunctionsScrollRegion.AddRect(Row);
+                        static CLineInputBuffered<32> s_RescueRadInput;
+                        CUIRect Lab, Field;
+                        Row.VSplitLeft(90.0f, &Lab, &Field);
+                        Ui()->DoLabel(&Lab, Localize("Rescue radius"), 12.0f, TEXTALIGN_ML);
+                        if(Ui()->ActiveItem() != &s_RescueRadInput) { char b[16]; str_format(b,16,"%.0f",BN.m_RescueRadius); s_RescueRadInput.Set(b); }
+                        if(Ui()->DoEditBox(&s_RescueRadInput, &Field, 12.0f)) BN.m_RescueRadius = (float)atof(s_RescueRadInput.GetString());
+                }
+                {
+                        RightView.HSplitTop(LineSize, &Row, &RightView);
+                        s_FunctionsScrollRegion.AddRect(Row);
                         static CLineInputBuffered<256> s_RescueIDsInput;
                         if(Ui()->ActiveItem() != &s_RescueIDsInput)
                         {
                                 BN.SyncIDsToStr(BN.m_RescueList, BN.m_aRescueIDsStr, sizeof(BN.m_aRescueIDsStr));
                                 s_RescueIDsInput.Set(BN.m_aRescueIDsStr);
                         }
-                        CUIRect RidLabel, RidField;
-                        R6.VSplitLeft(55.0f, &RidLabel, &RidField);
-                        Ui()->DoLabel(&RidLabel, Localize("Rescue IDs"), 10.0f, TEXTALIGN_ML);
-                        if(Ui()->DoEditBox(&s_RescueIDsInput, &RidField, 12.0f))
+                        CUIRect Lab, Field;
+                        Row.VSplitLeft(90.0f, &Lab, &Field);
+                        Ui()->DoLabel(&Lab, Localize("Rescue IDs"), 12.0f, TEXTALIGN_ML);
+                        if(Ui()->DoEditBox(&s_RescueIDsInput, &Field, 12.0f))
                         {
                                 str_copy(BN.m_aRescueIDsStr, s_RescueIDsInput.GetString(), sizeof(BN.m_aRescueIDsStr));
                                 BN.SyncStrToIDs(BN.m_aRescueIDsStr, BN.m_RescueList);
                         }
                 }
-        }
 
-        MainView.HSplitTop(8.0f, nullptr, &MainView);
+                // --- Other ---
+                RightView.HSplitTop(SectionGap, nullptr, &RightView);
+                {
+                        RightView.HSplitTop(LineSize, &Label, &RightView);
+                        s_FunctionsScrollRegion.AddRect(Label);
+                        Ui()->DoLabel(&Label, Localize("Other"), 13.0f, TEXTALIGN_ML);
+                }
+                {
+                        RightView.HSplitTop(LineSize, &Row, &RightView);
+                        s_FunctionsScrollRegion.AddRect(Row);
+                        if(DoButton_CheckBox(&BN.m_RandomAim, Localize("Random Aim"), BN.m_RandomAim, &Row))
+                        { BN.m_RandomAim ^= 1; if(!BN.m_RandomAim) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
+                }
+                {
+                        RightView.HSplitTop(LineSize, &Row, &RightView);
+                        s_FunctionsScrollRegion.AddRect(Row);
+                        static CLineInputBuffered<32> s_RndIntInput, s_CopyIDInput;
+                        CUIRect L1, L2;
+                        Row.VSplitMid(&L1, &L2, 10.0f);
+                        { CUIRect Lab, Field; L1.VSplitLeft(65.0f, &Lab, &Field);
+                          Ui()->DoLabel(&Lab, Localize("Interval"), 12.0f, TEXTALIGN_ML);
+                          if(Ui()->ActiveItem() != &s_RndIntInput) { char b[16]; str_format(b,16,"%d",BN.m_RandomAimInterval); s_RndIntInput.Set(b); }
+                          if(Ui()->DoEditBox(&s_RndIntInput, &Field, 12.0f)) { int v=atoi(s_RndIntInput.GetString()); if(v>=10&&v<=10000) BN.m_RandomAimInterval=v; } }
+                        { CUIRect Lab, Field; L2.VSplitLeft(65.0f, &Lab, &Field);
+                          Ui()->DoLabel(&Lab, Localize("Copy ID"), 12.0f, TEXTALIGN_ML);
+                          if(Ui()->ActiveItem() != &s_CopyIDInput) { char b[16]; str_format(b,16,"%d",BN.m_CopyTargetID); s_CopyIDInput.Set(b); }
+                          if(Ui()->DoEditBox(&s_CopyIDInput, &Field, 12.0f)) { BN.m_CopyTargetID = atoi(s_CopyIDInput.GetString()); } }
+                }
 
-        // === Pathfinder [Experimental] ===
-        {
-                MainView.HSplitTop(18.0f, &Label, &MainView);
-                s_FunctionsScrollRegion.AddRect(Label);
-                Ui()->DoLabel(&Label, Localize("Pathfinder [Experimental]"), 13.0f, TEXTALIGN_ML);
-        }
-
-        // --- Row 6: Pathfinder checkboxes (Sim Players, Fix Snap, SPS, Avoid Freeze, Pf Hook) ---
-        {
-                MainView.HSplitTop(20.0f, &Row, &MainView);
+                // Add remaining space for scroll region
+                LeftView.HSplitTop(LineSize, &Row, &LeftView);
+                RightView.HSplitTop(LineSize, &Row, &RightView);
                 s_FunctionsScrollRegion.AddRect(Row);
-                CUIRect Btn1, Btn2, Btn3, Btn4, Btn5;
-                float w5 = Row.w / 5.0f;
-                Row.VSplitLeft(w5, &Btn1, &Row);
-                Row.VSplitLeft(w5, &Btn2, &Row);
-                Row.VSplitLeft(w5, &Btn3, &Row);
-                Row.VSplitLeft(w5, &Btn4, &Btn5);
-
-                if(DoButton_CheckBox(&BN.m_PfSimulatePlayers, Localize("Sim Players"), BN.m_PfSimulatePlayers, &Btn1))
-                {
-                        BN.m_PfSimulatePlayers ^= 1;
-                        for(int i = 0; i < MAX_DUMMIES; i++)
-                        {
-                                BN.m_aDummies[i].m_LastTargetTX = -1;
-                                BN.m_aDummies[i].m_LastTargetTY = -1;
-                                BN.m_aDummies[i].m_PathFound = false;
-                                BN.ResetDummyInputs(i);
-                        }
-                }
-                if(DoButton_CheckBox(&BN.m_PfSnap, Localize("Fix Snap"), BN.m_PfSnap, &Btn2))
-                        BN.m_PfSnap ^= 1;
-                {
-                        // SPS as checkbox: 0=walls, 1=push(score)
-                        if(DoButton_CheckBox(&BN.m_PfSimulateMethod, Localize("SPS"), BN.m_PfSimulateMethod, &Btn3))
-                                BN.m_PfSimulateMethod = BN.m_PfSimulateMethod ? 0 : 1;
-                }
-                if(DoButton_CheckBox(&BN.m_AvoidFreeze, Localize("Avoid Freeze"), BN.m_AvoidFreeze, &Btn4))
-                { BN.m_AvoidFreeze ^= 1; if(!BN.m_AvoidFreeze) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
-                if(DoButton_CheckBox(&BN.m_PfHookEnabled, Localize("Pf Hook [Exp]"), BN.m_PfHookEnabled, &Btn5))
-                {
-                        BN.m_PfHookEnabled ^= 1;
-                        for(int i = 0; i < MAX_DUMMIES; i++)
-                        {
-                                BN.m_aDummies[i].m_PfHookTile = vec2(0, 0);
-                                BN.ResetDummyInputs(i);
-                        }
-                }
-        }
-
-        // --- Row 7: Pathfinder sliders (Rays, Dist) + Copy + Go coords ---
-        static int s_PfGoX = 0, s_PfGoY = 0;
-        static bool s_PfGoActive = false;
-        {
-                MainView.HSplitTop(20.0f, &Row, &MainView);
-                s_FunctionsScrollRegion.AddRect(Row);
-                CUIRect S1, S2, S3, S4, S5;
-                float w5 = Row.w / 5.0f;
-                Row.VSplitLeft(w5, &S1, &Row);
-                Row.VSplitLeft(w5, &S2, &Row);
-                Row.VSplitLeft(w5, &S3, &Row);
-                Row.VSplitLeft(w5, &S4, &S5);
-
-                {
-                        int64_t val = BN.m_PfRays;
-                        int64_t newval = Ui()->DoValueSelector(&BN.m_PfRays, &S1, Localize("Rays"), val, 12, 90);
-                        if(newval != val) BN.m_PfRays = (int)newval;
-                }
-                {
-                        int64_t val = BN.m_PfViewRadius;
-                        int64_t newval = Ui()->DoValueSelector(&BN.m_PfViewRadius, &S2, Localize("Dist"), val, 1, 128);
-                        if(newval != val) BN.m_PfViewRadius = (int)newval;
-                }
-                {
-                        int64_t val = BN.m_CopyTargetID;
-                        int64_t newval = Ui()->DoValueSelector(&BN.m_CopyTargetID, &S3, Localize("Copy ID"), val, -1, 127);
-                        if(newval != val) BN.m_CopyTargetID = (int)newval;
-                }
-
-                // Pathfinder Go X/Y (shared statics with Go toggle below)
-                {
-                        int64_t val = s_PfGoX;
-                        int64_t newval = Ui()->DoValueSelector(&s_PfGoX, &S4, "X", val, 0, 999);
-                        if(newval != val) s_PfGoX = (int)newval;
-                }
-                {
-                        int64_t val = s_PfGoY;
-                        int64_t newval = Ui()->DoValueSelector(&s_PfGoY, &S5, "Y", val, 0, 999);
-                        if(newval != val) s_PfGoY = (int)newval;
-                }
-        }
-        // Go toggle + Random Aim
-        {
-                MainView.HSplitTop(20.0f, &Row, &MainView);
-                s_FunctionsScrollRegion.AddRect(Row);
-                CUIRect GoBtn, RndBtn, RndIntBox;
-                Row.VSplitLeft(60.0f, &GoBtn, &Row);
-                Row.VSplitLeft(130.0f, &RndBtn, &RndIntBox);
-
-                // Go toggle
-                if(DoButton_CheckBox(&s_PfGoActive, Localize("Go"), s_PfGoActive, &GoBtn))
-                {
-                        s_PfGoActive = !s_PfGoActive;
-                        for(int i = 0; i < MAX_DUMMIES; i++)
-                        {
-                                BN.m_aDummies[i].m_PathfinderGoActive = s_PfGoActive;
-                                BN.m_aDummies[i].m_PathfinderGoPos = vec2((float)s_PfGoX * 32.0f, (float)s_PfGoY * 32.0f);
-                                if(!s_PfGoActive) BN.ResetDummyInputs(i);
-                        }
-                }
-
-                // Random Aim
-                if(DoButton_CheckBox(&BN.m_RandomAim, Localize("Random Aim"), BN.m_RandomAim, &RndBtn))
-                { BN.m_RandomAim ^= 1; if(!BN.m_RandomAim) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
-
-                // Random Aim interval
-                {
-                        int64_t val = BN.m_RandomAimInterval;
-                        int64_t newval = Ui()->DoValueSelector(&BN.m_RandomAimInterval, &RndIntBox, Localize("Interval"), val, 10, 10000);
-                        if(newval != val) BN.m_RandomAimInterval = (int)newval;
-                }
-
-                // Bots IDs: auto-managed (local dummies added automatically), no manual input needed
         }
 
         MainView.HSplitTop(10.0f, nullptr, &MainView);
