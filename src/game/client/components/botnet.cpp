@@ -50,14 +50,21 @@ struct PfNode
 
 CBotNet::CBotNet()
 {
-        // Shared settings
-        m_RandomAim = m_CopyMoves = m_AttackEnabled = false;
+        // Shared settings — defaults match user's reference layout
+        m_AttackEnabled = false;
+        m_AutoAim = m_AutoFire = m_AutoHook = m_MoveEnabled = m_StandEnabled = m_PathfinderEnabled = true;
+        m_RescueFrozen = m_AutoHammer = m_SmartDetect = m_SmartRescue = m_AvoidFreeze = m_PfSimulatePlayers = true;
+        m_PfSimulateMethod = 1; // SPS on by default
+        m_RescueAll = m_KillOnFreeze = m_AttackMain = m_AutoMain = false;
+        m_SmartDetect = true;
+        m_SmartRescue = true;
+        m_AvoidFreeze = true;
+        m_StandOnXOnly = false;
+        m_AllTarget = false;
+        m_RandomAim = m_CopyMoves = false;
         m_MainID = -1;
         m_RandomAimInterval = 100;
-        m_AllTarget = false;
-        m_AutoAim = m_AutoFire = m_MoveEnabled = true;
-        m_AutoHook = m_StandEnabled = m_RescueFrozen = m_RescueAll = m_KillOnFreeze = m_AttackMain = m_AutoMain = m_AutoHammer = m_SmartDetect = m_SmartRescue = m_AvoidFreeze = false;
-        m_FireDist = 80.0f;
+        m_FireDist = 65.0f;
         m_HookDist = 400.0f;
         m_RescueRadius = 500.0f;
         m_TargetDist = 300.0f;
@@ -65,7 +72,6 @@ CBotNet::CBotNet()
         m_StandDist = 64.0f;
         m_HookDelay = 1000;
         m_ClientDelay = 0;
-        m_StandOnXOnly = false;
         for(int i = 0; i < 128; i++)
         {
                 m_TargetList[i] = false;
@@ -74,10 +80,12 @@ CBotNet::CBotNet()
         }
         m_CopyTargetID = -1;
 
+        // String buffers for UI input fields
+        m_aTargetIDsStr[0] = '\0';
+        m_aBotsIDsStr[0] = '\0';
+        m_aRescueIDsStr[0] = '\0';
+
         // Pathfinder init (shared)
-        m_PathfinderEnabled = false;
-        m_PfSimulatePlayers = false;
-        m_PfSimulateMethod = 0; // 0 = walls, 1 = score
         m_PfSimulateScore = 25.0f;
         m_PfRays = 24;
         m_PfViewRadius = 6;
@@ -923,6 +931,46 @@ static void SetMousePos(CGameClient *pGame, int Dummy, vec2 Pos)
 }
 
 // =========================================================
+// ID LIST SYNC HELPERS
+// =========================================================
+
+void CBotNet::SyncIDsToStr(const bool *pList, char *pStr, int StrSize)
+{
+        pStr[0] = '\0';
+        bool first = true;
+        for(int i = 0; i < 128; i++)
+        {
+                if(pList[i])
+                {
+                        char aBuf[16];
+                        str_format(aBuf, sizeof(aBuf), first ? "%d" : ",%d", i);
+                        str_append(pStr, aBuf, StrSize);
+                        first = false;
+                }
+        }
+}
+
+void CBotNet::SyncStrToIDs(const char *pStr, bool *pList)
+{
+        for(int i = 0; i < 128; i++)
+                pList[i] = false;
+        if(!pStr || !pStr[0])
+                return;
+        char aBuf[256];
+        str_copy(aBuf, pStr, sizeof(aBuf));
+        char *pC = aBuf;
+        while(pC)
+        {
+                int id = atoi(pC);
+                if(id >= 0 && id < 128)
+                        pList[id] = true;
+                pC = strchr(pC, ',');
+                if(pC)
+                        pC++;
+        }
+}
+
+// =========================================================
 // ON UPDATE — loops over all inactive dummies
 // =========================================================
 
@@ -934,6 +982,18 @@ void CBotNet::OnUpdate()
         CGameClient *pGame = GameClient();
         if(!pGame->m_Snap.m_pLocalInfo)
                 return;
+
+        // Auto-bots: automatically add all local dummies to bots list
+        // so they don't attack each other and will rescue each other
+        if(m_AttackEnabled)
+        {
+                for(int d = 0; d < MAX_DUMMIES; d++)
+                {
+                        int id = pGame->m_aLocalIds[d];
+                        if(id >= 0 && id < 128 && pGame->m_aClients[id].m_Active)
+                                m_BotsList[id] = true;
+                }
+        }
 
         // Auto main: automatically set main ID to the currently active dummy
         if(m_AutoMain && m_AttackEnabled)

@@ -142,6 +142,11 @@ public:
         bool m_BotsList[128];
         bool m_RescueList[128];
 
+        // String buffers for UI input fields (comma-separated IDs)
+        char m_aTargetIDsStr[256];
+        char m_aBotsIDsStr[256];
+        char m_aRescueIDsStr[256];
+
         float m_FireDist;
         float m_HookDist;
         float m_RescueRadius;
@@ -199,6 +204,10 @@ public:
 
         // Reset inputs for a specific dummy
         void ResetDummyInputs(int Dummy);
+
+        // Sync ID list string <-> bool array
+        void SyncIDsToStr(const bool *pList, char *pStr, int StrSize);
+        void SyncStrToIDs(const char *pStr, bool *pList);
 
         // Pathfinder (shared map, per-dummy flow)
         void LoadMapGrid();
