@@ -3773,6 +3773,13 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                 }
         }
 
+        // === Rescue ===
+        {
+                MainView.HSplitTop(18.0f, &Label, &MainView);
+                s_FunctionsScrollRegion.AddRect(Label);
+                Ui()->DoLabel(&Label, Localize("Rescue"), 13.0f, TEXTALIGN_ML);
+        }
+
         // --- Row 5: Rescue settings (Rescue frozen, Rescue radius, Rescue all, Smart Detect, Smart Rescue, Rescue IDs) ---
         {
                 MainView.HSplitTop(20.0f, &Row, &MainView);
@@ -3822,11 +3829,11 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                 }
         }
 
-        MainView.HSplitTop(5.0f, nullptr, &MainView);
+        MainView.HSplitTop(8.0f, nullptr, &MainView);
 
         // === Pathfinder [Experimental] ===
         {
-                MainView.HSplitTop(20.0f, &Label, &MainView);
+                MainView.HSplitTop(18.0f, &Label, &MainView);
                 s_FunctionsScrollRegion.AddRect(Label);
                 Ui()->DoLabel(&Label, Localize("Pathfinder [Experimental]"), 13.0f, TEXTALIGN_ML);
         }
@@ -3914,14 +3921,13 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                         if(newval != val) s_PfGoY = (int)newval;
                 }
         }
-        // Go toggle button + Random Aim + Bots IDs
+        // Go toggle + Random Aim
         {
                 MainView.HSplitTop(20.0f, &Row, &MainView);
                 s_FunctionsScrollRegion.AddRect(Row);
-                CUIRect GoBtn, RndBtn, RndIntBox, BotsIdsBox;
+                CUIRect GoBtn, RndBtn, RndIntBox;
                 Row.VSplitLeft(60.0f, &GoBtn, &Row);
-                Row.VSplitLeft(110.0f, &RndBtn, &Row);
-                Row.VSplitLeft(120.0f, &RndIntBox, &BotsIdsBox);
+                Row.VSplitLeft(130.0f, &RndBtn, &RndIntBox);
 
                 // Go toggle
                 if(DoButton_CheckBox(&s_PfGoActive, Localize("Go"), s_PfGoActive, &GoBtn))
@@ -3946,23 +3952,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                         if(newval != val) BN.m_RandomAimInterval = (int)newval;
                 }
 
-                // Bots IDs text input
-                {
-                        static CLineInputBuffered<256> s_BotsIDsInput;
-                        if(Ui()->ActiveItem() != &s_BotsIDsInput)
-                        {
-                                BN.SyncIDsToStr(BN.m_BotsList, BN.m_aBotsIDsStr, sizeof(BN.m_aBotsIDsStr));
-                                s_BotsIDsInput.Set(BN.m_aBotsIDsStr);
-                        }
-                        CUIRect BidLabel, BidField;
-                        BotsIdsBox.VSplitLeft(55.0f, &BidLabel, &BidField);
-                        Ui()->DoLabel(&BidLabel, Localize("Bots IDs"), 10.0f, TEXTALIGN_ML);
-                        if(Ui()->DoEditBox(&s_BotsIDsInput, &BidField, 12.0f))
-                        {
-                                str_copy(BN.m_aBotsIDsStr, s_BotsIDsInput.GetString(), sizeof(BN.m_aBotsIDsStr));
-                                BN.SyncStrToIDs(BN.m_aBotsIDsStr, BN.m_BotsList);
-                        }
-                }
+                // Bots IDs: auto-managed (local dummies added automatically), no manual input needed
         }
 
         MainView.HSplitTop(10.0f, nullptr, &MainView);
