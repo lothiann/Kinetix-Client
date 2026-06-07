@@ -3627,7 +3627,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
 
                         // Header
                         Panel.HSplitTop(25.0f, &Label, &Panel);
-                        Ui()->DoLabel(&Label, Localize("BotNet"), 16.0f, TEXTALIGN_ML);
+                        Ui()->DoLabel(&Label, Localize("Block"), 16.0f, TEXTALIGN_ML);
                         Panel.HSplitTop(5.0f, nullptr, &Panel);
 
                         // Row: Enable + Auto main
