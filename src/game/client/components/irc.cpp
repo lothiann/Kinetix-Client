@@ -27,10 +27,10 @@ const std::string EMOTES[] = {
 	"Sushi", "Splatter", "Devil tee", "Omg", "Zzz", "Wtf", "Eyes", "Questionmark"
 };
 
-// Table 1 (Level 1): 32 most frequent characters (coded with 6 bits: 0 prefix + 5-bit index)
+// Table 1 (Level 1): 32 most frequent characters (coded with 0 prefix + 5-bit index)
 const std::string TABLE_1 = " оаеинтвсрлкмдпуяьгзбчйхetaoinsr";
 
-// Table 2 (Level 2): 128 additional characters (coded with 10 bits: 10 prefix + 8-bit index)
+// Table 2 (Level 2): 256 additional characters (coded with 10 prefix + 8-bit index)
 const std::string TABLE_2 =
 	"АБВГДЕЄЖЗИІЇЙКЛМНОПРСТУФХЦЧШЩЬЮЯ"
 	"єіїґэыёъ"
@@ -38,6 +38,12 @@ const std::string TABLE_2 =
 	"bcdfghjklmpquvwxyz"
 	"0123456789"
 	".,!?-+=_@#$%^&*()[]{}<>;:/\\|'\"\n\t:";
+
+// SYNCHRONIZED STATIC SHANNON DICTIONARY (256 tokens)
+// Level 0: coded with 0 prefix + 8-bit index = 9 bits per token
+const std::string DICTIONARY[256] = {
+	"th", "the", "he", "при", "ha", "re", "er", "in", "or", "int", "рив", "an", "ра", "ea", "nt", "пр", "ого", "as", "at", "en", "le", "ma", "ou", "вс", "ри", "ch", "es", "ic", "la", "lo", "om", "oo", "te", "to", "го", "ив", "то", "ank", "ans", "ase", "cla", "eas", "eed", "eez", "ent", "ere", "ess", "eze", "fre", "hat", "hen", "ien", "ill", "lan", "mat", "mor", "oin", "ook", "ore", "pee", "ple", "poi", "ran", "ree", "ser", "spe", "sto", "tha", "wor", "you", "вет", "все", "всі", "від", "год", "гра", "доб", "ебе", "ере", "иве", "обр", "одн", "ому", "рав", "ств", "сьо", "тву", "ьог", "ar", "ee", "fr", "is", "ll", "me", "pe", "pl", "ra", "ro", "se", "st", "ve", "wo", "ав", "ам", "на", "но", "ре", "ст", "та", "ти", "ad", "am", "cl", "co", "de", "ed", "ez", "hi", "ho", "il", "nd", "ol", "on", "po", "so", "sp", "un", "wi", "ал", "бе", "бу", "ва", "ве", "ві", "де", "ди", "до", "еб", "ен", "ет", "ка", "ми", "му", "не", "об", "ог", "ом", "се", "ую", "чу", "як", "ід", "abl", "abo", "ace", "ach", "ade", "adm", "aha", "aid", "ail", "ake", "alt", "ame", "amm", "and", "any", "ard", "are", "arm", "asy", "atc", "ate", "ath", "ave", "awn", "ble", "blo", "bou", "bro", "cha", "che", "ckp", "cli", "con", "coo", "cor", "cus", "ddn", "dea", "dis", "dmi", "dne", "dra", "dru", "dum", "eac", "eal", "eam", "eat", "eck", "ect", "edr", "eir", "ele", "ell", "ena", "end", "eop", "epi", "epo", "erf", "erv", "est", "fai", "fec", "fla", "fly", "for", "fri", "fro", "ful", "gam", "ggw", "glh", "gre", "gun", "guy", "gwp", "hah", "ham", "han", "har", "has", "hav", "hea", "hec", "hei", "hel", "hem", "her", "hey", "hic", "him", "his", "hoo", "hot", "how", "ice", "ich", "ike", "ing", "inj", "ion", "ist", "ith"
+};
 
 // Helper class to write individual bits into 4-bit emotes (nibbles)
 class EmoteBitWriter {
@@ -453,6 +459,35 @@ int CIRC::GetUtf8CharIndex(const std::string &table, const std::string &utf8Char
 	return -1;
 }
 
+std::string CIRC::GetUtf8CharFromTable(const std::string& table, size_t index)
+{
+	size_t bytePos = 0;
+	size_t symbolIdx = 0;
+	while(bytePos < table.size() && symbolIdx < index)
+	{
+		unsigned char c = table[bytePos];
+		int len = 1;
+		if((c & 0x80) == 0) len = 1;
+		else if((c & 0xE0) == 0xC0) len = 2;
+		else if((c & 0xF0) == 0xE0) len = 3;
+		else if((c & 0xF8) == 0xF0) len = 4;
+		bytePos += len;
+		symbolIdx++;
+	}
+	if(bytePos < table.size())
+	{
+		unsigned char c = table[bytePos];
+		int len = 1;
+		if((c & 0x80) == 0) len = 1;
+		else if((c & 0xE0) == 0xC0) len = 2;
+		else if((c & 0xF0) == 0xE0) len = 3;
+		else if((c & 0xF8) == 0xF0) len = 4;
+		return table.substr(bytePos, len);
+	}
+	return "";
+}
+
+// ENCODING — with Level 0 dictionary compression
 std::vector<int> CIRC::EncodeStringToEmotes(const std::string& text)
 {
 	std::vector<int> result;
@@ -460,6 +495,34 @@ std::vector<int> CIRC::EncodeStringToEmotes(const std::string& text)
 
 	for(size_t i = 0; i < text.size(); )
 	{
+		bool matchFound = false;
+
+		// Search for the longest matching chunk in DICTIONARY (Level 0)
+		int bestIndex = -1;
+		size_t bestLen = 0;
+		for(int idx = 0; idx < 256; ++idx)
+		{
+			const std::string& token = DICTIONARY[idx];
+			if(token.empty()) continue;
+			if(text.compare(i, token.length(), token) == 0)
+			{
+				if(token.length() > bestLen)
+				{
+					bestLen = token.length();
+					bestIndex = idx;
+				}
+			}
+		}
+
+		if(bestIndex != -1)
+		{
+			writer.WriteBit(0); // Level 0
+			writer.WriteBits(bestIndex, 8);
+			i += bestLen;
+			continue;
+		}
+
+		// If no dictionary match, encode one UTF-8 character
 		unsigned char c = text[i];
 		int charLen = 1;
 		if((c & 0x80) == 0) charLen = 1;
@@ -475,7 +538,8 @@ std::vector<int> CIRC::EncodeStringToEmotes(const std::string& text)
 		int pos1 = GetUtf8CharIndex(TABLE_1, utf8Char);
 		if(pos1 != -1)
 		{
-			writer.WriteBit(0); // Level 1 Prefix
+			writer.WriteBit(1);
+			writer.WriteBit(0); // Level 1
 			writer.WriteBits(pos1, 5);
 			continue;
 		}
@@ -484,15 +548,17 @@ std::vector<int> CIRC::EncodeStringToEmotes(const std::string& text)
 		int pos2 = GetUtf8CharIndex(TABLE_2, utf8Char);
 		if(pos2 != -1)
 		{
-			writer.WriteBit(1); // Level 2-3 Prefix
-			writer.WriteBit(0); // Level 2 Prefix
+			writer.WriteBit(1);
+			writer.WriteBit(1);
+			writer.WriteBit(0); // Level 2
 			writer.WriteBits(pos2, 8);
 			continue;
 		}
 
 		// Level 3 Fallback (raw UTF-8 byte stream)
-		writer.WriteBit(1); // Level 2-3 Prefix
-		writer.WriteBit(1); // Level 3 Prefix
+		writer.WriteBit(1);
+		writer.WriteBit(1);
+		writer.WriteBit(1);
 		writer.WriteBits(charLen, 3); // Byte size (1-4)
 		for(char byte : utf8Char)
 		{
@@ -504,6 +570,7 @@ std::vector<int> CIRC::EncodeStringToEmotes(const std::string& text)
 	return result;
 }
 
+// DECODING — with Level 0 dictionary compression
 std::string CIRC::DecodeEmotesToString(const std::vector<int>& emotes)
 {
 	std::string result = "";
@@ -511,38 +578,15 @@ std::string CIRC::DecodeEmotesToString(const std::vector<int>& emotes)
 
 	while(true)
 	{
-		int levelBit = reader.ReadBit();
-		if(levelBit == -1) break;
+		int firstBit = reader.ReadBit();
+		if(firstBit == -1) break;
 
-		if(levelBit == 0)
+		if(firstBit == 0)
 		{
-			// Level 1
-			int idx = reader.ReadBits(5);
-			if(idx == -1) break;
-
-			size_t charBytePos = 0;
-			int currentSymbolIndex = 0;
-			while(charBytePos < TABLE_1.size() && currentSymbolIndex < idx)
-			{
-				unsigned char c = TABLE_1[charBytePos];
-				int len = 1;
-				if((c & 0x80) == 0) len = 1;
-				else if((c & 0xE0) == 0xC0) len = 2;
-				else if((c & 0xF0) == 0xE0) len = 3;
-				else if((c & 0xF8) == 0xF0) len = 4;
-				charBytePos += len;
-				currentSymbolIndex++;
-			}
-			if(charBytePos < TABLE_1.size())
-			{
-				unsigned char c = TABLE_1[charBytePos];
-				int len = 1;
-				if((c & 0x80) == 0) len = 1;
-				else if((c & 0xE0) == 0xC0) len = 2;
-				else if((c & 0xF0) == 0xE0) len = 3;
-				else if((c & 0xF8) == 0xF0) len = 4;
-				result += TABLE_1.substr(charBytePos, len);
-			}
+			// Level 0: Dictionary token
+			int idx = reader.ReadBits(8);
+			if(idx == -1 || idx < 0 || idx >= 256) break;
+			result += DICTIONARY[idx];
 		}
 		else
 		{
@@ -551,47 +595,37 @@ std::string CIRC::DecodeEmotesToString(const std::vector<int>& emotes)
 
 			if(secondBit == 0)
 			{
-				// Level 2
-				int idx = reader.ReadBits(8);
+				// Level 1
+				int idx = reader.ReadBits(5);
 				if(idx == -1) break;
-
-				size_t charBytePos = 0;
-				int currentSymbolIndex = 0;
-				while(charBytePos < TABLE_2.size() && currentSymbolIndex < idx)
-				{
-					unsigned char c = TABLE_2[charBytePos];
-					int len = 1;
-					if((c & 0x80) == 0) len = 1;
-					else if((c & 0xE0) == 0xC0) len = 2;
-					else if((c & 0xF0) == 0xE0) len = 3;
-					else if((c & 0xF8) == 0xF0) len = 4;
-					charBytePos += len;
-					currentSymbolIndex++;
-				}
-				if(charBytePos < TABLE_2.size())
-				{
-					unsigned char c = TABLE_2[charBytePos];
-					int len = 1;
-					if((c & 0x80) == 0) len = 1;
-					else if((c & 0xE0) == 0xC0) len = 2;
-					else if((c & 0xF0) == 0xE0) len = 3;
-					else if((c & 0xF8) == 0xF0) len = 4;
-					result += TABLE_2.substr(charBytePos, len);
-				}
+				result += GetUtf8CharFromTable(TABLE_1, idx);
 			}
 			else
 			{
-				// Level 3: Raw UTF-8 bytes
-				int byteLen = reader.ReadBits(3);
-				if(byteLen == -1) break;
-				std::string utf8Char = "";
-				for(int b = 0; b < byteLen; ++b)
+				int thirdBit = reader.ReadBit();
+				if(thirdBit == -1) break;
+
+				if(thirdBit == 0)
 				{
-					int val = reader.ReadBits(8);
-					if(val == -1) break;
-					utf8Char += static_cast<char>(val);
+					// Level 2
+					int idx = reader.ReadBits(8);
+					if(idx == -1) break;
+					result += GetUtf8CharFromTable(TABLE_2, idx);
 				}
-				result += utf8Char;
+				else
+				{
+					// Level 3: Raw UTF-8 bytes
+					int byteLen = reader.ReadBits(3);
+					if(byteLen == -1) break;
+					std::string utf8Char = "";
+					for(int b = 0; b < byteLen; ++b)
+					{
+						int val = reader.ReadBits(8);
+						if(val == -1) break;
+						utf8Char += static_cast<char>(val);
+					}
+					result += utf8Char;
+				}
 			}
 		}
 	}

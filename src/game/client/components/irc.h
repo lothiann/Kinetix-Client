@@ -27,6 +27,7 @@ public:
 	std::vector<int> EncodeStringToEmotes(const std::string& text);
 	std::string DecodeEmotesToString(const std::vector<int>& emotes);
 	int GetUtf8CharIndex(const std::string &table, const std::string &utf8Char);
+	std::string GetUtf8CharFromTable(const std::string& table, size_t index);
 
 private:
 	static void ConSendIRC(IConsole::IResult *pResult, void *pUserData);
