@@ -1,7 +1,6 @@
 #include "botnet.h"
 
 #include <game/client/components/bot_control.h>
-#include <game/client/components/chat.h>
 
 #include <base/math.h>
 #include <base/mem.h>
@@ -2615,48 +2614,8 @@ static std::string ReplacePlaceholders(const std::string &Cmd, int DummyIndex, C
                 }
         }
 
-        // {n} — random name from server players
-        // Original: names_list = shared_state.get('names', []); random.choice(names_list) or "lol"
-        {
-                size_t Pos;
-                while((Pos = Result.find("{n}")) != std::string::npos)
-                {
-                        const char *pName = "lol";
-                        int ActiveCount = 0;
-                        const char *aNames[MAX_CLIENTS];
-                        for(int i = 0; i < MAX_CLIENTS; ++i)
-                        {
-                                if(pGame->m_aClients[i].m_Active && pGame->m_aClients[i].m_aName[0])
-                                {
-                                        aNames[ActiveCount++] = pGame->m_aClients[i].m_aName;
-                                }
-                        }
-                        if(ActiveCount > 0)
-                                pName = aNames[rand() % ActiveCount];
-                        Result.replace(Pos, 3, pName);
-                }
-        }
-
-        // {d} — random phrase from chat history
-        {
-                size_t Pos;
-                while((Pos = Result.find("{d}")) != std::string::npos)
-                {
-                        const char *pPhrase = "lol";
-                        const CChat &Chat = pGame->m_Chat;
-                        const char *aPhrases[CChat::MAX_LINES];
-                        int Count = 0;
-                        for(int i = 0; i < CChat::MAX_LINES; ++i)
-                        {
-                                const CChat::CLine &Line = Chat.m_aLines[i];
-                                if(Line.m_Initialized && Line.m_aText[0] != '\0')
-                                        aPhrases[Count++] = Line.m_aText;
-                        }
-                        if(Count > 0)
-                                pPhrase = aPhrases[rand() % Count];
-                        Result.replace(Pos, 3, pPhrase);
-                }
-        }
+        // TODO: {n} — random player name (needs chat friend access)
+        // TODO: {d} — random chat phrase (needs chat friend access)
 
         // {c} — random CJK character U+4E00–U+9FFF
         // Original: chr(random.randint(0x4E00, 0x9FFF))
