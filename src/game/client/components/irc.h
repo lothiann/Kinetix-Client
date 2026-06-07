@@ -4,6 +4,7 @@
 #include <game/client/component.h>
 #include <engine/shared/protocol.h>
 #include <engine/console.h>
+#include <engine/client/enums.h>
 #include <vector>
 #include <string>
 
@@ -29,12 +30,18 @@ public:
 
 private:
 	static void ConSendIRC(IConsole::IResult *pResult, void *pUserData);
-	void QueueHandshake();
+	void QueueHandshake(int Dummy);
+	void SendEmoteOnDummy(int Dummy, int Emoticon);
+	bool IsOwnClient(int ClientId) const;
 
-	std::vector<int> m_vSendQueue;
-	int m_NextEmoteSendTick;
+	// Per-dummy send queue and timing
+	std::vector<int> m_aSendQueue[MAX_DUMMIES];
+	int m_aNextEmoteSendTick[MAX_DUMMIES];
+	bool m_aHandshakeSent[MAX_DUMMIES];
+
 	bool m_LastRevealJoin;
 
+	// Receive/decode state (shared — messages come from any player)
 	std::vector<int> m_aEmoteHistory[MAX_CLIENTS];
 	char m_aDetectedClient[MAX_CLIENTS][16];
 
