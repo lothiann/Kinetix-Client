@@ -3443,7 +3443,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                 char aStatus[128];
                 if(AnyActive)
                 {
-                        str_format(aStatus, sizeof(aStatus), Localize("Status: Active"));
+                        str_copy(aStatus, Localize("Status: Active"));
                         TextRender()->TextColor(0.4f, 1.0f, 0.4f, 1.0f);
                 }
                 else
