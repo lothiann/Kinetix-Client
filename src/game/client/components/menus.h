@@ -844,6 +844,8 @@ private:
         void RenderSettingsDummies(CUIRect MainView);
         void RenderSettingsDMClients(CUIRect MainView);
         void RenderSettingsFunctions(CUIRect MainView);
+        void RenderSettingsAdvanced(CUIRect MainView);
+        void RenderSettingsBotSettings(CUIRect MainView);
         bool RenderHslaScrollbars(CUIRect *pRect, unsigned int *pColor, bool Alpha, float DarkestLight);
 };
 #endif
