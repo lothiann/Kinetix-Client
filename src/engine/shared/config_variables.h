@@ -261,6 +261,11 @@ MACRO_CONFIG_INT(ClDummyHook, cl_dummy_hook, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_I
 MACRO_CONFIG_INT(ClBotActionDuration, cl_bot_action_duration, 500, 100, 10000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Duration in ms for bot input actions (c_input UI buttons)")
 MACRO_CONFIG_INT(ClBotTargetDummy, cl_bot_target_dummy, 1, 0, 7, CFGFLAG_CLIENT | CFGFLAG_INSENSITIVE, "Target dummy for bot control UI (0=main, 1-7=dummies)")
 
+// IRC (emote-based communication)
+MACRO_CONFIG_INT(ClIrcEnabled, cl_irc_enabled, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Enable IRC emote communication and decoding")
+MACRO_CONFIG_INT(ClIrcRevealJoin, cl_irc_reveal_join, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Send handshake on join to reveal yourself as IRC user")
+MACRO_CONFIG_INT(ClIrcNameplateTag, cl_irc_nameplate_tag, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Show client tag in player nameplates if IRC user detected")
+
 // start menu
 MACRO_CONFIG_INT(ClShowStartMenuImages, cl_show_start_menu_images, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Show start menu images")
 MACRO_CONFIG_INT(ClSkipStartMenu, cl_skip_start_menu, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Skip the start menu")

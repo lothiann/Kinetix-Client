@@ -4234,14 +4234,17 @@ void CMenus::RenderSettingsBotSettings(CUIRect MainView)
 
         CUIRect Row, Label;
         const float PanelPad = 8.0f;
+        const float PanelGap = 5.0f;
+        const float RowGap = 2.0f;
         const ColorRGBA PanelBgColor = ColorRGBA(0.0f, 0.0f, 0.0f, 0.15f);
         CUIRect PanelBg, Panel;
 
         MainView.HSplitTop(5.0f, nullptr, &MainView);
 
-        // === Placeholder Panel ===
+        // === IRC Panel ===
         {
-                const float SectionH = PanelPad + 25.0f + 5.0f + 20.0f + PanelPad;
+                // Header(25) + gap(5) + enabled(20) + gap(2) + reveal(20) + gap(2) + nameplate(20)
+                const float SectionH = PanelPad + 25.0f + 5.0f + 3 * 20.0f + 2 * RowGap + PanelPad;
                 MainView.HSplitTop(SectionH, &PanelBg, &MainView);
                 PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
                 s_BotSettingsScrollRegion.AddRect(PanelBg);
@@ -4249,14 +4252,31 @@ void CMenus::RenderSettingsBotSettings(CUIRect MainView)
 
                 // Header
                 Panel.HSplitTop(25.0f, &Label, &Panel);
-                Ui()->DoLabel(&Label, Localize("Settings"), 16.0f, TEXTALIGN_ML);
+                Ui()->DoLabel(&Label, Localize("IRC"), 16.0f, TEXTALIGN_ML);
                 Panel.HSplitTop(5.0f, nullptr, &Panel);
 
+                // IRC Enabled
                 Panel.HSplitTop(20.0f, &Row, &Panel);
-                TextRender()->TextColor(0.6f, 0.6f, 0.6f, 1.0f);
-                Ui()->DoLabel(&Row, Localize("Bot settings will be available here in future versions."), 12.0f, TEXTALIGN_ML);
-                TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
+                if(DoButton_CheckBox(&g_Config.m_ClIrcEnabled, Localize("Enable IRC"), g_Config.m_ClIrcEnabled, &Row))
+                        g_Config.m_ClIrcEnabled ^= 1;
+                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClIrcEnabled, &Row, Localize("Enable emote-based IRC communication and decode incoming messages"));
+                Panel.HSplitTop(RowGap, nullptr, &Panel);
+
+                // Reveal Join
+                Panel.HSplitTop(20.0f, &Row, &Panel);
+                if(DoButton_CheckBox(&g_Config.m_ClIrcRevealJoin, Localize("Reveal join"), g_Config.m_ClIrcRevealJoin, &Row))
+                        g_Config.m_ClIrcRevealJoin ^= 1;
+                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClIrcRevealJoin, &Row, Localize("Send handshake on join to reveal yourself as an IRC user (DMC)"));
+                Panel.HSplitTop(RowGap, nullptr, &Panel);
+
+                // Nameplate Tag
+                Panel.HSplitTop(20.0f, &Row, &Panel);
+                if(DoButton_CheckBox(&g_Config.m_ClIrcNameplateTag, Localize("Nameplate tag"), g_Config.m_ClIrcNameplateTag, &Row))
+                        g_Config.m_ClIrcNameplateTag ^= 1;
+                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClIrcNameplateTag, &Row, Localize("Show client tag (e.g. [DMC]) in player nameplates if IRC user detected"));
         }
+
+        MainView.HSplitTop(PanelGap, nullptr, &MainView);
 
         // Add remaining space as final scroll rect
         MainView.HSplitTop(20.0f, &Row, &MainView);

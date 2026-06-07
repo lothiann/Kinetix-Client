@@ -32,6 +32,7 @@
 #include "components/binds.h"
 #include "components/bot_control.h"
 #include "components/botnet.h"
+#include "components/irc.h"
 #include "components/broadcast.h"
 #include "components/camera.h"
 #include "components/censor.h"
@@ -155,6 +156,7 @@ public:
         CBinds m_Binds;
         CBotControl m_BotControl;
         CBotNet m_BotNet;
+        CIRC m_IRC;
         CKeyBinder m_KeyBinder;
         CParticles m_Particles;
         CMenus m_Menus;

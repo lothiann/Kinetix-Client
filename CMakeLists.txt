@@ -2497,6 +2497,8 @@ if(CLIENT)
     components/bot_control.h
     components/botnet.cpp
     components/botnet.h
+    components/irc.cpp
+    components/irc.h
     components/binds.cpp
     components/binds.h
     components/broadcast.cpp

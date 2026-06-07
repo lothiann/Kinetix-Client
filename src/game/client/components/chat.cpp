@@ -22,6 +22,7 @@
 #include <game/client/components/skins.h>
 #include <game/client/components/sounds.h>
 #include <game/client/gameclient.h>
+#include <game/client/components/irc.h>
 #include <game/localization.h>
 
 char CChat::ms_aDisplayText[MAX_LINE_LENGTH] = "";
@@ -270,6 +271,14 @@ bool CChat::OnInput(const IInput::CEvent &Event)
                 }
 
                 SendChatQueued(m_Input.GetString());
+                m_pHistoryEntry = nullptr;
+                DisableMode();
+                GameClient()->OnRelease();
+                m_Input.Clear();
+        }
+        else if(Event.m_Flags & IInput::FLAG_PRESS && Event.m_Key == KEY_RSHIFT && g_Config.m_ClIrcEnabled)
+        {
+                GameClient()->m_IRC.SendIRC(m_Input.GetString());
                 m_pHistoryEntry = nullptr;
                 DisableMode();
                 GameClient()->OnRelease();

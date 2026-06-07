@@ -10,6 +10,7 @@
 
 #include <game/client/animstate.h>
 #include <game/client/gameclient.h>
+#include <game/client/components/irc.h>
 #include <game/client/prediction/entities/character.h>
 
 #include <memory>
@@ -340,8 +341,10 @@ public:
 class CNamePlatePartName : public CNamePlatePartText
 {
 private:
-        char m_aText[std::max<size_t>(MAX_NAME_LENGTH, protocol7::MAX_NAME_ARRAY_SIZE)] = "";
+        char m_aText[std::max<size_t>(MAX_NAME_LENGTH, protocol7::MAX_NAME_ARRAY_SIZE) + 16] = "";
+        char m_aName[std::max<size_t>(MAX_NAME_LENGTH, protocol7::MAX_NAME_ARRAY_SIZE)] = "";
         float m_FontSize = -INFINITY;
+        bool m_IsIrcUser = false;
 
 protected:
         bool UpdateNeeded(CGameClient &This, const CNamePlateData &Data) override
@@ -350,12 +353,37 @@ protected:
                 if(!m_Visible)
                         return false;
                 m_Color = Data.m_Color;
-                return m_FontSize != Data.m_FontSize || str_comp(m_aText, Data.m_aName) != 0;
+
+                const char *pPrefix = nullptr;
+                if(g_Config.m_ClIrcEnabled && g_Config.m_ClIrcNameplateTag)
+                {
+                        pPrefix = This.m_IRC.GetClientPrefix(Data.m_ClientId);
+                }
+                bool HasPrefix = (pPrefix != nullptr);
+
+                return m_FontSize != Data.m_FontSize || str_comp(m_aName, Data.m_aName) != 0 || m_IsIrcUser != HasPrefix;
         }
         void UpdateText(CGameClient &This, const CNamePlateData &Data) override
         {
                 m_FontSize = Data.m_FontSize;
-                str_copy(m_aText, Data.m_aName, sizeof(m_aText));
+                str_copy(m_aName, Data.m_aName, sizeof(m_aName));
+
+                const char *pPrefix = nullptr;
+                if(g_Config.m_ClIrcEnabled && g_Config.m_ClIrcNameplateTag)
+                {
+                        pPrefix = This.m_IRC.GetClientPrefix(Data.m_ClientId);
+                }
+                m_IsIrcUser = (pPrefix != nullptr);
+
+                if(pPrefix)
+                {
+                        str_format(m_aText, sizeof(m_aText), "[%s] %s", pPrefix, Data.m_aName);
+                }
+                else
+                {
+                        str_copy(m_aText, Data.m_aName, sizeof(m_aText));
+                }
+
                 CTextCursor Cursor;
                 Cursor.m_FontSize = m_FontSize;
                 This.TextRender()->CreateOrAppendTextContainer(m_TextContainerIndex, &Cursor, m_aText);
