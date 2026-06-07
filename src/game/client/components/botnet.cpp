@@ -2547,6 +2547,126 @@ void CBotNet::ConPfHook(IConsole::IResult *pResult, void *pUserData)
         }
 }
 
+static std::string ReplacePlaceholders(const std::string &Cmd, int DummyIndex, CGameClient *pGame)
+{
+        std::string Result = Cmd;
+
+        // {i} — rank of this dummy among connected local dummies (1-based)
+        {
+                int Rank = 1;
+                int MyId = pGame->m_aLocalIds[DummyIndex];
+                for(int d = 0; d < MAX_DUMMIES; ++d)
+                {
+                        if(d == DummyIndex) continue;
+                        if(pGame->m_aLocalIds[d] >= 0 && pGame->m_aLocalIds[d] < MyId)
+                                ++Rank;
+                }
+                size_t Pos;
+                while((Pos = Result.find("{i}")) != std::string::npos)
+                        Result.replace(Pos, 3, std::to_string(Rank));
+        }
+
+        // {r} — random lowercase letter
+        {
+                size_t Pos;
+                while((Pos = Result.find("{r}")) != std::string::npos)
+                {
+                        char Ch = 'a' + (rand() % 26);
+                        Result.replace(Pos, 3, 1, Ch);
+                }
+        }
+
+        // {ri-N} — random integer from 0 to N
+        {
+                size_t Pos;
+                while((Pos = Result.find("{ri-")) != std::string::npos)
+                {
+                        size_t End = Result.find('}', Pos);
+                        if(End != std::string::npos)
+                        {
+                                std::string NumStr = Result.substr(Pos + 4, End - Pos - 4);
+                                int MaxVal = atoi(NumStr.c_str());
+                                if(MaxVal < 1) MaxVal = 1;
+                                int Val = rand() % (MaxVal + 1);
+                                Result.replace(Pos, End - Pos + 1, std::to_string(Val));
+                        }
+                        else
+                        {
+                                break;
+                        }
+                }
+        }
+
+        // {n} — random player name from the server
+        {
+                size_t Pos;
+                while((Pos = Result.find("{n}")) != std::string::npos)
+                {
+                        const char *pName = "player";
+                        // Collect active client names
+                        int ActiveCount = 0;
+                        const char *aNames[MAX_CLIENTS];
+                        for(int i = 0; i < MAX_CLIENTS; ++i)
+                        {
+                                if(pGame->m_aClients[i].m_Active && pGame->m_aClients[i].m_aName[0])
+                                {
+                                        aNames[ActiveCount++] = pGame->m_aClients[i].m_aName;
+                                }
+                        }
+                        if(ActiveCount > 0)
+                                pName = aNames[rand() % ActiveCount];
+                        Result.replace(Pos, 3, pName);
+                }
+        }
+
+        // {d} — random word from dictionary file
+        {
+                size_t Pos;
+                while((Pos = Result.find("{d}")) != std::string::npos)
+                {
+                        const char *pWord = "lol";
+                        // Try to load from dictionary.txt (cached on first use)
+                        static std::vector<std::string> s_vDict;
+                        static bool s_Loaded = false;
+                        if(!s_Loaded)
+                        {
+                                s_Loaded = true;
+                                std::ifstream File("dictionary.txt");
+                                if(File.is_open())
+                                {
+                                        std::string Line;
+                                        while(std::getline(File, Line))
+                                        {
+                                                if(!Line.empty())
+                                                        s_vDict.push_back(Line);
+                                        }
+                                }
+                        }
+                        if(!s_vDict.empty())
+                                pWord = s_vDict[rand() % s_vDict.size()].c_str();
+                        Result.replace(Pos, 3, pWord);
+                }
+        }
+
+        // {c} — random Chinese character (CJK Unified Ideographs U+4E00–U+9FFF)
+        {
+                size_t Pos;
+                while((Pos = Result.find("{c}")) != std::string::npos)
+                {
+                        int Codepoint = 0x4E00 + (rand() % (0x9FFF - 0x4E00 + 1));
+                        char Utf8[5];
+                        // Encode UTF-8 for U+4E00..U+9FFF (3-byte sequence)
+                        Utf8[0] = (char)(0xE0 | ((Codepoint >> 12) & 0x0F));
+                        Utf8[1] = (char)(0x80 | ((Codepoint >> 6) & 0x3F));
+                        Utf8[2] = (char)(0x80 | (Codepoint & 0x3F));
+                        Utf8[3] = '\0';
+                        Result.replace(Pos, 3, Utf8);
+                }
+        }
+
+        return Result;
+}
+
 void CBotNet::ConSendDummy(IConsole::IResult *pResult, void *pUserData)
 {
         CBotNet *pSelf = (CBotNet *)pUserData;
@@ -2591,8 +2711,11 @@ void CBotNet::ConSendDummy(IConsole::IResult *pResult, void *pUserData)
                 if(D != 0 && !pSelf->Client()->DummyConnected(D))
                         continue;
 
+                // Replace placeholders per-dummy
+                std::string Cmd = ReplacePlaceholders(pCmd, D, pSelf->GameClient());
+
                 g_Config.m_ClDummy = D;
-                pSelf->Console()->ExecuteLine(pCmd, IConsole::CLIENT_ID_UNSPECIFIED);
+                pSelf->Console()->ExecuteLine(Cmd.c_str(), IConsole::CLIENT_ID_UNSPECIFIED);
         }
 
         // Restore original dummy
