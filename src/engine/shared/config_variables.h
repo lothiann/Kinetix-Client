@@ -245,6 +245,7 @@ MACRO_CONFIG_COL(ClDummyColorBody, dummy_color_body, 65408, CFGFLAG_CLIENT | CFG
 MACRO_CONFIG_COL(ClDummyColorFeet, dummy_color_feet, 65408, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_COLLIGHT | CFGFLAG_INSENSITIVE, "Dummy feet color")
 MACRO_CONFIG_STR(ClDummySkin, dummy_skin, 24, "default", CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Dummy skin")
 MACRO_CONFIG_INT(ClDummyDefaultEyes, dummy_default_eyes, 0, 0, 5, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Dummy eyes when joining server (0 = normal, 1 = pain, 2 = happy, 3 = surprise, 4 = angry, 5 = blink)")
+// Max value 7 = MAX_DUMMIES-1 — update when MAX_DUMMIES changes
 MACRO_CONFIG_INT(ClDummy, cl_dummy, 0, 0, 7, CFGFLAG_CLIENT | CFGFLAG_INSENSITIVE, "Which player you control (0 = main, 1-7 = dummies)")
 MACRO_CONFIG_INT(ClDummyHammer, cl_dummy_hammer, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_INSENSITIVE, "Whether dummy is hammering for a hammerfly")
 MACRO_CONFIG_INT(ClDummyResetOnSwitch, cl_dummy_resetonswitch, 0, 0, 2, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Whether dummy or player should stop pressing keys when you switch (0 = off, 1 = dummy, 2 = player)")
@@ -259,6 +260,7 @@ MACRO_CONFIG_INT(ClDummyHook, cl_dummy_hook, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_I
 
 // bot control
 MACRO_CONFIG_INT(ClBotActionDuration, cl_bot_action_duration, 500, 100, 10000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Duration in ms for bot input actions (c_input UI buttons)")
+// Max value 7 = MAX_DUMMIES-1 — update when MAX_DUMMIES changes
 MACRO_CONFIG_INT(ClBotTargetDummy, cl_bot_target_dummy, 1, 0, 7, CFGFLAG_CLIENT | CFGFLAG_INSENSITIVE, "Target dummy for bot control UI (0=main, 1-7=dummies)")
 
 // IRC (emote-based communication)

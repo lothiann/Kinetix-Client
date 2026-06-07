@@ -4820,9 +4820,16 @@ void CClient::ConchainStdoutOutputLevel(IConsole::IResult *pResult, void *pUserD
 
 void CClient::RegisterCommands()
 {
+        // Ensure config_variables.h max values (7) stay in sync with MAX_DUMMIES
+        static_assert(7 == MAX_DUMMIES - 1, "MAX_DUMMIES changed — update max values in config_variables.h (ClDummy, ClBotTargetDummy)");
+
         m_pConsole = Kernel()->RequestInterface<IConsole>();
 
-        m_pConsole->Register("dummy_connect", "?i", CFGFLAG_CLIENT, Con_DummyConnect, this, "Connect dummy (1-7)");
+        {
+                char aDummyHelp[64];
+                str_format(aDummyHelp, sizeof(aDummyHelp), "Connect dummy (1-%d)", MAX_DUMMIES - 1);
+                m_pConsole->Register("dummy_connect", "?i", CFGFLAG_CLIENT, Con_DummyConnect, this, aDummyHelp);
+        }
         m_pConsole->Register("dummy_disconnect", "?i", CFGFLAG_CLIENT, Con_DummyDisconnect, this, "Disconnect dummy (no arg = all)");
         m_pConsole->Register("dummy_reset", "", CFGFLAG_CLIENT, Con_DummyResetInput, this, "Reset dummy");
 

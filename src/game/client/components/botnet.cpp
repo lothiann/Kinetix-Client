@@ -2614,9 +2614,6 @@ static std::string ReplacePlaceholders(const std::string &Cmd, int DummyIndex, C
                 }
         }
 
-        // TODO: {n} — random player name (needs chat friend access)
-        // TODO: {d} — random chat phrase (needs chat friend access)
-
         // {c} — random CJK character U+4E00–U+9FFF
         // Original: chr(random.randint(0x4E00, 0x9FFF))
         {

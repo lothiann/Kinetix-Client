@@ -7,6 +7,7 @@
 #include <base/types.h>
 #include <base/vmath.h>
 
+#include <engine/client/enums.h>
 #include <engine/console.h>
 #include <engine/demo.h>
 #include <engine/friends.h>
@@ -735,7 +736,6 @@ public:
         bool m_Dummy;
 
         // Dummies tab buttons
-        static const int MAX_DUMMIES = 8;
         CButtonContainer m_aDummyButtons[MAX_DUMMIES];
         CButtonContainer m_aDummySwitchButtons[MAX_DUMMIES];
         CButtonContainer m_MainSwitchButton;
