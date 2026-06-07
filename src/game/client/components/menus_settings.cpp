@@ -4110,7 +4110,7 @@ void CMenus::RenderSettingsAdvanced(CUIRect MainView)
                                 {
                                         char aCmd[64];
                                         str_format(aCmd, sizeof(aCmd), "c_macro_record %d", IsRecording ? 0 : 1);
-                                        Console()->ExecuteLine(aCmd);
+                                        Console()->ExecuteLine(aCmd, IConsole::CLIENT_ID_UNSPECIFIED);
                                 }
                         }
                         Panel.HSplitTop(RowGap, nullptr, &Panel);
@@ -4128,7 +4128,7 @@ void CMenus::RenderSettingsAdvanced(CUIRect MainView)
                                         int v = atoi(s_CaptureIDInput.GetString());
                                         char aCmd[64];
                                         str_format(aCmd, sizeof(aCmd), "c_macro_capture %d", v);
-                                        Console()->ExecuteLine(aCmd);
+                                        Console()->ExecuteLine(aCmd, IConsole::CLIENT_ID_UNSPECIFIED);
                                 }
 
                                 // Buffer size indicator
@@ -4149,7 +4149,7 @@ void CMenus::RenderSettingsAdvanced(CUIRect MainView)
                                 {
                                         char aCmd[64];
                                         str_format(aCmd, sizeof(aCmd), "c_macro_play %d", IsPlaying ? 0 : 1);
-                                        Console()->ExecuteLine(aCmd);
+                                        Console()->ExecuteLine(aCmd, IConsole::CLIENT_ID_UNSPECIFIED);
                                 }
                         }
                         Panel.HSplitTop(RowGap, nullptr, &Panel);
@@ -4169,7 +4169,7 @@ void CMenus::RenderSettingsAdvanced(CUIRect MainView)
                                         {
                                                 char aCmd[512];
                                                 str_format(aCmd, sizeof(aCmd), "c_macro_load \"%s\"", s_MacroPathInput.GetString());
-                                                Console()->ExecuteLine(aCmd);
+                                                Console()->ExecuteLine(aCmd, IConsole::CLIENT_ID_UNSPECIFIED);
                                         }
                                 }
 
@@ -4180,7 +4180,7 @@ void CMenus::RenderSettingsAdvanced(CUIRect MainView)
                                         {
                                                 char aCmd[512];
                                                 str_format(aCmd, sizeof(aCmd), "c_macro_save \"%s\"", s_MacroPathInput.GetString());
-                                                Console()->ExecuteLine(aCmd);
+                                                Console()->ExecuteLine(aCmd, IConsole::CLIENT_ID_UNSPECIFIED);
                                         }
                                 }
 
