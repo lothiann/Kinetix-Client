@@ -1039,8 +1039,7 @@ void CBotNet::OnUpdate()
                         InputData.m_Jump = 0;
                         InputData.m_Hook = 0;
                         InputData.m_Fire = 0;
-                        if(GameClient()->m_BotControl)
-                                GameClient()->m_BotControl.ActionStop(g_Config.m_ClDummy);
+                        GameClient()->m_BotControl.ActionStop(g_Config.m_ClDummy);
                         dbg_msg("botnet_macro", "Playback finished.");
                 }
 
@@ -1207,7 +1206,7 @@ void CBotNet::OnUpdate()
                         InputData.m_WantedWeapon = TChar.m_Cur.m_Weapon + 1;
                         float WorldX = (float)(TChar.m_HasExtendedData ? TChar.m_ExtendedData.m_TargetX : 0);
                         float WorldY = (float)(TChar.m_HasExtendedData ? TChar.m_ExtendedData.m_TargetY : 0);
-                        GameClient()->m_BotControl.ActionOverrideAim((int)WorldX, (int, g_Config.m_ClDummy)WorldY, Dummy);
+                        GameClient()->m_BotControl.ActionOverrideAim((int)WorldX, (int)WorldY, Dummy);
 
                         InputData.m_PlayerFlags |= 1;
                         return;
@@ -1840,7 +1839,7 @@ void CBotNet::OnUpdate()
         {
                 if(CurTick >= m_NextRandomAimTick)
                 {
-                        GameClient()->m_BotControl.ActionOverrideAim((rand() % 2001) - 1000, (rand() % 2001, g_Config.m_ClDummy) - 1000, g_Config.m_ClDummy);
+                        GameClient()->m_BotControl.ActionOverrideAim((rand() % 2001) - 1000, (rand() % 2001) - 1000, g_Config.m_ClDummy);
                         int TS = Client()->GameTickSpeed();
                         m_NextRandomAimTick = CurTick + (int64_t)(TS ? TS : 50) * m_RandomAimInterval / 1000;
                 }
@@ -1935,8 +1934,7 @@ void CBotNet::ConMacroPlay(IConsole::IResult *pResult, void *pUserData)
                         pGame->m_Controls.m_aInputData[Dummy].m_Hook = 0;
                         pGame->m_Controls.m_aInputData[Dummy].m_Fire = 0;
                 }
-                if(p->GameClient()->m_BotControl)
-                        p->GameClient()->m_BotControl.ActionStop(g_Config.m_ClDummy);
+                p->GameClient()->m_BotControl.ActionStop(g_Config.m_ClDummy);
                 dbg_msg("botnet_macro", "Playback stopped manually.");
         }
 }
