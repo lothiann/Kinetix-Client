@@ -285,6 +285,19 @@ int CControls::SnapInput(int *pData)
 
                 // send once a second just to be sure
                 Send = Send || time_get() > m_LastSendTime + time_freq();
+
+                // force send when bot is active — bypass menu freeze
+                {
+                        CBotControl &Bot = GameClient()->m_BotControl;
+                        for(int D = 0; D < MAX_DUMMIES; D++)
+                        {
+                                if(D == g_Config.m_ClDummy && Bot.IsBotActiveAny(D))
+                                {
+                                        Send = true;
+                                        break;
+                                }
+                        }
+                }
         }
         else
         {
