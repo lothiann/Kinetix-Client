@@ -1,6 +1,7 @@
 #include "botnet.h"
 
 #include <game/client/components/bot_control.h>
+#include <game/client/components/chat.h>
 
 #include <base/math.h>
 #include <base/mem.h>
@@ -2636,32 +2637,24 @@ static std::string ReplacePlaceholders(const std::string &Cmd, int DummyIndex, C
                 }
         }
 
-        // {d} — random word from dictionary
-        // Original: dict_list = shared_state.get('dictionary', []); random.choice(dict_list) or "lol"
+        // {d} — random phrase from chat history
         {
                 size_t Pos;
                 while((Pos = Result.find("{d}")) != std::string::npos)
                 {
-                        const char *pWord = "lol";
-                        static std::vector<std::string> s_vDict;
-                        static bool s_Loaded = false;
-                        if(!s_Loaded)
+                        const char *pPhrase = "lol";
+                        const CChat &Chat = pGame->m_Chat;
+                        const char *aPhrases[CChat::MAX_LINES];
+                        int Count = 0;
+                        for(int i = 0; i < CChat::MAX_LINES; ++i)
                         {
-                                s_Loaded = true;
-                                std::ifstream File("dictionary.txt");
-                                if(File.is_open())
-                                {
-                                        std::string Line;
-                                        while(std::getline(File, Line))
-                                        {
-                                                if(!Line.empty())
-                                                        s_vDict.push_back(Line);
-                                        }
-                                }
+                                const CChat::CLine &Line = Chat.m_aLines[i];
+                                if(Line.m_Initialized && Line.m_aText[0] != '\0')
+                                        aPhrases[Count++] = Line.m_aText;
                         }
-                        if(!s_vDict.empty())
-                                pWord = s_vDict[rand() % s_vDict.size()].c_str();
-                        Result.replace(Pos, 3, pWord);
+                        if(Count > 0)
+                                pPhrase = aPhrases[rand() % Count];
+                        Result.replace(Pos, 3, pPhrase);
                 }
         }
 
