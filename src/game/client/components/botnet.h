@@ -3,6 +3,7 @@
 
 #include <base/vmath.h>
 
+#include <engine/client/enums.h>
 #include <engine/console.h>
 #include <engine/shared/config.h>
 
@@ -18,161 +19,239 @@ static const float PF_FREEZE_COST = 50.0f;
 static const float PF_PLAYER_COST = 1e18f;
 static const float PF_FREEZE_REPEL_WEIGHT = 3.0f;
 
+// =========================================================
+// Per-dummy runtime state (position/timing dependent)
+// Each inactive dummy has its own instance
+// =========================================================
+struct CBotNetDummy
+{
+	// Pathfinder flow
+	vec2 m_FlowDir;
+	vec2 m_PfHookTile;
+	int m_FlowTargetTX, m_FlowTargetTY;
+	int m_LastTargetTX, m_LastTargetTY;
+	int m_LastBotTX, m_LastBotTY;
+	bool m_PathFound;
+
+	// Attack runtime
+	int m_HookTickTimer;
+	int m_JumpTicks;
+
+	// Stuck detection
+	vec2 m_LastPos;
+	int m_StuckTicks;
+
+	// PathfinderGo
+	bool m_PathfinderGoActive;
+	vec2 m_PathfinderGoPos;
+
+	// Random aim timing
+	int64_t m_NextRandomAimTick;
+
+	// Copy moves
+	int m_LastTargetAttackTick;
+
+	// Macro
+	bool m_MacroRecording;
+	bool m_MacroPlaying;
+	int m_MacroCaptureID;
+	std::vector<std::string> m_MacroRecordBuffer;
+	std::vector<std::string> m_MacroPlayLines;
+	int m_MacroPlayIndex;
+	int m_MacroSleepTicks;
+	int64_t m_MacroSleepUntilTick;
+	int64_t m_LastMacroRecordTick;
+	int m_LastRecordedDir;
+	int m_LastRecordedJump;
+	int m_LastRecordedHook;
+	int m_LastRecordedFire;
+	int m_LastRecordedAimX;
+	int m_LastRecordedAimY;
+	int m_LastRecordedWeapon;
+
+	CBotNetDummy() { Reset(); }
+
+	void Reset()
+	{
+		m_FlowDir = vec2(0, 0);
+		m_PfHookTile = vec2(0, 0);
+		m_FlowTargetTX = m_FlowTargetTY = -1;
+		m_LastTargetTX = m_LastTargetTY = -1;
+		m_LastBotTX = m_LastBotTY = -1;
+		m_PathFound = false;
+		m_HookTickTimer = 0;
+		m_JumpTicks = 0;
+		m_LastPos = vec2(0, 0);
+		m_StuckTicks = 0;
+		m_PathfinderGoActive = false;
+		m_PathfinderGoPos = vec2(0, 0);
+		m_NextRandomAimTick = 0;
+		m_LastTargetAttackTick = -1;
+		m_MacroRecording = false;
+		m_MacroPlaying = false;
+		m_MacroCaptureID = -1;
+		m_MacroPlayIndex = 0;
+		m_MacroSleepTicks = 0;
+		m_MacroSleepUntilTick = 0;
+		m_LastMacroRecordTick = 0;
+		m_LastRecordedDir = 0;
+		m_LastRecordedJump = 0;
+		m_LastRecordedHook = 0;
+		m_LastRecordedFire = 0;
+		m_LastRecordedAimX = 0;
+		m_LastRecordedAimY = 0;
+		m_LastRecordedWeapon = -1;
+	}
+
+	void ResetMacroBuffers()
+	{
+		m_MacroRecordBuffer.clear();
+		m_MacroPlayLines.clear();
+		m_MacroPlayIndex = 0;
+		m_MacroSleepTicks = 0;
+		m_MacroSleepUntilTick = 0;
+	}
+};
+
+// =========================================================
+// CBotNet — botnet component (all inactive dummies)
+// =========================================================
 class CBotNet : public CComponent
 {
 public:
-        bool m_RandomAim;
-        int m_RandomAimInterval;
-        int64_t m_NextRandomAimTick;
+	// --- Shared settings (same for all dummies) ---
+	bool m_AttackEnabled;
+	bool m_AutoAim;
+	bool m_AutoFire;
+	bool m_AutoHook;
+	bool m_MoveEnabled;
+	bool m_StandEnabled;
+	bool m_RescueFrozen;
+	bool m_RescueAll;
+	bool m_KillOnFreeze;
+	bool m_AttackMain;
+	bool m_AutoHammer;
+	bool m_SmartDetect;
+	bool m_SmartRescue;
+	bool m_AvoidFreeze;
 
-        bool m_CopyMoves;
-        int m_CopyTargetID;
-        int m_LastTargetAttackTick;
-        int m_JumpTicks;
+	int m_MainID;
+	bool m_AllTarget;
+	bool m_TargetList[128];
+	bool m_BotsList[128];
+	bool m_RescueList[128];
 
-        bool m_AttackEnabled;
-        int m_MainID;
-        bool m_AllTarget;
-        bool m_TargetList[128];
-        bool m_BotsList[128];
+	float m_FireDist;
+	float m_HookDist;
+	float m_RescueRadius;
+	float m_TargetDist;
+	float m_MainDist;
+	float m_StandDist;
 
-        bool m_AutoAim;
-        bool m_AutoFire;
-        bool m_AutoHook;
-        bool m_MoveEnabled;
-        bool m_StandEnabled;
-        bool m_RescueFrozen;
-        bool m_RescueAll;
-        bool m_KillOnFreeze;
-        bool m_AttackMain;
-        bool m_AutoHammer;
-        bool m_SmartDetect;
-        bool m_SmartRescue;
-        bool m_AvoidFreeze;
+	int m_HookDelay;
+	int m_ClientDelay;
+	bool m_StandOnXOnly;
 
-        int m_ClientDelay;
-        bool m_StandOnXOnly;
+	bool m_CopyMoves;
+	int m_CopyTargetID;
 
-        float m_FireDist;
-        float m_HookDist;
-        float m_RescueRadius;
-        float m_TargetDist;
-        float m_MainDist;
-        float m_StandDist;
+	bool m_RandomAim;
+	int m_RandomAimInterval;
 
-        bool m_RescueList[128];
+	// Pathfinder settings (shared)
+	bool m_PathfinderEnabled;
+	bool m_PfSimulatePlayers;
+	int m_PfSimulateMethod;
+	float m_PfSimulateScore;
+	int m_PfRays;
+	int m_PfViewRadius;
+	bool m_PfSnap;
+	bool m_PfHookEnabled;
 
-        int m_HookDelay;
-        int m_HookTickTimer;
+	// Per-dummy runtime state
+	CBotNetDummy m_aDummies[MAX_DUMMIES];
 
-        bool m_MacroRecording;
-        bool m_MacroPlaying;
-        int m_MacroCaptureID;
-        std::vector<std::string> m_MacroRecordBuffer;
-        std::vector<std::string> m_MacroPlayLines;
-        int m_MacroPlayIndex;
-        int m_MacroSleepTicks;
-        int64_t m_MacroSleepUntilTick;
-        int64_t m_LastMacroRecordTick;
+	// Map grid (shared — same map for all)
+	int m_MapWidth;
+	int m_MapHeight;
+	unsigned char *m_pMapGrid;
+	unsigned char *m_pFrontGrid;
+	float *m_PfPlayerPenalty;
+	bool m_MapGridLoaded;
+	char m_aLastMapName[256];
+	float *m_pfDist;
+	bool *m_pfVisited;
 
-        int m_LastRecordedDir;
-        int m_LastRecordedJump;
-        int m_LastRecordedHook;
-        int m_LastRecordedFire;
-        int m_LastRecordedAimX;
-        int m_LastRecordedAimY;
-        int m_LastRecordedWeapon;
+	CBotNet();
+	~CBotNet();
 
-        // --- Pathfinder ---
-        bool m_PathfinderEnabled;
-        bool m_PfSimulatePlayers;
-        int m_PfSimulateMethod; // 0 = walls, 1 = score
-        float m_PfSimulateScore;
-        int m_PfRays;
-        int m_PfViewRadius;
-        bool m_PfSnap;
-        bool m_PfHookEnabled;
-        vec2 m_PfHookTile;
+	int Sizeof() const override { return sizeof(*this); }
+	void OnConsoleInit() override;
+	void OnUpdate() override;
+	void OnReset() override;
 
-        int m_MapWidth;
-        int m_MapHeight;
-        unsigned char *m_pMapGrid;
-        unsigned char *m_pFrontGrid;
-        float *m_PfPlayerPenalty;
-        bool m_MapGridLoaded;
-        char m_aLastMapName[256];
+	// Process one inactive dummy
+	void ProcessDummy(int Dummy);
 
-        float *m_pfDist;
-        bool *m_pfVisited;
+	// Check if botnet is active for a specific dummy
+	bool IsDummyActive(int Dummy) const;
 
-        vec2 m_FlowDir;
-        int m_FlowTargetTX, m_FlowTargetTY;
+	// Reset inputs for a specific dummy
+	void ResetDummyInputs(int Dummy);
 
-        int m_LastTargetTX, m_LastTargetTY;
-        int m_LastBotTX, m_LastBotTY;
-        bool m_PathFound;
+	// Pathfinder (shared map, per-dummy flow)
+	void LoadMapGrid();
+	bool IsTileWalkable(int tx, int ty);
+	bool IsTileFreeze(int tx, int ty);
+	float GetTileCost(int tx, int ty);
+	void ComputePathfinder(int botTX, int botTY, int targetTX, int targetTY, CBotNetDummy &State);
+	void ComputePathfinderRescue(int botTX, int botTY, int targetTX, int targetTY, CBotNetDummy &State);
+	bool HasLineOfSightTiles(int r1, int c1, int r2, int c2);
+	void ComputeFlowForTile(int r, int c, CBotNetDummy &State);
+	vec2 ComputeFreezeRepel(int botTX, int botTY);
+	void UpdatePlayerPenalty(int botTX, int botTY, int excludeTX, int excludeTY, int LocalID);
+	void GetMovementFromFlow(const CBotNetDummy &State, bool &outLeft, bool &outRight, bool &outJump);
 
-        vec2 m_LastPos;
-        int m_StuckTicks;
+	// --- Console commands ---
+	static void ConRandomAim(IConsole::IResult *pResult, void *pUserData);
+	static void ConCopyMoves(IConsole::IResult *pResult, void *pUserData);
+	static void ConAttackEnable(IConsole::IResult *pResult, void *pUserData);
+	static void ConSetMain(IConsole::IResult *pResult, void *pUserData);
+	static void ConSetTargets(IConsole::IResult *pResult, void *pUserData);
+	static void ConSetBots(IConsole::IResult *pResult, void *pUserData);
+	static void ConSetTargetAll(IConsole::IResult *pResult, void *pUserData);
+	static void ConAttackSettings(IConsole::IResult *pResult, void *pUserData);
+	static void ConAttackDists(IConsole::IResult *pResult, void *pUserData);
+	static void ConAttackHookDelay(IConsole::IResult *pResult, void *pUserData);
+	static void ConClientDelay(IConsole::IResult *pResult, void *pUserData);
+	static void ConStandOnX(IConsole::IResult *pResult, void *pUserData);
+	static void ConRescueIds(IConsole::IResult *pResult, void *pUserData);
+	static void ConPathfinder(IConsole::IResult *pResult, void *pUserData);
+	static void ConPathfinderRays(IConsole::IResult *pResult, void *pUserData);
+	static void ConPathfinderRaysDist(IConsole::IResult *pResult, void *pUserData);
+	static void ConPathfinderSnap(IConsole::IResult *pResult, void *pUserData);
+	static void ConPathfinderSps(IConsole::IResult *pResult, void *pUserData);
+	static void ConPathfinderGo(IConsole::IResult *pResult, void *pUserData);
+	static void ConMacroLoad(IConsole::IResult *pResult, void *pUserData);
+	static void ConMacroPlay(IConsole::IResult *pResult, void *pUserData);
+	static void ConMacroRecord(IConsole::IResult *pResult, void *pUserData);
+	static void ConMacroSave(IConsole::IResult *pResult, void *pUserData);
+	static void ConMacroCapture(IConsole::IResult *pResult, void *pUserData);
 
-        bool m_PathfinderGoActive;
-        vec2 m_PathfinderGoPos;
-
-        int m_TargetDummy; // which dummy botnet controls (default 1)
-
-        CBotNet();
-        ~CBotNet();
-
-        int Sizeof() const override { return sizeof(*this); }
-        void OnConsoleInit() override;
-        void OnUpdate() override;
-        void OnReset() override;
-
-        // Input helpers — write to correct input buffer depending on active/inactive dummy
-        CNetObj_PlayerInput &InputData();
-        int &InputDirLeft();
-        int &InputDirRight();
-        vec2 &InputMousePos();
-
-        // Pathfinder
-        void LoadMapGrid();
-        bool IsTileWalkable(int tx, int ty);
-        bool IsTileFreeze(int tx, int ty);
-        float GetTileCost(int tx, int ty);
-        void ComputePathfinder(int botTX, int botTY, int targetTX, int targetTY);
-        void ComputePathfinderRescue(int botTX, int botTY, int targetTX, int targetTY);
-        bool HasLineOfSightTiles(int r1, int c1, int r2, int c2);
-        void ComputeFlowForTile(int r, int c);
-        vec2 ComputeFreezeRepel(int botTX, int botTY);
-        void UpdatePlayerPenalty(int botTX, int botTY, int excludeTX, int excludeTY, int LocalID);
-        void GetMovementFromFlow(bool &outLeft, bool &outRight, bool &outJump);
-
-        static void ConRandomAim(IConsole::IResult *pResult, void *pUserData);
-        static void ConCopyMoves(IConsole::IResult *pResult, void *pUserData);
-        static void ConAttackEnable(IConsole::IResult *pResult, void *pUserData);
-        static void ConSetMain(IConsole::IResult *pResult, void *pUserData);
-        static void ConSetTargets(IConsole::IResult *pResult, void *pUserData);
-        static void ConSetBots(IConsole::IResult *pResult, void *pUserData);
-        static void ConSetTargetAll(IConsole::IResult *pResult, void *pUserData);
-        static void ConAttackSettings(IConsole::IResult *pResult, void *pUserData);
-        static void ConAttackDists(IConsole::IResult *pResult, void *pUserData);
-        static void ConAttackHookDelay(IConsole::IResult *pResult, void *pUserData);
-        static void ConClientDelay(IConsole::IResult *pResult, void *pUserData);
-        static void ConStandOnX(IConsole::IResult *pResult, void *pUserData);
-        static void ConRescueIds(IConsole::IResult *pResult, void *pUserData);
-        static void ConPathfinder(IConsole::IResult *pResult, void *pUserData);
-        static void ConPathfinderRays(IConsole::IResult *pResult, void *pUserData);
-        static void ConPathfinderRaysDist(IConsole::IResult *pResult, void *pUserData);
-        static void ConPathfinderSnap(IConsole::IResult *pResult, void *pUserData);
-        static void ConPathfinderSps(IConsole::IResult *pResult, void *pUserData);
-        static void ConPathfinderGo(IConsole::IResult *pResult, void *pUserData);
-
-        static void ConMacroLoad(IConsole::IResult *pResult, void *pUserData);
-        static void ConMacroPlay(IConsole::IResult *pResult, void *pUserData);
-        static void ConMacroRecord(IConsole::IResult *pResult, void *pUserData);
-        static void ConMacroSave(IConsole::IResult *pResult, void *pUserData);
-        static void ConMacroCapture(IConsole::IResult *pResult, void *pUserData);
-        static void ConTargetDummy(IConsole::IResult *pResult, void *pUserData);
+	// Individual toggle commands (easier than c_atk_set with 15 params)
+	static void ConStand(IConsole::IResult *pResult, void *pUserData);
+	static void ConAutoAim(IConsole::IResult *pResult, void *pUserData);
+	static void ConAutoFire(IConsole::IResult *pResult, void *pUserData);
+	static void ConAutoHook(IConsole::IResult *pResult, void *pUserData);
+	static void ConMove(IConsole::IResult *pResult, void *pUserData);
+	static void ConRescue(IConsole::IResult *pResult, void *pUserData);
+	static void ConKillFrz(IConsole::IResult *pResult, void *pUserData);
+	static void ConAtkMain(IConsole::IResult *pResult, void *pUserData);
+	static void ConHammer(IConsole::IResult *pResult, void *pUserData);
+	static void ConSmartDetect(IConsole::IResult *pResult, void *pUserData);
+	static void ConSmartRescue(IConsole::IResult *pResult, void *pUserData);
+	static void ConAvoidFreeze(IConsole::IResult *pResult, void *pUserData);
+	static void ConPfHook(IConsole::IResult *pResult, void *pUserData);
 };
 
 #endif

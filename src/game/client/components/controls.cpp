@@ -277,6 +277,20 @@ int CControls::SnapInput(int *pData)
                         }
                 }
 
+                // botnet — sync inactive dummy inputs (menu/chat freeze block)
+                {
+                        CBotNet &BN = GameClient()->m_BotNet;
+                        for(int D = 0; D < MAX_DUMMIES; D++)
+                        {
+                                if(D == g_Config.m_ClDummy)
+                                        continue;
+                                if(D != 0 && !GameClient()->Client()->DummyConnected(D))
+                                        continue;
+                                if(BN.IsDummyActive(D))
+                                        m_aInputData[D] = GameClient()->m_aDummyInput[D];
+                        }
+                }
+
                 mem_copy(pData, &m_aInputData[g_Config.m_ClDummy], sizeof(m_aInputData[0]));
 
                 // set the target anyway though so that we can keep seeing our surroundings,
@@ -299,10 +313,10 @@ int CControls::SnapInput(int *pData)
                                 }
                         }
                 }
-                // force send when botnet is active for the active dummy
+                // force send when botnet is active
                 {
                         CBotNet &BN = GameClient()->m_BotNet;
-                        if(BN.m_TargetDummy == g_Config.m_ClDummy && (BN.m_AttackEnabled || BN.m_CopyMoves || BN.m_RandomAim || BN.m_MacroPlaying || BN.m_PathfinderGoActive))
+                        if(BN.m_AttackEnabled || BN.m_CopyMoves || BN.m_RandomAim || BN.m_PathfinderEnabled)
                                 Send = true;
                 }
         }
@@ -439,12 +453,14 @@ int CControls::SnapInput(int *pData)
                 // botnet — sync inactive dummy inputs
                 {
                         CBotNet &BN = GameClient()->m_BotNet;
-                        int TD = BN.m_TargetDummy;
-                        if(TD != g_Config.m_ClDummy && (BN.m_AttackEnabled || BN.m_CopyMoves || BN.m_RandomAim || BN.m_MacroPlaying || BN.m_PathfinderGoActive))
+                        for(int D = 0; D < MAX_DUMMIES; D++)
                         {
-                                // Copy botnet-written m_aDummyInput[TD] back to m_aInputData[TD]
-                                // so OnSnapInput for the inactive dummy sends the bot's inputs
-                                m_aInputData[TD] = GameClient()->m_aDummyInput[TD];
+                                if(D == g_Config.m_ClDummy)
+                                        continue;
+                                if(D != 0 && !GameClient()->Client()->DummyConnected(D))
+                                        continue;
+                                if(BN.IsDummyActive(D))
+                                        m_aInputData[D] = GameClient()->m_aDummyInput[D];
                         }
                 }
 
@@ -474,10 +490,10 @@ int CControls::SnapInput(int *pData)
                 Send = Send || time_get() > m_LastSendTime + time_freq() / 25; // send at least 25 Hz
                 Send = Send || (GameClient()->m_Snap.m_pLocalCharacter && GameClient()->m_Snap.m_pLocalCharacter->m_Weapon == WEAPON_NINJA && (m_aInputData[g_Config.m_ClDummy].m_Direction || m_aInputData[g_Config.m_ClDummy].m_Jump || m_aInputData[g_Config.m_ClDummy].m_Hook));
 
-                // force send when botnet is active for the active dummy
+                // force send when botnet is active
                 {
                         CBotNet &BN = GameClient()->m_BotNet;
-                        if(BN.m_TargetDummy == g_Config.m_ClDummy && (BN.m_AttackEnabled || BN.m_CopyMoves || BN.m_RandomAim || BN.m_MacroPlaying || BN.m_PathfinderGoActive))
+                        if(BN.m_AttackEnabled || BN.m_CopyMoves || BN.m_RandomAim || BN.m_PathfinderEnabled)
                                 Send = true;
                 }
         }
