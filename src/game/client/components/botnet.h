@@ -263,6 +263,7 @@ public:
         static void ConSmartRescue(IConsole::IResult *pResult, void *pUserData);
         static void ConAvoidFreeze(IConsole::IResult *pResult, void *pUserData);
         static void ConPfHook(IConsole::IResult *pResult, void *pUserData);
+        static void ConSendDummy(IConsole::IResult *pResult, void *pUserData);
 };
 
 #endif

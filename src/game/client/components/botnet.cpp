@@ -158,6 +158,7 @@ void CBotNet::OnConsoleInit()
         Console()->Register("c_smart_rescue", "i[on]", CFGFLAG_CLIENT, ConSmartRescue, this, "Smart rescue pathfinder");
         Console()->Register("c_avoid_freeze", "i[on]", CFGFLAG_CLIENT, ConAvoidFreeze, this, "Avoid freeze tiles");
         Console()->Register("c_pf_hook", "i[on]", CFGFLAG_CLIENT, ConPfHook, this, "Pathfinder hook to walls");
+        Console()->Register("c_send", "s[dummyids] r[command]", CFGFLAG_CLIENT, ConSendDummy, this, "Execute command on dummies (-1=all, 0,1,2=specific)");
 }
 
 // =========================================================
@@ -2544,4 +2545,56 @@ void CBotNet::ConPfHook(IConsole::IResult *pResult, void *pUserData)
                 for(int D = 0; D < MAX_DUMMIES; D++)
                         p->ResetDummyInputs(D);
         }
+}
+
+void CBotNet::ConSendDummy(IConsole::IResult *pResult, void *pUserData)
+{
+        CBotNet *pSelf = (CBotNet *)pUserData;
+        const char *pIds = pResult->GetString(0);
+        const char *pCmd = pResult->GetString(1);
+
+        if(!pCmd[0])
+                return;
+
+        // Parse dummy IDs
+        bool aTargets[MAX_DUMMIES] = {};
+        bool AllDummies = false;
+
+        if(str_comp(pIds, "-1") == 0)
+        {
+                AllDummies = true;
+        }
+        else
+        {
+                // Parse comma-separated IDs: "0,1,2,3"
+                char aBuf[64];
+                str_copy(aBuf, pIds, sizeof(aBuf));
+                char *pTok = strtok(aBuf, ",");
+                while(pTok)
+                {
+                        int Id = atoi(pTok);
+                        if(Id >= 0 && Id < MAX_DUMMIES)
+                                aTargets[Id] = true;
+                        pTok = strtok(nullptr, ",");
+                }
+        }
+
+        // Save current dummy
+        int SavedDummy = g_Config.m_ClDummy;
+
+        // Execute command on each target dummy
+        for(int D = 0; D < MAX_DUMMIES; D++)
+        {
+                if(!AllDummies && !aTargets[D])
+                        continue;
+                // Skip disconnected dummies (0=main, always connected if online)
+                if(D != 0 && !pSelf->Client()->DummyConnected(D))
+                        continue;
+
+                g_Config.m_ClDummy = D;
+                pSelf->Console()->ExecuteLine(pCmd, IConsole::CLIENT_ID_UNSPECIFIED);
+        }
+
+        // Restore original dummy
+        g_Config.m_ClDummy = SavedDummy;
 }
