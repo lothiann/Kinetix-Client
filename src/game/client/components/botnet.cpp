@@ -111,6 +111,7 @@ CBotNet::CBotNet()
         m_StuckTicks = 0;
         m_PathfinderGoActive = false;
         m_PathfinderGoPos = vec2(0, 0);
+        m_TargetDummy = 1; // default: control the inactive dummy
 }
 
 CBotNet::~CBotNet()
@@ -149,6 +150,7 @@ void CBotNet::OnConsoleInit()
         Console()->Register("c_macro_record", "i[on]", CFGFLAG_CLIENT, ConMacroRecord, this, "Record macro (1=start, 0=stop)");
         Console()->Register("c_macro_save", "s[path]", CFGFLAG_CLIENT, ConMacroSave, this, "Save recorded macro to file");
         Console()->Register("c_macro_capture", "i[id]", CFGFLAG_CLIENT, ConMacroCapture, this, "Set capture ID for macro recording");
+        Console()->Register("c_target_dummy", "i[dummy]", CFGFLAG_CLIENT, ConTargetDummy, this, "Set target dummy index (0=main, 1=first dummy, etc.)");
 }
 
 // =========================================================
@@ -926,6 +928,79 @@ void CBotNet::GetMovementFromFlow(bool &outLeft, bool &outRight, bool &outJump)
 }
 
 // =========================================================
+// INPUT HELPERS — route to correct buffer for active/inactive dummy
+// =========================================================
+
+CNetObj_PlayerInput &CBotNet::InputData()
+{
+        CGameClient *pGame = GameClient();
+        int D = m_TargetDummy;
+        if(D == g_Config.m_ClDummy)
+                return pGame->m_Controls.m_aInputData[D];
+        else
+                return pGame->m_aDummyInput[D];
+}
+
+int &CBotNet::InputDirLeft()
+{
+        CGameClient *pGame = GameClient();
+        int D = m_TargetDummy;
+        if(D == g_Config.m_ClDummy)
+                return pGame->m_Controls.m_aInputDirectionLeft[D];
+        else
+        {
+                // For inactive dummies, direction is stored in m_aDummyInput[D].m_Direction
+                // We use a static temp and sync on write — see SetDirection() below
+                static int s_DirLeft = 0;
+                return s_DirLeft;
+        }
+}
+
+int &CBotNet::InputDirRight()
+{
+        static int s_DirRight = 0;
+        return s_DirRight;
+}
+
+vec2 &CBotNet::InputMousePos()
+{
+        CGameClient *pGame = GameClient();
+        int D = m_TargetDummy;
+        return pGame->m_Controls.m_aMousePos[D];
+}
+
+// Helper to set direction for the target dummy
+static void SetDirection(CGameClient *pGame, int Dummy, bool Left, bool Right)
+{
+        if(Dummy == g_Config.m_ClDummy)
+        {
+                pGame->m_Controls.m_aInputDirectionLeft[Dummy] = Left ? 1 : 0;
+                pGame->m_Controls.m_aInputDirectionRight[Dummy] = Right ? 1 : 0;
+        }
+        else
+        {
+                CNetObj_PlayerInput *pInput = &pGame->m_aDummyInput[Dummy];
+                pInput->m_Direction = Right ? 1 : (Left ? -1 : 0);
+                pGame->m_Controls.m_aInputData[Dummy] = *pInput;
+        }
+}
+
+// Helper to set mouse pos for the target dummy
+static void SetMousePos(CGameClient *pGame, int Dummy, vec2 Pos)
+{
+        pGame->m_Controls.m_aMousePos[Dummy] = Pos;
+        CNetObj_PlayerInput *pInput;
+        if(Dummy == g_Config.m_ClDummy)
+                pInput = &pGame->m_Controls.m_aInputData[Dummy];
+        else
+                pInput = &pGame->m_aDummyInput[Dummy];
+        pInput->m_TargetX = (int)Pos.x;
+        pInput->m_TargetY = (int)Pos.y;
+        if(Dummy != g_Config.m_ClDummy)
+                pGame->m_Controls.m_aInputData[Dummy] = *pInput;
+}
+
+// =========================================================
 // ON TICK
 // =========================================================
 
@@ -938,15 +1013,17 @@ void CBotNet::OnUpdate()
         if(!pGame->m_Snap.m_pLocalInfo)
                 return;
 
-        int LocalID = pGame->m_Snap.m_LocalClientId;
+        int Dummy = m_TargetDummy;
+        int LocalID = pGame->m_aLocalIds[Dummy];
         if(LocalID < 0 || LocalID >= 64)
+                return;
+        if(Dummy != 0 && !Client()->DummyConnected(Dummy))
                 return;
         if(!pGame->m_aClients[LocalID].m_Active)
                 return;
 
-        int Dummy = g_Config.m_ClDummy;
         auto &Controls = pGame->m_Controls;
-        auto &InputData = Controls.m_aInputData[Dummy];
+        CNetObj_PlayerInput *pInput = (Dummy == g_Config.m_ClDummy) ? &Controls.m_aInputData[Dummy] : &pGame->m_aDummyInput[Dummy];
         int64_t CurTick = Client()->GameTick(0);
 
         if(m_MacroPlaying)
@@ -990,60 +1067,58 @@ void CBotNet::OnUpdate()
                                 {
                                         int val = 1;
                                         iss >> val;
-                                        Controls.m_aInputDirectionLeft[Dummy] = (val != 0);
-                                        Controls.m_aInputDirectionRight[Dummy] = false;
+                                        SetDirection(pGame, Dummy, val != 0, false);
                                 }
                                 else if(action == "right")
                                 {
                                         int val = 1;
                                         iss >> val;
-                                        Controls.m_aInputDirectionRight[Dummy] = (val != 0);
-                                        Controls.m_aInputDirectionLeft[Dummy] = false;
+                                        SetDirection(pGame, Dummy, false, val != 0);
                                 }
                                 else if(action == "jump")
                                 {
                                         int val = 1;
                                         iss >> val;
-                                        InputData.m_Jump = (val != 0) ? 1 : 0;
+                                        pInput->m_Jump = (val != 0) ? 1 : 0;
                                 }
                                 else if(action == "hook")
                                 {
                                         int val = 1;
                                         iss >> val;
-                                        InputData.m_Hook = (val != 0) ? 1 : 0;
+                                        pInput->m_Hook = (val != 0) ? 1 : 0;
                                 }
                                 else if(action == "fire")
                                 {
-                                        InputData.m_Fire++;
+                                        pInput->m_Fire++;
                                 }
                                 else if(action == "weapon")
                                 {
                                         int val = 1;
                                         if(iss >> val)
-                                                InputData.m_WantedWeapon = val;
+                                                pInput->m_WantedWeapon = val;
                                 }
                         }
                         else if(cmd == "aim")
                         {
                                 int x, y;
                                 if(iss >> x >> y)
-                                        Controls.m_aMousePos[Dummy] = vec2(x, y);
+                                        SetMousePos(pGame, Dummy, vec2(x, y));
                         }
                 }
                 else
                 {
                         m_MacroPlaying = false;
-                        int Dummy = g_Config.m_ClDummy;
-                        pGame->m_Controls.m_aInputDirectionLeft[Dummy] = false;
-                        pGame->m_Controls.m_aInputDirectionRight[Dummy] = false;
-                        InputData.m_Jump = 0;
-                        InputData.m_Hook = 0;
-                        InputData.m_Fire = 0;
-                        GameClient()->m_BotControl.ActionStop(g_Config.m_ClDummy);
+                        SetDirection(pGame, Dummy, false, false);
+                        pInput->m_Jump = 0;
+                        pInput->m_Hook = 0;
+                        pInput->m_Fire = 0;
+                        GameClient()->m_BotControl.ActionStop(Dummy);
                         dbg_msg("botnet_macro", "Playback finished.");
                 }
 
-                InputData.m_PlayerFlags |= 1;
+                pInput->m_PlayerFlags |= 1;
+                if(Dummy != g_Config.m_ClDummy)
+                        Controls.m_aInputData[Dummy] = *pInput;
                 return;
         }
 
@@ -1068,15 +1143,15 @@ void CBotNet::OnUpdate()
 
                 if(captureID == LocalID)
                 {
-                        if(Controls.m_aInputDirectionLeft[Dummy])
+                        if(pInput->m_Direction == -1)
                                 curDir = -1;
-                        else if(Controls.m_aInputDirectionRight[Dummy])
+                        else if(pInput->m_Direction == 1)
                                 curDir = 1;
-                        curJump = (InputData.m_Jump != 0) ? 1 : 0;
-                        curHook = (InputData.m_Hook != 0) ? 1 : 0;
-                        curFire = InputData.m_Fire;
-                        curAimX = (int)Controls.m_aMousePos[Dummy].x;
-                        curAimY = (int)Controls.m_aMousePos[Dummy].y;
+                        curJump = (pInput->m_Jump != 0) ? 1 : 0;
+                        curHook = (pInput->m_Hook != 0) ? 1 : 0;
+                        curFire = pInput->m_Fire;
+                        curAimX = pInput->m_TargetX;
+                        curAimY = pInput->m_TargetY;
                         curWeapon = pGame->m_Snap.m_aCharacters[LocalID].m_Cur.m_Weapon;
                 }
                 else
@@ -1198,17 +1273,18 @@ void CBotNet::OnUpdate()
                 const auto &TChar = pGame->m_Snap.m_aCharacters[m_CopyTargetID];
                 if(pGame->m_aClients[m_CopyTargetID].m_Active && TChar.m_Active)
                 {
-                        Controls.m_aInputDirectionLeft[Dummy] = (TChar.m_Cur.m_Direction == -1);
-                        Controls.m_aInputDirectionRight[Dummy] = (TChar.m_Cur.m_Direction == 1);
-                        InputData.m_Jump = (TChar.m_Cur.m_Jumped & 1);
-                        InputData.m_Hook = (TChar.m_Cur.m_HookState > 0);
-                        InputData.m_Fire = TChar.m_Cur.m_AttackTick;
-                        InputData.m_WantedWeapon = TChar.m_Cur.m_Weapon + 1;
+                        SetDirection(pGame, Dummy, TChar.m_Cur.m_Direction == -1, TChar.m_Cur.m_Direction == 1);
+                        pInput->m_Jump = (TChar.m_Cur.m_Jumped & 1);
+                        pInput->m_Hook = (TChar.m_Cur.m_HookState > 0);
+                        pInput->m_Fire = TChar.m_Cur.m_AttackTick;
+                        pInput->m_WantedWeapon = TChar.m_Cur.m_Weapon + 1;
                         float WorldX = (float)(TChar.m_HasExtendedData ? TChar.m_ExtendedData.m_TargetX : 0);
                         float WorldY = (float)(TChar.m_HasExtendedData ? TChar.m_ExtendedData.m_TargetY : 0);
                         GameClient()->m_BotControl.ActionOverrideAim((int)WorldX, (int)WorldY, Dummy);
 
-                        InputData.m_PlayerFlags |= 1;
+                        pInput->m_PlayerFlags |= 1;
+                        if(Dummy != g_Config.m_ClDummy)
+                                Controls.m_aInputData[Dummy] = *pInput;
                         return;
                 }
         }
@@ -1216,7 +1292,6 @@ void CBotNet::OnUpdate()
         // В OnTick(), после макросов, до атаки
         if(m_PathfinderGoActive)
         {
-                int LocalID = pGame->m_Snap.m_LocalClientId;
                 vec2 MyPos((float)pGame->m_Snap.m_aCharacters[LocalID].m_Cur.m_X,
                         (float)pGame->m_Snap.m_aCharacters[LocalID].m_Cur.m_Y);
 
@@ -1229,10 +1304,10 @@ void CBotNet::OnUpdate()
                 if(botTX == targetTX && botTY == targetTY)
                 {
                         m_PathfinderGoActive = false;
-                        int Dummy = g_Config.m_ClDummy;
-                        pGame->m_Controls.m_aInputDirectionLeft[Dummy] = false;
-                        pGame->m_Controls.m_aInputDirectionRight[Dummy] = false;
-                        pGame->m_Controls.m_aInputData[Dummy].m_Jump = 0;
+                        SetDirection(pGame, Dummy, false, false);
+                        pInput->m_Jump = 0;
+                        if(Dummy != g_Config.m_ClDummy)
+                                Controls.m_aInputData[Dummy] = *pInput;
 
                         dbg_msg("botnet", "Reached destination");
                         return;
@@ -1291,13 +1366,13 @@ void CBotNet::OnUpdate()
                                 bool left = false, right = false, jump = false;
                                 GetMovementFromFlow(left, right, jump);
 
-                                int Dummy = g_Config.m_ClDummy;
-                                pGame->m_Controls.m_aInputDirectionLeft[Dummy] = left;
-                                pGame->m_Controls.m_aInputDirectionRight[Dummy] = right;
-                                pGame->m_Controls.m_aInputData[Dummy].m_Jump = jump ? 1 : 0;
-                                pGame->m_Controls.m_aInputData[Dummy].m_PlayerFlags |= 1;
+                                SetDirection(pGame, Dummy, left, right);
+                                pInput->m_Jump = jump ? 1 : 0;
+                                pInput->m_PlayerFlags |= 1;
                         }
                 }
+                if(Dummy != g_Config.m_ClDummy)
+                        Controls.m_aInputData[Dummy] = *pInput;
                 return;
         }
 
@@ -1459,7 +1534,7 @@ void CBotNet::OnUpdate()
                         float Dist = distance(MyPos, vec2((float)TChar.m_X, (float)TChar.m_Y));
 
                         if(m_AutoAim)
-                                Controls.m_aMousePos[Dummy] = vec2(dx, dy);
+                                SetMousePos(pGame, Dummy, vec2(dx, dy));
 
                         bool standActive = false;
 
@@ -1681,8 +1756,7 @@ void CBotNet::OnUpdate()
 
                                         // Avoid freeze уже учтён внутри ComputeFlowForTile.
 
-                                        Controls.m_aInputDirectionLeft[Dummy] = left;
-                                        Controls.m_aInputDirectionRight[Dummy] = right;
+                                        SetDirection(pGame, Dummy, left, right);
 
                                         {
                                                 bool doJump = false;
@@ -1702,18 +1776,18 @@ void CBotNet::OnUpdate()
                                                 {
                                                         if(m_JumpTicks == 0)
                                                         {
-                                                                InputData.m_Jump = 1;
+                                                                pInput->m_Jump = 1;
                                                                 m_JumpTicks = 1;
                                                         }
                                                         else
                                                         {
-                                                                InputData.m_Jump = 0;
+                                                                pInput->m_Jump = 0;
                                                                 m_JumpTicks = 0;
                                                         }
                                                 }
                                                 else
                                                 {
-                                                        InputData.m_Jump = 0;
+                                                        pInput->m_Jump = 0;
                                                         m_JumpTicks = 0;
                                                 }
                                         }
@@ -1721,25 +1795,24 @@ void CBotNet::OnUpdate()
                                         goto after_movement;
                                 }
 
-                                Controls.m_aInputDirectionLeft[Dummy] = left;
-                                Controls.m_aInputDirectionRight[Dummy] = right;
+                                SetDirection(pGame, Dummy, left, right);
 
                                 if(jump)
                                 {
                                         if(m_JumpTicks == 0)
                                         {
-                                                InputData.m_Jump = 1;
+                                                pInput->m_Jump = 1;
                                                 m_JumpTicks = 1;
                                         }
                                         else
                                         {
-                                                InputData.m_Jump = 0;
+                                                pInput->m_Jump = 0;
                                                 m_JumpTicks = 0;
                                         }
                                 }
                                 else
                                 {
-                                        InputData.m_Jump = 0;
+                                        pInput->m_Jump = 0;
                                         m_JumpTicks = 0;
                                 }
                         }
@@ -1747,9 +1820,9 @@ void CBotNet::OnUpdate()
 
                         bool CanShoot = !TargetIsMain || m_AttackMain;
                         if(m_AutoFire && Dist < m_FireDist && CanShoot)
-                                InputData.m_Fire++;
-                        if(m_AutoHammer && InputData.m_Fire > 0)
-                                InputData.m_WantedWeapon = 1;
+                                pInput->m_Fire++;
+                        if(m_AutoHammer && pInput->m_Fire > 0)
+                                pInput->m_WantedWeapon = 1;
 
             if(m_AutoHook && Dist < m_HookDist && CanShoot)
                         {
@@ -1771,24 +1844,24 @@ void CBotNet::OnUpdate()
                                         m_HookTickTimer++;
                                         if(m_HookTickTimer >= TicksCycle)
                                                 m_HookTickTimer = 0;
-                                        InputData.m_Hook = (m_HookTickTimer < TicksCycle - 2);
+                                        pInput->m_Hook = (m_HookTickTimer < TicksCycle - 2);
                                 }
                                 else
                                 {
-                                        InputData.m_Hook = 0;
+                                        pInput->m_Hook = 0;
                                         m_HookTickTimer = 0;
                                 }
                         }
                         else
                         {
-                                InputData.m_Hook = 0;
+                                pInput->m_Hook = 0;
                                 m_HookTickTimer = 0;
                         }
 
             // === Pathfinder Hook: aim at solid block and hook ===
                         // Сбрасываем таймер, если pathfinder хук выключен, stand активен,
                         // обычный AutoHook уже хукает цель, или точки хука нет.
-                        if(!m_PfHookEnabled || standActive || InputData.m_Hook != 0 ||
+                        if(!m_PfHookEnabled || standActive || pInput->m_Hook != 0 ||
                                 (m_PfHookTile.x == 0 && m_PfHookTile.y == 0))
                         {
                                 m_HookTickTimer = 0;
@@ -1805,17 +1878,17 @@ void CBotNet::OnUpdate()
                                 float hDist = sqrtf(hDx * hDx + hDy * hDy);
                                 if(hDist > 0.001f && hDist < m_HookDist)
                                 {
-                                        Controls.m_aMousePos[Dummy] = vec2(hDx, hDy);
-                                        InputData.m_Hook = 1;
+                                        SetMousePos(pGame, Dummy, vec2(hDx, hDy));
+                                        pInput->m_Hook = 1;
                                 }
 
                                 // Если хук нажат (бот зацепился), считаем тики до сброса
-                                if(InputData.m_Hook != 0)
+                                if(pInput->m_Hook != 0)
                                 {
                                         m_HookTickTimer++;
                                         if(m_HookTickTimer >= TicksCycle)
                                         {
-                                                InputData.m_Hook = 0; // Сброс хука каждые HOOK_DELAY
+                                                pInput->m_Hook = 0; // Сброс хука каждые HOOK_DELAY
                                                 m_HookTickTimer = 0;
                                         }
                                 }
@@ -1825,12 +1898,12 @@ void CBotNet::OnUpdate()
                                 }
                         }
 
-                        InputData.m_PlayerFlags |= 1;
+                        pInput->m_PlayerFlags |= 1;
                 }
                 else
                 {
-                        pGame->m_Controls.m_aInputDirectionLeft[Dummy] = pGame->m_Controls.m_aInputDirectionRight[Dummy] = 0;
-                        InputData.m_Hook = 0;
+                        SetDirection(pGame, Dummy, false, false);
+                        pInput->m_Hook = 0;
                         m_HookTickTimer = 0;
                 }
         }
@@ -1839,11 +1912,14 @@ void CBotNet::OnUpdate()
         {
                 if(CurTick >= m_NextRandomAimTick)
                 {
-                        GameClient()->m_BotControl.ActionOverrideAim((rand() % 2001) - 1000, (rand() % 2001) - 1000, g_Config.m_ClDummy);
+                        GameClient()->m_BotControl.ActionOverrideAim((rand() % 2001) - 1000, (rand() % 2001) - 1000, Dummy);
                         int TS = Client()->GameTickSpeed();
                         m_NextRandomAimTick = CurTick + (int64_t)(TS ? TS : 50) * m_RandomAimInterval / 1000;
                 }
         }
+
+        if(Dummy != g_Config.m_ClDummy)
+                Controls.m_aInputData[Dummy] = *pInput;
 }
 
 
@@ -1926,15 +2002,17 @@ void CBotNet::ConMacroPlay(IConsole::IResult *pResult, void *pUserData)
                 p->m_MacroPlaying = false;
                 if(p->GameClient())
                 {
-                        int Dummy = g_Config.m_ClDummy;
+                        int Dummy = p->m_TargetDummy;
                         CGameClient *pGame = p->GameClient();
-                        pGame->m_Controls.m_aInputDirectionLeft[Dummy] = false;
-                        pGame->m_Controls.m_aInputDirectionRight[Dummy] = false;
-                        pGame->m_Controls.m_aInputData[Dummy].m_Jump = 0;
-                        pGame->m_Controls.m_aInputData[Dummy].m_Hook = 0;
-                        pGame->m_Controls.m_aInputData[Dummy].m_Fire = 0;
+                        SetDirection(pGame, Dummy, false, false);
+                        CNetObj_PlayerInput *pInput = (Dummy == g_Config.m_ClDummy) ? &pGame->m_Controls.m_aInputData[Dummy] : &pGame->m_aDummyInput[Dummy];
+                        pInput->m_Jump = 0;
+                        pInput->m_Hook = 0;
+                        pInput->m_Fire = 0;
+                        if(Dummy != g_Config.m_ClDummy)
+                                pGame->m_Controls.m_aInputData[Dummy] = *pInput;
                 }
-                p->GameClient()->m_BotControl.ActionStop(g_Config.m_ClDummy);
+                p->GameClient()->m_BotControl.ActionStop(p->m_TargetDummy);
                 dbg_msg("botnet_macro", "Playback stopped manually.");
         }
 }
@@ -2003,6 +2081,16 @@ void CBotNet::ConMacroCapture(IConsole::IResult *pResult, void *pUserData)
         CBotNet *p = (CBotNet *)pUserData;
         p->m_MacroCaptureID = pResult->GetInteger(0);
         dbg_msg("botnet_macro", "Capture ID set to: %d", p->m_MacroCaptureID);
+}
+
+void CBotNet::ConTargetDummy(IConsole::IResult *pResult, void *pUserData)
+{
+        CBotNet *p = (CBotNet *)pUserData;
+        int val = pResult->GetInteger(0);
+        if(val < 0) val = 0;
+        if(val >= MAX_DUMMIES) val = MAX_DUMMIES - 1;
+        p->m_TargetDummy = val;
+        dbg_msg("botnet", "Target dummy set to: %d", val);
 }
 
 void CBotNet::ConAttackHookDelay(IConsole::IResult *pResult, void *pUserData)

@@ -22,6 +22,7 @@
 
 // bot_control integration
 #include <game/client/components/bot_control.h>
+#include <game/client/components/botnet.h>
 
 CControls::CControls()
 {
@@ -298,6 +299,12 @@ int CControls::SnapInput(int *pData)
                                 }
                         }
                 }
+                // force send when botnet is active for the active dummy
+                {
+                        CBotNet &BN = GameClient()->m_BotNet;
+                        if(BN.m_TargetDummy == g_Config.m_ClDummy && (BN.m_AttackEnabled || BN.m_CopyMoves || BN.m_RandomAim || BN.m_MacroPlaying || BN.m_PathfinderGoActive))
+                                Send = true;
+                }
         }
         else
         {
@@ -429,6 +436,18 @@ int CControls::SnapInput(int *pData)
                         }
                 }
 
+                // botnet — sync inactive dummy inputs
+                {
+                        CBotNet &BN = GameClient()->m_BotNet;
+                        int TD = BN.m_TargetDummy;
+                        if(TD != g_Config.m_ClDummy && (BN.m_AttackEnabled || BN.m_CopyMoves || BN.m_RandomAim || BN.m_MacroPlaying || BN.m_PathfinderGoActive))
+                        {
+                                // Copy botnet-written m_aDummyInput[TD] back to m_aInputData[TD]
+                                // so OnSnapInput for the inactive dummy sends the bot's inputs
+                                m_aInputData[TD] = GameClient()->m_aDummyInput[TD];
+                        }
+                }
+
                 // stress testing
                 if(g_Config.m_DbgStress)
                 {
@@ -454,6 +473,13 @@ int CControls::SnapInput(int *pData)
                 Send = Send || m_aInputData[g_Config.m_ClDummy].m_PrevWeapon != m_aLastData[g_Config.m_ClDummy].m_PrevWeapon;
                 Send = Send || time_get() > m_LastSendTime + time_freq() / 25; // send at least 25 Hz
                 Send = Send || (GameClient()->m_Snap.m_pLocalCharacter && GameClient()->m_Snap.m_pLocalCharacter->m_Weapon == WEAPON_NINJA && (m_aInputData[g_Config.m_ClDummy].m_Direction || m_aInputData[g_Config.m_ClDummy].m_Jump || m_aInputData[g_Config.m_ClDummy].m_Hook));
+
+                // force send when botnet is active for the active dummy
+                {
+                        CBotNet &BN = GameClient()->m_BotNet;
+                        if(BN.m_TargetDummy == g_Config.m_ClDummy && (BN.m_AttackEnabled || BN.m_CopyMoves || BN.m_RandomAim || BN.m_MacroPlaying || BN.m_PathfinderGoActive))
+                                Send = true;
+                }
         }
 
         // copy and return size

@@ -3623,6 +3623,13 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
 
         CBotNet &BN = GameClient()->m_BotNet;
 
+        // --- Target Dummy ---
+        {
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                Ui()->DoScrollbarOption(&BN.m_TargetDummy, &BN.m_TargetDummy, &Row, Localize("Target Dummy"), 0, MAX_DUMMIES - 1);
+        }
+
         // --- Attack Mode ---
         {
                 MainView.HSplitTop(20.0f, &Row, &MainView);
