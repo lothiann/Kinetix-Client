@@ -3375,6 +3375,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
         s_FunctionsScrollRegion.Begin(&MainView, &ScrollParams);
 
         CUIRect Row, Label, Button;
+        int TargetDummy = g_Config.m_ClBotTargetDummy;
 
         // Header
         MainView.HSplitTop(20.0f, &Row, &MainView);
@@ -3384,7 +3385,6 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
         MainView.HSplitTop(10.0f, nullptr, &MainView);
 
         // === Target Dummy Selector ===
-        static int s_TargetDummy = 1; // default to dummy 1
         {
                 MainView.HSplitTop(25.0f, &Label, &MainView);
                 s_FunctionsScrollRegion.AddRect(Label);
@@ -3392,7 +3392,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
         }
         MainView.HSplitTop(5.0f, nullptr, &MainView);
 
-        // Dummy selector buttons — one per dummy + main
+        // Dummy selector buttons
         {
                 MainView.HSplitTop(25.0f, &Row, &MainView);
                 s_FunctionsScrollRegion.AddRect(Row);
@@ -3414,21 +3414,13 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                         else
                                 str_format(aName, sizeof(aName), "D%d", D);
 
-                        bool Active = (s_TargetDummy == D);
-                        bool Connected = (D == 0) || Client()->DummyConnected(D);
+                        bool Active = (TargetDummy == D);
 
                         if(DoButton_MenuTab(&s_aDummyButtons[D], aName, Active ? 1 : 0, &Btn, IGraphics::CORNER_ALL))
                         {
-                                s_TargetDummy = D;
-                        }
-
-                        // Dim unconnected dummies
-                        if(!Connected && D != 0)
-                        {
-                                TextRender()->TextColor(0.5f, 0.5f, 0.5f, 0.5f);
+                                g_Config.m_ClBotTargetDummy = D;
                         }
                 }
-                TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
         }
         MainView.HSplitTop(5.0f, nullptr, &MainView);
 
@@ -3438,7 +3430,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                 s_FunctionsScrollRegion.AddRect(Row);
 
                 CBotControl &Bot = GameClient()->m_BotControl;
-                bool AnyActive = Bot.IsBotActiveAny(s_TargetDummy);
+                bool AnyActive = Bot.IsBotActiveAny(TargetDummy);
 
                 char aStatus[128];
                 if(AnyActive)
@@ -3458,17 +3450,17 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                 CUIRect StatusRight;
                 Row.VSplitRight(300.0f, nullptr, &StatusRight);
                 char aDetail[128] = "";
-                if(Bot.IsBotActiveJump(s_TargetDummy))
+                if(Bot.IsBotActiveJump(TargetDummy))
                         str_append(aDetail, "JUMP ");
-                if(Bot.IsBotActiveHook(s_TargetDummy))
+                if(Bot.IsBotActiveHook(TargetDummy))
                         str_append(aDetail, "HOOK ");
-                if(Bot.IsBotActiveFire(s_TargetDummy))
+                if(Bot.IsBotActiveFire(TargetDummy))
                         str_append(aDetail, "FIRE ");
-                if(Bot.IsBotActiveMove(s_TargetDummy))
+                if(Bot.IsBotActiveMove(TargetDummy))
                         str_append(aDetail, "MOVE ");
-                if(Bot.IsBotActiveAim(s_TargetDummy))
+                if(Bot.IsBotActiveAim(TargetDummy))
                         str_append(aDetail, "AIM ");
-                if(Bot.IsBotActiveOverrideAim(s_TargetDummy))
+                if(Bot.IsBotActiveOverrideAim(TargetDummy))
                         str_append(aDetail, "OAIM ");
                 if(aDetail[0] != '\0')
                         Ui()->DoLabel(&StatusRight, aDetail, 11.0f, TEXTALIGN_ML);
@@ -3476,36 +3468,11 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
 
         MainView.HSplitTop(10.0f, nullptr, &MainView);
 
-        // === Duration Setting ===
-        static int s_ActionDuration = 500;
+        // === Duration Setting (slider like Prediction margin) ===
         {
-                MainView.HSplitTop(25.0f, &Label, &MainView);
-                s_FunctionsScrollRegion.AddRect(Label);
-
-                char aDurStr[64];
-                str_format(aDurStr, sizeof(aDurStr), "%s: %d ms", Localize("Action Duration"), s_ActionDuration);
-                Ui()->DoLabel(&Label, aDurStr, 16.0f, TEXTALIGN_ML);
-        }
-        MainView.HSplitTop(5.0f, nullptr, &MainView);
-
-        {
-                MainView.HSplitTop(25.0f, &Row, &MainView);
+                MainView.HSplitTop(20.0f, &Row, &MainView);
                 s_FunctionsScrollRegion.AddRect(Row);
-
-                static CButtonContainer s_aDurPresets[6];
-                const int aPresetValues[] = {100, 250, 500, 1000, 2000, 5000};
-                CUIRect PresetBtn;
-                float PresetW = Row.w / 6.0f;
-                for(int i = 0; i < 6; i++)
-                {
-                        Row.VSplitLeft(PresetW, &PresetBtn, &Row);
-                        if(i < 5)
-                                Row.VSplitLeft(3.0f, nullptr, &Row);
-                        char aPreset[16];
-                        str_format(aPreset, sizeof(aPreset), "%d", aPresetValues[i]);
-                        if(DoButton_MenuTab(&s_aDurPresets[i], aPreset, s_ActionDuration == aPresetValues[i] ? 1 : 0, &PresetBtn, IGraphics::CORNER_ALL))
-                                s_ActionDuration = aPresetValues[i];
-                }
+                Ui()->DoScrollbarOption(&g_Config.m_ClBotActionDuration, &g_Config.m_ClBotActionDuration, &Row, Localize("Action duration (ms)"), 100, 10000);
         }
 
         MainView.HSplitTop(10.0f, nullptr, &MainView);
@@ -3541,17 +3508,16 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                         if(i < 4)
                                 Row.VSplitLeft(5.0f, nullptr, &Row);
 
-                        // Highlight if action is active for this target
                         bool Active = false;
                         const CBotControl &Bot = GameClient()->m_BotControl;
-                        if(i == 0) Active = Bot.IsBotActiveJump(s_TargetDummy);
-                        else if(i == 1) Active = Bot.IsBotActiveHook(s_TargetDummy);
-                        else if(i == 2) Active = Bot.IsBotActiveFire(s_TargetDummy);
-                        else if(i == 3 || i == 4) Active = Bot.IsBotActiveMove(s_TargetDummy);
+                        if(i == 0) Active = Bot.IsBotActiveJump(TargetDummy);
+                        else if(i == 1) Active = Bot.IsBotActiveHook(TargetDummy);
+                        else if(i == 2) Active = Bot.IsBotActiveFire(TargetDummy);
+                        else if(i == 3 || i == 4) Active = Bot.IsBotActiveMove(TargetDummy);
 
                         if(DoButton_Menu(apBtnIds[i], Localize(apActions[i]), Active ? 1 : 0, &Btn))
                         {
-                                GameClient()->m_BotControl.ActionInput(apCmdNames[i], s_ActionDuration, s_TargetDummy);
+                                GameClient()->m_BotControl.ActionInput(apCmdNames[i], g_Config.m_ClBotActionDuration, TargetDummy);
                         }
                 }
         }
@@ -3591,61 +3557,39 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                 Row.VSplitLeft(3.0f, nullptr, &Row);
                         if(DoButton_Menu(&s_aAimBtns[i], aAimLabels[i], 0, &Btn))
                         {
-                                GameClient()->m_BotControl.ActionAim(aAimDx[i], aAimDy[i], s_TargetDummy);
+                                GameClient()->m_BotControl.ActionAim(aAimDx[i], aAimDy[i], TargetDummy);
                         }
                 }
         }
         MainView.HSplitTop(5.0f, nullptr, &MainView);
 
-        // Absolute aim (c_oaim) — custom X/Y
+        // Absolute aim (c_oaim) — sliders for X/Y
         {
                 MainView.HSplitTop(20.0f, &Row, &MainView);
                 s_FunctionsScrollRegion.AddRect(Row);
-
                 Ui()->DoLabel(&Row, Localize("Absolute aim (c_oaim)"), 11.0f, TEXTALIGN_ML);
         }
         {
                 static int s_OaimX = 0;
                 static int s_OaimY = 0;
 
+                // X slider
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                Ui()->DoScrollbarOption(&s_OaimX, &s_OaimX, &Row, Localize("Aim X"), -1000, 1000);
+
+                // Y slider
+                MainView.HSplitTop(20.0f, &Row, &MainView);
+                s_FunctionsScrollRegion.AddRect(Row);
+                Ui()->DoScrollbarOption(&s_OaimY, &s_OaimY, &Row, Localize("Aim Y"), -1000, 1000);
+
+                // Apply button
                 MainView.HSplitTop(25.0f, &Row, &MainView);
                 s_FunctionsScrollRegion.AddRect(Row);
-
-                CUIRect LabelX, MinusX, PlusX, LabelY, MinusY, PlusY, ApplyBtn;
-
-                // X control
-                Row.VSplitLeft(30.0f, &LabelX, &Row);
-                Row.VSplitLeft(30.0f, &MinusX, &Row);
-                Row.VSplitLeft(50.0f, &PlusX, &Row);
-                // Y control
-                Row.VSplitLeft(30.0f, &LabelY, &Row);
-                Row.VSplitLeft(30.0f, &MinusY, &Row);
-                Row.VSplitLeft(50.0f, &PlusY, &Row);
-                // Apply button
-                Row.VSplitLeft(10.0f, nullptr, &Row);
-                Row.VSplitLeft(80.0f, &ApplyBtn, &Row);
-
-                char aXStr[16], aYStr[16];
-                str_format(aXStr, sizeof(aXStr), "X:%d", s_OaimX);
-                str_format(aYStr, sizeof(aYStr), "Y:%d", s_OaimY);
-                Ui()->DoLabel(&LabelX, aXStr, 11.0f, TEXTALIGN_ML);
-
-                static CButtonContainer s_XMinus, s_XPlus, s_YMinus, s_YPlus, s_OaimApply;
-                if(DoButton_Menu(&s_XMinus, "--", 0, &MinusX))
-                        s_OaimX -= 50;
-                if(DoButton_Menu(&s_XPlus, "++", 0, &PlusX))
-                        s_OaimX += 50;
-
-                Ui()->DoLabel(&LabelY, aYStr, 11.0f, TEXTALIGN_ML);
-
-                if(DoButton_Menu(&s_YMinus, "--", 0, &MinusY))
-                        s_OaimY -= 50;
-                if(DoButton_Menu(&s_YPlus, "++", 0, &PlusY))
-                        s_OaimY += 50;
-
-                if(DoButton_Menu(&s_OaimApply, Localize("Apply"), 0, &ApplyBtn))
+                static CButtonContainer s_OaimApply;
+                if(DoButton_Menu(&s_OaimApply, Localize("Apply absolute aim"), 0, &Row))
                 {
-                        GameClient()->m_BotControl.ActionOverrideAim(s_OaimX, s_OaimY, s_TargetDummy);
+                        GameClient()->m_BotControl.ActionOverrideAim(s_OaimX, s_OaimY, TargetDummy);
                 }
         }
 
@@ -3659,7 +3603,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                 static CButtonContainer s_StopBtn;
                 if(DoButton_Menu(&s_StopBtn, Localize("Stop All Actions"), 0, &Row))
                 {
-                        GameClient()->m_BotControl.ActionStop(s_TargetDummy);
+                        GameClient()->m_BotControl.ActionStop(TargetDummy);
                 }
         }
 
