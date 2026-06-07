@@ -3644,6 +3644,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                 // --- Row: Main ID + Target IDs ---
                 MainView.HSplitTop(LineSize, &Row, &MainView);
                 s_FunctionsScrollRegion.AddRect(Row);
+                Row.VSplitMid(&Left, &Right, ColGap);
                 {
                         static CLineInputBuffered<32> s_MainIDInput;
                         if(Ui()->ActiveItem() != &s_MainIDInput)
@@ -3653,8 +3654,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                 s_MainIDInput.Set(aBuf);
                         }
                         CUIRect Lab, Field;
-                        Row.VSplitLeft(55.0f, &Lab, &Field);
-                        Field.VSplitLeft(40.0f, &Field, &Row);
+                        Left.VSplitLeft(55.0f, &Lab, &Field);
                         Ui()->DoLabel(&Lab, Localize("Main ID"), 12.0f, TEXTALIGN_ML);
                         if(Ui()->DoEditBox(&s_MainIDInput, &Field, 12.0f))
                         {
@@ -3671,7 +3671,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                 s_TargetIDsInput.Set(BN.m_aTargetIDsStr);
                         }
                         CUIRect Lab, Field;
-                        Row.VSplitLeft(68.0f, &Lab, &Field);
+                        Right.VSplitLeft(68.0f, &Lab, &Field);
                         Ui()->DoLabel(&Lab, Localize("Target IDs"), 12.0f, TEXTALIGN_ML);
                         if(Ui()->DoEditBox(&s_TargetIDsInput, &Field, 12.0f))
                         {
@@ -3821,11 +3821,11 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                 // Rescue radius + Rescue IDs
                 MainView.HSplitTop(LineSize, &Row, &MainView);
                 s_FunctionsScrollRegion.AddRect(Row);
+                Row.VSplitMid(&Left, &Right, ColGap);
                 {
                         static CLineInputBuffered<32> s_RescueRadInput;
                         CUIRect Lab, Field;
-                        Row.VSplitLeft(90.0f, &Lab, &Field);
-                        Field.VSplitLeft(50.0f, &Field, &Row);
+                        Left.VSplitLeft(90.0f, &Lab, &Field);
                         Ui()->DoLabel(&Lab, Localize("Rescue radius"), 12.0f, TEXTALIGN_ML);
                         if(Ui()->ActiveItem() != &s_RescueRadInput) { char b[16]; str_format(b,16,"%.0f",BN.m_RescueRadius); s_RescueRadInput.Set(b); }
                         if(Ui()->DoEditBox(&s_RescueRadInput, &Field, 12.0f)) BN.m_RescueRadius = (float)atof(s_RescueRadInput.GetString());
@@ -3838,7 +3838,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                 s_RescueIDsInput.Set(BN.m_aRescueIDsStr);
                         }
                         CUIRect Lab, Field;
-                        Row.VSplitLeft(70.0f, &Lab, &Field);
+                        Right.VSplitLeft(70.0f, &Lab, &Field);
                         Ui()->DoLabel(&Lab, Localize("Rescue IDs"), 12.0f, TEXTALIGN_ML);
                         if(Ui()->DoEditBox(&s_RescueIDsInput, &Field, 12.0f))
                         {
