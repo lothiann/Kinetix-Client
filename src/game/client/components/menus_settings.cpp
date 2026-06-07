@@ -3606,11 +3606,18 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
 
         MainView.HSplitTop(5.0f, nullptr, &MainView);
 
+        // === BotNet ===
+        {
+                MainView.HSplitTop(25.0f, &Label, &MainView);
+                s_FunctionsScrollRegion.AddRect(Label);
+                Ui()->DoLabel(&Label, Localize("BotNet"), 16.0f, TEXTALIGN_ML);
+        }
+        MainView.HSplitTop(5.0f, nullptr, &MainView);
+
         CBotNet &BN = GameClient()->m_BotNet;
 
         {
                 const float LineSize = 20.0f;
-                const float SectionGap = 8.0f;
                 const float ColGap = 10.0f;
                 CUIRect Left, Right;
 
@@ -3711,10 +3718,10 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                         BN.m_StandOnXOnly ^= 1;
 
                 // --- Distances ---
-                MainView.HSplitTop(SectionGap, nullptr, &MainView);
-                MainView.HSplitTop(LineSize, &Label, &MainView);
+                MainView.HSplitTop(25.0f, &Label, &MainView);
                 s_FunctionsScrollRegion.AddRect(Label);
-                Ui()->DoLabel(&Label, Localize("Distances"), 13.0f, TEXTALIGN_ML);
+                Ui()->DoLabel(&Label, Localize("Distances"), 16.0f, TEXTALIGN_ML);
+                MainView.HSplitTop(5.0f, nullptr, &MainView);
 
                 // Fire dist + Hook dist
                 MainView.HSplitTop(LineSize, &Row, &MainView);
@@ -3779,61 +3786,11 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                         if(Ui()->DoEditBox(&s_HookDelayInput, &Field, 12.0f)) BN.m_HookDelay = atoi(s_HookDelayInput.GetString());
                 }
 
-                // --- Rescue (no header, just checkboxes) ---
-                MainView.HSplitTop(SectionGap, nullptr, &MainView);
-
-                // Rescue frozen + Rescue all
-                MainView.HSplitTop(LineSize, &Row, &MainView);
-                s_FunctionsScrollRegion.AddRect(Row);
-                Row.VSplitMid(&Left, &Right, ColGap);
-                if(DoButton_CheckBox(&BN.m_RescueFrozen, Localize("Rescue frozen"), BN.m_RescueFrozen, &Left))
-                { BN.m_RescueFrozen ^= 1; if(!BN.m_RescueFrozen) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
-                if(DoButton_CheckBox(&BN.m_RescueAll, Localize("Rescue all"), BN.m_RescueAll, &Right))
-                { BN.m_RescueAll ^= 1; if(!BN.m_RescueAll) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
-
-                // Smart Detect + Smart Rescue
-                MainView.HSplitTop(LineSize, &Row, &MainView);
-                s_FunctionsScrollRegion.AddRect(Row);
-                Row.VSplitMid(&Left, &Right, ColGap);
-                if(DoButton_CheckBox(&BN.m_SmartDetect, Localize("Smart Detect"), BN.m_SmartDetect, &Left))
-                { BN.m_SmartDetect ^= 1; if(!BN.m_SmartDetect) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
-                if(DoButton_CheckBox(&BN.m_SmartRescue, Localize("Smart Rescue"), BN.m_SmartRescue, &Right))
-                { BN.m_SmartRescue ^= 1; if(!BN.m_SmartRescue) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
-
-                // Rescue radius + Rescue IDs
-                MainView.HSplitTop(LineSize, &Row, &MainView);
-                s_FunctionsScrollRegion.AddRect(Row);
-                Row.VSplitMid(&Left, &Right, ColGap);
-                {
-                        static CLineInputBuffered<32> s_RescueRadInput;
-                        CUIRect Lab, Field;
-                        Left.VSplitLeft(90.0f, &Lab, &Field);
-                        Ui()->DoLabel(&Lab, Localize("Rescue radius"), 12.0f, TEXTALIGN_ML);
-                        if(!s_RescueRadInput.IsActive()) { char b[16]; str_format(b,16,"%.0f",BN.m_RescueRadius); s_RescueRadInput.Set(b); }
-                        if(Ui()->DoEditBox(&s_RescueRadInput, &Field, 12.0f)) BN.m_RescueRadius = (float)atof(s_RescueRadInput.GetString());
-                }
-                {
-                        static CLineInputBuffered<256> s_RescueIDsInput;
-                        if(!s_RescueIDsInput.IsActive())
-                        {
-                                BN.SyncIDsToStr(BN.m_RescueList, BN.m_aRescueIDsStr, sizeof(BN.m_aRescueIDsStr));
-                                s_RescueIDsInput.Set(BN.m_aRescueIDsStr);
-                        }
-                        CUIRect Lab, Field;
-                        Right.VSplitLeft(70.0f, &Lab, &Field);
-                        Ui()->DoLabel(&Lab, Localize("Rescue IDs"), 12.0f, TEXTALIGN_ML);
-                        if(Ui()->DoEditBox(&s_RescueIDsInput, &Field, 12.0f))
-                        {
-                                str_copy(BN.m_aRescueIDsStr, s_RescueIDsInput.GetString(), sizeof(BN.m_aRescueIDsStr));
-                                BN.SyncStrToIDs(BN.m_aRescueIDsStr, BN.m_RescueList);
-                        }
-                }
-
                 // --- Pathfinder [Experimental] ---
-                MainView.HSplitTop(SectionGap, nullptr, &MainView);
-                MainView.HSplitTop(LineSize, &Label, &MainView);
+                MainView.HSplitTop(25.0f, &Label, &MainView);
                 s_FunctionsScrollRegion.AddRect(Label);
-                Ui()->DoLabel(&Label, Localize("Pathfinder [Experimental]"), 13.0f, TEXTALIGN_ML);
+                Ui()->DoLabel(&Label, Localize("Pathfinder [Experimental]"), 16.0f, TEXTALIGN_ML);
+                MainView.HSplitTop(5.0f, nullptr, &MainView);
 
                 // Pathfinder + Avoid Freeze
                 MainView.HSplitTop(LineSize, &Row, &MainView);
@@ -3939,10 +3896,10 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                 }
 
                 // --- Other ---
-                MainView.HSplitTop(SectionGap, nullptr, &MainView);
-                MainView.HSplitTop(LineSize, &Label, &MainView);
+                MainView.HSplitTop(25.0f, &Label, &MainView);
                 s_FunctionsScrollRegion.AddRect(Label);
-                Ui()->DoLabel(&Label, Localize("Other"), 13.0f, TEXTALIGN_ML);
+                Ui()->DoLabel(&Label, Localize("Other"), 16.0f, TEXTALIGN_ML);
+                MainView.HSplitTop(5.0f, nullptr, &MainView);
 
                 // Random Aim
                 MainView.HSplitTop(LineSize, &Row, &MainView);
