@@ -3131,232 +3131,277 @@ void CMenus::RenderSettingsDummies(CUIRect MainView)
         ScrollParams.m_Flags = CScrollRegionParams::FLAG_CONTENT_STATIC_WIDTH;
         s_DummiesScrollRegion.Begin(&MainView, &ScrollParams);
 
-        // Header
-        MainView.HSplitTop(20.0f, &Row, &MainView);
-        s_DummiesScrollRegion.AddRect(Row);
-        Ui()->DoLabel(&Row, Localize("Dummy Management"), 20.0f, TEXTALIGN_MC);
-        MainView.HSplitTop(10.0f, nullptr, &MainView);
+        const float PanelPad = 8.0f;
+        const float PanelGap = 5.0f;
+        const float RowGap = 2.0f;
+        const ColorRGBA PanelBgColor = ColorRGBA(0.0f, 0.0f, 0.0f, 0.15f);
+        CUIRect PanelBg, Panel, Label;
 
-        // Connect/Disconnect all
-        MainView.HSplitTop(25.0f, &Row, &MainView);
-        s_DummiesScrollRegion.AddRect(Row);
-        if(!DummyAllowed)
-        {
-                DoButton_Menu(&m_aDummyButtons[0], Localize("Connect Dummy"), 1, &Row);
-                GameClient()->m_Tooltips.DoToolTip(&m_aDummyButtons[0], &Row, Localize("Dummy is not allowed on this server"));
-        }
-        else if(Client()->AnyDummyConnecting())
-        {
-                DoButton_Menu(&m_aDummyButtons[0], Localize("Connecting dummy…"), 1, &Row);
-        }
-        else if(Client()->AnyDummyConnected())
-        {
-                if(DoButton_Menu(&m_aDummyButtons[0], Localize("Disconnect All Dummies"), 0, &Row))
-                {
-                        for(int D = 1; D < MAX_DUMMIES; D++)
-                        {
-                                if(Client()->DummyConnected(D))
-                                        Client()->DummyDisconnect(D, nullptr);
-                        }
-                }
-        }
-        else
-        {
-                if(DoButton_Menu(&m_aDummyButtons[0], Localize("Connect Dummy 1"), 0, &Row))
-                {
-                        Client()->DummyConnect(1);
-                }
-        }
-
-        MainView.HSplitTop(15.0f, nullptr, &MainView);
-
-        // Individual dummy rows
-        {
-                CUIRect Label;
-                MainView.HSplitTop(25.0f, &Label, &MainView);
-                s_DummiesScrollRegion.AddRect(Label);
-                Ui()->DoLabel(&Label, Localize("Individual Dummies"), 16.0f, TEXTALIGN_ML);
-        }
         MainView.HSplitTop(5.0f, nullptr, &MainView);
 
-        for(int D = 1; D < MAX_DUMMIES; D++)
+        // === Connection Panel ===
         {
-                MainView.HSplitTop(5.0f, nullptr, &MainView);
-                MainView.HSplitTop(25.0f, &Row, &MainView);
-                s_DummiesScrollRegion.AddRect(Row);
+                const float SectionH = PanelPad + 25.0f + 5.0f + 25.0f + PanelPad;
+                MainView.HSplitTop(SectionH, &PanelBg, &MainView);
+                PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
+                s_DummiesScrollRegion.AddRect(PanelBg);
+                PanelBg.Margin(PanelPad, &Panel);
 
-                char aLabel[64];
-                str_format(aLabel, sizeof(aLabel), Localize("Dummy %d"), D);
-
-                // Label
-                CUIRect LabelRect, ButtonsRect;
-                Row.VSplitLeft(100.0f, &LabelRect, &ButtonsRect);
-                bool IsActive = (g_Config.m_ClDummy == D);
-                if(IsActive)
-                {
-                        TextRender()->TextColor(0.4f, 1.0f, 0.4f, 1.0f);
-                        Ui()->DoLabel(&LabelRect, aLabel, 13.0f, TEXTALIGN_ML);
-                        TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
-                }
-                else
-                {
-                        Ui()->DoLabel(&LabelRect, aLabel, 13.0f, TEXTALIGN_ML);
-                }
+                // Header
+                Panel.HSplitTop(25.0f, &Label, &Panel);
+                Ui()->DoLabel(&Label, Localize("Connection"), 16.0f, TEXTALIGN_ML);
+                Panel.HSplitTop(5.0f, nullptr, &Panel);
 
                 // Connect/Disconnect button
-                CUIRect ConnectBtn, SwitchBtn;
-                ButtonsRect.VSplitLeft(5.0f, nullptr, &ButtonsRect);
-                ButtonsRect.VSplitLeft(120.0f, &ConnectBtn, &SwitchBtn);
-
-                if(Client()->DummyConnected(D))
+                Panel.HSplitTop(25.0f, &Row, &Panel);
+                if(!DummyAllowed)
                 {
-                        str_format(aLabel, sizeof(aLabel), Localize("Disconnect D%d"), D);
-                        if(DoButton_Menu(&m_aDummyButtons[D], aLabel, 0, &ConnectBtn))
-                        {
-                                Client()->DummyDisconnect(D, nullptr);
-                        }
+                        DoButton_Menu(&m_aDummyButtons[0], Localize("Connect Dummy"), 1, &Row);
+                        GameClient()->m_Tooltips.DoToolTip(&m_aDummyButtons[0], &Row, Localize("Dummy is not allowed on this server"));
                 }
-                else if(DummyAllowed && !Client()->AnyDummyConnecting())
+                else if(Client()->AnyDummyConnecting())
                 {
-                        str_format(aLabel, sizeof(aLabel), Localize("Connect D%d"), D);
-                        if(DoButton_Menu(&m_aDummyButtons[D], aLabel, 0, &ConnectBtn))
-                        {
-                                Client()->DummyConnect(D);
-                        }
+                        DoButton_Menu(&m_aDummyButtons[0], Localize("Connecting dummy…"), 1, &Row);
                 }
-                else
+                else if(Client()->AnyDummyConnected())
                 {
-                        str_format(aLabel, sizeof(aLabel), Localize("Connect D%d"), D);
-                        DoButton_Menu(&m_aDummyButtons[D], aLabel, 1, &ConnectBtn);
-                }
-
-                // Switch button (only if connected)
-                if(Client()->DummyConnected(D))
-                {
-                        SwitchBtn.VSplitLeft(5.0f, nullptr, &SwitchBtn);
-                        str_format(aLabel, sizeof(aLabel), IsActive ? Localize("Active") : Localize("Switch to D%d"), D);
-                        if(DoButton_Menu(&m_aDummySwitchButtons[D], aLabel, IsActive ? 1 : 0, &SwitchBtn))
+                        if(DoButton_Menu(&m_aDummyButtons[0], Localize("Disconnect All Dummies"), 0, &Row))
                         {
-                                if(!IsActive)
+                                for(int D = 1; D < MAX_DUMMIES; D++)
                                 {
-                                        g_Config.m_ClDummy = D;
+                                        if(Client()->DummyConnected(D))
+                                                Client()->DummyDisconnect(D, nullptr);
                                 }
                         }
                 }
-        }
-
-        MainView.HSplitTop(15.0f, nullptr, &MainView);
-
-        // Switch back to main player
-        if(g_Config.m_ClDummy != 0)
-        {
-                MainView.HSplitTop(25.0f, &Row, &MainView);
-                s_DummiesScrollRegion.AddRect(Row);
-                if(DoButton_Menu(&m_MainSwitchButton, Localize("Switch to Main Player"), 0, &Row))
+                else
                 {
-                        g_Config.m_ClDummy = 0;
+                        if(DoButton_Menu(&m_aDummyButtons[0], Localize("Connect Dummy 1"), 0, &Row))
+                        {
+                                Client()->DummyConnect(1);
+                        }
                 }
         }
 
-        MainView.HSplitTop(15.0f, nullptr, &MainView);
+        MainView.HSplitTop(PanelGap, nullptr, &MainView);
 
-        // === Movement Settings ===
+        // === Individual Dummies Panel ===
         {
-                CUIRect Label;
-                MainView.HSplitTop(25.0f, &Label, &MainView);
-                s_DummiesScrollRegion.AddRect(Label);
-                Ui()->DoLabel(&Label, Localize("Movement"), 16.0f, TEXTALIGN_ML);
-        }
-        MainView.HSplitTop(5.0f, nullptr, &MainView);
+                float SectionH = PanelPad + 25.0f + 5.0f + (MAX_DUMMIES - 1) * 25.0f + (MAX_DUMMIES - 2) * RowGap;
+                if(g_Config.m_ClDummy != 0)
+                        SectionH += RowGap + 25.0f; // Switch to Main Player
+                SectionH += PanelPad;
+                MainView.HSplitTop(SectionH, &PanelBg, &MainView);
+                PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
+                s_DummiesScrollRegion.AddRect(PanelBg);
+                PanelBg.Margin(PanelPad, &Panel);
 
-        MainView.HSplitTop(20.0f, &Row, &MainView);
-        s_DummiesScrollRegion.AddRect(Row);
-        if(DoButton_CheckBox(&g_Config.m_ClDummyCopyMoves, Localize("Copy moves"), g_Config.m_ClDummyCopyMoves, &Row))
-                g_Config.m_ClDummyCopyMoves ^= 1;
-        GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyCopyMoves, &Row, Localize("All dummies copy your movement (direction, jump, hook, aim, fire, weapon switches)"));
+                // Header
+                Panel.HSplitTop(25.0f, &Label, &Panel);
+                Ui()->DoLabel(&Label, Localize("Individual Dummies"), 16.0f, TEXTALIGN_ML);
+                Panel.HSplitTop(5.0f, nullptr, &Panel);
 
-        MainView.HSplitTop(20.0f, &Row, &MainView);
-        s_DummiesScrollRegion.AddRect(Row);
-        if(DoButton_CheckBox(&g_Config.m_ClDummyHammer, Localize("Dummy hammer"), g_Config.m_ClDummyHammer, &Row))
-                g_Config.m_ClDummyHammer ^= 1;
-        GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyHammer, &Row, Localize("All dummies will hammer towards you for hammerfly"));
-
-        MainView.HSplitTop(20.0f, &Row, &MainView);
-        s_DummiesScrollRegion.AddRect(Row);
-        if(DoButton_CheckBox(&g_Config.m_ClDummyRestoreWeapon, Localize("Restore weapon after hammer"), g_Config.m_ClDummyRestoreWeapon, &Row))
-                g_Config.m_ClDummyRestoreWeapon ^= 1;
-        GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyRestoreWeapon, &Row, Localize("Switch back to previous weapon after hammerfly ends"));
-
-        MainView.HSplitTop(20.0f, &Row, &MainView);
-        s_DummiesScrollRegion.AddRect(Row);
-        if(DoButton_CheckBox(&g_Config.m_ClPredictDummy, Localize("Predict dummy movement"), g_Config.m_ClPredictDummy, &Row))
-                g_Config.m_ClPredictDummy ^= 1;
-        GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClPredictDummy, &Row, Localize("Predict dummy positions locally for smoother rendering (similar to cl_predict)"));
-
-        MainView.HSplitTop(15.0f, nullptr, &MainView);
-
-        // === Dummy Control ===
-        {
-                CUIRect Label;
-                MainView.HSplitTop(25.0f, &Label, &MainView);
-                s_DummiesScrollRegion.AddRect(Label);
-                Ui()->DoLabel(&Label, Localize("Dummy Control"), 16.0f, TEXTALIGN_ML);
-        }
-        MainView.HSplitTop(5.0f, nullptr, &MainView);
-
-        MainView.HSplitTop(20.0f, &Row, &MainView);
-        s_DummiesScrollRegion.AddRect(Row);
-        if(DoButton_CheckBox(&g_Config.m_ClDummyControl, Localize("Dummy control"), g_Config.m_ClDummyControl, &Row))
-                g_Config.m_ClDummyControl ^= 1;
-        GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyControl, &Row, Localize("Control dummies independently (use jump/fire/hook buttons below)"));
-
-        if(g_Config.m_ClDummyControl)
-        {
-                MainView.HSplitTop(20.0f, &Row, &MainView);
-                s_DummiesScrollRegion.AddRect(Row);
-                if(DoButton_CheckBox(&g_Config.m_ClDummyJump, Localize("Dummy jump"), g_Config.m_ClDummyJump, &Row))
-                        g_Config.m_ClDummyJump ^= 1;
-                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyJump, &Row, Localize("All dummies will jump (requires Dummy control)"));
-
-                MainView.HSplitTop(20.0f, &Row, &MainView);
-                s_DummiesScrollRegion.AddRect(Row);
-                if(DoButton_CheckBox(&g_Config.m_ClDummyFire, Localize("Dummy fire"), g_Config.m_ClDummyFire, &Row))
-                        g_Config.m_ClDummyFire ^= 1;
-                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyFire, &Row, Localize("All dummies will fire their weapon (requires Dummy control)"));
-
-                MainView.HSplitTop(20.0f, &Row, &MainView);
-                s_DummiesScrollRegion.AddRect(Row);
-                if(DoButton_CheckBox(&g_Config.m_ClDummyHook, Localize("Dummy hook"), g_Config.m_ClDummyHook, &Row))
-                        g_Config.m_ClDummyHook ^= 1;
-                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyHook, &Row, Localize("All dummies will use hook (requires Dummy control)"));
-        }
-
-        MainView.HSplitTop(15.0f, nullptr, &MainView);
-
-        // === Switch Behavior ===
-        {
-                CUIRect Label;
-                MainView.HSplitTop(25.0f, &Label, &MainView);
-                s_DummiesScrollRegion.AddRect(Label);
-                Ui()->DoLabel(&Label, Localize("Switch Behavior"), 16.0f, TEXTALIGN_ML);
-        }
-        MainView.HSplitTop(5.0f, nullptr, &MainView);
-
-        // Reset on switch: 0=off, 1=reset dummy, 2=reset player
-        {
-                MainView.HSplitTop(20.0f, &Row, &MainView);
-                s_DummiesScrollRegion.AddRect(Row);
-                CUIRect LabelRect, ButtonRect;
-                Row.VSplitLeft(200.0f, &LabelRect, &ButtonRect);
-                Ui()->DoLabel(&LabelRect, Localize("Reset on switch"), 13.0f, TEXTALIGN_ML);
-                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyResetOnSwitch, &Row, Localize("What happens when you switch between player and dummy: Off = keep pressing keys, Dummy = dummy stops, Player = player stops"));
-
-                static int s_ResetSwitch = 0;
-                static const char *s_apResetNames[] = {"Off", "Dummy", "Player"};
-                static CButtonContainer s_ResetButton;
-                if(DoButton_MenuTab(&s_ResetButton, s_apResetNames[g_Config.m_ClDummyResetOnSwitch], 0, &ButtonRect, IGraphics::CORNER_ALL))
+                for(int D = 1; D < MAX_DUMMIES; D++)
                 {
-                        g_Config.m_ClDummyResetOnSwitch = (g_Config.m_ClDummyResetOnSwitch + 1) % 3;
+                        if(D > 1)
+                                Panel.HSplitTop(RowGap, nullptr, &Panel);
+                        Panel.HSplitTop(25.0f, &Row, &Panel);
+
+                        char aLabel[64];
+                        str_format(aLabel, sizeof(aLabel), Localize("Dummy %d"), D);
+
+                        // Label
+                        CUIRect LabelRect, ButtonsRect;
+                        Row.VSplitLeft(100.0f, &LabelRect, &ButtonsRect);
+                        bool IsActive = (g_Config.m_ClDummy == D);
+                        if(IsActive)
+                        {
+                                TextRender()->TextColor(0.4f, 1.0f, 0.4f, 1.0f);
+                                Ui()->DoLabel(&LabelRect, aLabel, 13.0f, TEXTALIGN_ML);
+                                TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
+                        }
+                        else
+                        {
+                                Ui()->DoLabel(&LabelRect, aLabel, 13.0f, TEXTALIGN_ML);
+                        }
+
+                        // Connect/Disconnect button
+                        CUIRect ConnectBtn, SwitchBtn;
+                        ButtonsRect.VSplitLeft(5.0f, nullptr, &ButtonsRect);
+                        ButtonsRect.VSplitLeft(120.0f, &ConnectBtn, &SwitchBtn);
+
+                        if(Client()->DummyConnected(D))
+                        {
+                                str_format(aLabel, sizeof(aLabel), Localize("Disconnect D%d"), D);
+                                if(DoButton_Menu(&m_aDummyButtons[D], aLabel, 0, &ConnectBtn))
+                                {
+                                        Client()->DummyDisconnect(D, nullptr);
+                                }
+                        }
+                        else if(DummyAllowed && !Client()->AnyDummyConnecting())
+                        {
+                                str_format(aLabel, sizeof(aLabel), Localize("Connect D%d"), D);
+                                if(DoButton_Menu(&m_aDummyButtons[D], aLabel, 0, &ConnectBtn))
+                                {
+                                        Client()->DummyConnect(D);
+                                }
+                        }
+                        else
+                        {
+                                str_format(aLabel, sizeof(aLabel), Localize("Connect D%d"), D);
+                                DoButton_Menu(&m_aDummyButtons[D], aLabel, 1, &ConnectBtn);
+                        }
+
+                        // Switch button (only if connected)
+                        if(Client()->DummyConnected(D))
+                        {
+                                SwitchBtn.VSplitLeft(5.0f, nullptr, &SwitchBtn);
+                                str_format(aLabel, sizeof(aLabel), IsActive ? Localize("Active") : Localize("Switch to D%d"), D);
+                                if(DoButton_Menu(&m_aDummySwitchButtons[D], aLabel, IsActive ? 1 : 0, &SwitchBtn))
+                                {
+                                        if(!IsActive)
+                                        {
+                                                g_Config.m_ClDummy = D;
+                                        }
+                                }
+                        }
+                }
+
+                // Switch back to main player
+                if(g_Config.m_ClDummy != 0)
+                {
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
+                        Panel.HSplitTop(25.0f, &Row, &Panel);
+                        if(DoButton_Menu(&m_MainSwitchButton, Localize("Switch to Main Player"), 0, &Row))
+                        {
+                                g_Config.m_ClDummy = 0;
+                        }
+                }
+        }
+
+        MainView.HSplitTop(PanelGap, nullptr, &MainView);
+
+        // === Movement Panel ===
+        {
+                const float SectionH = PanelPad + 25.0f + 5.0f + 4 * 20.0f + 3 * RowGap + PanelPad;
+                MainView.HSplitTop(SectionH, &PanelBg, &MainView);
+                PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
+                s_DummiesScrollRegion.AddRect(PanelBg);
+                PanelBg.Margin(PanelPad, &Panel);
+
+                // Header
+                Panel.HSplitTop(25.0f, &Label, &Panel);
+                Ui()->DoLabel(&Label, Localize("Movement"), 16.0f, TEXTALIGN_ML);
+                Panel.HSplitTop(5.0f, nullptr, &Panel);
+
+                // Copy moves
+                Panel.HSplitTop(20.0f, &Row, &Panel);
+                if(DoButton_CheckBox(&g_Config.m_ClDummyCopyMoves, Localize("Copy moves"), g_Config.m_ClDummyCopyMoves, &Row))
+                        g_Config.m_ClDummyCopyMoves ^= 1;
+                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyCopyMoves, &Row, Localize("All dummies copy your movement (direction, jump, hook, aim, fire, weapon switches)"));
+                Panel.HSplitTop(RowGap, nullptr, &Panel);
+
+                // Dummy hammer
+                Panel.HSplitTop(20.0f, &Row, &Panel);
+                if(DoButton_CheckBox(&g_Config.m_ClDummyHammer, Localize("Dummy hammer"), g_Config.m_ClDummyHammer, &Row))
+                        g_Config.m_ClDummyHammer ^= 1;
+                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyHammer, &Row, Localize("All dummies will hammer towards you for hammerfly"));
+                Panel.HSplitTop(RowGap, nullptr, &Panel);
+
+                // Restore weapon after hammer
+                Panel.HSplitTop(20.0f, &Row, &Panel);
+                if(DoButton_CheckBox(&g_Config.m_ClDummyRestoreWeapon, Localize("Restore weapon after hammer"), g_Config.m_ClDummyRestoreWeapon, &Row))
+                        g_Config.m_ClDummyRestoreWeapon ^= 1;
+                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyRestoreWeapon, &Row, Localize("Switch back to previous weapon after hammerfly ends"));
+                Panel.HSplitTop(RowGap, nullptr, &Panel);
+
+                // Predict dummy movement
+                Panel.HSplitTop(20.0f, &Row, &Panel);
+                if(DoButton_CheckBox(&g_Config.m_ClPredictDummy, Localize("Predict dummy movement"), g_Config.m_ClPredictDummy, &Row))
+                        g_Config.m_ClPredictDummy ^= 1;
+                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClPredictDummy, &Row, Localize("Predict dummy positions locally for smoother rendering (similar to cl_predict)"));
+        }
+
+        MainView.HSplitTop(PanelGap, nullptr, &MainView);
+
+        // === Dummy Control Panel ===
+        {
+                float SectionH = PanelPad + 25.0f + 5.0f + 20.0f;
+                if(g_Config.m_ClDummyControl)
+                        SectionH += RowGap + 3 * 20.0f + 2 * RowGap;
+                SectionH += PanelPad;
+                MainView.HSplitTop(SectionH, &PanelBg, &MainView);
+                PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
+                s_DummiesScrollRegion.AddRect(PanelBg);
+                PanelBg.Margin(PanelPad, &Panel);
+
+                // Header
+                Panel.HSplitTop(25.0f, &Label, &Panel);
+                Ui()->DoLabel(&Label, Localize("Dummy Control"), 16.0f, TEXTALIGN_ML);
+                Panel.HSplitTop(5.0f, nullptr, &Panel);
+
+                // Dummy control
+                Panel.HSplitTop(20.0f, &Row, &Panel);
+                if(DoButton_CheckBox(&g_Config.m_ClDummyControl, Localize("Dummy control"), g_Config.m_ClDummyControl, &Row))
+                        g_Config.m_ClDummyControl ^= 1;
+                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyControl, &Row, Localize("Control dummies independently (use jump/fire/hook buttons below)"));
+
+                if(g_Config.m_ClDummyControl)
+                {
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
+
+                        // Dummy jump
+                        Panel.HSplitTop(20.0f, &Row, &Panel);
+                        if(DoButton_CheckBox(&g_Config.m_ClDummyJump, Localize("Dummy jump"), g_Config.m_ClDummyJump, &Row))
+                                g_Config.m_ClDummyJump ^= 1;
+                        GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyJump, &Row, Localize("All dummies will jump (requires Dummy control)"));
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
+
+                        // Dummy fire
+                        Panel.HSplitTop(20.0f, &Row, &Panel);
+                        if(DoButton_CheckBox(&g_Config.m_ClDummyFire, Localize("Dummy fire"), g_Config.m_ClDummyFire, &Row))
+                                g_Config.m_ClDummyFire ^= 1;
+                        GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyFire, &Row, Localize("All dummies will fire their weapon (requires Dummy control)"));
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
+
+                        // Dummy hook
+                        Panel.HSplitTop(20.0f, &Row, &Panel);
+                        if(DoButton_CheckBox(&g_Config.m_ClDummyHook, Localize("Dummy hook"), g_Config.m_ClDummyHook, &Row))
+                                g_Config.m_ClDummyHook ^= 1;
+                        GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyHook, &Row, Localize("All dummies will use hook (requires Dummy control)"));
+                }
+        }
+
+        MainView.HSplitTop(PanelGap, nullptr, &MainView);
+
+        // === Switch Behavior Panel ===
+        {
+                const float SectionH = PanelPad + 25.0f + 5.0f + 20.0f + PanelPad;
+                MainView.HSplitTop(SectionH, &PanelBg, &MainView);
+                PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
+                s_DummiesScrollRegion.AddRect(PanelBg);
+                PanelBg.Margin(PanelPad, &Panel);
+
+                // Header
+                Panel.HSplitTop(25.0f, &Label, &Panel);
+                Ui()->DoLabel(&Label, Localize("Switch Behavior"), 16.0f, TEXTALIGN_ML);
+                Panel.HSplitTop(5.0f, nullptr, &Panel);
+
+                // Reset on switch: 0=off, 1=reset dummy, 2=reset player
+                Panel.HSplitTop(20.0f, &Row, &Panel);
+                {
+                        CUIRect LabelRect, ButtonRect;
+                        Row.VSplitLeft(200.0f, &LabelRect, &ButtonRect);
+                        Ui()->DoLabel(&LabelRect, Localize("Reset on switch"), 13.0f, TEXTALIGN_ML);
+                        GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyResetOnSwitch, &Row, Localize("What happens when you switch between player and dummy: Off = keep pressing keys, Dummy = dummy stops, Player = player stops"));
+
+                        static int s_ResetSwitch = 0;
+                        static const char *s_apResetNames[] = {"Off", "Dummy", "Player"};
+                        static CButtonContainer s_ResetButton;
+                        if(DoButton_MenuTab(&s_ResetButton, s_apResetNames[g_Config.m_ClDummyResetOnSwitch], 0, &ButtonRect, IGraphics::CORNER_ALL))
+                        {
+                                g_Config.m_ClDummyResetOnSwitch = (g_Config.m_ClDummyResetOnSwitch + 1) % 3;
+                        }
                 }
         }
 
