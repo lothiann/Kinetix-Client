@@ -29,6 +29,7 @@
 #include <deque>
 #include <memory>
 #include <mutex>
+#include <vector>
 
 class CDemoEdit;
 class IDemoRecorder;
@@ -194,8 +195,8 @@ class CClient : public IClient, public CDemoPlayer::IListener
         bool m_aDummyDeactivateOnReconnect[MAX_DUMMIES] = {};
 
         // graphs
-        CGraph m_aInputtimeMarginGraphs[MAX_DUMMIES];
-        CGraph m_aGametimeMarginGraphs[MAX_DUMMIES];
+        std::vector<CGraph> m_aInputtimeMarginGraphs;
+        std::vector<CGraph> m_aGametimeMarginGraphs;
         CGraph m_FpsGraph;
 
         // the game snapshots are modifiable by the game

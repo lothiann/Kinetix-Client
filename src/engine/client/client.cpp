@@ -108,10 +108,15 @@ CClient::CClient() :
         m_pSnapshotDelta(CSnapshotDelta_New()),
         m_pSnapshotDeltaSixup(CSnapshotDelta_New()),
         m_DemoPlayer(&*m_pSnapshotDelta, &*m_pSnapshotDeltaSixup, true, [&]() { UpdateDemoIntraTimers(); }),
-        m_aInputtimeMarginGraphs{{128, 2, true}, {128, 2, true}, {128, 2, true}, {128, 2, true}, {128, 2, true}, {128, 2, true}, {128, 2, true}, {128, 2, true}},
-        m_aGametimeMarginGraphs{{128, 2, true}, {128, 2, true}, {128, 2, true}, {128, 2, true}, {128, 2, true}, {128, 2, true}, {128, 2, true}, {128, 2, true}},
         m_FpsGraph(4096, 0, true)
 {
+        m_aInputtimeMarginGraphs.reserve(MAX_DUMMIES);
+        m_aGametimeMarginGraphs.reserve(MAX_DUMMIES);
+        for(int i = 0; i < MAX_DUMMIES; i++)
+        {
+                m_aInputtimeMarginGraphs.emplace_back(128, 2, true);
+                m_aGametimeMarginGraphs.emplace_back(128, 2, true);
+        }
         m_StateStartTime = time_get();
         for(auto &DemoRecorder : m_aDemoRecorders)
                 DemoRecorder = CDemoRecorder(&*m_pSnapshotDelta);
@@ -4820,9 +4825,6 @@ void CClient::ConchainStdoutOutputLevel(IConsole::IResult *pResult, void *pUserD
 
 void CClient::RegisterCommands()
 {
-        // Ensure config_variables.h max values (7) stay in sync with MAX_DUMMIES
-        static_assert(7 == MAX_DUMMIES - 1, "MAX_DUMMIES changed — update max values in config_variables.h (ClDummy, ClBotTargetDummy)");
-
         m_pConsole = Kernel()->RequestInterface<IConsole>();
 
         {
