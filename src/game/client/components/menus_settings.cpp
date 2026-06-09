@@ -3728,8 +3728,8 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                         {
                                 static CLineInputBuffered<32> s_AvoidFreezeRadiusInput;
                                 CUIRect Lab, Field;
-                                Right.VSplitLeft(75.0f, &Lab, &Field);
-                                Ui()->DoLabel(&Lab, Localize("Freeze rad"), 12.0f, TEXTALIGN_ML);
+                                Right.VSplitLeft(90.0f, &Lab, &Field);
+                                Ui()->DoLabel(&Lab, Localize("Avoid freeze"), 12.0f, TEXTALIGN_ML);
                                 if(!s_AvoidFreezeRadiusInput.IsActive()) { char b[16]; str_format(b,16,"%d",BN.m_AvoidFreezeRadius); s_AvoidFreezeRadiusInput.Set(b); }
                                 if(Ui()->DoEditBox(&s_AvoidFreezeRadiusInput, &Field, 12.0f)) { int v=atoi(s_AvoidFreezeRadiusInput.GetString()); if(v>=1&&v<=10) BN.m_AvoidFreezeRadius=v; }
                         }
