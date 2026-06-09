@@ -3480,9 +3480,10 @@ void CMenus::RenderSettingsDummies(CUIRect MainView)
                                                 if(D != 0 && !Client()->DummyConnected(D))
                                                         continue;
 
+                                                std::string ProcessedCmd = CBotNet::ReplacePlaceholders(pCmd, D, GameClient());
                                                 int OldDummy = g_Config.m_ClDummy;
                                                 g_Config.m_ClDummy = D;
-                                                Console()->ExecuteLine(pCmd, -1);
+                                                Console()->ExecuteLine(ProcessedCmd.c_str(), IConsole::CLIENT_ID_UNSPECIFIED);
                                                 g_Config.m_ClDummy = OldDummy;
                                         }
                                 }

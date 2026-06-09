@@ -2555,7 +2555,7 @@ void CBotNet::ConPfHook(IConsole::IResult *pResult, void *pUserData)
         }
 }
 
-static std::string ReplacePlaceholders(const std::string &Cmd, int DummyIndex, CGameClient *pGame)
+std::string CBotNet::ReplacePlaceholders(const std::string &Cmd, int DummyIndex, CGameClient *pGame)
 {
         std::string Result = Cmd;
 

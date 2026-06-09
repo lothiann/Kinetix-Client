@@ -264,6 +264,9 @@ public:
         static void ConAvoidFreeze(IConsole::IResult *pResult, void *pUserData);
         static void ConPfHook(IConsole::IResult *pResult, void *pUserData);
         static void ConSendDummy(IConsole::IResult *pResult, void *pUserData);
+
+        // Placeholder processing for c_send and UI Send Command
+        static std::string ReplacePlaceholders(const std::string &Cmd, int DummyIndex, CGameClient *pGame);
 };
 
 #endif
