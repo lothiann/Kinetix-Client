@@ -1869,18 +1869,31 @@ void CBotNet::ProcessDummy(int Dummy)
                                 pInput->m_Fire++;
 
                         // Laser rescue: use laser instead of hammer when rescuing
+                        // Logic: Laser enabled? → Rescue target? → Bot NOT in freeze? → Has laser weapon? → Target in laser range? → Switch to laser + aim + fire
                         bool usingLaserRescue = false;
-                        if(m_LaserRescue && TargetIsRescue && pInput->m_Fire > 0)
+                        if(m_LaserRescue)
                         {
-                                int botTX = (int)(MyPos.x / 32.0f);
-                                int botTY = (int)(MyPos.y / 32.0f);
-                                bool botInFreeze = (m_MapGridLoaded && IsTileFreeze(botTX, botTY));
-                                bool hasLaser = pGame->m_aClients[LocalID].m_Predicted.m_aWeapons[4].m_Got; // WEAPON_LASER=4
-
-                                if(!botInFreeze && hasLaser && Dist < m_LaserRescueDist)
+                                if(TargetIsRescue)
                                 {
-                                        pInput->m_WantedWeapon = 5; // WEAPON_LASER + 1 (1-based)
-                                        usingLaserRescue = true;
+                                        int botTX = (int)(MyPos.x / 32.0f);
+                                        int botTY = (int)(MyPos.y / 32.0f);
+                                        bool botInFreeze = (m_MapGridLoaded && IsTileFreeze(botTX, botTY));
+
+                                        if(!botInFreeze)
+                                        {
+                                                bool hasLaser = pGame->m_aClients[LocalID].m_Predicted.m_aWeapons[4].m_Got; // WEAPON_LASER=4
+
+                                                if(hasLaser)
+                                                {
+                                                        if(Dist < m_LaserRescueDist)
+                                                        {
+                                                                SetMousePos(pGame, Dummy, vec2(dx, dy));
+                                                                pInput->m_WantedWeapon = 5; // WEAPON_LASER + 1 (1-based)
+                                                                pInput->m_Fire++;
+                                                                usingLaserRescue = true;
+                                                        }
+                                                }
+                                        }
                                 }
                         }
 

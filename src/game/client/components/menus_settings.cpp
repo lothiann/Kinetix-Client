@@ -3778,8 +3778,8 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                         {
                                 static CLineInputBuffered<32> s_LaserRescueDistInput;
                                 CUIRect Lab, Field;
-                                Right.VSplitLeft(85.0f, &Lab, &Field);
-                                Ui()->DoLabel(&Lab, Localize("Laser dist"), 12.0f, TEXTALIGN_ML);
+                                Right.VSplitLeft(100.0f, &Lab, &Field);
+                                Ui()->DoLabel(&Lab, Localize("Laser unfreeze"), 12.0f, TEXTALIGN_ML);
                                 if(!s_LaserRescueDistInput.IsActive()) { char b[16]; str_format(b,16,"%.0f",BN.m_LaserRescueDist); s_LaserRescueDistInput.Set(b); }
                                 if(Ui()->DoEditBox(&s_LaserRescueDistInput, &Field, 12.0f)) BN.m_LaserRescueDist = (float)atof(s_LaserRescueDistInput.GetString());
                         }
