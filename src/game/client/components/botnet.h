@@ -158,6 +158,8 @@ public:
         bool m_LaserRescue;
         float m_LaserRescueDist;
 
+        int m_AvoidFreezeRadius;
+
         int m_HookDelay;
         int m_ClientDelay;
         bool m_StandOnXOnly;

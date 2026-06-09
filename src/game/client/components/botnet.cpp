@@ -73,6 +73,7 @@ CBotNet::CBotNet()
         m_MainStandDist = 128.0f;
         m_LaserRescue = false;
         m_LaserRescueDist = 800.0f;
+        m_AvoidFreezeRadius = 2;
         m_HookDelay = 1000;
         m_ClientDelay = 0;
         for(int i = 0; i < 128; i++)
@@ -802,7 +803,7 @@ void CBotNet::ComputeFlowForTile(int r, int c, CBotNetDummy &State)
 vec2 CBotNet::ComputeFreezeRepel(int botTX, int botTY)
 {
         vec2 repel = vec2(0, 0);
-        const int scanRadius = 2;
+        const int scanRadius = m_AvoidFreezeRadius;
 
         for(int i = 0; i < m_PfRays; i++)
         {
