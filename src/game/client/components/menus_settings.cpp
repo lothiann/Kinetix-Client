@@ -3720,7 +3720,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                 static CLineInputBuffered<32> s_MainStandDistInput;
                                 CUIRect Lab, Field;
                                 Row.VSplitMid(&Left, &Right, ColGap);
-                                Left.VSplitLeft(95.0f, &Lab, &Field);
+                                Left.VSplitLeft(75.0f, &Lab, &Field);
                                 Ui()->DoLabel(&Lab, Localize("Main stand"), 12.0f, TEXTALIGN_ML);
                                 if(!s_MainStandDistInput.IsActive()) { char b[16]; str_format(b,16,"%.0f",BN.m_MainStandDist); s_MainStandDistInput.Set(b); }
                                 if(Ui()->DoEditBox(&s_MainStandDistInput, &Field, 12.0f)) BN.m_MainStandDist = (float)atof(s_MainStandDistInput.GetString());
