@@ -1036,7 +1036,12 @@ void CBotNet::ProcessDummy(int Dummy)
         {
                 // Only keep kill-on-freeze check
                 if(m_KillOnFreeze && pGame->m_aClients[LocalID].m_FreezeEnd > 0)
+                {
+                        int OldDummy = g_Config.m_ClDummy;
+                        g_Config.m_ClDummy = Dummy;
                         Console()->ExecuteLine("kill", -1, -1);
+                        g_Config.m_ClDummy = OldDummy;
+                }
                 pInput->m_Direction = 0;
                 pInput->m_Jump = 0;
                 pInput->m_Hook = 0;
@@ -1314,7 +1319,10 @@ void CBotNet::ProcessDummy(int Dummy)
         // ===== KILL ON FREEZE =====
         if(m_KillOnFreeze && pGame->m_aClients[LocalID].m_FreezeEnd > 0)
         {
+                int OldDummy = g_Config.m_ClDummy;
+                g_Config.m_ClDummy = Dummy;
                 Console()->ExecuteLine("kill", -1, -1);
+                g_Config.m_ClDummy = OldDummy;
         }
 
         // ===== COPY MOVES =====

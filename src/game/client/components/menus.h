@@ -740,6 +740,11 @@ public:
         CButtonContainer m_aDummySwitchButtons[MAX_DUMMIES];
         CButtonContainer m_MainSwitchButton;
 
+        // Dummies tab: Send command
+        bool m_aDummySendCmdEnabled[MAX_DUMMIES] = {};
+        CLineInputBuffered<256> m_SendCommandInput;
+        CButtonContainer m_SendCommandButton;
+
         const char *GetCurrentDemoFolder() const { return m_aCurrentDemoFolder; }
 
         // Ghost

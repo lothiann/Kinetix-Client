@@ -3277,6 +3277,14 @@ void CMenus::RenderSettingsDummies(CUIRect MainView)
                                         }
                                 }
                         }
+
+                        // Send command checkbox (only if connected)
+                        if(Client()->DummyConnected(D))
+                        {
+                                SwitchBtn.VSplitLeft(5.0f, nullptr, &SwitchBtn);
+                                if(DoButton_CheckBox(&m_aDummySendCmdEnabled[D], Localize("Send"), m_aDummySendCmdEnabled[D], &SwitchBtn))
+                                        m_aDummySendCmdEnabled[D] ^= 1;
+                        }
                 }
 
                 // Switch back to main player
@@ -3414,6 +3422,80 @@ void CMenus::RenderSettingsDummies(CUIRect MainView)
                         {
                                 g_Config.m_ClDummyResetOnSwitch = (g_Config.m_ClDummyResetOnSwitch + 1) % 3;
                         }
+                }
+        }
+
+        MainView.HSplitTop(PanelGap, nullptr, &MainView);
+
+        // === Send Command Panel ===
+        {
+                // Check if any dummy has Send enabled
+                bool AnySendEnabled = false;
+                for(int D = 0; D < MAX_DUMMIES; D++)
+                {
+                        if(m_aDummySendCmdEnabled[D])
+                        {
+                                AnySendEnabled = true;
+                                break;
+                        }
+                }
+
+                float SectionH = PanelPad + 25.0f + 5.0f;
+                if(AnySendEnabled)
+                        SectionH += 25.0f; // input + button row
+                else
+                        SectionH += 20.0f; // hint text
+                SectionH += PanelPad;
+                MainView.HSplitTop(SectionH, &PanelBg, &MainView);
+                PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
+                s_DummiesScrollRegion.AddRect(PanelBg);
+                PanelBg.Margin(PanelPad, &Panel);
+
+                // Header
+                Panel.HSplitTop(25.0f, &Label, &Panel);
+                Ui()->DoLabel(&Label, Localize("Send Command"), 16.0f, TEXTALIGN_ML);
+                Panel.HSplitTop(5.0f, nullptr, &Panel);
+
+                if(AnySendEnabled)
+                {
+                        // Row: input field + Send button
+                        Panel.HSplitTop(25.0f, &Row, &Panel);
+                        CUIRect InputRect, SendBtnRect;
+                        Row.VSplitRight(80.0f, &InputRect, &SendBtnRect);
+                        SendBtnRect.VSplitLeft(5.0f, nullptr, &SendBtnRect);
+
+                        // Command input field
+                        Ui()->DoEditBox(&m_SendCommandInput, &InputRect, 13.0f);
+
+                        // Send button
+                        if(DoButton_Menu(&m_SendCommandButton, Localize("Send"), 0, &SendBtnRect))
+                        {
+                                const char *pCmd = m_SendCommandInput.GetString();
+                                if(pCmd[0])
+                                {
+                                        for(int D = 0; D < MAX_DUMMIES; D++)
+                                        {
+                                                if(!m_aDummySendCmdEnabled[D])
+                                                        continue;
+                                                if(D != 0 && !Client()->DummyConnected(D))
+                                                        continue;
+
+                                                int OldDummy = g_Config.m_ClDummy;
+                                                g_Config.m_ClDummy = D;
+                                                Console()->ExecuteLine(pCmd, -1);
+                                                g_Config.m_ClDummy = OldDummy;
+                                        }
+                                }
+                        }
+                }
+                else
+                {
+                        // Hint when no dummies selected
+                        CUIRect HintRect;
+                        Panel.HSplitTop(20.0f, &HintRect, &Panel);
+                        TextRender()->TextColor(0.5f, 0.5f, 0.5f, 1.0f);
+                        Ui()->DoLabel(&HintRect, Localize("Select dummies with \"Send\" checkbox above"), 12.0f, TEXTALIGN_ML);
+                        TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
                 }
         }
 
