@@ -4386,8 +4386,8 @@ void CMenus::RenderSettingsBotSettings(CUIRect MainView)
 
         // === IRC Panel ===
         {
-                // Header(25) + gap(5) + enabled(20) + gap(2) + reveal(20) + gap(2) + nameplate(20)
-                const float SectionH = PanelPad + 25.0f + 5.0f + 3 * 20.0f + 2 * RowGap + PanelPad;
+                // Header(25) + gap(5) + enabled(20) + gap(2) + reveal(20) + gap(2) + nameplate(20) + gap(2) + credits(15)
+                const float SectionH = PanelPad + 25.0f + 5.0f + 3 * 20.0f + 2 * RowGap + RowGap + 15.0f + PanelPad;
                 MainView.HSplitTop(SectionH, &PanelBg, &MainView);
                 PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
                 s_BotSettingsScrollRegion.AddRect(PanelBg);
@@ -4409,14 +4409,22 @@ void CMenus::RenderSettingsBotSettings(CUIRect MainView)
                 Panel.HSplitTop(20.0f, &Row, &Panel);
                 if(DoButton_CheckBox(&g_Config.m_ClIrcRevealJoin, Localize("Reveal join"), g_Config.m_ClIrcRevealJoin, &Row))
                         g_Config.m_ClIrcRevealJoin ^= 1;
-                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClIrcRevealJoin, &Row, Localize("Send handshake on join to reveal yourself as an IRC user (DMC)"));
+                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClIrcRevealJoin, &Row, Localize("Send handshake on join to reveal yourself as an IRC user (DMC/CFF)"));
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
 
                 // Nameplate Tag
                 Panel.HSplitTop(20.0f, &Row, &Panel);
                 if(DoButton_CheckBox(&g_Config.m_ClIrcNameplateTag, Localize("Nameplate tag"), g_Config.m_ClIrcNameplateTag, &Row))
                         g_Config.m_ClIrcNameplateTag ^= 1;
-                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClIrcNameplateTag, &Row, Localize("Show client tag (e.g. [DMC]) in player nameplates if IRC user detected"));
+                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClIrcNameplateTag, &Row, Localize("Show client tag (e.g. [DMC], [CFF]) in player nameplates if IRC user detected"));
+
+                // Credits
+                Panel.HSplitTop(RowGap, nullptr, &Panel);
+                CUIRect CreditsRow;
+                Panel.HSplitTop(15.0f, &CreditsRow, &Panel);
+                TextRender()->TextColor(0.5f, 0.5f, 0.5f, 1.0f);
+                Ui()->DoLabel(&CreditsRow, "Credits: scar17off", 11.0f, TEXTALIGN_ML);
+                TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
         }
 
         MainView.HSplitTop(PanelGap, nullptr, &MainView);
