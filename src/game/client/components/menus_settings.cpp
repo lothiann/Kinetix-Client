@@ -3640,7 +3640,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
 
                 // === Distances Panel ===
                 {
-                        const float SectionH = PanelPad + 25.0f + 5.0f + 4*LineSize + 3*RowGap + PanelPad;
+                        const float SectionH = PanelPad + 25.0f + 5.0f + 5*LineSize + 4*RowGap + PanelPad;
                         MainView.HSplitTop(SectionH, &PanelBg, &MainView);
                         PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
                         s_FunctionsScrollRegion.AddRect(PanelBg);
@@ -3713,7 +3713,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                 if(Ui()->DoEditBox(&s_HookDelayInput, &Field, 12.0f)) BN.m_HookDelay = atoi(s_HookDelayInput.GetString());
                         }
 
-                        // Main stand dist + Freeze rad
+                        // Main stand dist + Avoid freeze
                         Panel.HSplitTop(RowGap, nullptr, &Panel);
                         Panel.HSplitTop(LineSize, &Row, &Panel);
                         Row.VSplitMid(&Left, &Right, ColGap);
@@ -3733,13 +3733,26 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                 if(!s_AvoidFreezeRadiusInput.IsActive()) { char b[16]; str_format(b,16,"%d",BN.m_AvoidFreezeRadius); s_AvoidFreezeRadiusInput.Set(b); }
                                 if(Ui()->DoEditBox(&s_AvoidFreezeRadiusInput, &Field, 12.0f)) { int v=atoi(s_AvoidFreezeRadiusInput.GetString()); if(v>=1&&v<=10) BN.m_AvoidFreezeRadius=v; }
                         }
+
+                        // Laser unfreeze (centered)
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
+                        Panel.HSplitTop(LineSize, &Row, &Panel);
+                        Row.VSplitMid(&Left, &Right, ColGap);
+                        {
+                                static CLineInputBuffered<32> s_LaserRescueDistInput;
+                                CUIRect Lab, Field;
+                                Left.VSplitLeft(75.0f, &Lab, &Field);
+                                Ui()->DoLabel(&Lab, Localize("Laser unfreeze"), 12.0f, TEXTALIGN_ML);
+                                if(!s_LaserRescueDistInput.IsActive()) { char b[16]; str_format(b,16,"%.0f",BN.m_LaserRescueDist); s_LaserRescueDistInput.Set(b); }
+                                if(Ui()->DoEditBox(&s_LaserRescueDistInput, &Field, 12.0f)) BN.m_LaserRescueDist = (float)atof(s_LaserRescueDistInput.GetString());
+                        }
                 }
 
                 MainView.HSplitTop(PanelGap, nullptr, &MainView);
 
                 // === Rescue Panel ===
                 {
-                        const float SectionH = PanelPad + 25.0f + 5.0f + 4*LineSize + 3*RowGap + PanelPad;
+                        const float SectionH = PanelPad + 25.0f + 5.0f + 4*LineSize + 4*RowGap + PanelPad;
                         MainView.HSplitTop(SectionH, &PanelBg, &MainView);
                         PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
                         s_FunctionsScrollRegion.AddRect(PanelBg);
@@ -3768,21 +3781,12 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                         if(DoButton_CheckBox(&BN.m_SmartRescue, Localize("Smart rescue"), BN.m_SmartRescue, &Right))
                         { BN.m_SmartRescue ^= 1; if(!BN.m_SmartRescue) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
 
-                        // Laser rescue + Laser dist
+                        // Laser rescue
                         Panel.HSplitTop(LineSize, &Row, &Panel);
                         Panel.HSplitTop(RowGap, nullptr, &Panel);
-                        Row.VSplitMid(&Left, &Right, ColGap);
-                        if(DoButton_CheckBox(&BN.m_LaserRescue, Localize("Laser"), BN.m_LaserRescue, &Left))
+                        if(DoButton_CheckBox(&BN.m_LaserRescue, Localize("Laser"), BN.m_LaserRescue, &Row))
                                 BN.m_LaserRescue ^= 1;
-                        GameClient()->m_Tooltips.DoToolTip(&BN.m_LaserRescue, &Left, Localize("Use laser instead of hammer for rescue (longer range, requires laser weapon)"));
-                        {
-                                static CLineInputBuffered<32> s_LaserRescueDistInput;
-                                CUIRect Lab, Field;
-                                Right.VSplitLeft(100.0f, &Lab, &Field);
-                                Ui()->DoLabel(&Lab, Localize("Laser unfreeze"), 12.0f, TEXTALIGN_ML);
-                                if(!s_LaserRescueDistInput.IsActive()) { char b[16]; str_format(b,16,"%.0f",BN.m_LaserRescueDist); s_LaserRescueDistInput.Set(b); }
-                                if(Ui()->DoEditBox(&s_LaserRescueDistInput, &Field, 12.0f)) BN.m_LaserRescueDist = (float)atof(s_LaserRescueDistInput.GetString());
-                        }
+                        GameClient()->m_Tooltips.DoToolTip(&BN.m_LaserRescue, &Row, Localize("Use laser instead of hammer for rescue (longer range, requires laser weapon)"));
 
                         // Rescue dist + Rescue IDs
                         Panel.HSplitTop(LineSize, &Row, &Panel);
