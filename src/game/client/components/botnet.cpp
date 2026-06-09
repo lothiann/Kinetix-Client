@@ -1869,21 +1869,24 @@ void CBotNet::ProcessDummy(int Dummy)
                                 pInput->m_Fire++;
 
                         // Laser rescue: use laser instead of hammer when rescuing
-                        // Logic: Laser enabled? → Rescue target? → Bot NOT in freeze? → Has laser weapon? → Line of sight (wall + player)? → Target in laser range? → Switch to laser + aim + fire
+                        // Logic: Laser enabled? → Rescue target? → Target NOT in freeze tile? → Has laser weapon? → Line of sight (wall + player)? → Target in laser range? → Switch to laser + aim + fire
                         bool usingLaserRescue = false;
                         if(m_LaserRescue)
                         {
                                 if(TargetIsRescue)
                                 {
-                                        bool targetFrozen = (pGame->m_aClients[TargetID].m_FreezeEnd != 0);
+                                        vec2 TPos((float)TChar.m_X, (float)TChar.m_Y);
+                                        int targetMapIdx = pGame->Collision()->GetPureMapIndex(TPos);
+                                        int targetTile = pGame->Collision()->GetTileIndex(targetMapIdx);
+                                        int targetFrontTile = pGame->Collision()->GetFrontTileIndex(targetMapIdx);
+                                        bool targetInFreezeTile = (targetTile == TILE_FREEZE || targetFrontTile == TILE_FREEZE);
 
-                                        if(!targetFrozen)
+                                        if(!targetInFreezeTile)
                                         {
                                                 bool hasLaser = pGame->m_aClients[LocalID].m_Predicted.m_aWeapons[4].m_Got; // WEAPON_LASER=4
 
                                                 if(hasLaser)
                                                 {
-                                                        vec2 TPos((float)TChar.m_X, (float)TChar.m_Y);
                                                         bool blocked = (pGame->Collision()->IntersectLine(MyPos, TPos, NULL, NULL) != 0);
                                                         if(!blocked)
                                                         {
