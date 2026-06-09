@@ -3238,9 +3238,9 @@ void CMenus::RenderSettingsDummies(CUIRect MainView)
                         }
 
                         // Connect/Disconnect button
-                        CUIRect ConnectBtn, SwitchBtn;
+                        CUIRect ConnectBtn, SwitchBtn, SendCheckRect;
                         ButtonsRect.VSplitLeft(5.0f, nullptr, &ButtonsRect);
-                        ButtonsRect.VSplitLeft(120.0f, &ConnectBtn, &SwitchBtn);
+                        ButtonsRect.VSplitLeft(110.0f, &ConnectBtn, &SwitchBtn);
 
                         if(Client()->DummyConnected(D))
                         {
@@ -3264,11 +3264,12 @@ void CMenus::RenderSettingsDummies(CUIRect MainView)
                                 DoButton_Menu(&m_aDummyButtons[D], aLabel, 1, &ConnectBtn);
                         }
 
-                        // Switch button (only if connected)
+                        // Switch button + Send checkbox (only if connected)
                         if(Client()->DummyConnected(D))
                         {
                                 SwitchBtn.VSplitLeft(5.0f, nullptr, &SwitchBtn);
-                                str_format(aLabel, sizeof(aLabel), IsActive ? Localize("Active") : Localize("Switch to D%d"), D);
+                                SwitchBtn.VSplitLeft(80.0f, &SwitchBtn, &SendCheckRect);
+                                str_format(aLabel, sizeof(aLabel), IsActive ? Localize("Active") : Localize("Switch"), D);
                                 if(DoButton_Menu(&m_aDummySwitchButtons[D], aLabel, IsActive ? 1 : 0, &SwitchBtn))
                                 {
                                         if(!IsActive)
@@ -3276,13 +3277,10 @@ void CMenus::RenderSettingsDummies(CUIRect MainView)
                                                 g_Config.m_ClDummy = D;
                                         }
                                 }
-                        }
 
-                        // Send command checkbox (only if connected)
-                        if(Client()->DummyConnected(D))
-                        {
-                                SwitchBtn.VSplitLeft(5.0f, nullptr, &SwitchBtn);
-                                if(DoButton_CheckBox(&m_aDummySendCmdEnabled[D], Localize("Send"), m_aDummySendCmdEnabled[D], &SwitchBtn))
+                                // Send checkbox in remaining space
+                                SendCheckRect.VSplitLeft(5.0f, nullptr, &SendCheckRect);
+                                if(DoButton_CheckBox(&m_aDummySendCmdEnabled[D], Localize("Send"), m_aDummySendCmdEnabled[D], &SendCheckRect))
                                         m_aDummySendCmdEnabled[D] ^= 1;
                         }
                 }
@@ -3713,6 +3711,68 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                 Ui()->DoLabel(&Lab, Localize("Hook delay"), 12.0f, TEXTALIGN_ML);
                                 if(!s_HookDelayInput.IsActive()) { char b[16]; str_format(b,16,"%d",BN.m_HookDelay); s_HookDelayInput.Set(b); }
                                 if(Ui()->DoEditBox(&s_HookDelayInput, &Field, 12.0f)) BN.m_HookDelay = atoi(s_HookDelayInput.GetString());
+                        }
+                }
+
+                MainView.HSplitTop(PanelGap, nullptr, &MainView);
+
+                // === Rescue Panel ===
+                {
+                        const float SectionH = PanelPad + 25.0f + 5.0f + 3*LineSize + 2*RowGap + PanelPad;
+                        MainView.HSplitTop(SectionH, &PanelBg, &MainView);
+                        PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
+                        s_FunctionsScrollRegion.AddRect(PanelBg);
+                        PanelBg.Margin(PanelPad, &Panel);
+
+                        // Header
+                        Panel.HSplitTop(25.0f, &Label, &Panel);
+                        Ui()->DoLabel(&Label, Localize("Rescue"), 16.0f, TEXTALIGN_ML);
+                        Panel.HSplitTop(5.0f, nullptr, &Panel);
+
+                        // Rescue frozen + Rescue all
+                        Panel.HSplitTop(LineSize, &Row, &Panel);
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
+                        Row.VSplitMid(&Left, &Right, ColGap);
+                        if(DoButton_CheckBox(&BN.m_RescueFrozen, Localize("Rescue frozen"), BN.m_RescueFrozen, &Left))
+                        { BN.m_RescueFrozen ^= 1; if(!BN.m_RescueFrozen) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
+                        if(DoButton_CheckBox(&BN.m_RescueAll, Localize("Rescue all"), BN.m_RescueAll, &Right))
+                                BN.m_RescueAll ^= 1;
+
+                        // Smart detect + Smart rescue
+                        Panel.HSplitTop(LineSize, &Row, &Panel);
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
+                        Row.VSplitMid(&Left, &Right, ColGap);
+                        if(DoButton_CheckBox(&BN.m_SmartDetect, Localize("Smart detect"), BN.m_SmartDetect, &Left))
+                        { BN.m_SmartDetect ^= 1; if(!BN.m_SmartDetect) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
+                        if(DoButton_CheckBox(&BN.m_SmartRescue, Localize("Smart rescue"), BN.m_SmartRescue, &Right))
+                        { BN.m_SmartRescue ^= 1; if(!BN.m_SmartRescue) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
+
+                        // Rescue dist + Rescue IDs
+                        Panel.HSplitTop(LineSize, &Row, &Panel);
+                        Row.VSplitMid(&Left, &Right, ColGap);
+                        {
+                                static CLineInputBuffered<32> s_RescueRadInput;
+                                CUIRect Lab, Field;
+                                Left.VSplitLeft(85.0f, &Lab, &Field);
+                                Ui()->DoLabel(&Lab, Localize("Rescue dist"), 12.0f, TEXTALIGN_ML);
+                                if(!s_RescueRadInput.IsActive()) { char b[16]; str_format(b,16,"%.0f",BN.m_RescueRadius); s_RescueRadInput.Set(b); }
+                                if(Ui()->DoEditBox(&s_RescueRadInput, &Field, 12.0f)) BN.m_RescueRadius = (float)atof(s_RescueRadInput.GetString());
+                        }
+                        {
+                                static CLineInputBuffered<256> s_RescueIDsInput;
+                                CUIRect Lab, Field;
+                                Right.VSplitLeft(85.0f, &Lab, &Field);
+                                Ui()->DoLabel(&Lab, Localize("Rescue IDs"), 12.0f, TEXTALIGN_ML);
+                                if(!s_RescueIDsInput.IsActive())
+                                {
+                                        BN.SyncIDsToStr(BN.m_RescueList, BN.m_aRescueIDsStr, sizeof(BN.m_aRescueIDsStr));
+                                        s_RescueIDsInput.Set(BN.m_aRescueIDsStr);
+                                }
+                                if(Ui()->DoEditBox(&s_RescueIDsInput, &Field, 12.0f))
+                                {
+                                        str_copy(BN.m_aRescueIDsStr, s_RescueIDsInput.GetString(), sizeof(BN.m_aRescueIDsStr));
+                                        BN.SyncStrToIDs(BN.m_aRescueIDsStr, BN.m_RescueList);
+                                }
                         }
                 }
 
