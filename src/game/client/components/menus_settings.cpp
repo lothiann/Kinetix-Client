@@ -3713,17 +3713,25 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                 if(Ui()->DoEditBox(&s_HookDelayInput, &Field, 12.0f)) BN.m_HookDelay = atoi(s_HookDelayInput.GetString());
                         }
 
-                        // Main stand dist (centered)
+                        // Main stand dist + Freeze rad
                         Panel.HSplitTop(RowGap, nullptr, &Panel);
                         Panel.HSplitTop(LineSize, &Row, &Panel);
+                        Row.VSplitMid(&Left, &Right, ColGap);
                         {
                                 static CLineInputBuffered<32> s_MainStandDistInput;
                                 CUIRect Lab, Field;
-                                Row.VSplitMid(&Left, &Right, ColGap);
                                 Left.VSplitLeft(75.0f, &Lab, &Field);
                                 Ui()->DoLabel(&Lab, Localize("Main stand"), 12.0f, TEXTALIGN_ML);
                                 if(!s_MainStandDistInput.IsActive()) { char b[16]; str_format(b,16,"%.0f",BN.m_MainStandDist); s_MainStandDistInput.Set(b); }
                                 if(Ui()->DoEditBox(&s_MainStandDistInput, &Field, 12.0f)) BN.m_MainStandDist = (float)atof(s_MainStandDistInput.GetString());
+                        }
+                        {
+                                static CLineInputBuffered<32> s_AvoidFreezeRadiusInput;
+                                CUIRect Lab, Field;
+                                Right.VSplitLeft(75.0f, &Lab, &Field);
+                                Ui()->DoLabel(&Lab, Localize("Frz rad"), 12.0f, TEXTALIGN_ML);
+                                if(!s_AvoidFreezeRadiusInput.IsActive()) { char b[16]; str_format(b,16,"%d",BN.m_AvoidFreezeRadius); s_AvoidFreezeRadiusInput.Set(b); }
+                                if(Ui()->DoEditBox(&s_AvoidFreezeRadiusInput, &Field, 12.0f)) { int v=atoi(s_AvoidFreezeRadiusInput.GetString()); if(v>=1&&v<=10) BN.m_AvoidFreezeRadius=v; }
                         }
                 }
 
@@ -3809,7 +3817,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
 
                 // === Pathfinder Panel ===
                 {
-                        const float SectionH = PanelPad + 25.0f + 5.0f + 6*LineSize + 5*RowGap + PanelPad;
+                        const float SectionH = PanelPad + 25.0f + 5.0f + 5*LineSize + 4*RowGap + PanelPad;
                         MainView.HSplitTop(SectionH, &PanelBg, &MainView);
                         PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
                         s_FunctionsScrollRegion.AddRect(PanelBg);
@@ -3820,7 +3828,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                         Ui()->DoLabel(&Label, Localize("Pathfinder [Experimental]"), 16.0f, TEXTALIGN_ML);
                         Panel.HSplitTop(5.0f, nullptr, &Panel);
 
-                        // Pathfinder + Avoid Freeze + Avoid radius
+                        // Pathfinder + Avoid Freeze
                         Panel.HSplitTop(LineSize, &Row, &Panel);
                         Panel.HSplitTop(RowGap, nullptr, &Panel);
                         Row.VSplitMid(&Left, &Right, ColGap);
@@ -3837,19 +3845,6 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                         }
                         if(DoButton_CheckBox(&BN.m_AvoidFreeze, Localize("Avoid Freeze"), BN.m_AvoidFreeze, &Right))
                         { BN.m_AvoidFreeze ^= 1; if(!BN.m_AvoidFreeze) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
-
-                        // Avoid freeze radius (centered)
-                        Panel.HSplitTop(LineSize, &Row, &Panel);
-                        Panel.HSplitTop(RowGap, nullptr, &Panel);
-                        Row.VSplitMid(&Left, &Right, ColGap);
-                        {
-                                static CLineInputBuffered<32> s_AvoidFreezeRadiusInput;
-                                CUIRect Lab, Field;
-                                Left.VSplitLeft(95.0f, &Lab, &Field);
-                                Ui()->DoLabel(&Lab, Localize("Avoid frz rad"), 12.0f, TEXTALIGN_ML);
-                                if(!s_AvoidFreezeRadiusInput.IsActive()) { char b[16]; str_format(b,16,"%d",BN.m_AvoidFreezeRadius); s_AvoidFreezeRadiusInput.Set(b); }
-                                if(Ui()->DoEditBox(&s_AvoidFreezeRadiusInput, &Field, 12.0f)) { int v=atoi(s_AvoidFreezeRadiusInput.GetString()); if(v>=1&&v<=10) BN.m_AvoidFreezeRadius=v; }
-                        }
 
                         // Simulate Players + SPS (push)
                         Panel.HSplitTop(LineSize, &Row, &Panel);
