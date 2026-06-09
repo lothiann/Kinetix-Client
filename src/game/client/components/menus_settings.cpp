@@ -3640,7 +3640,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
 
                 // === Distances Panel ===
                 {
-                        const float SectionH = PanelPad + 25.0f + 5.0f + 3*LineSize + 2*RowGap + PanelPad;
+                        const float SectionH = PanelPad + 25.0f + 5.0f + 4*LineSize + 3*RowGap + PanelPad;
                         MainView.HSplitTop(SectionH, &PanelBg, &MainView);
                         PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
                         s_FunctionsScrollRegion.AddRect(PanelBg);
@@ -3711,6 +3711,19 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                 Ui()->DoLabel(&Lab, Localize("Hook delay"), 12.0f, TEXTALIGN_ML);
                                 if(!s_HookDelayInput.IsActive()) { char b[16]; str_format(b,16,"%d",BN.m_HookDelay); s_HookDelayInput.Set(b); }
                                 if(Ui()->DoEditBox(&s_HookDelayInput, &Field, 12.0f)) BN.m_HookDelay = atoi(s_HookDelayInput.GetString());
+                        }
+
+                        // Main stand dist (centered)
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
+                        Panel.HSplitTop(LineSize, &Row, &Panel);
+                        {
+                                static CLineInputBuffered<32> s_MainStandDistInput;
+                                CUIRect Lab, Field;
+                                Row.VSplitMid(&Left, &Right, ColGap);
+                                Left.VSplitLeft(95.0f, &Lab, &Field);
+                                Ui()->DoLabel(&Lab, Localize("Main stand"), 12.0f, TEXTALIGN_ML);
+                                if(!s_MainStandDistInput.IsActive()) { char b[16]; str_format(b,16,"%.0f",BN.m_MainStandDist); s_MainStandDistInput.Set(b); }
+                                if(Ui()->DoEditBox(&s_MainStandDistInput, &Field, 12.0f)) BN.m_MainStandDist = (float)atof(s_MainStandDistInput.GetString());
                         }
                 }
 

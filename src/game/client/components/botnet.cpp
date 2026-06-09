@@ -70,6 +70,7 @@ CBotNet::CBotNet()
         m_TargetDist = 300.0f;
         m_MainDist = INFINITY;
         m_StandDist = 64.0f;
+        m_MainStandDist = 128.0f;
         m_HookDelay = 1000;
         m_ClientDelay = 0;
         for(int i = 0; i < 128; i++)
@@ -126,7 +127,7 @@ void CBotNet::OnConsoleInit()
         Console()->Register("c_bots", "s[ids]", CFGFLAG_CLIENT, ConSetBots, this, "Bots (allies)");
         Console()->Register("c_target_all", "i[on]", CFGFLAG_CLIENT, ConSetTargetAll, this, "Attack all (targets become blacklist)");
         Console()->Register("c_atk_set", "iiiiiiiiiiiiiii", CFGFLAG_CLIENT, ConAttackSettings, this, "Settings (15 params: aim,fire,hook,move,stand,rescue,rescueAll,smartDetect,smartRescue,killFrz,atkMain,hammer,simPlayers,avoidFreeze,pfHook)");
-        Console()->Register("c_atk_dists", "ffffff", CFGFLAG_CLIENT, ConAttackDists, this, "Radii (fire, hook, rescue, target, main, stand)");
+        Console()->Register("c_atk_dists", "fffffff", CFGFLAG_CLIENT, ConAttackDists, this, "Radii (fire, hook, rescue, target, main, stand, main stand)");
         Console()->Register("c_atk_hook_delay", "i[ms]", CFGFLAG_CLIENT, ConAttackHookDelay, this, "Hook Delay");
         Console()->Register("c_client_delay", "i[ms]", CFGFLAG_CLIENT, ConClientDelay, this, "Client delay in ms (0 to disable)");
         Console()->Register("c_stand_on_x", "i[on]", CFGFLAG_CLIENT, ConStandOnX, this, "Stand only on X axis");
@@ -1670,9 +1671,10 @@ void CBotNet::ProcessDummy(int Dummy)
                                                         vec2 repel = ComputeFreezeRepel(botTX, botTY);
                                                         nearFreeze = (repel.x * repel.x + repel.y * repel.y) > 0.0001f;
                                                 }
+                                                float standDist = (TargetIsMain && !m_AttackMain && !TargetIsRescue) ? m_MainStandDist : m_StandDist;
                                                 if(m_StandEnabled && !nearFreeze &&
-                                                        ((!m_StandOnXOnly && Dist < m_StandDist) ||
-                                                                (m_StandOnXOnly && absolute(dx) < m_StandDist)))
+                                                        ((!m_StandOnXOnly && Dist < standDist) ||
+                                                                (m_StandOnXOnly && absolute(dx) < standDist)))
                                                 {
                                                         left = false;
                                                         right = false;
@@ -1763,8 +1765,8 @@ void CBotNet::ProcessDummy(int Dummy)
                                                         nearFreeze = (repel.x * repel.x + repel.y * repel.y) > 0.0001f;
                                                 }
                                                 if(m_StandEnabled && !nearFreeze &&
-                                                        ((!m_StandOnXOnly && Dist < m_StandDist) ||
-                                                                (m_StandOnXOnly && absolute(dx) < m_StandDist)))
+                                                        ((!m_StandOnXOnly && Dist < ((TargetIsMain && !m_AttackMain && !TargetIsRescue) ? m_MainStandDist : m_StandDist)) ||
+                                                                (m_StandOnXOnly && absolute(dx) < ((TargetIsMain && !m_AttackMain && !TargetIsRescue) ? m_MainStandDist : m_StandDist))))
                                                 {
                                                         left = false;
                                                         right = false;
@@ -1786,7 +1788,7 @@ void CBotNet::ProcessDummy(int Dummy)
                                 }
                                 else
                                 {
-                                        if(!m_StandEnabled || (!m_StandOnXOnly && Dist >= m_StandDist) || (m_StandOnXOnly && absolute(dx) >= m_StandDist))
+                                        if(!m_StandEnabled || (!m_StandOnXOnly && Dist >= ((TargetIsMain && !m_AttackMain && !TargetIsRescue) ? m_MainStandDist : m_StandDist)) || (m_StandOnXOnly && absolute(dx) >= ((TargetIsMain && !m_AttackMain && !TargetIsRescue) ? m_MainStandDist : m_StandDist)))
                                         {
                                                 left = (dx < -20.0f);
                                                 right = (dx > 20.0f);
@@ -2176,6 +2178,8 @@ void CBotNet::ConAttackDists(IConsole::IResult *pResult, void *pUserData)
                 p->m_MainDist = pResult->GetFloat(4);
         if(pResult->NumArguments() > 5)
                 p->m_StandDist = pResult->GetFloat(5);
+        if(pResult->NumArguments() > 6)
+                p->m_MainStandDist = pResult->GetFloat(6);
 }
 
 void CBotNet::ConSetTargets(IConsole::IResult *pResult, void *pUserData)

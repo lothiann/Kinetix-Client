@@ -153,6 +153,7 @@ public:
         float m_TargetDist;
         float m_MainDist;
         float m_StandDist;
+        float m_MainStandDist;
 
         int m_HookDelay;
         int m_ClientDelay;
