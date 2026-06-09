@@ -1,38 +1,26 @@
 === DMClients Bug Tracker ===
 
-[BUG] Kill On Freeze sends respawn to active player instead of frozen dummy
-  - Когда дамми замерзает и включён Kill On Freeze, респавн отправляется
-    активному игроку (g_Config.m_ClDummy), а не замёрзшему дамми
-  - Нужно: в логике Kill On Freeze переключать m_ClDummy на замёрзшего
-    дамми перед отправкой kill, потом восстанавливать
-  - Файл: src/game/client/components/botnet.cpp
-  - Приоритет: высокий
+[FIXED] Kill On Freeze sends respawn to active player instead of frozen dummy
+  - Исправлено: в логике Kill On Freeze теперь переключается m_ClDummy на
+    замёрзшего дамми перед отправкой kill, потом восстанавливается
+  - Файл: src/game/client/components/botnet.cpp (2 места)
 
-[BUG] Weapon switching when switching between dummies
-  - При переключении между дамми оружие меняется
-  - Закономерность пока не выявлена — нужно протестировать какие именно действия это вызывают
-  - Файл: src/game/client/components/controls.cpp / menus_settings.cpp
-  - Приоритет: средний
+[FIXED] Weapon switching when switching between dummies via cl_dummy
+  - Исправлено: в OnDummySwap() теперь копируется весь m_aDummyInput[newActive]
+    в m_aInputData[newActive] вместо только m_Fire. Это гарантирует что
+    m_WantedWeapon/m_NextWeapon/m_PrevWeapon совпадают с тем что сервер
+    последний раз получал от этого соединения
+  - Файл: src/game/client/gameclient.cpp (OnDummySwap)
 
-[BUG] Weapon switching/firing when changing settings
-  - При изменении настроек в UI у активного дамми переключается оружие или он стреляет
-  - Закономерность пока не выявлена — нужно протестировать какие именно настройки это вызывают
-  - Файл: src/game/client/components/menus_settings.cpp
-  - Приоритет: средний
+[REMOVED] Weapon switching/firing when changing settings
+  - Баг больше не воспроизводится — удалён из трекера
 
-[FEATURE] UI: "Send commands" чекбокс в DMClients->Dummies
-  - После кнопки (кнопок) "Connect D*" добавить чекбокс "Send commands"
-  - Этот чекбокс влияет на следующий пункт (контейнер Send command)
-  - Когда выключен — контейнер Send command скрыт/отключён
-  - Файл: src/game/client/components/menus_settings.cpp (Dummies tab)
-  - Приоритет: высокий
-
-[FEATURE] UI: Контейнер "Send command" в DMClients->Dummies
-  - Новый контейнер с полем ввода команды и кнопкой "Send" на одной строчке
-  - Отправляется только выбранным дамми (те у кого включён "Send commands"
-    чекбокс из предыдущего пункта)
-  - Работает как c_send: переключает m_ClDummy, выполняет команду,
-    возвращает обратно
-  - Поддерживает плейсхолдеры {i}, {r}, {ri-N}, {c}
+[IMPLEMENTED] UI: "Send commands" чекбокс в DMClients->Dummies
+  - Реализовано: чекбокс "Send" для каждого дамми в Individual Dummies панели
   - Файл: src/game/client/components/menus_settings.cpp + menus.h
-  - Приоритет: высокий
+
+[IMPLEMENTED] UI: Контейнер "Send command" в DMClients->Dummies
+  - Реализовано: контейнер с полем ввода и кнопкой Send, отправляет
+    команду выбранным дамми через переключение m_ClDummy
+  - Поддерживает плейсхолдеры: {i}, {r}, {ri-N}, {c}
+  - Файл: src/game/client/components/menus_settings.cpp + menus.h

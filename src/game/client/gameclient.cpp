@@ -559,10 +559,15 @@ void CGameClient::OnDummySwap()
                 m_aDummyInput[D] = m_Controls.m_aInputData[D];
         }
 
-        // Transfer the fire counter: the new active player (previously a dummy)
-        // should keep its own fire counter, not get the old active's counter.
-        // This matches the original where PrevDummyFire comes from the dummy
-        // that is now becoming active.
+        // Copy the entire m_aDummyInput to m_aInputData for the new active
+        // player (previously a dummy). This ensures weapon counters
+        // (m_WantedWeapon, m_NextWeapon, m_PrevWeapon) match what the server
+        // was last receiving from that connection, preventing spurious weapon
+        // switches when switching via cl_dummy command.
+        // Then restore the fire counter from before the copy (see comment above).
+        // Direction, jump, hook etc. will be overwritten by player's key state
+        // on the next SnapInput() call anyway.
+        m_Controls.m_aInputData[g_Config.m_ClDummy] = m_aDummyInput[g_Config.m_ClDummy];
         m_Controls.m_aInputData[g_Config.m_ClDummy].m_Fire = NewActivePrevFire;
 
         // Sync m_aLastData with m_aInputData for the new active dummy to prevent
