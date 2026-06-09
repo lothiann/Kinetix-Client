@@ -71,6 +71,8 @@ CBotNet::CBotNet()
         m_MainDist = INFINITY;
         m_StandDist = 64.0f;
         m_MainStandDist = 128.0f;
+        m_LaserRescue = false;
+        m_LaserRescueDist = 800.0f;
         m_HookDelay = 1000;
         m_ClientDelay = 0;
         for(int i = 0; i < 128; i++)
@@ -1864,7 +1866,24 @@ void CBotNet::ProcessDummy(int Dummy)
                         bool CanShoot = !TargetIsMain || m_AttackMain;
                         if(m_AutoFire && Dist < m_FireDist && CanShoot)
                                 pInput->m_Fire++;
-                        if(m_AutoHammer && pInput->m_Fire > 0)
+
+                        // Laser rescue: use laser instead of hammer when rescuing
+                        bool usingLaserRescue = false;
+                        if(m_LaserRescue && TargetIsRescue && pInput->m_Fire > 0)
+                        {
+                                int botTX = (int)(MyPos.x / 32.0f);
+                                int botTY = (int)(MyPos.y / 32.0f);
+                                bool botInFreeze = (m_MapGridLoaded && IsTileFreeze(botTX, botTY));
+                                bool hasLaser = pGame->m_aClients[LocalID].m_Predicted.m_aWeapons[4].m_Got; // WEAPON_LASER=4
+
+                                if(!botInFreeze && hasLaser && Dist < m_LaserRescueDist)
+                                {
+                                        pInput->m_WantedWeapon = 5; // WEAPON_LASER + 1 (1-based)
+                                        usingLaserRescue = true;
+                                }
+                        }
+
+                        if(m_AutoHammer && pInput->m_Fire > 0 && !usingLaserRescue)
                                 pInput->m_WantedWeapon = 1;
 
                         if(m_AutoHook && Dist < m_HookDist && CanShoot)

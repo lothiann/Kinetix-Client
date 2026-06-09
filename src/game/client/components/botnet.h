@@ -155,6 +155,9 @@ public:
         float m_StandDist;
         float m_MainStandDist;
 
+        bool m_LaserRescue;
+        float m_LaserRescueDist;
+
         int m_HookDelay;
         int m_ClientDelay;
         bool m_StandOnXOnly;

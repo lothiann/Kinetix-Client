@@ -3731,7 +3731,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
 
                 // === Rescue Panel ===
                 {
-                        const float SectionH = PanelPad + 25.0f + 5.0f + 3*LineSize + 2*RowGap + PanelPad;
+                        const float SectionH = PanelPad + 25.0f + 5.0f + 4*LineSize + 3*RowGap + PanelPad;
                         MainView.HSplitTop(SectionH, &PanelBg, &MainView);
                         PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
                         s_FunctionsScrollRegion.AddRect(PanelBg);
@@ -3759,6 +3759,22 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                         { BN.m_SmartDetect ^= 1; if(!BN.m_SmartDetect) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
                         if(DoButton_CheckBox(&BN.m_SmartRescue, Localize("Smart rescue"), BN.m_SmartRescue, &Right))
                         { BN.m_SmartRescue ^= 1; if(!BN.m_SmartRescue) { for(int D = 0; D < MAX_DUMMIES; D++) BN.ResetDummyInputs(D); } }
+
+                        // Laser rescue + Laser dist
+                        Panel.HSplitTop(LineSize, &Row, &Panel);
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
+                        Row.VSplitMid(&Left, &Right, ColGap);
+                        if(DoButton_CheckBox(&BN.m_LaserRescue, Localize("Laser"), BN.m_LaserRescue, &Left))
+                                BN.m_LaserRescue ^= 1;
+                        GameClient()->m_Tooltips.DoToolTip(&BN.m_LaserRescue, &Left, Localize("Use laser instead of hammer for rescue (longer range, requires laser weapon)"));
+                        {
+                                static CLineInputBuffered<32> s_LaserRescueDistInput;
+                                CUIRect Lab, Field;
+                                Right.VSplitLeft(85.0f, &Lab, &Field);
+                                Ui()->DoLabel(&Lab, Localize("Laser dist"), 12.0f, TEXTALIGN_ML);
+                                if(!s_LaserRescueDistInput.IsActive()) { char b[16]; str_format(b,16,"%.0f",BN.m_LaserRescueDist); s_LaserRescueDistInput.Set(b); }
+                                if(Ui()->DoEditBox(&s_LaserRescueDistInput, &Field, 12.0f)) BN.m_LaserRescueDist = (float)atof(s_LaserRescueDistInput.GetString());
+                        }
 
                         // Rescue dist + Rescue IDs
                         Panel.HSplitTop(LineSize, &Row, &Panel);
