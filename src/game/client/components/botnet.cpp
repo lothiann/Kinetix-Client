@@ -1875,9 +1875,9 @@ void CBotNet::ProcessDummy(int Dummy)
                         {
                                 if(TargetIsRescue)
                                 {
-                                        bool botInFreeze = (pGame->m_aClients[LocalID].m_FreezeEnd != 0);
+                                        bool targetFrozen = (pGame->m_aClients[TargetID].m_FreezeEnd != 0);
 
-                                        if(!botInFreeze)
+                                        if(!targetFrozen)
                                         {
                                                 bool hasLaser = pGame->m_aClients[LocalID].m_Predicted.m_aWeapons[4].m_Got; // WEAPON_LASER=4
 
