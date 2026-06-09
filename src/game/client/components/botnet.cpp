@@ -1869,15 +1869,13 @@ void CBotNet::ProcessDummy(int Dummy)
                                 pInput->m_Fire++;
 
                         // Laser rescue: use laser instead of hammer when rescuing
-                        // Logic: Laser enabled? → Rescue target? → Bot NOT in freeze? → Has laser weapon? → Target in laser range? → Switch to laser + aim + fire
+                        // Logic: Laser enabled? → Rescue target? → Bot NOT in freeze? → Has laser weapon? → Line of sight (wall + player)? → Target in laser range? → Switch to laser + aim + fire
                         bool usingLaserRescue = false;
                         if(m_LaserRescue)
                         {
                                 if(TargetIsRescue)
                                 {
-                                        int botTX = (int)(MyPos.x / 32.0f);
-                                        int botTY = (int)(MyPos.y / 32.0f);
-                                        bool botInFreeze = (m_MapGridLoaded && IsTileFreeze(botTX, botTY));
+                                        bool botInFreeze = (pGame->m_aClients[LocalID].m_FreezeEnd != 0);
 
                                         if(!botInFreeze)
                                         {
@@ -1885,7 +1883,17 @@ void CBotNet::ProcessDummy(int Dummy)
 
                                                 if(hasLaser)
                                                 {
-                                                        if(Dist < m_LaserRescueDist)
+                                                        vec2 TPos((float)TChar.m_X, (float)TChar.m_Y);
+                                                        bool blocked = (pGame->Collision()->IntersectLine(MyPos, TPos, NULL, NULL) != 0);
+                                                        if(!blocked)
+                                                        {
+                                                                vec2 IntersectPos;
+                                                                int HitPlayer = pGame->IntersectCharacter(MyPos, TPos, IntersectPos, LocalID);
+                                                                if(HitPlayer != -1 && HitPlayer != TargetID)
+                                                                        blocked = true;
+                                                        }
+
+                                                        if(!blocked && Dist < m_LaserRescueDist)
                                                         {
                                                                 SetMousePos(pGame, Dummy, vec2(dx, dy));
                                                                 pInput->m_WantedWeapon = 5; // WEAPON_LASER + 1 (1-based)
@@ -1976,6 +1984,8 @@ void CBotNet::ProcessDummy(int Dummy)
                 {
                         SetDirection(pGame, Dummy, false, false);
                         pInput->m_Hook = 0;
+                        pInput->m_Fire = 0;
+                        pInput->m_WantedWeapon = 0;
                         State.m_HookTickTimer = 0;
                 }
         }
