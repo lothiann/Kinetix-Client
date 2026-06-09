@@ -90,7 +90,7 @@ using namespace std::chrono_literals;
 const char *CGameClient::Version() const { return GAME_VERSION; }
 const char *CGameClient::NetVersion() const { return GAME_NETVERSION; }
 const char *CGameClient::NetVersion7() const { return GAME_NETVERSION7; }
-int CGameClient::DDNetVersion() const { return DDNET_VERSION_NUMBER; }
+int CGameClient::DDNetVersion() const { return g_Config.m_ClVersionSpoof ? g_Config.m_ClVersionSpoofId : DDNET_VERSION_NUMBER; }
 const char *CGameClient::DDNetVersionStr() const { return m_aDDNetVersionStr; }
 int CGameClient::ClientVersion7() const { return CLIENT_VERSION7; }
 const char *CGameClient::GetItemName(int Type) const { return m_NetObjHandler.GetObjName(Type); }

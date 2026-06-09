@@ -4421,6 +4421,39 @@ void CMenus::RenderSettingsBotSettings(CUIRect MainView)
 
         MainView.HSplitTop(PanelGap, nullptr, &MainView);
 
+        // === Version Spoof Panel ===
+        {
+                float SectionH = PanelPad + 25.0f + 5.0f + 20.0f;
+                if(g_Config.m_ClVersionSpoof)
+                        SectionH += RowGap + 20.0f;
+                SectionH += PanelPad;
+                MainView.HSplitTop(SectionH, &PanelBg, &MainView);
+                PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
+                s_BotSettingsScrollRegion.AddRect(PanelBg);
+                PanelBg.Margin(PanelPad, &Panel);
+
+                // Header
+                Panel.HSplitTop(25.0f, &Label, &Panel);
+                Ui()->DoLabel(&Label, Localize("Version Spoof"), 16.0f, TEXTALIGN_ML);
+                Panel.HSplitTop(5.0f, nullptr, &Panel);
+
+                // Enable checkbox
+                Panel.HSplitTop(20.0f, &Row, &Panel);
+                if(DoButton_CheckBox(&g_Config.m_ClVersionSpoof, Localize("Spoof DDNet version"), g_Config.m_ClVersionSpoof, &Row))
+                        g_Config.m_ClVersionSpoof ^= 1;
+
+                if(g_Config.m_ClVersionSpoof)
+                {
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
+                        Panel.HSplitTop(20.0f, &Row, &Panel);
+                        int SpoofId = (g_Config.m_ClVersionSpoofId / 10) * 10;
+                        Ui()->DoScrollbarOption(&g_Config.m_ClVersionSpoofId, &SpoofId, &Row, Localize("Version ID"), 10000, 21000, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
+                        g_Config.m_ClVersionSpoofId = (SpoofId / 10) * 10;
+                }
+        }
+
+        MainView.HSplitTop(PanelGap, nullptr, &MainView);
+
         // Add remaining space as final scroll rect
         MainView.HSplitTop(20.0f, &Row, &MainView);
         s_BotSettingsScrollRegion.AddRect(Row);
