@@ -265,6 +265,13 @@ MACRO_CONFIG_INT(ClBotActionDuration, cl_bot_action_duration, 500, 100, 10000, C
 // Max value 7 = MAX_DUMMIES-1 — update when MAX_DUMMIES changes
 MACRO_CONFIG_INT(ClBotTargetDummy, cl_bot_target_dummy, 1, 0, 7, CFGFLAG_CLIENT | CFGFLAG_INSENSITIVE, "Target dummy for bot control UI (0=main, 1-7=dummies)")
 
+// trajectory prediction
+MACRO_CONFIG_INT(ClShowTrajectory, cl_show_trajectory, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Show trajectory prediction for active player")
+MACRO_CONFIG_INT(ClTrajectoryTicks, cl_trajectory_ticks, 10, 1, 50, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Number of ticks to predict trajectory (1-50)")
+MACRO_CONFIG_INT(ClTrajectoryLineSize, cl_trajectory_line_size, 1, 0, 20, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Trajectory line width in pixels (0=thin default)")
+MACRO_CONFIG_COL(ClTrajectoryColor, cl_trajectory_color, 65471, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Trajectory line color")
+MACRO_CONFIG_INT(ClTrajectoryAlpha, cl_trajectory_alpha, 80, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Trajectory line opacity (0-100)")
+
 // IRC (emote-based communication)
 MACRO_CONFIG_INT(ClIrcEnabled, cl_irc_enabled, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Enable IRC emote communication and decoding")
 MACRO_CONFIG_INT(ClIrcRevealJoin, cl_irc_reveal_join, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Send handshake on join to reveal yourself as IRC user")

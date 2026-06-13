@@ -23,6 +23,8 @@
 #include <game/client/components/skins.h>
 #include <game/client/components/sounds.h>
 #include <game/client/gameclient.h>
+#include <game/client/prediction/gameworld.h>
+#include <game/client/prediction/entities/character.h>
 #include <game/gamecore.h>
 #include <game/mapitems.h>
 
@@ -1118,6 +1120,131 @@ void CPlayers::OnRender()
                 const CGameClient::CClientData *pClientData = &GameClient()->m_aClients[RenderLastId];
                 RenderHookCollLine(&pClientData->m_RenderPrev, &pClientData->m_RenderCur, RenderLastId);
                 RenderPlayer(&pClientData->m_RenderPrev, &pClientData->m_RenderCur, &aRenderInfo[RenderLastId], RenderLastId);
+        }
+
+        // Render trajectory prediction
+        RenderTrajectory();
+}
+
+void CPlayers::RenderTrajectory()
+{
+        if(!g_Config.m_ClShowTrajectory)
+                return;
+
+        // Need a local character to predict
+        int LocalClientId = GameClient()->m_Snap.m_LocalClientId;
+        if(LocalClientId < 0 || !GameClient()->m_Snap.m_aCharacters[LocalClientId].m_Active)
+                return;
+
+        // Need the predicted world with the local character
+        CCharacter *pLocalChar = GameClient()->m_PredictedWorld.GetCharacterById(LocalClientId);
+        if(!pLocalChar)
+                return;
+
+        int NumTicks = g_Config.m_ClTrajectoryTicks;
+        if(NumTicks <= 0)
+                return;
+
+        // Create a separate prediction world — does not affect the real predicted world
+        CGameWorld FutureWorld;
+        FutureWorld.CopyWorld(&GameClient()->m_PredictedWorld);
+
+        // Remove other players' characters to speed up simulation,
+        // but keep entities (projectiles, lasers, etc.) for collision.
+        for(int i = 0; i < MAX_CLIENTS; i++)
+        {
+                if(i == LocalClientId)
+                        continue;
+                if(CCharacter *pChar = FutureWorld.GetCharacterById(i))
+                        FutureWorld.RemoveEntity(pChar);
+        }
+
+        // Get the local character in the future world
+        CCharacter *pFutureChar = FutureWorld.GetCharacterById(LocalClientId);
+        if(!pFutureChar)
+                return;
+
+        // Use the current input (last known) for all future ticks
+        CNetObj_PlayerInput FutureInput = pFutureChar->GetCore().m_Input;
+
+        // Collect trajectory positions
+        std::vector<vec2> vPositions;
+        vPositions.reserve(NumTicks + 1);
+        vPositions.push_back(pFutureChar->m_Pos);
+
+        int StartTick = FutureWorld.GameTick();
+
+        for(int i = 0; i < NumTicks; i++)
+        {
+                int Tick = StartTick + i + 1;
+
+                // Apply the same input for each tick
+                pFutureChar->OnDirectInput(&FutureInput);
+                FutureWorld.m_GameTick = Tick;
+                pFutureChar->OnPredictedInput(&FutureInput);
+                FutureWorld.Tick();
+
+                // Check if character was destroyed (died, etc.)
+                // Re-fetch from world — if removed, GetCharacterById returns nullptr
+                if(!FutureWorld.GetCharacterById(LocalClientId))
+                        break;
+
+                vPositions.push_back(pFutureChar->m_Pos);
+        }
+
+        if(vPositions.size() < 2)
+                return;
+
+        // Render trajectory
+        Graphics()->TextureClear();
+
+        ColorRGBA BaseColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClTrajectoryColor, true));
+        float ConfigAlpha = g_Config.m_ClTrajectoryAlpha / 100.0f;
+        int LineSize = g_Config.m_ClTrajectoryLineSize;
+
+        if(LineSize > 0)
+        {
+                std::vector<IGraphics::CFreeformItem> vQuads;
+                vQuads.reserve(vPositions.size() - 1);
+                float HalfWidth = 0.5f + (float)(LineSize - 1) * 0.25f;
+
+                for(size_t i = 1; i < vPositions.size(); i++)
+                {
+                        vec2 p0 = vPositions[i - 1];
+                        vec2 p1 = vPositions[i];
+                        vec2 Dir = normalize(p1 - p0);
+                        vec2 Perp = vec2(Dir.y, -Dir.x) * HalfWidth;
+
+                        vQuads.emplace_back(
+                                p0.x - Perp.x, p0.y - Perp.y,
+                                p0.x + Perp.x, p0.y + Perp.y,
+                                p1.x - Perp.x, p1.y - Perp.y,
+                                p1.x + Perp.x, p1.y + Perp.y);
+                }
+
+                Graphics()->QuadsBegin();
+                for(size_t i = 0; i < vQuads.size(); i++)
+                {
+                        float t = (float)(i + 1) / (float)vPositions.size();
+                        float Alpha = ConfigAlpha * (1.0f - t * 0.7f);
+                        Graphics()->SetColor(BaseColor.r, BaseColor.g, BaseColor.b, Alpha);
+                        Graphics()->QuadsDrawFreeform(&vQuads[i], 1);
+                }
+                Graphics()->QuadsEnd();
+        }
+        else
+        {
+                Graphics()->LinesBegin();
+                for(size_t i = 1; i < vPositions.size(); i++)
+                {
+                        float t = (float)i / (float)vPositions.size();
+                        float Alpha = ConfigAlpha * (1.0f - t * 0.7f);
+
+                        IGraphics::CLineItem Line(vPositions[i - 1], vPositions[i]);
+                        Graphics()->SetColor(BaseColor.r, BaseColor.g, BaseColor.b, Alpha);
+                        Graphics()->LinesDraw(&Line, 1);
+                }
+                Graphics()->LinesEnd();
         }
 }
 

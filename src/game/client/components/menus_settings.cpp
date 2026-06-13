@@ -4255,6 +4255,52 @@ void CMenus::RenderSettingsAdvanced(CUIRect MainView)
 
                 MainView.HSplitTop(PanelGap, nullptr, &MainView);
 
+                // === Trajectory Prediction Panel ===
+                {
+                        // Header (25) + gap (5) + checkbox (20) + gap + ticks (20) + gap + line size (20) + gap + color picker (25) + gap + alpha (20) + pad
+                        const float SectionH = PanelPad + 25.0f + 5.0f + 20.0f + RowGap + 20.0f + RowGap + 20.0f + RowGap + 25.0f + RowGap + 20.0f + PanelPad;
+                        MainView.HSplitTop(SectionH, &PanelBg, &MainView);
+                        PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
+                        s_AdvancedScrollRegion.AddRect(PanelBg);
+                        PanelBg.Margin(PanelPad, &Panel);
+
+                        // Header
+                        Panel.HSplitTop(25.0f, &Label, &Panel);
+                        Ui()->DoLabel(&Label, Localize("Trajectory"), 16.0f, TEXTALIGN_ML);
+                        Panel.HSplitTop(5.0f, nullptr, &Panel);
+
+                        // Show trajectory checkbox
+                        Panel.HSplitTop(20.0f, &Row, &Panel);
+                        if(DoButton_CheckBox(&g_Config.m_ClShowTrajectory, Localize("Show trajectory"), g_Config.m_ClShowTrajectory, &Row))
+                                g_Config.m_ClShowTrajectory ^= 1;
+
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
+
+                        // Ticks slider
+                        Panel.HSplitTop(20.0f, &Row, &Panel);
+                        Ui()->DoScrollbarOption(&g_Config.m_ClTrajectoryTicks, &g_Config.m_ClTrajectoryTicks, &Row, Localize("Prediction ticks"), 1, 50);
+
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
+
+                        // Line width slider
+                        Panel.HSplitTop(20.0f, &Row, &Panel);
+                        Ui()->DoScrollbarOption(&g_Config.m_ClTrajectoryLineSize, &g_Config.m_ClTrajectoryLineSize, &Row, Localize("Line margin"), 0, 20);
+
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
+
+                        // Color picker
+                        static CButtonContainer s_TrajectoryColorId;
+                        DoLine_ColorPicker(&s_TrajectoryColorId, 25.0f, 13.0f, 0.0f, &Panel, Localize("Line color"), &g_Config.m_ClTrajectoryColor, color_cast<ColorRGBA>(ColorHSLA(65471, true)), false);
+
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
+
+                        // Alpha slider
+                        Panel.HSplitTop(20.0f, &Row, &Panel);
+                        Ui()->DoScrollbarOption(&g_Config.m_ClTrajectoryAlpha, &g_Config.m_ClTrajectoryAlpha, &Row, Localize("Line opacity"), 0, 100);
+                }
+
+                MainView.HSplitTop(PanelGap, nullptr, &MainView);
+
                 // === Macro Panel ===
                 {
                         CBotNet &BN = GameClient()->m_BotNet;
