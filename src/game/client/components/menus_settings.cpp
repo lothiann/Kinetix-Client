@@ -4040,27 +4040,27 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                         Panel.HSplitTop(5.0f, nullptr, &Panel);
 
                         // Code input area
-				CUIRect CodeRect;
-				Panel.HSplitTop(CodeAreaH, &CodeRect, &Panel);
-				{
-					static CLineInputBuffered<sizeof(CCodeExec::m_aCodeBuffer)> s_CodeInput;
-					if(!s_CodeInput.IsActive())
-					{
-						s_CodeInput.Set(CE.m_aCodeBuffer);
-					}
+                                CUIRect CodeRect;
+                                Panel.HSplitTop(CodeAreaH, &CodeRect, &Panel);
+                                {
+                                        static CLineInputBuffered<sizeof(CCodeExec::m_aCodeBuffer)> s_CodeInput;
+                                        if(!s_CodeInput.IsActive())
+                                        {
+                                                s_CodeInput.Set(CE.m_aCodeBuffer);
+                                        }
 
-					Ui()->DoEditBox(&s_CodeInput, &CodeRect, 12.0f, IGraphics::CORNER_ALL, TEXTALIGN_TL);
+                                        Ui()->DoEditBox(&s_CodeInput, &CodeRect, 12.0f, IGraphics::CORNER_ALL);
 
-					if(s_CodeInput.IsActive())
-					{
-						if(Ui()->ConsumeHotkey(CUi::HOTKEY_ENTER))
-						{
-							CE.Execute(CE.m_aCodeBuffer);
-						}
-					}
+                                        if(s_CodeInput.IsActive())
+                                        {
+                                                if(Ui()->ConsumeHotkey(CUi::HOTKEY_ENTER))
+                                                {
+                                                        CE.Execute(CE.m_aCodeBuffer);
+                                                }
+                                        }
 
-					str_copy(CE.m_aCodeBuffer, s_CodeInput.GetString(), sizeof(CE.m_aCodeBuffer));
-				}
+                                        str_copy(CE.m_aCodeBuffer, s_CodeInput.GetString(), sizeof(CE.m_aCodeBuffer));
+                                }
 
                         Panel.HSplitTop(5.0f, nullptr, &Panel);
 
