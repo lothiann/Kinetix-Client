@@ -4160,7 +4160,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
 
                                                         if(Y + LineH >= CodeRect.y && Y < CodeRect.y + CodeRect.h)
                                                         {
-                                                                // Draw selection highlight on this line
+                                                                // Draw selection highlight on this line — same style as DoEditBox
                                                                 if(CE.m_SelectionStart != CE.m_SelectionEnd && Active)
                                                                 {
                                                                         int SelS = minimum(CE.m_SelectionStart, CE.m_SelectionEnd);
@@ -4170,18 +4170,33 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                                                                 int DrawStart = maximum(SelS, LineStart);
                                                                                 int DrawEnd = minimum(SelE, LineEnd);
                                                                                 char TmpBuf[8192];
+                                                                                float PreW = 0.0f;
                                                                                 int PreLen = DrawStart - LineStart;
+                                                                                if(PreLen > 0)
+                                                                                {
+                                                                                        str_copy(TmpBuf, pStr + LineStart, PreLen + 1);
+                                                                                        PreW = TextRender()->TextWidth(FontSize, TmpBuf, -1, -1.0f);
+                                                                                }
+                                                                                // If selection starts before this line, extend to left edge
+                                                                                if(SelS <= LineStart)
+                                                                                        PreW = 0.0f;
+                                                                                float SelW = 0.0f;
                                                                                 int SelLen = DrawEnd - DrawStart;
-                                                                                str_copy(TmpBuf, pStr + LineStart, PreLen + 1);
-                                                                                float PreW = TextRender()->TextWidth(FontSize, TmpBuf, -1, -1.0f);
-                                                                                str_copy(TmpBuf, pStr + DrawStart, SelLen + 1);
-                                                                                float SelW = TextRender()->TextWidth(FontSize, TmpBuf, -1, -1.0f);
+                                                                                if(SelLen > 0)
+                                                                                {
+                                                                                        str_copy(TmpBuf, pStr + DrawStart, SelLen + 1);
+                                                                                        SelW = TextRender()->TextWidth(FontSize, TmpBuf, -1, -1.0f);
+                                                                                }
+                                                                                // If selection extends past this line (across newline), extend to right edge
+                                                                                if(SelE > LineEnd)
+                                                                                        SelW = (TextRect.x + TextRect.w) - (TextRect.x + PreW);
+                                                                                // Selection color: white 50% alpha — same as DefaultTextSelectionColor()
                                                                                 CUIRect SelRect;
                                                                                 SelRect.x = TextRect.x + PreW;
                                                                                 SelRect.y = Y;
                                                                                 SelRect.w = SelW;
                                                                                 SelRect.h = LineH;
-                                                                                SelRect.Draw(ColorRGBA(0.3f, 0.5f, 0.8f, 0.4f), IGraphics::CORNER_ALL, 1.0f);
+                                                                                SelRect.Draw(ColorRGBA(1.0f, 1.0f, 1.0f, 0.5f), 0, 0.0f);
                                                                         }
                                                                 }
 
@@ -4190,7 +4205,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                                                 {
                                                                         char TmpBuf[8192];
                                                                         str_copy(TmpBuf, pStr + LineStart, LineEnd - LineStart + 1);
-                                                                        TextRender()->TextColor(0.85f, 0.85f, 0.85f, 1.0f);
+                                                                        TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
                                                                         TextRender()->Text(TextRect.x, Y, FontSize, TmpBuf, -1.0f);
                                                                 }
                                                         }
@@ -4221,7 +4236,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                                                 CursorRect.y = CursorY;
                                                                 CursorRect.w = 1.5f;
                                                                 CursorRect.h = LineH;
-                                                                CursorRect.Draw(ColorRGBA(0.9f, 0.9f, 0.9f, 1.0f), IGraphics::CORNER_ALL, 0.0f);
+                                                                CursorRect.Draw(ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f), 0, 0.0f);
                                                         }
                                                 }
                                         }
