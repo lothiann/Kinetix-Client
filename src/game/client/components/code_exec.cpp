@@ -1,4 +1,5 @@
 #include <game/client/components/code_exec.h>
+#include <game/client/components/chat.h>
 
 #include <game/client/gameclient.h>
 #include <engine/shared/config.h>
@@ -82,7 +83,7 @@ void CCodeExec::OnInit()
                 sol::lib::debug
         );
 
-        // Override print to echo output in chat (like the echo command)
+        // Override print to output in chat as chat/lua
         m_pLua->set_function("print", [this](sol::variadic_args va) {
                 std::string result;
                 for(auto it = va.begin(); it != va.end(); ++it)
@@ -103,10 +104,8 @@ void CCodeExec::OnInit()
                         }
                 }
 
-                // Echo to chat
-                char aCmd[1024];
-                str_format(aCmd, sizeof(aCmd), "echo \"%s\"", result.c_str());
-                Console()->ExecuteLine(aCmd, -1);
+                // Output to chat as chat/lua (not chat/client like echo)
+                GameClient()->m_Chat.AddLine(CChat::LUA_MSG, 0, result.c_str());
         });
 
         // Register all game bindings
@@ -169,10 +168,16 @@ bool CCodeExec::Execute(const char *pCode)
         if(!load.valid())
         {
                 sol::optional<sol::error> maybe_err = load;
+                const char *pErrMsg = "Unknown Lua load error";
                 if(maybe_err)
-                        str_copy(m_aLastError, maybe_err->what(), sizeof(m_aLastError));
-                else
-                        str_copy(m_aLastError, "Unknown Lua load error", sizeof(m_aLastError));
+                        pErrMsg = maybe_err->what();
+                str_copy(m_aLastError, pErrMsg, sizeof(m_aLastError));
+
+                // Output error to chat as chat/lua
+                char aErrBuf[1024];
+                str_format(aErrBuf, sizeof(aErrBuf), "Lua load error: %s", pErrMsg);
+                GameClient()->m_Chat.AddLine(CChat::LUA_MSG, 0, aErrBuf);
+
                 m_State = STATE_ERROR;
                 lua_sethook(m_pLua->lua_state(), nullptr, 0, 0);
                 return false;
@@ -182,10 +187,16 @@ bool CCodeExec::Execute(const char *pCode)
         if(!result.valid())
         {
                 sol::optional<sol::error> maybe_err = result;
+                const char *pErrMsg = "Unknown Lua execution error";
                 if(maybe_err)
-                        str_copy(m_aLastError, maybe_err->what(), sizeof(m_aLastError));
-                else
-                        str_copy(m_aLastError, "Unknown Lua execution error", sizeof(m_aLastError));
+                        pErrMsg = maybe_err->what();
+                str_copy(m_aLastError, pErrMsg, sizeof(m_aLastError));
+
+                // Output error to chat as chat/lua
+                char aErrBuf[1024];
+                str_format(aErrBuf, sizeof(aErrBuf), "Lua error: %s", pErrMsg);
+                GameClient()->m_Chat.AddLine(CChat::LUA_MSG, 0, aErrBuf);
+
                 m_State = STATE_ERROR;
                 lua_sethook(m_pLua->lua_state(), nullptr, 0, 0);
                 return false;

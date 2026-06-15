@@ -721,6 +721,8 @@ void CChat::AddLine(int ClientId, int Team, const char *pLine)
                                 ChatLogColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClMessageSystemColor));
                         else if(Line.m_ClientId == CLIENT_MSG)
                                 ChatLogColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClMessageClientColor));
+                        else if(Line.m_ClientId == LUA_MSG)
+                                ChatLogColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClMessageClientColor));
                         else // regular message
                                 ChatLogColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClMessageColor));
                 }
@@ -734,6 +736,8 @@ void CChat::AddLine(int ClientId, int Team, const char *pLine)
                         pFrom = "chat/server";
                 else if(Line.m_ClientId == CLIENT_MSG)
                         pFrom = "chat/client";
+                else if(Line.m_ClientId == LUA_MSG)
+                        pFrom = "chat/lua";
                 else
                         pFrom = "chat/all";
 
@@ -743,6 +747,8 @@ void CChat::AddLine(int ClientId, int Team, const char *pLine)
         // Custom color for new line
         std::optional<ColorRGBA> CustomColor = std::nullopt;
         if(ClientId == CLIENT_MSG)
+                CustomColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClMessageClientColor));
+        else if(ClientId == LUA_MSG)
                 CustomColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClMessageClientColor));
 
         CLine &PreviousLine = m_aLines[m_CurrentLine];

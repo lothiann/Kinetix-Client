@@ -69,12 +69,6 @@ class CChat : public CComponent
 	CLine m_aLines[MAX_LINES];
 	int m_CurrentLine;
 
-	enum
-	{
-		// client IDs for special messages
-		CLIENT_MSG = -2,
-		SERVER_MSG = -1,
-	};
 
 	enum
 	{
@@ -163,6 +157,13 @@ class CChat : public CComponent
 public:
 	CChat();
 	int Sizeof() const override { return sizeof(*this); }
+	enum
+	{
+		// client IDs for special messages
+		LUA_MSG = -3,
+		CLIENT_MSG = -2,
+		SERVER_MSG = -1,
+	};
 
 	static constexpr float MESSAGE_TEE_PADDING_RIGHT = 0.5f;
 
