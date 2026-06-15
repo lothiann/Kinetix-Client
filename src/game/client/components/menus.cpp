@@ -2446,19 +2446,16 @@ bool CMenus::OnInput(const IInput::CEvent &Event)
 		// Text input (regular typing)
 		if(Event.m_Flags & IInput::FLAG_TEXT)
 		{
-			// Don't insert text if modifier is pressed (except Shift)
 			if(!ModPressed && !Input()->AltIsPressed())
 			{
 				int SelStart = minimum(CE.m_SelectionStart, CE.m_SelectionEnd);
 				int SelEnd = maximum(CE.m_SelectionStart, CE.m_SelectionEnd);
-				// Delete selection first
 				if(SelStart != SelEnd)
 				{
 					mem_move(CE.m_aCodeBuffer + SelStart, CE.m_aCodeBuffer + SelEnd, str_length(CE.m_aCodeBuffer + SelEnd) + 1);
 					BufLen -= (SelEnd - SelStart);
 					CE.m_CursorPos = SelStart;
 				}
-				// Insert text character
 				int TextLen = str_length(Event.m_aText);
 				if(BufLen + TextLen < (int)sizeof(CE.m_aCodeBuffer) - 1)
 				{
@@ -2474,14 +2471,14 @@ bool CMenus::OnInput(const IInput::CEvent &Event)
 
 		if(Event.m_Flags & IInput::FLAG_PRESS)
 		{
-			// Enter â insert newline
+			// Enter - insert newline
 			if(Event.m_Key == KEY_RETURN || Event.m_Key == KEY_KP_ENTER)
 			{
-				if(ModPressed) // Ctrl+Enter â execute
+				if(ModPressed) // Ctrl+Enter = execute
 				{
 					CE.Execute(CE.m_aCodeBuffer);
 				}
-				else // Plain Enter â insert newline
+				else // Plain Enter = insert newline
 				{
 					int SelStart = minimum(CE.m_SelectionStart, CE.m_SelectionEnd);
 					int SelEnd = maximum(CE.m_SelectionStart, CE.m_SelectionEnd);
@@ -2494,8 +2491,7 @@ bool CMenus::OnInput(const IInput::CEvent &Event)
 					if(BufLen + 1 < (int)sizeof(CE.m_aCodeBuffer) - 1)
 					{
 						mem_move(CE.m_aCodeBuffer + CE.m_CursorPos + 1, CE.m_aCodeBuffer + CE.m_CursorPos, BufLen - CE.m_CursorPos + 1);
-						CE.m_aCodeBuffer[CE.m_CursorPos] = '
-';
+						CE.m_aCodeBuffer[CE.m_CursorPos] = '\n';
 						CE.m_CursorPos++;
 					}
 					CE.m_SelectionStart = CE.m_CursorPos;
@@ -2516,7 +2512,6 @@ bool CMenus::OnInput(const IInput::CEvent &Event)
 				else if(CE.m_CursorPos > 0)
 				{
 					int DeleteCount = 1;
-					// Ctrl+Backspace: delete word
 					if(ModPressed)
 					{
 						DeleteCount = 0;
@@ -2526,8 +2521,7 @@ bool CMenus::OnInput(const IInput::CEvent &Event)
 							DeleteCount++;
 							Pos--;
 						}
-						while(Pos >= 0 && CE.m_aCodeBuffer[Pos] != ' ' && CE.m_aCodeBuffer[Pos] != '
-')
+						while(Pos >= 0 && CE.m_aCodeBuffer[Pos] != ' ' && CE.m_aCodeBuffer[Pos] != '\n')
 						{
 							DeleteCount++;
 							Pos--;
@@ -2562,8 +2556,7 @@ bool CMenus::OnInput(const IInput::CEvent &Event)
 							DeleteCount++;
 							Pos++;
 						}
-						while(CE.m_aCodeBuffer[Pos] && CE.m_aCodeBuffer[Pos] != ' ' && CE.m_aCodeBuffer[Pos] != '
-')
+						while(CE.m_aCodeBuffer[Pos] && CE.m_aCodeBuffer[Pos] != ' ' && CE.m_aCodeBuffer[Pos] != '\n')
 						{
 							DeleteCount++;
 							Pos++;
@@ -2575,7 +2568,7 @@ bool CMenus::OnInput(const IInput::CEvent &Event)
 				CE.m_SelectionEnd = CE.m_CursorPos;
 				KeyHandled = true;
 			}
-			// Arrow keys
+			// Arrow Left
 			else if(Event.m_Key == KEY_LEFT)
 			{
 				if(ShiftPressed)
@@ -2595,6 +2588,7 @@ bool CMenus::OnInput(const IInput::CEvent &Event)
 				}
 				KeyHandled = true;
 			}
+			// Arrow Right
 			else if(Event.m_Key == KEY_RIGHT)
 			{
 				if(ShiftPressed)
@@ -2614,6 +2608,7 @@ bool CMenus::OnInput(const IInput::CEvent &Event)
 				}
 				KeyHandled = true;
 			}
+			// Arrow Up
 			else if(Event.m_Key == KEY_UP)
 			{
 				int Line = CE.GetLineFromOffset(CE.m_CursorPos);
@@ -2632,11 +2627,10 @@ bool CMenus::OnInput(const IInput::CEvent &Event)
 					CE.m_SelectionEnd = CE.m_CursorPos;
 				}
 				else
-				{
 					CE.m_SelectionEnd = CE.m_CursorPos;
-				}
 				KeyHandled = true;
 			}
+			// Arrow Down
 			else if(Event.m_Key == KEY_DOWN)
 			{
 				int Line = CE.GetLineFromOffset(CE.m_CursorPos);
@@ -2660,9 +2654,7 @@ bool CMenus::OnInput(const IInput::CEvent &Event)
 					CE.m_SelectionEnd = CE.m_CursorPos;
 				}
 				else
-				{
 					CE.m_SelectionEnd = CE.m_CursorPos;
-				}
 				KeyHandled = true;
 			}
 			// Home
@@ -2676,9 +2668,7 @@ bool CMenus::OnInput(const IInput::CEvent &Event)
 					CE.m_SelectionEnd = CE.m_CursorPos;
 				}
 				else
-				{
 					CE.m_SelectionEnd = CE.m_CursorPos;
-				}
 				KeyHandled = true;
 			}
 			// End
@@ -2696,38 +2686,38 @@ bool CMenus::OnInput(const IInput::CEvent &Event)
 					CE.m_SelectionEnd = CE.m_CursorPos;
 				}
 				else
-				{
 					CE.m_SelectionEnd = CE.m_CursorPos;
-				}
 				KeyHandled = true;
 			}
-			// Ctrl+V
+			// Ctrl+V - paste with newlines preserved
 			else if(ModPressed && !Input()->AltIsPressed() && Event.m_Key == KEY_V)
 			{
 				std::string ClipboardText = Input()->GetClipboardText();
 				if(!ClipboardText.empty())
 				{
+					// Sanitize: keep \n and \t, remove other control chars, strip \r
 					for(size_t i = 0; i < ClipboardText.size(); i++)
 					{
 						unsigned char c = ClipboardText[i];
-						if(c < 32 && c != '
-' && c != '	')
-							ClipboardText[i] = ' ';
-						if(c == '')
+						if(c == '\r')
 						{
 							ClipboardText.erase(i, 1);
 							i--;
 						}
+						else if(c < 32 && c != '\n' && c != '\t')
+						{
+							ClipboardText[i] = ' ';
+						}
 					}
 					int SelStart = minimum(CE.m_SelectionStart, CE.m_SelectionEnd);
-				int SelEnd = maximum(CE.m_SelectionStart, CE.m_SelectionEnd);
-				if(SelStart != SelEnd)
+					int SelEnd = maximum(CE.m_SelectionStart, CE.m_SelectionEnd);
+					if(SelStart != SelEnd)
 					{
 						mem_move(CE.m_aCodeBuffer + SelStart, CE.m_aCodeBuffer + SelEnd, str_length(CE.m_aCodeBuffer + SelEnd) + 1);
 						CE.m_CursorPos = SelStart;
 						BufLen = str_length(CE.m_aCodeBuffer);
 					}
-					int PasteLen = ClipboardText.size();
+					int PasteLen = (int)ClipboardText.size();
 					if(BufLen + PasteLen < (int)sizeof(CE.m_aCodeBuffer) - 1)
 					{
 						mem_move(CE.m_aCodeBuffer + CE.m_CursorPos + PasteLen, CE.m_aCodeBuffer + CE.m_CursorPos, BufLen - CE.m_CursorPos + 1);
@@ -2739,39 +2729,39 @@ bool CMenus::OnInput(const IInput::CEvent &Event)
 				}
 				KeyHandled = true;
 			}
-			// Ctrl+C
+			// Ctrl+C - copy selection
 			else if(ModPressed && !Input()->AltIsPressed() && Event.m_Key == KEY_C)
 			{
 				int SelStart = minimum(CE.m_SelectionStart, CE.m_SelectionEnd);
 				int SelEnd = maximum(CE.m_SelectionStart, CE.m_SelectionEnd);
 				if(SelEnd > SelStart)
-					{
-						char TempChar = CE.m_aCodeBuffer[SelEnd];
-						CE.m_aCodeBuffer[SelEnd] = ' ';
-						Input()->SetClipboardText(CE.m_aCodeBuffer + SelStart);
-						CE.m_aCodeBuffer[SelEnd] = TempChar;
-					}
+				{
+					char TempChar = CE.m_aCodeBuffer[SelEnd];
+					CE.m_aCodeBuffer[SelEnd] = '\0';
+					Input()->SetClipboardText(CE.m_aCodeBuffer + SelStart);
+					CE.m_aCodeBuffer[SelEnd] = TempChar;
+				}
 				KeyHandled = true;
 			}
-			// Ctrl+X
+			// Ctrl+X - cut selection
 			else if(ModPressed && !Input()->AltIsPressed() && Event.m_Key == KEY_X)
 			{
 				int SelStart = minimum(CE.m_SelectionStart, CE.m_SelectionEnd);
 				int SelEnd = maximum(CE.m_SelectionStart, CE.m_SelectionEnd);
 				if(SelEnd > SelStart)
-					{
-						char TempChar = CE.m_aCodeBuffer[SelEnd];
-						CE.m_aCodeBuffer[SelEnd] = ' ';
-						Input()->SetClipboardText(CE.m_aCodeBuffer + SelStart);
-						CE.m_aCodeBuffer[SelEnd] = TempChar;
-						mem_move(CE.m_aCodeBuffer + SelStart, CE.m_aCodeBuffer + SelEnd, str_length(CE.m_aCodeBuffer + SelEnd) + 1);
-						CE.m_CursorPos = SelStart;
-						CE.m_SelectionStart = SelStart;
-						CE.m_SelectionEnd = SelStart;
-					}
+				{
+					char TempChar = CE.m_aCodeBuffer[SelEnd];
+					CE.m_aCodeBuffer[SelEnd] = '\0';
+					Input()->SetClipboardText(CE.m_aCodeBuffer + SelStart);
+					CE.m_aCodeBuffer[SelEnd] = TempChar;
+					mem_move(CE.m_aCodeBuffer + SelStart, CE.m_aCodeBuffer + SelEnd, str_length(CE.m_aCodeBuffer + SelEnd) + 1);
+					CE.m_CursorPos = SelStart;
+					CE.m_SelectionStart = SelStart;
+					CE.m_SelectionEnd = SelStart;
+				}
 				KeyHandled = true;
 			}
-			// Ctrl+A
+			// Ctrl+A - select all
 			else if(ModPressed && !Input()->AltIsPressed() && Event.m_Key == KEY_A)
 			{
 				CE.m_SelectionStart = 0;
@@ -2798,6 +2788,7 @@ bool CMenus::OnInput(const IInput::CEvent &Event)
 		return true;
 	}
 	return false;
+}
 }
 
 void CMenus::OnStateChange(int NewState, int OldState)
