@@ -4040,20 +4040,83 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                 CUIRect CodeRect;
                                 Panel.HSplitTop(CodeAreaH, &CodeRect, &Panel);
                                 {
-                                        // Click handling for focus
+                                        // Mouse handling for focus and selection
                                         const bool Inside = Ui()->MouseHovered(&CodeRect);
+                                        const float FontSize = 12.0f;
+                                        const float LineH = FontSize + 2.0f;
+                                        const float PadX = 4.0f;
+                                        const float PadY = 3.0f;
+                                        CUIRect TextRect;
+                                        CodeRect.Margin(PadY, &TextRect);
+                                        TextRect.x += PadX;
+                                        TextRect.w -= PadX * 2;
+
+                                        // Helper: get text offset from mouse position using TextRender
+                                        auto GetOffsetAtMouse = [&](float MX, float MY) -> int {
+                                                float RelY = MY - TextRect.y + CE.m_ScrollY;
+                                                int Line = (int)(RelY / LineH);
+                                                int TotalLines = CE.GetLineCount();
+                                                if(Line < 0) Line = 0;
+                                                if(Line >= TotalLines) Line = TotalLines - 1;
+                                                int LineOff = CE.GetLineStart(Line);
+                                                int LineEndOff = LineOff;
+                                                while(CE.m_aCodeBuffer[LineEndOff] && CE.m_aCodeBuffer[LineEndOff] != '\n')
+                                                        LineEndOff++;
+                                                int LineLen = LineEndOff - LineOff;
+                                                if(LineLen <= 0) return LineOff;
+                                                // Measure text width char by char to find closest position
+                                                float RelX = MX - TextRect.x;
+                                                if(RelX <= 0.0f) return LineOff;
+                                                char TmpBuf[8192];
+                                                for(int c = 1; c <= LineLen; c++)
+                                                {
+                                                        str_copy(TmpBuf, CE.m_aCodeBuffer + LineOff, c + 1);
+                                                        float W = TextRender()->TextWidth(FontSize, TmpBuf, -1, -1.0f);
+                                                        if(W > RelX)
+                                                        {
+                                                                // Closer to left or right char?
+                                                                if(c > 1)
+                                                                {
+                                                                        str_copy(TmpBuf, CE.m_aCodeBuffer + LineOff, c);
+                                                                        float WPrev = TextRender()->TextWidth(FontSize, TmpBuf, -1, -1.0f);
+                                                                        if(RelX - WPrev < W - RelX)
+                                                                                return LineOff + c - 1;
+                                                                }
+                                                                return LineOff + c;
+                                                        }
+                                                }
+                                                return LineOff + LineLen;
+                                        };
+
+                                        // Mouse click: activate and position cursor
                                         if(Inside && Ui()->MouseButtonClicked(0))
                                         {
                                                 CE.m_EditorActive = true;
                                                 Input()->StartTextInput();
-                                                CE.m_CursorPos = str_length(CE.m_aCodeBuffer);
-                                                CE.m_SelectionStart = CE.m_CursorPos;
-                                                CE.m_SelectionEnd = CE.m_CursorPos;
+                                                vec2 Mouse = Ui()->MousePos();
+                                                int ClickOff = GetOffsetAtMouse(Mouse.x, Mouse.y);
+                                                CE.m_CursorPos = ClickOff;
+                                                CE.m_SelectionStart = ClickOff;
+                                                CE.m_SelectionEnd = ClickOff;
+                                                CE.m_MouseSelecting = true;
+                                        }
+                                        // Mouse drag: extend selection
+                                        if(CE.m_MouseSelecting && Ui()->MouseButton(0))
+                                        {
+                                                vec2 Mouse = Ui()->MousePos();
+                                                int DragOff = GetOffsetAtMouse(Mouse.x, Mouse.y);
+                                                CE.m_CursorPos = DragOff;
+                                                CE.m_SelectionEnd = DragOff;
+                                        }
+                                        if(CE.m_MouseSelecting && !Ui()->MouseButton(0))
+                                        {
+                                                CE.m_MouseSelecting = false;
                                         }
                                         // Click outside deactivates
                                         if(CE.m_EditorActive && !Inside && Ui()->MouseButtonClicked(0))
                                         {
                                                 CE.m_EditorActive = false;
+                                                CE.m_MouseSelecting = false;
                                                 Input()->StopTextInput();
                                         }
 
@@ -4069,16 +4132,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                                 BgColor = ColorRGBA(1.0f, 1.0f, 1.0f, 0.5f);
                                         CodeRect.Draw(BgColor, IGraphics::CORNER_ALL, 3.0f);
 
-                                        // Text rendering area
-                                        const float FontSize = 12.0f;
-                                        const float LineH = FontSize + 2.0f;
-                                        const float PadX = 4.0f;
-                                        const float PadY = 3.0f;
-
-                                        CUIRect TextRect;
-                                        CodeRect.Margin(PadY, &TextRect);
-                                        TextRect.x += PadX;
-                                        TextRect.w -= PadX * 2;
+                                        // Text rendering area (FontSize/LineH/TextRect already defined above)
 
                                         // Scroll logic
                                         CE.EnsureCursorVisible(LineH, TextRect.h);

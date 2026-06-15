@@ -43,6 +43,7 @@ CCodeExec::CCodeExec() :
         m_AbortRequested(false),
         m_pLua(nullptr),
         m_EditorActive(false),
+        m_MouseSelecting(false),
         m_CursorPos(0),
         m_SelectionStart(0),
         m_SelectionEnd(0),
@@ -648,6 +649,50 @@ void CCodeExec::EnsureCursorVisible(float LineHeight, float ViewHeight)
                 m_ScrollYChange = CursorY - m_ScrollY;
         else if(CursorY + LineHeight > m_ScrollY + ViewHeight)
                 m_ScrollYChange = (CursorY + LineHeight) - (m_ScrollY + ViewHeight);
+}
+
+int CCodeExec::GetOffsetFromPos(float MouseX, float MouseY, float TextX, float TextY, float FontSize, float LineH, float ScrollY) const
+{
+        // Determine which line the mouse is on
+        float RelY = MouseY - TextY + ScrollY;
+        int Line = (int)(RelY / LineH);
+        if(Line < 0)
+                Line = 0;
+        int TotalLines = GetLineCount();
+        if(Line >= TotalLines)
+                Line = TotalLines - 1;
+
+        // Get the start offset of this line
+        int LineOff = GetLineStart(Line);
+
+        // Find the character position within the line by measuring text widths
+        // We need ITextRender but we don't have direct access here.
+        // Instead, we'll use a simple character-count approach based on MouseX offset.
+        // The caller will use TextRender to refine this.
+        // For now, count characters until we pass MouseX.
+        float RelX = MouseX - TextX;
+        if(RelX <= 0.0f)
+                return LineOff;
+
+        // Find line length
+        int LineEndOff = LineOff;
+        while(m_aCodeBuffer[LineEndOff] && m_aCodeBuffer[LineEndOff] != '\n')
+                LineEndOff++;
+        int LineLen = LineEndOff - LineOff;
+
+        // Binary search for the character position using text width
+        // We can't call TextRender here, so return best guess by char position
+        // The menus_settings.cpp will refine this with actual TextWidth calls
+        // Simple approach: estimate based on average char width
+        if(LineLen <= 0)
+                return LineOff;
+
+        // Approximate: assume monospace-like average width
+        float AvgCharW = FontSize * 0.5f;
+        int EstCol = (int)(RelX / AvgCharW + 0.5f);
+        if(EstCol > LineLen)
+                EstCol = LineLen;
+        return LineOff + EstCol;
 }
 
 // =========================================================

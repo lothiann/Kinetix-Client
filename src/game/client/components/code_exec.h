@@ -51,6 +51,7 @@ public:
 
         // --- Multiline editor state ---
         bool m_EditorActive;           // true when the code editor has focus
+        bool m_MouseSelecting;         // true while mouse drag selects text
         int m_CursorPos;               // byte offset of cursor in m_aCodeBuffer
         int m_SelectionStart;          // byte offset of selection start
         int m_SelectionEnd;            // byte offset of selection end
@@ -61,6 +62,7 @@ public:
         int GetLineCount() const;
         int GetLineStart(int Line) const;
         int GetLineFromOffset(int Offset) const;
+        int GetOffsetFromPos(float MouseX, float MouseY, float TextX, float TextY, float FontSize, float LineH, float ScrollY) const;
         void EnsureCursorVisible(float LineHeight, float ViewHeight);
 
 private:
