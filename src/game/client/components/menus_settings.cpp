@@ -28,6 +28,7 @@
 #include <game/client/gameclient.h>
 #include <game/client/components/bot_control.h>
 #include <game/client/components/botnet.h>
+#include <game/client/components/code_exec.h>
 #include <game/client/skin.h>
 #include <game/client/ui.h>
 #include <game/client/ui_listbox.h>
@@ -1446,7 +1447,7 @@ void CMenus::RenderSettings(CUIRect MainView)
                 Localize("Sound"),
                 Localize("DDNet"),
                 Localize("Assets"),
-                Localize("DMClients")};
+                Localize("ZMajor")};
         static CButtonContainer s_aTabButtons[SETTINGS_LENGTH];
 
         for(int i = 0; i < SETTINGS_LENGTH; i++)
@@ -1513,7 +1514,7 @@ void CMenus::RenderSettings(CUIRect MainView)
         else if(g_Config.m_UiSettingsPage == SETTINGS_DMCLIENTS)
         {
                 GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_RESERVED0);
-                RenderSettingsDMClients(MainView);
+                RenderSettingsZMajor(MainView);
         }
         else
         {
@@ -3080,7 +3081,7 @@ void CMenus::CPopupMapPickerContext::MapListPopulate()
         m_Selection = -1;
 }
 
-void CMenus::RenderSettingsDMClients(CUIRect MainView)
+void CMenus::RenderSettingsZMajor(CUIRect MainView)
 {
         enum
         {
@@ -3821,7 +3822,11 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
 
                 // === Pathfinder Panel ===
                 {
-                        const float SectionH = PanelPad + 25.0f + 5.0f + 5*LineSize + 4*RowGap + PanelPad;
+                        // Dynamic height: base rows + kinodynamic-dependent rows
+                        int numRows = 5; // pathfinder+avoidfreeze, simulate+sps, fixsnap+kino, rays+dist, go
+                        if(BN.m_KinodynamicEnabled)
+                                numRows += 5; // Candidates, Ticks, Hook Angles, Cache Ticks, ShowPath+ShowField
+                        const float SectionH = PanelPad + 25.0f + 5.0f + numRows*LineSize + (numRows-1)*RowGap + PanelPad;
                         MainView.HSplitTop(SectionH, &PanelBg, &MainView);
                         PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
                         s_FunctionsScrollRegion.AddRect(PanelBg);
@@ -3868,20 +3873,53 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                         if(DoButton_CheckBox(&BN.m_PfSimulateMethod, Localize("SPS (push)"), BN.m_PfSimulateMethod, &Right))
                                 BN.m_PfSimulateMethod = BN.m_PfSimulateMethod ? 0 : 1;
 
-                        // Fix Snap + Pf Hook
+                        // Fix Snap + Kinodynamic A*
                         Panel.HSplitTop(LineSize, &Row, &Panel);
                         Panel.HSplitTop(RowGap, nullptr, &Panel);
                         Row.VSplitMid(&Left, &Right, ColGap);
                         if(DoButton_CheckBox(&BN.m_PfSnap, Localize("Fix Snap"), BN.m_PfSnap, &Left))
                                 BN.m_PfSnap ^= 1;
-                        if(DoButton_CheckBox(&BN.m_PfHookEnabled, Localize("Pf Hook"), BN.m_PfHookEnabled, &Right))
+                        if(DoButton_CheckBox(&BN.m_KinodynamicEnabled, Localize("Kinodynamic A*"), BN.m_KinodynamicEnabled, &Right))
                         {
-                                BN.m_PfHookEnabled ^= 1;
+                                BN.m_KinodynamicEnabled ^= 1;
                                 for(int i = 0; i < MAX_DUMMIES; i++)
                                 {
-                                        BN.m_aDummies[i].m_PfHookTile = vec2(0, 0);
+                                        BN.m_aDummies[i].m_KinoCache.Reset();
                                         BN.ResetDummyInputs(i);
                                 }
+                        }
+
+                        // Kinodynamic A* sliders (only visible when Kinodynamic is on)
+                        if(BN.m_KinodynamicEnabled)
+                        {
+                                // Candidates slider
+                                Panel.HSplitTop(LineSize, &Row, &Panel);
+                                Panel.HSplitTop(RowGap, nullptr, &Panel);
+                                Ui()->DoScrollbarOption(&BN.m_KinoCandidates, &BN.m_KinoCandidates, &Row, Localize("Candidates"), 10, 200, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
+
+                                // Ticks slider
+                                Panel.HSplitTop(LineSize, &Row, &Panel);
+                                Panel.HSplitTop(RowGap, nullptr, &Panel);
+                                Ui()->DoScrollbarOption(&BN.m_KinoTicks, &BN.m_KinoTicks, &Row, Localize("Ticks"), 5, 50, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
+
+                                // Hook Angles slider
+                                Panel.HSplitTop(LineSize, &Row, &Panel);
+                                Panel.HSplitTop(RowGap, nullptr, &Panel);
+                                Ui()->DoScrollbarOption(&BN.m_KinoHookAngles, &BN.m_KinoHookAngles, &Row, Localize("Hook Angles"), 4, 32, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
+
+                                // Cache Ticks slider
+                                Panel.HSplitTop(LineSize, &Row, &Panel);
+                                Panel.HSplitTop(RowGap, nullptr, &Panel);
+                                Ui()->DoScrollbarOption(&BN.m_KinoCacheTicks, &BN.m_KinoCacheTicks, &Row, Localize("Cache Ticks"), 1, 30, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
+
+                                // Show Path + Show Field
+                                Panel.HSplitTop(LineSize, &Row, &Panel);
+                                Panel.HSplitTop(RowGap, nullptr, &Panel);
+                                Row.VSplitMid(&Left, &Right, ColGap);
+                                if(DoButton_CheckBox(&BN.m_KinoShowPath, Localize("Show Path"), BN.m_KinoShowPath, &Left))
+                                        BN.m_KinoShowPath ^= 1;
+                                if(DoButton_CheckBox(&BN.m_KinoShowField, Localize("Show Field"), BN.m_KinoShowField, &Right))
+                                        BN.m_KinoShowField ^= 1;
                         }
 
                         // Rays + Dist
@@ -3974,6 +4012,145 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                 Ui()->DoLabel(&Lab, Localize("Copy ID"), 12.0f, TEXTALIGN_ML);
                                 if(!s_CopyIDInput.IsActive()) { char b[16]; str_format(b,16,"%d",BN.m_CopyTargetID); s_CopyIDInput.Set(b); }
                                 if(Ui()->DoEditBox(&s_CopyIDInput, &Field, 12.0f)) { BN.m_CopyTargetID = atoi(s_CopyIDInput.GetString()); }
+                        }
+                }
+
+                MainView.HSplitTop(PanelGap, nullptr, &MainView);
+
+                // === Code Execution Panel ===
+                {
+                        CCodeExec &CE = GameClient()->m_CodeExec;
+
+                        const float CodeAreaH = 200.0f;
+                        const float ButtonRowH = 25.0f;
+                        const float OutputH = 80.0f;
+                        int OutputLines = 0;
+                        if(CE.GetOutputLog()[0] != '\0' || CE.GetState() == CCodeExec::STATE_ERROR)
+                                OutputLines = 1;
+
+                        const float SectionH = PanelPad + 25.0f + 5.0f + CodeAreaH + 5.0f + ButtonRowH + (OutputLines ? 5.0f + OutputH : 0) + PanelPad;
+                        MainView.HSplitTop(SectionH, &PanelBg, &MainView);
+                        PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
+                        s_FunctionsScrollRegion.AddRect(PanelBg);
+                        PanelBg.Margin(PanelPad, &Panel);
+
+                        // Header
+                        Panel.HSplitTop(25.0f, &Label, &Panel);
+                        Ui()->DoLabel(&Label, Localize("Code Execution [Lua]"), 16.0f, TEXTALIGN_ML);
+                        Panel.HSplitTop(5.0f, nullptr, &Panel);
+
+                        // Code input area
+				CUIRect CodeRect;
+				Panel.HSplitTop(CodeAreaH, &CodeRect, &Panel);
+				{
+					static CLineInputBuffered<sizeof(CCodeExec::m_aCodeBuffer)> s_CodeInput;
+					if(!s_CodeInput.IsActive())
+					{
+						s_CodeInput.Set(CE.m_aCodeBuffer);
+					}
+
+					Ui()->DoEditBox(&s_CodeInput, &CodeRect, 12.0f, IGraphics::CORNER_ALL, TEXTALIGN_TL);
+
+					if(s_CodeInput.IsActive())
+					{
+						if(Ui()->ConsumeHotkey(CUi::HOTKEY_ENTER))
+						{
+							CE.Execute(CE.m_aCodeBuffer);
+						}
+					}
+
+					str_copy(CE.m_aCodeBuffer, s_CodeInput.GetString(), sizeof(CE.m_aCodeBuffer));
+				}
+
+                        Panel.HSplitTop(5.0f, nullptr, &Panel);
+
+                        // Button row: Run/Stop + Clear
+                        CUIRect BtnRow, RunBtn, ClearBtn;
+                        Panel.HSplitTop(ButtonRowH, &BtnRow, &Panel);
+                        BtnRow.VSplitLeft(100.0f, &RunBtn, &BtnRow);
+                        BtnRow.VSplitLeft(10.0f, nullptr, &BtnRow);
+                        BtnRow.VSplitLeft(100.0f, &ClearBtn, &BtnRow);
+
+                        // Run/Stop button
+                        {
+                                static CButtonContainer s_RunBtn;
+                                bool IsRunning = (CE.GetState() == CCodeExec::STATE_RUNNING);
+                                const char *pBtnLabel = IsRunning ? Localize("Stop") : Localize("Run");
+
+                                if(IsRunning)
+                                {
+                                        RunBtn.Draw(ColorRGBA(0.6f, 0.15f, 0.15f, 0.8f), IGraphics::CORNER_ALL, 4.0f);
+                                }
+                                else
+                                {
+                                        RunBtn.Draw(ColorRGBA(0.15f, 0.5f, 0.15f, 0.8f), IGraphics::CORNER_ALL, 4.0f);
+                                }
+
+                                if(DoButton_Menu(&s_RunBtn, pBtnLabel, 0, &RunBtn))
+                                {
+                                        if(IsRunning)
+                                                CE.Stop();
+                                        else
+                                                CE.Execute(CE.m_aCodeBuffer);
+                                }
+                        }
+
+                        // Clear button
+                        {
+                                static CButtonContainer s_ClearBtn;
+                                ClearBtn.Draw(ColorRGBA(0.2f, 0.2f, 0.2f, 0.8f), IGraphics::CORNER_ALL, 4.0f);
+                                if(DoButton_Menu(&s_ClearBtn, Localize("Clear"), 0, &ClearBtn))
+                                {
+                                        CE.m_aCodeBuffer[0] = '\0';
+                                        CE.ClearOutputLog();
+                                }
+                        }
+
+                        // Status indicator
+                        {
+                                CUIRect StatusRect;
+                                BtnRow.VSplitLeft(100.0f, &StatusRect, &BtnRow);
+                                const char *pStatusText;
+                                ColorRGBA StatusColor;
+                                switch(CE.GetState())
+                                {
+                                case CCodeExec::STATE_RUNNING:
+                                        pStatusText = Localize("Running...");
+                                        StatusColor = ColorRGBA(0.2f, 0.8f, 0.2f, 1.0f);
+                                        break;
+                                case CCodeExec::STATE_ERROR:
+                                        pStatusText = Localize("Error");
+                                        StatusColor = ColorRGBA(0.9f, 0.2f, 0.2f, 1.0f);
+                                        break;
+                                default:
+                                        pStatusText = Localize("Idle");
+                                        StatusColor = ColorRGBA(0.5f, 0.5f, 0.5f, 1.0f);
+                                        break;
+                                }
+                                Ui()->DoLabel(&StatusRect, pStatusText, 12.0f, TEXTALIGN_ML);
+                        }
+
+                        // Output/Error area
+                        if(OutputLines)
+                        {
+                                Panel.HSplitTop(5.0f, nullptr, &Panel);
+                                CUIRect OutputRect;
+                                Panel.HSplitTop(OutputH, &OutputRect, &Panel);
+                                OutputRect.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.3f), IGraphics::CORNER_ALL, 3.0f);
+                                OutputRect.Margin(4.0f, &OutputRect);
+
+                                if(CE.GetState() == CCodeExec::STATE_ERROR && CE.GetLastError()[0] != '\0')
+                                {
+                                        SLabelProperties LabelProps;
+                                        LabelProps.m_MaxWidth = OutputRect.w;
+                                        Ui()->DoLabel(&OutputRect, CE.GetLastError(), 10.0f, TEXTALIGN_TL, LabelProps);
+                                }
+                                else if(CE.GetOutputLog()[0] != '\0')
+                                {
+                                        SLabelProperties LabelProps2;
+                                        LabelProps2.m_MaxWidth = OutputRect.w;
+                                        Ui()->DoLabel(&OutputRect, CE.GetOutputLog(), 10.0f, TEXTALIGN_TL, LabelProps2);
+                                }
                         }
                 }
         }

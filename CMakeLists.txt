@@ -293,6 +293,8 @@ if(NOT MSVC AND NOT HAIKU)
 
   # Disable exceptions as DDNet does not use them.
   add_cxx_compiler_flag_if_supported(OUR_FLAGS -fno-exceptions)
+  # sol2 (Lua bindings) must be told we compile without exceptions
+  add_compile_definitions(SOL_NO_EXCEPTIONS)
 
   # Inaccurate floating point numbers cause problems on mingw-w64-gcc when
   # compiling for x86, might cause problems elsewhere. So don't store floats
@@ -853,8 +855,25 @@ add_library(json EXCLUDE_FROM_ALL OBJECT ${DEP_JSON_SRC})
 set_src(DEP_MD5_SRC GLOB src/engine/external/md5 md5.c md5.h)
 add_library(md5 EXCLUDE_FROM_ALL OBJECT ${DEP_MD5_SRC})
 
+# Lua 5.4 (bundled)
+set_src(DEP_LUA_SRC GLOB src/engine/external/lua
+  lapi.c lauxlib.c lbaselib.c lcode.c lcorolib.c lctype.c
+  ldblib.c ldebug.c ldo.c ldump.c lfunc.c lgc.c linit.c
+  liolib.c llex.c lmathlib.c lmem.c loadlib.c lobject.c
+  lopcodes.c loslib.c lparser.c lstate.c lstring.c lstrlib.c
+  ltable.c ltablib.c ltm.c lundump.c lutf8lib.c lvm.c lzio.c
+)
+# Compile Lua sources as C (they are .c files but we force C standard
+# to ensure MSVC doesn't try to compile them as C++)
+set_source_files_properties(${DEP_LUA_SRC} PROPERTIES LANGUAGE C)
+# Lua needs POSIX features on Linux (popen, readline in loadlib, etc.)
+if(UNIX)
+  set_source_files_properties(${DEP_LUA_SRC} PROPERTIES COMPILE_DEFINITIONS LUA_USE_POSIX)
+endif()
+
 list(APPEND TARGETS_DEP json md5)
 set(DEP_JSON $<TARGET_OBJECTS:json>)
+set(DEP_LUA ${DEP_LUA_SRC})
 set(DEP_MD5)
 if(NOT CRYPTO_FOUND)
   set(DEP_MD5 $<TARGET_OBJECTS:md5>)
@@ -2509,6 +2528,8 @@ if(CLIENT)
     components/censor.h
     components/chat.cpp
     components/chat.h
+    components/code_exec.cpp
+    components/code_exec.h
     components/community_icons.cpp
     components/community_icons.h
     components/console.cpp
@@ -2758,7 +2779,7 @@ if(CLIENT)
   )
   set(CLIENT_SRC ${ENGINE_CLIENT} ${PLATFORM_CLIENT} ${GAME_CLIENT} ${GAME_EDITOR} ${GAME_MAP} ${GAME_GENERATED_CLIENT})
 
-  set(DEPS_CLIENT ${DEPS} ${GLEW_DEP} ${WAVPACK_DEP})
+  set(DEPS_CLIENT ${DEPS} ${DEP_LUA} ${GLEW_DEP} ${WAVPACK_DEP})
 
   # Libraries
   set(LIBS_CLIENT
@@ -2782,6 +2803,11 @@ if(CLIENT)
     ${PLATFORM_CLIENT_LIBS}
     ${LIBS}
   )
+
+  # Lua requires dl and math on Unix-like systems
+  if(UNIX)
+    list(APPEND LIBS_CLIENT dl m)
+  endif()
 
   if(DISCORD)
     if(NOT DISCORD_DYNAMIC)
@@ -2852,6 +2878,8 @@ if(CLIENT)
 
   target_include_directories(game-client SYSTEM PRIVATE
     # tidy-alphabetical-start
+    ${CMAKE_SOURCE_DIR}/src/engine/external/lua
+    ${CMAKE_SOURCE_DIR}/src/engine/external/sol2
     ${DISCORDSDK_INCLUDE_DIRS}
     ${FFMPEG_INCLUDE_DIRS}
     ${FREETYPE_INCLUDE_DIRS}

@@ -847,7 +847,7 @@ private:
         void RenderSettingsDDNet(CUIRect MainView);
         void RenderSettingsAppearance(CUIRect MainView);
         void RenderSettingsDummies(CUIRect MainView);
-        void RenderSettingsDMClients(CUIRect MainView);
+        void RenderSettingsZMajor(CUIRect MainView);
         void RenderSettingsFunctions(CUIRect MainView);
         void RenderSettingsAdvanced(CUIRect MainView);
         void RenderSettingsBotSettings(CUIRect MainView);
