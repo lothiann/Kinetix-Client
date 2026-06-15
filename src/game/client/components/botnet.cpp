@@ -2,6 +2,7 @@
 
 #include <game/client/components/bot_control.h>
 
+#include <base/color.h>
 #include <base/math.h>
 #include <base/mem.h>
 #include <base/time.h>
@@ -9,9 +10,12 @@
 
 #include <engine/client.h>
 #include <engine/client/enums.h>
+#include <engine/graphics.h>
 #include <engine/map.h>
 
 #include <game/client/gameclient.h>
+#include <game/client/prediction/gameworld.h>
+#include <game/client/prediction/entities/character.h>
 #include <game/collision.h>
 #include <game/mapitems.h>
 
@@ -95,6 +99,16 @@ CBotNet::CBotNet()
         m_PfViewRadius = 6;
         m_PfSnap = false;
         m_PfHookEnabled = false;
+
+        // Kinodynamic A* defaults
+        m_KinodynamicEnabled = false;
+        m_KinoCandidates = 50;
+        m_KinoTicks = 15;
+        m_KinoHookAngles = 12;
+        m_KinoCacheTicks = 5;
+        m_KinoShowPath = true;
+        m_KinoShowField = false;
+
         m_MapWidth = 0;
         m_MapHeight = 0;
         m_pMapGrid = nullptr;
@@ -129,7 +143,7 @@ void CBotNet::OnConsoleInit()
         Console()->Register("c_targets", "s[ids]", CFGFLAG_CLIENT, ConSetTargets, this, "Targets");
         Console()->Register("c_bots", "s[ids]", CFGFLAG_CLIENT, ConSetBots, this, "Bots (allies)");
         Console()->Register("c_target_all", "i[on]", CFGFLAG_CLIENT, ConSetTargetAll, this, "Attack all (targets become blacklist)");
-        Console()->Register("c_atk_set", "iiiiiiiiiiiiiii", CFGFLAG_CLIENT, ConAttackSettings, this, "Settings (15 params: aim,fire,hook,move,stand,rescue,rescueAll,smartDetect,smartRescue,killFrz,atkMain,hammer,simPlayers,avoidFreeze,pfHook)");
+        Console()->Register("c_atk_set", "iiiiiiiiiiiiiiii", CFGFLAG_CLIENT, ConAttackSettings, this, "Settings (16 params: aim,fire,hook,move,stand,rescue,rescueAll,smartDetect,smartRescue,killFrz,atkMain,hammer,simPlayers,avoidFreeze,pfHook,kinodynamic)");
         Console()->Register("c_atk_dists", "fffffff", CFGFLAG_CLIENT, ConAttackDists, this, "Radii (fire, hook, rescue, target, main, stand, main stand)");
         Console()->Register("c_atk_hook_delay", "i[ms]", CFGFLAG_CLIENT, ConAttackHookDelay, this, "Hook Delay");
         Console()->Register("c_client_delay", "i[ms]", CFGFLAG_CLIENT, ConClientDelay, this, "Client delay in ms (0 to disable)");
@@ -162,6 +176,13 @@ void CBotNet::OnConsoleInit()
         Console()->Register("c_smart_rescue", "i[on]", CFGFLAG_CLIENT, ConSmartRescue, this, "Smart rescue pathfinder");
         Console()->Register("c_avoid_freeze", "i[on]", CFGFLAG_CLIENT, ConAvoidFreeze, this, "Avoid freeze tiles");
         Console()->Register("c_pf_hook", "i[on]", CFGFLAG_CLIENT, ConPfHook, this, "Pathfinder hook to walls");
+        Console()->Register("c_kinodynamic", "i[on]", CFGFLAG_CLIENT, ConKinodynamic, this, "Enable Kinodynamic A* movement");
+        Console()->Register("c_kino_candidates", "i[count]", CFGFLAG_CLIENT, ConKinoCandidates, this, "Kinodynamic: number of candidate input packages (10-200)");
+        Console()->Register("c_kino_ticks", "i[ticks]", CFGFLAG_CLIENT, ConKinoTicks, this, "Kinodynamic: simulation depth in ticks (5-50)");
+        Console()->Register("c_kino_hook_angles", "i[angles]", CFGFLAG_CLIENT, ConKinoHookAngles, this, "Kinodynamic: number of hook angles (4-32)");
+        Console()->Register("c_kino_cache_ticks", "i[ticks]", CFGFLAG_CLIENT, ConKinoCacheTicks, this, "Kinodynamic: cache duration in ticks (1-30)");
+        Console()->Register("c_kino_show_path", "i[on]", CFGFLAG_CLIENT, ConKinoShowPath, this, "Kinodynamic: show predicted path");
+        Console()->Register("c_kino_show_field", "i[on]", CFGFLAG_CLIENT, ConKinoShowField, this, "Kinodynamic: show vector field");
         Console()->Register("c_send", "s[dummyids] r[command]", CFGFLAG_CLIENT, ConSendDummy, this, "Execute command on dummies (-1=all, 0,1,2=specific)");
 }
 
@@ -1654,7 +1675,82 @@ void CBotNet::ProcessDummy(int Dummy)
                                                         State.m_LastBotTY = botTY;
                                                 }
 
-                                                GetMovementFromFlow(State, left, right, jump);
+                                                // --- KINODYNAMIC A* MOVEMENT ---
+                                                bool kinoNearFreeze = false;
+                                                if(m_AvoidFreeze && m_MapGridLoaded)
+                                                {
+                                                        vec2 repel = ComputeFreezeRepel(botTX, botTY);
+                                                        kinoNearFreeze = (repel.x * repel.x + repel.y * repel.y) > 0.0001f;
+                                                }
+
+                                                if(m_KinodynamicEnabled && State.m_PathFound && !kinoNearFreeze)
+                                                {
+                                                        CKinodynamicCache &kinoCache = State.m_KinoCache;
+
+                                                        // Check if cache needs recomputation
+                                                        bool kinoNeedRecompute = false;
+                                                        if(!kinoCache.IsValid())
+                                                                kinoNeedRecompute = true;
+                                                        else if(kinoCache.IsExpired(m_KinoCacheTicks))
+                                                                kinoNeedRecompute = true;
+                                                        else if(kinoCache.TargetTX != targetTX || kinoCache.TargetTY != targetTY)
+                                                                kinoNeedRecompute = true;
+                                                        else
+                                                        {
+                                                                // Check if bot drifted too far from expected position
+                                                                float drift = distance(MyPos, kinoCache.BotPos);
+                                                                if(drift > 64.0f) // more than 2 tiles drift
+                                                                        kinoNeedRecompute = true;
+                                                        }
+
+                                                        if(kinoNeedRecompute)
+                                                                ComputeKinodynamic(Dummy, MyPos, botTX, botTY, targetTX, targetTY, State);
+
+                                                        // Apply cached kinodynamic inputs
+                                                        if(kinoCache.IsValid())
+                                                        {
+                                                                // Check if bot should stand (close enough to target)
+                                                                bool kinoStandActive = false;
+                                                                float standDist = (TargetIsMain && !m_AttackMain && !TargetIsRescue) ? m_MainStandDist : m_StandDist;
+                                                                if(m_StandEnabled && !kinoNearFreeze &&
+                                                                        ((!m_StandOnXOnly && Dist < standDist) ||
+                                                                                (m_StandOnXOnly && absolute(dx) < standDist)))
+                                                                {
+                                                                        kinoStandActive = true;
+                                                                }
+
+                                                                if(kinoStandActive)
+                                                                {
+                                                                        // Stand: clear movement, let normal SetDirection handle it
+                                                                        left = false;
+                                                                        right = false;
+                                                                        jump = false;
+                                                                        pInput->m_Hook = 0;
+                                                                        // Don't goto after_kino_movement — let SetDirection + stand logic run
+                                                                }
+                                                                else
+                                                                {
+                                                                        ApplyKinodynamicCache(Dummy, pInput, State);
+                                                                        // Skip the normal movement flow
+                                                                        goto after_kino_movement;
+                                                                }
+                                                        }
+
+                                                        // Cache invalid after compute (no valid path found) — fall through to normal movement
+                                                }
+
+                                                // Normal pathfinder movement — used when:
+                                                // 1. Kinodynamic is disabled
+                                                // 2. Bot is near freeze (kinodynamic skips to let avoid-freeze logic work)
+                                                // 3. Kinodynamic cache is invalid (no valid path found by simulation)
+                                                if(!m_KinodynamicEnabled || kinoNearFreeze || !State.m_KinoCache.IsValid())
+                                                {
+                                                        GetMovementFromFlow(State, left, right, jump);
+                                                        // When falling back from kinodynamic to normal movement, clear hook
+                                                        // because auto-hook code below is skipped when kinodynamic is enabled
+                                                        if(m_KinodynamicEnabled)
+                                                                pInput->m_Hook = 0;
+                                                }
 
                                                 if(m_PfSnap && State.m_PathFound && !left && !right)
                                                 {
@@ -1862,16 +1958,16 @@ void CBotNet::ProcessDummy(int Dummy)
                                 }
                         }
 
+        after_kino_movement:
                 after_movement:
 
                         bool CanShoot = !TargetIsMain || m_AttackMain;
                         if(m_AutoFire && Dist < m_FireDist && CanShoot)
                                 pInput->m_Fire++;
 
-                        // Laser rescue: use laser instead of hammer when rescuing
-                        // Logic: Laser enabled? → Rescue target? → Target NOT in freeze tile? → Has laser weapon? → Line of sight (wall + player)? → Target in laser range? → Switch to laser + aim + fire
+                        // Laser rescue: skip when Kinodynamic A* is active (it manages hook/aim itself)
                         bool usingLaserRescue = false;
-                        if(m_LaserRescue)
+                        if(!m_KinodynamicEnabled && m_LaserRescue)
                         {
                                 if(TargetIsRescue)
                                 {
@@ -1911,65 +2007,32 @@ void CBotNet::ProcessDummy(int Dummy)
                         if(m_AutoHammer && pInput->m_Fire > 0 && !usingLaserRescue)
                                 pInput->m_WantedWeapon = 1;
 
-                        if(m_AutoHook && Dist < m_HookDist && CanShoot)
+                        // Auto-hook: skip when Kinodynamic A* is active (it manages hook itself)
+                        if(!m_KinodynamicEnabled)
                         {
-                                vec2 TPos((float)TChar.m_X, (float)TChar.m_Y);
-                                bool canHook = (pGame->Collision()->IntersectLine(MyPos, TPos, NULL, NULL) == 0);
-                                if(canHook)
+                                if(m_AutoHook && Dist < m_HookDist && CanShoot)
                                 {
-                                        vec2 IntersectPos;
-                                        int HitPlayer = pGame->IntersectCharacter(MyPos, TPos, IntersectPos, LocalID);
-                                        if(HitPlayer != -1 && HitPlayer != TargetID)
-                                                canHook = false;
-                                }
+                                        vec2 TPos((float)TChar.m_X, (float)TChar.m_Y);
+                                        bool canHook = (pGame->Collision()->IntersectLine(MyPos, TPos, NULL, NULL) == 0);
+                                        if(canHook)
+                                        {
+                                                vec2 IntersectPos;
+                                                int HitPlayer = pGame->IntersectCharacter(MyPos, TPos, IntersectPos, LocalID);
+                                                if(HitPlayer != -1 && HitPlayer != TargetID)
+                                                        canHook = false;
+                                        }
 
-                                if(canHook)
-                                {
-                                        int TicksCycle = (50 * m_HookDelay / 1000);
-                                        if(TicksCycle < 2)
-                                                TicksCycle = 2;
-                                        State.m_HookTickTimer++;
-                                        if(State.m_HookTickTimer >= TicksCycle)
-                                                State.m_HookTickTimer = 0;
-                                        pInput->m_Hook = (State.m_HookTickTimer < TicksCycle - 2);
-                                }
-                                else
-                                {
-                                        pInput->m_Hook = 0;
-                                        State.m_HookTickTimer = 0;
-                                }
-                        }
-                        else
-                        {
-                                pInput->m_Hook = 0;
-                                State.m_HookTickTimer = 0;
-                        }
-
-                        // === Pathfinder Hook ===
-                        if(!m_PfHookEnabled || standActive || pInput->m_Hook != 0 ||
-                                (State.m_PfHookTile.x == 0 && State.m_PfHookTile.y == 0))
-                        {
-                                State.m_HookTickTimer = 0;
-                        }
-                        else
-                        {
-                                int TicksCycle = (50 * m_HookDelay / 1000);
-                                if(TicksCycle < 2)
-                                        TicksCycle = 2;
-
-                                float hDx = State.m_PfHookTile.x - MyPos.x;
-                                float hDy = State.m_PfHookTile.y - MyPos.y;
-                                float hDist = sqrtf(hDx * hDx + hDy * hDy);
-                                if(hDist > 0.001f && hDist < m_HookDist)
-                                {
-                                        SetMousePos(pGame, Dummy, vec2(hDx, hDy));
-                                        pInput->m_Hook = 1;
-                                }
-
-                                if(pInput->m_Hook != 0)
-                                {
-                                        State.m_HookTickTimer++;
-                                        if(State.m_HookTickTimer >= TicksCycle)
+                                        if(canHook)
+                                        {
+                                                int TicksCycle = (50 * m_HookDelay / 1000);
+                                                if(TicksCycle < 2)
+                                                        TicksCycle = 2;
+                                                State.m_HookTickTimer++;
+                                                if(State.m_HookTickTimer >= TicksCycle)
+                                                        State.m_HookTickTimer = 0;
+                                                pInput->m_Hook = (State.m_HookTickTimer < TicksCycle - 2);
+                                        }
+                                        else
                                         {
                                                 pInput->m_Hook = 0;
                                                 State.m_HookTickTimer = 0;
@@ -1977,7 +2040,47 @@ void CBotNet::ProcessDummy(int Dummy)
                                 }
                                 else
                                 {
+                                        pInput->m_Hook = 0;
                                         State.m_HookTickTimer = 0;
+                                }
+                        }
+
+                        // === Pathfinder Hook === (skipped when Kinodynamic A* is active — it manages hook itself)
+                        if(!m_KinodynamicEnabled)
+                        {
+                                if(!m_PfHookEnabled || standActive || pInput->m_Hook != 0 ||
+                                        (State.m_PfHookTile.x == 0 && State.m_PfHookTile.y == 0))
+                                {
+                                        State.m_HookTickTimer = 0;
+                                }
+                                else
+                                {
+                                        int TicksCycle = (50 * m_HookDelay / 1000);
+                                        if(TicksCycle < 2)
+                                                TicksCycle = 2;
+
+                                        float hDx = State.m_PfHookTile.x - MyPos.x;
+                                        float hDy = State.m_PfHookTile.y - MyPos.y;
+                                        float hDist = sqrtf(hDx * hDx + hDy * hDy);
+                                        if(hDist > 0.001f && hDist < m_HookDist)
+                                        {
+                                                SetMousePos(pGame, Dummy, vec2(hDx, hDy));
+                                                pInput->m_Hook = 1;
+                                        }
+
+                                        if(pInput->m_Hook != 0)
+                                        {
+                                                State.m_HookTickTimer++;
+                                                if(State.m_HookTickTimer >= TicksCycle)
+                                                {
+                                                        pInput->m_Hook = 0;
+                                                        State.m_HookTickTimer = 0;
+                                                }
+                                        }
+                                        else
+                                        {
+                                                State.m_HookTickTimer = 0;
+                                        }
                                 }
                         }
 
@@ -2053,10 +2156,30 @@ void CBotNet::OnReset()
         m_AttackEnabled = false;
         m_CopyMoves = false;
         m_RandomAim = false;
+        m_KinodynamicEnabled = false;
         for(int D = 0; D < MAX_DUMMIES; D++)
         {
                 m_aDummies[D].Reset();
                 ResetDummyInputs(D);
+        }
+}
+
+void CBotNet::OnRender()
+{
+        if(!m_KinodynamicEnabled)
+                return;
+
+        // Render kinodynamic package trajectory and vector field
+        if(m_KinoShowField)
+                RenderVectorField();
+        if(m_KinoShowPath)
+        {
+                for(int D = 0; D < MAX_DUMMIES; D++)
+                {
+                        if(!IsDummyActive(D))
+                                continue;
+                        RenderPackage(D);
+                }
         }
 }
 
@@ -2336,6 +2459,18 @@ void CBotNet::ConAttackSettings(IConsole::IResult *pResult, void *pUserData)
                         p->m_PfHookEnabled = newPfHook;
                         for(int D = 0; D < MAX_DUMMIES; D++)
                                 p->m_aDummies[D].m_PfHookTile = vec2(0, 0);
+                }
+        }
+        {
+                bool newKino = pResult->GetInteger(15) != 0;
+                if(newKino != p->m_KinodynamicEnabled)
+                {
+                        p->m_KinodynamicEnabled = newKino;
+                        for(int D = 0; D < MAX_DUMMIES; D++)
+                        {
+                                p->m_aDummies[D].m_KinoCache.Reset();
+                                p->ResetDummyInputs(D);
+                        }
                 }
         }
 }
@@ -2744,4 +2879,509 @@ void CBotNet::ConSendDummy(IConsole::IResult *pResult, void *pUserData)
 
         // Restore original dummy
         g_Config.m_ClDummy = SavedDummy;
+}
+
+// =========================================================
+// KINODYNAMIC A* — CONSOLE COMMANDS
+// =========================================================
+
+void CBotNet::ConKinodynamic(IConsole::IResult *pResult, void *pUserData)
+{
+        CBotNet *p = (CBotNet *)pUserData;
+        p->m_KinodynamicEnabled = pResult->GetInteger(0) != 0;
+        if(!p->m_KinodynamicEnabled)
+        {
+                for(int D = 0; D < MAX_DUMMIES; D++)
+                {
+                        p->m_aDummies[D].m_KinoCache.Reset();
+                        p->ResetDummyInputs(D);
+                }
+        }
+}
+
+void CBotNet::ConKinoCandidates(IConsole::IResult *pResult, void *pUserData)
+{
+        CBotNet *p = (CBotNet *)pUserData;
+        int v = pResult->GetInteger(0);
+        if(v >= 10 && v <= 200)
+                p->m_KinoCandidates = v;
+}
+
+void CBotNet::ConKinoTicks(IConsole::IResult *pResult, void *pUserData)
+{
+        CBotNet *p = (CBotNet *)pUserData;
+        int v = pResult->GetInteger(0);
+        if(v >= 5 && v <= 50)
+                p->m_KinoTicks = v;
+}
+
+void CBotNet::ConKinoHookAngles(IConsole::IResult *pResult, void *pUserData)
+{
+        CBotNet *p = (CBotNet *)pUserData;
+        int v = pResult->GetInteger(0);
+        if(v >= 4 && v <= 32)
+                p->m_KinoHookAngles = v;
+}
+
+void CBotNet::ConKinoCacheTicks(IConsole::IResult *pResult, void *pUserData)
+{
+        CBotNet *p = (CBotNet *)pUserData;
+        int v = pResult->GetInteger(0);
+        if(v >= 1 && v <= 30)
+                p->m_KinoCacheTicks = v;
+}
+
+void CBotNet::ConKinoShowPath(IConsole::IResult *pResult, void *pUserData)
+{
+        CBotNet *p = (CBotNet *)pUserData;
+        p->m_KinoShowPath = pResult->GetInteger(0) != 0;
+}
+
+void CBotNet::ConKinoShowField(IConsole::IResult *pResult, void *pUserData)
+{
+        CBotNet *p = (CBotNet *)pUserData;
+        p->m_KinoShowField = pResult->GetInteger(0) != 0;
+}
+
+// =========================================================
+// KINODYNAMIC A* — ALGORITHM
+// =========================================================
+
+// Halton sequence for quasi-random low-discrepancy sampling
+static float Halton(int index, int base)
+{
+        float result = 0.0f;
+        float f = 1.0f / (float)base;
+        int i = index;
+        while(i > 0)
+        {
+                result += f * (float)(i % base);
+                i /= base;
+                f /= (float)base;
+        }
+        return result;
+}
+
+// Generate a single candidate input package
+// Uses Halton sequence to uniformly cover the control parameter space:
+//   dim 0: direction (-1, 0, +1)
+//   dim 1: jump timing (tick 0..T-1 or never)
+//   dim 2: hook timing (tick 0..T-1 or never)
+//   dim 3: hook angle (0..2pi)
+static void GenerateCandidate(int index, int numTicks, int hookAngles,
+        int &outDirection, int &outJumpTick, int &outHookTick, float &outHookAngle)
+{
+        // Use different prime bases for each dimension (Halton)
+        float d0 = Halton(index + 1, 2); // direction
+        float d1 = Halton(index + 1, 3); // jump phase
+        float d2 = Halton(index + 1, 5); // hook phase
+        float d3 = Halton(index + 1, 7); // hook angle
+
+        // Direction: 3 buckets → -1, 0, +1
+        int dirBucket = (int)(d0 * 3.0f);
+        dirBucket = pf_clamp(dirBucket, 0, 2);
+        outDirection = dirBucket - 1; // -1, 0, +1
+
+        // Jump tick: if d1 < 0.3 → never jump, else map to [0, numTicks-1]
+        if(d1 < 0.3f)
+                outJumpTick = -1; // never
+        else
+                outJumpTick = (int)((d1 - 0.3f) / 0.7f * (float)numTicks);
+        outJumpTick = pf_clamp(outJumpTick, -1, numTicks - 1);
+
+        // Hook tick: if d2 < 0.5 → never hook, else map to [0, numTicks-1]
+        if(d2 < 0.5f)
+                outHookTick = -1; // never
+        else
+                outHookTick = (int)((d2 - 0.5f) / 0.5f * (float)numTicks);
+        outHookTick = pf_clamp(outHookTick, -1, numTicks - 1);
+
+        // Hook angle: evenly spaced angles
+        outHookAngle = 2.0f * (float)pi * d3;
+}
+
+// Build per-tick input array from candidate parameters
+static void BuildInputSequence(int numTicks, int direction, int jumpTick, int hookTick, float hookAngle,
+        CNetObj_PlayerInput *pInputs, const vec2 &botPos)
+{
+        for(int t = 0; t < numTicks; t++)
+        {
+                pInputs[t].m_Direction = direction;
+                pInputs[t].m_Jump = (t == jumpTick) ? 1 : 0;
+                // Hook: press from hookTick for a limited duration, then release
+                // Holding hook forever causes the bot to stay attached
+                const int HOOK_HOLD_TICKS = 8; // ~160ms hook hold before release
+                pInputs[t].m_Hook = (hookTick >= 0 && t >= hookTick && t < hookTick + HOOK_HOLD_TICKS) ? 1 : 0;
+
+                // Aim: if hooking, aim at hook angle; otherwise aim in movement direction
+                if(hookTick >= 0 && t >= hookTick && t < hookTick + HOOK_HOLD_TICKS)
+                {
+                        float aimDist = 200.0f; // reasonable aim distance
+                        pInputs[t].m_TargetX = (int)(cosf(hookAngle) * aimDist);
+                        pInputs[t].m_TargetY = (int)(sinf(hookAngle) * aimDist);
+                }
+                else
+                {
+                        // Aim in movement direction
+                        float aimDist = 100.0f;
+                        pInputs[t].m_TargetX = (int)((float)direction * aimDist);
+                        pInputs[t].m_TargetY = (jumpTick >= 0 && t <= jumpTick) ? (int)(-aimDist) : 0;
+                }
+
+                pInputs[t].m_Fire = 0;
+                pInputs[t].m_WantedWeapon = 0;
+                pInputs[t].m_PlayerFlags = 0;
+                pInputs[t].m_NextWeapon = 0;
+                pInputs[t].m_PrevWeapon = 0;
+        }
+}
+
+void CBotNet::ComputeKinodynamic(int Dummy, const vec2 &MyPos, int botTX, int botTY, int targetTX, int targetTY, CBotNetDummy &State)
+{
+        // Preconditions: m_pfDist must be computed by ComputePathfinder already
+        if(!m_MapGridLoaded || !m_pfDist)
+                return;
+        if(botTX < 0 || botTY < 0 || botTX >= m_MapWidth || botTY >= m_MapHeight)
+                return;
+
+        CGameClient *pGame = GameClient();
+
+        int numCandidates = pf_clamp(m_KinoCandidates, 10, KINO_MAX_CANDIDATES);
+        int numTicks = pf_clamp(m_KinoTicks, 5, KINO_MAX_TICKS);
+        int hookAngles = pf_clamp(m_KinoHookAngles, 4, 32);
+
+        // Score the start position using A* distance field
+        int startIdx = botTY * m_MapWidth + botTX;
+        float startDist = m_pfDist[startIdx];
+        if(startDist >= 1e17f)
+                return; // bot is in an unreachable tile
+
+        // Find the dummy character ID in the predicted world
+        int PredictedCharId = (Dummy == g_Config.m_ClDummy) ? pGame->m_Snap.m_LocalClientId : Dummy;
+
+        // Verify the character exists in the predicted world
+        if(!pGame->m_PredictedWorld.GetCharacterById(PredictedCharId))
+                return;
+
+        // === Generate candidates and simulate ===
+        float bestScore = 1e18f; // lower is better (we want to minimize m_pfDist at the endpoint)
+        int bestCandidate = -1;
+        int bestFreezeCount = 0; // track freeze tiles in best candidate
+        CNetObj_PlayerInput bestInputs[KINO_MAX_TICKS];
+        std::vector<vec2> bestPath;
+
+        for(int c = 0; c < numCandidates; c++)
+        {
+                int dir, jumpTick, hookTick;
+                float hookAngle;
+                GenerateCandidate(c, numTicks, hookAngles, dir, jumpTick, hookTick, hookAngle);
+
+                // Build input sequence for this candidate
+                CNetObj_PlayerInput aInputs[KINO_MAX_TICKS];
+                BuildInputSequence(numTicks, dir, jumpTick, hookTick, hookAngle, aInputs, MyPos);
+
+                // Create a fresh copy of the predicted world for each candidate
+                // This is the safest approach — avoids entity list pointer corruption
+                CGameWorld FutureWorld;
+                FutureWorld.CopyWorld(&pGame->m_PredictedWorld);
+
+                // Remove other characters to speed up simulation
+                for(int i = 0; i < MAX_CLIENTS; i++)
+                {
+                        if(i == PredictedCharId)
+                                continue;
+                        if(CCharacter *pChar = FutureWorld.GetCharacterById(i))
+                                FutureWorld.RemoveEntity(pChar);
+                }
+
+                // Get the dummy's character in the future world
+                CCharacter *pFutureChar = FutureWorld.GetCharacterById(PredictedCharId);
+                if(!pFutureChar)
+                        continue;
+
+                int StartTick = FutureWorld.GameTick();
+
+                // Simulate the candidate
+                std::vector<vec2> vPositions;
+                vPositions.reserve(numTicks + 1);
+                vPositions.push_back(pFutureChar->m_Pos);
+
+                bool characterDied = false;
+                for(int t = 0; t < numTicks; t++)
+                {
+                        int Tick = StartTick + t + 1;
+                        pFutureChar->OnDirectInput(&aInputs[t]);
+                        FutureWorld.m_GameTick = Tick;
+                        pFutureChar->OnPredictedInput(&aInputs[t]);
+                        FutureWorld.Tick();
+
+                        if(!FutureWorld.GetCharacterById(PredictedCharId))
+                        {
+                                characterDied = true;
+                                break;
+                        }
+                        vPositions.push_back(pFutureChar->m_Pos);
+                }
+
+                if(characterDied)
+                        continue;
+
+                // Score: use the A* distance field at the final position
+                vec2 finalPos = pFutureChar->m_Pos;
+                int finalTX = (int)(finalPos.x / 32.0f);
+                int finalTY = (int)(finalPos.y / 32.0f);
+                finalTX = pf_clamp(finalTX, 0, m_MapWidth - 1);
+                finalTY = pf_clamp(finalTY, 0, m_MapHeight - 1);
+                int finalIdx = finalTY * m_MapWidth + finalTX;
+
+                float score = m_pfDist[finalIdx];
+
+                // Penalize freeze tiles along the entire path
+                // Use a moderate penalty so that moving toward the target still wins over standing still
+                // PF_FREEZE_COST=50 per tile was too aggressive — a 10-tile freeze path = 500 penalty
+                // which made "stand still" (penalty=0) always win
+                const float KINO_FREEZE_PENALTY = 5.0f; // moderate: 10 tiles = 50, still allows progress
+                int freezeTileCount = 0;
+                for(size_t p = 0; p < vPositions.size(); p++)
+                {
+                        int ptx = (int)(vPositions[p].x / 32.0f);
+                        int pty = (int)(vPositions[p].y / 32.0f);
+                        ptx = pf_clamp(ptx, 0, m_MapWidth - 1);
+                        pty = pf_clamp(pty, 0, m_MapHeight - 1);
+                        if(IsTileFreeze(ptx, pty))
+                                freezeTileCount++;
+                }
+                score += (float)freezeTileCount * KINO_FREEZE_PENALTY;
+
+                // Track best candidate AND its freeze count
+                // If the best candidate goes through heavy freeze, we'll fall back to normal pathfinder
+
+                if(score < bestScore)
+                {
+                        bestScore = score;
+                        bestCandidate = c;
+                        bestFreezeCount = freezeTileCount;
+                        memcpy(bestInputs, aInputs, sizeof(CNetObj_PlayerInput) * numTicks);
+                        bestPath = vPositions;
+                }
+        }
+
+        // Store the best package in the cache
+        // But if the best candidate goes through heavy freeze (>30% of ticks in freeze tiles),
+        // don't use it — fall back to normal pathfinder which has proper freeze avoidance
+        if(bestCandidate >= 0)
+        {
+                float freezeRatio = (float)bestFreezeCount / (float)(numTicks + 1);
+                if(freezeRatio > 0.3f)
+                {
+                        // Too much freeze on the predicted path — invalidate cache
+                        // so the caller falls back to normal pathfinder movement
+                        State.m_KinoCache.Reset();
+                        return;
+                }
+
+                CKinodynamicCache &cache = State.m_KinoCache;
+                cache.Reset();
+                memcpy(cache.aInputs, bestInputs, sizeof(CNetObj_PlayerInput) * numTicks);
+                cache.NumTicks = numTicks;
+                cache.CurrentTick = 0;
+                cache.ComputeTick = pGame->Client()->GameTick(g_Config.m_ClDummy);
+                cache.TargetTX = targetTX;
+                cache.TargetTY = targetTY;
+                cache.BotPos = MyPos;
+                cache.vPath = bestPath;
+        }
+}
+
+void CBotNet::ApplyKinodynamicCache(int Dummy, CNetObj_PlayerInput *pInput, CBotNetDummy &State)
+{
+        CKinodynamicCache &cache = State.m_KinoCache;
+        if(!cache.IsValid())
+                return;
+
+        CGameClient *pGame = GameClient();
+
+        if(cache.CurrentTick < cache.NumTicks)
+        {
+                CNetObj_PlayerInput &src = cache.aInputs[cache.CurrentTick];
+
+                // Apply direction
+                if(Dummy == g_Config.m_ClDummy)
+                {
+                        pGame->m_Controls.m_aInputDirectionLeft[Dummy] = (src.m_Direction < 0) ? 1 : 0;
+                        pGame->m_Controls.m_aInputDirectionRight[Dummy] = (src.m_Direction > 0) ? 1 : 0;
+                }
+                else
+                {
+                        pInput->m_Direction = src.m_Direction;
+                }
+
+                // Apply jump
+                pInput->m_Jump = src.m_Jump;
+
+                // Apply hook and aim
+                pInput->m_Hook = src.m_Hook;
+                if(src.m_Hook || src.m_TargetX != 0 || src.m_TargetY != 0)
+                {
+                        SetMousePos(pGame, Dummy, vec2((float)src.m_TargetX, (float)src.m_TargetY));
+                }
+
+                pInput->m_PlayerFlags |= 1;
+                cache.CurrentTick++;
+        }
+        else
+        {
+                // Cache exhausted, mark for recomputation
+                // IMPORTANT: Clear hook/jump to prevent them leaking and getting stuck
+                pInput->m_Hook = 0;
+                pInput->m_Jump = 0;
+                cache.Reset();
+        }
+}
+
+bool CBotNet::IsKinodynamicCacheValid(int targetTX, int targetTY, const vec2 &MyPos) const
+{
+        // This is called on the State's cache - but since it's per-dummy,
+        // the caller should check State.m_KinoCache directly
+        return false; // placeholder, actual logic is inline in ProcessDummy
+}
+
+// =========================================================
+// KINODYNAMIC A* — RENDERING
+// =========================================================
+
+void CBotNet::RenderPackage(int Dummy)
+{
+        if(!m_KinodynamicEnabled)
+                return;
+        if(Dummy < 0 || Dummy >= MAX_DUMMIES)
+                return;
+
+        const CKinodynamicCache &cache = m_aDummies[Dummy].m_KinoCache;
+        if(!cache.IsValid() || cache.vPath.size() < 2)
+                return;
+
+        // Render kinodynamic predicted path — use fixed alpha, independent of trajectory settings
+        Graphics()->TextureClear();
+
+        const ColorRGBA KinoColor = ColorRGBA(0.2f, 1.0f, 0.4f, 1.0f);
+        const float PathAlpha = 0.8f;
+        const float HalfWidth = 1.5f;
+
+        {
+                std::vector<IGraphics::CFreeformItem> vQuads;
+                vQuads.reserve(cache.vPath.size() - 1);
+
+                for(size_t i = 1; i < cache.vPath.size(); i++)
+                {
+                        vec2 p0 = cache.vPath[i - 1];
+                        vec2 p1 = cache.vPath[i];
+                        vec2 Dir = normalize(p1 - p0);
+                        vec2 Perp = vec2(Dir.y, -Dir.x) * HalfWidth;
+
+                        vQuads.emplace_back(
+                                p0.x - Perp.x, p0.y - Perp.y,
+                                p0.x + Perp.x, p0.y + Perp.y,
+                                p1.x - Perp.x, p1.y - Perp.y,
+                                p1.x + Perp.x, p1.y + Perp.y);
+                }
+
+                Graphics()->QuadsBegin();
+                for(size_t i = 0; i < vQuads.size(); i++)
+                {
+                        float t = (float)(i + 1) / (float)cache.vPath.size();
+                        float Alpha = PathAlpha * (1.0f - t * 0.7f);
+                        Graphics()->SetColor(KinoColor.r, KinoColor.g, KinoColor.b, Alpha);
+                        Graphics()->QuadsDrawFreeform(&vQuads[i], 1);
+                }
+                Graphics()->QuadsEnd();
+        }
+}
+
+void CBotNet::RenderVectorField()
+{
+        if(!m_KinodynamicEnabled || !m_PathfinderEnabled || !m_MapGridLoaded)
+                return;
+        if(!m_pfDist)
+                return;
+
+        CGameClient *pGame = GameClient();
+
+        // Get camera position for viewport culling
+        float CamX = pGame->m_Camera.m_Center.x;
+        float CamY = pGame->m_Camera.m_Center.y;
+        float CamW = pGame->m_Camera.m_Zoom * Graphics()->ScreenWidth() / 2.0f;
+        float CamH = pGame->m_Camera.m_Zoom * Graphics()->ScreenHeight() / 2.0f;
+
+        int minTX = pf_max(0, (int)((CamX - CamW) / 32.0f) - 1);
+        int maxTX = pf_min(m_MapWidth - 1, (int)((CamX + CamW) / 32.0f) + 1);
+        int minTY = pf_max(0, (int)((CamY - CamH) / 32.0f) - 1);
+        int maxTY = pf_min(m_MapHeight - 1, (int)((CamY + CamH) / 32.0f) + 1);
+
+        // Sample every 2 tiles for performance
+        int step = 2;
+
+        Graphics()->TextureClear();
+        Graphics()->LinesBegin();
+
+        for(int ty = minTY; ty <= maxTY; ty += step)
+        {
+                for(int tx = minTX; tx <= maxTX; tx += step)
+                {
+                        int idx = ty * m_MapWidth + tx;
+                        if(m_pfDist[idx] >= 1e17f)
+                                continue;
+                        if(!IsTileWalkable(tx, ty))
+                                continue;
+
+                        float currentD = m_pfDist[idx];
+
+                        // Find the neighbor with the smallest distance (gradient direction)
+                        float bestDx = 0, bestDy = 0;
+                        float bestDist = currentD;
+                        int dr[] = {-1, 1, 0, 0, -1, -1, 1, 1};
+                        int dc[] = {0, 0, -1, 1, -1, 1, -1, 1};
+
+                        for(int d = 0; d < 8; d++)
+                        {
+                                int nr = ty + dr[d];
+                                int nc = tx + dc[d];
+                                if(nr < 0 || nc < 0 || nr >= m_MapHeight || nc >= m_MapWidth)
+                                        continue;
+                                int nIdx = nr * m_MapWidth + nc;
+                                if(m_pfDist[nIdx] < bestDist)
+                                {
+                                        bestDist = m_pfDist[nIdx];
+                                        bestDx = (float)(nc - tx);
+                                        bestDy = (float)(nr - ty);
+                                }
+                        }
+
+                        if(bestDx == 0 && bestDy == 0)
+                                continue;
+
+                        float len = sqrtf(bestDx * bestDx + bestDy * bestDy);
+                        if(len < 0.001f)
+                                continue;
+
+                        bestDx /= len;
+                        bestDy /= len;
+
+                        float cx = tx * 32.0f + 16.0f;
+                        float cy = ty * 32.0f + 16.0f;
+                        float arrowLen = 12.0f;
+
+                        vec2 start(cx, cy);
+                        vec2 end(cx + bestDx * arrowLen, cy + bestDy * arrowLen);
+
+                        // Color based on distance: close to target = green, far = yellow
+                        float maxVisDist = 100.0f;
+                        float ratio = pf_min(currentD / maxVisDist, 1.0f);
+                        Graphics()->SetColor(1.0f, 1.0f - ratio * 0.5f, 0.0f, 0.4f);
+                        IGraphics::CLineItem Line(start, end);
+                        Graphics()->LinesDraw(&Line, 1);
+                }
+        }
+
+        Graphics()->LinesEnd();
 }

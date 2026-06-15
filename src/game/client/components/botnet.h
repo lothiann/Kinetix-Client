@@ -19,6 +19,40 @@ static const float PF_FREEZE_COST = 50.0f;
 static const float PF_PLAYER_COST = 1e18f;
 static const float PF_FREEZE_REPEL_WEIGHT = 3.0f;
 
+// Kinodynamic A* constants
+static const int KINO_MAX_TICKS = 50;
+static const int KINO_MAX_CANDIDATES = 200;
+
+// =========================================================
+// Kinodynamic A* — cached input package per dummy
+// =========================================================
+struct CKinodynamicCache
+{
+        CNetObj_PlayerInput aInputs[KINO_MAX_TICKS]; // the winning input package
+        int NumTicks;           // how many ticks in the package
+        int CurrentTick;        // which tick of the package we're currently applying
+        int ComputeTick;        // game tick when this was computed
+        int TargetTX, TargetTY; // target tile at compute time (for invalidation)
+        vec2 BotPos;            // bot position at compute time (for invalidation)
+        std::vector<vec2> vPath; // predicted positions for rendering
+
+        CKinodynamicCache() { Reset(); }
+
+        void Reset()
+        {
+                NumTicks = 0;
+                CurrentTick = 0;
+                ComputeTick = 0;
+                TargetTX = -1;
+                TargetTY = -1;
+                BotPos = vec2(0, 0);
+                vPath.clear();
+        }
+
+        bool IsValid() const { return NumTicks > 0; }
+        bool IsExpired(int CacheTicks) const { return CurrentTick >= NumTicks || CurrentTick >= CacheTicks; }
+};
+
 // =========================================================
 // Per-dummy runtime state (position/timing dependent)
 // Each inactive dummy has its own instance
@@ -47,6 +81,9 @@ struct CBotNetDummy
 
         // Random aim timing
         int64_t m_NextRandomAimTick;
+
+        // Kinodynamic A* cache
+        CKinodynamicCache m_KinoCache;
 
         // Copy moves
         int m_LastTargetAttackTick;
@@ -180,6 +217,15 @@ public:
         bool m_PfSnap;
         bool m_PfHookEnabled;
 
+        // Kinodynamic A* settings (shared)
+        bool m_KinodynamicEnabled;
+        int m_KinoCandidates;   // how many input packages to test (10-200)
+        int m_KinoTicks;        // how many ticks to simulate per package (5-50)
+        int m_KinoHookAngles;   // how many hook angles to test (4-32)
+        int m_KinoCacheTicks;   // how many ticks to apply cached package before recomputing (1-30)
+        bool m_KinoShowPath;    // render kinodynamic predicted path
+        bool m_KinoShowField;   // render pathfinder vector field
+
         // Per-dummy runtime state
         CBotNetDummy m_aDummies[MAX_DUMMIES];
 
@@ -200,6 +246,7 @@ public:
         int Sizeof() const override { return sizeof(*this); }
         void OnConsoleInit() override;
         void OnUpdate() override;
+        void OnRender() override;
         void OnReset() override;
 
         // Process one inactive dummy
@@ -227,6 +274,13 @@ public:
         vec2 ComputeFreezeRepel(int botTX, int botTY);
         void UpdatePlayerPenalty(int botTX, int botTY, int excludeTX, int excludeTY, int LocalID);
         void GetMovementFromFlow(const CBotNetDummy &State, bool &outLeft, bool &outRight, bool &outJump);
+
+        // Kinodynamic A* — physics-aware input planning
+        void ComputeKinodynamic(int Dummy, const vec2 &MyPos, int botTX, int botTY, int targetTX, int targetTY, CBotNetDummy &State);
+        void ApplyKinodynamicCache(int Dummy, CNetObj_PlayerInput *pInput, CBotNetDummy &State);
+        bool IsKinodynamicCacheValid(int targetTX, int targetTY, const vec2 &MyPos) const;
+        void RenderPackage(int Dummy);
+        void RenderVectorField();
 
         // --- Console commands ---
         static void ConRandomAim(IConsole::IResult *pResult, void *pUserData);
@@ -269,6 +323,13 @@ public:
         static void ConSmartRescue(IConsole::IResult *pResult, void *pUserData);
         static void ConAvoidFreeze(IConsole::IResult *pResult, void *pUserData);
         static void ConPfHook(IConsole::IResult *pResult, void *pUserData);
+        static void ConKinodynamic(IConsole::IResult *pResult, void *pUserData);
+        static void ConKinoCandidates(IConsole::IResult *pResult, void *pUserData);
+        static void ConKinoTicks(IConsole::IResult *pResult, void *pUserData);
+        static void ConKinoHookAngles(IConsole::IResult *pResult, void *pUserData);
+        static void ConKinoCacheTicks(IConsole::IResult *pResult, void *pUserData);
+        static void ConKinoShowPath(IConsole::IResult *pResult, void *pUserData);
+        static void ConKinoShowField(IConsole::IResult *pResult, void *pUserData);
         static void ConSendDummy(IConsole::IResult *pResult, void *pUserData);
 
         // Placeholder processing for c_send and UI Send Command
