@@ -2782,6 +2782,7 @@ bool CMenus::OnInput(const IInput::CEvent &Event)
 		if(CE.m_EditorActive && Event.m_Flags & IInput::FLAG_PRESS && Event.m_Key == KEY_ESCAPE)
 		{
 			CE.m_EditorActive = false;
+			Input()->StopTextInput();
 			return true;
 		}
 		Ui()->OnInput(Event);

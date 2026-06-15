@@ -4045,6 +4045,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                         if(Inside && Ui()->MouseButtonClicked(0))
                                         {
                                                 CE.m_EditorActive = true;
+                                                Input()->StartTextInput();
                                                 CE.m_CursorPos = str_length(CE.m_aCodeBuffer);
                                                 CE.m_SelectionStart = CE.m_CursorPos;
                                                 CE.m_SelectionEnd = CE.m_CursorPos;
@@ -4053,18 +4054,20 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                         if(CE.m_EditorActive && !Inside && Ui()->MouseButtonClicked(0))
                                         {
                                                 CE.m_EditorActive = false;
+                                                Input()->StopTextInput();
                                         }
 
-                                        // Draw background
+                                        // Draw background — same style as DoEditBox
                                         const bool Active = CE.m_EditorActive;
-                                        CodeRect.Draw(ColorRGBA(0.1f, 0.1f, 0.1f, 0.9f), IGraphics::CORNER_ALL, 3.0f);
+                                        const bool Hovered = Inside;
+                                        ColorRGBA BgColor;
                                         if(Active)
-                                        {
-                                                CUIRect Border = CodeRect;
-                                                Border.Draw(ColorRGBA(0.4f, 0.6f, 0.8f, 0.5f), IGraphics::CORNER_ALL, 3.0f);
-                                                CodeRect.Margin(1.5f, &CodeRect);
-                                                CodeRect.Draw(ColorRGBA(0.1f, 0.1f, 0.1f, 0.95f), IGraphics::CORNER_ALL, 2.0f);
-                                        }
+                                                BgColor = ColorRGBA(1.0f, 1.0f, 1.0f, 0.4f);
+                                        else if(Hovered)
+                                                BgColor = ColorRGBA(1.0f, 1.0f, 1.0f, 0.6f);
+                                        else
+                                                BgColor = ColorRGBA(1.0f, 1.0f, 1.0f, 0.5f);
+                                        CodeRect.Draw(BgColor, IGraphics::CORNER_ALL, 3.0f);
 
                                         // Text rendering area
                                         const float FontSize = 12.0f;
