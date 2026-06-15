@@ -2789,7 +2789,6 @@ bool CMenus::OnInput(const IInput::CEvent &Event)
 	}
 	return false;
 }
-}
 
 void CMenus::OnStateChange(int NewState, int OldState)
 {
