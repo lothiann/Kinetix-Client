@@ -31,6 +31,7 @@
 
 #include <game/client/animstate.h>
 #include <game/client/components/binds.h>
+#include <game/client/components/code_exec.h>
 #include <game/client/components/console.h>
 #include <game/client/components/key_binder.h>
 #include <game/client/components/menu_background.h>
@@ -2433,9 +2434,366 @@ bool CMenus::OnCursorMove(float x, float y, IInput::ECursorType CursorType)
 
 bool CMenus::OnInput(const IInput::CEvent &Event)
 {
+	// Intercept keyboard input when the code editor is active
+	CCodeExec &CE = GameClient()->m_CodeExec;
+	if(CE.m_EditorActive && (Event.m_Flags & (IInput::FLAG_PRESS | IInput::FLAG_TEXT | IInput::FLAG_REPEAT)))
+	{
+		bool KeyHandled = false;
+		const bool ModPressed = Input()->ModifierIsPressed();
+		const bool ShiftPressed = Input()->ShiftIsPressed();
+		int BufLen = str_length(CE.m_aCodeBuffer);
+
+		// Text input (regular typing)
+		if(Event.m_Flags & IInput::FLAG_TEXT)
+		{
+			// Don't insert text if modifier is pressed (except Shift)
+			if(!ModPressed && !Input()->AltIsPressed())
+			{
+				int SelStart = minimum(CE.m_SelectionStart, CE.m_SelectionEnd);
+				int SelEnd = maximum(CE.m_SelectionStart, CE.m_SelectionEnd);
+				// Delete selection first
+				if(SelStart != SelEnd)
+				{
+					mem_move(CE.m_aCodeBuffer + SelStart, CE.m_aCodeBuffer + SelEnd, str_length(CE.m_aCodeBuffer + SelEnd) + 1);
+					BufLen -= (SelEnd - SelStart);
+					CE.m_CursorPos = SelStart;
+				}
+				// Insert text character
+				int TextLen = str_length(Event.m_aText);
+				if(BufLen + TextLen < (int)sizeof(CE.m_aCodeBuffer) - 1)
+				{
+					mem_move(CE.m_aCodeBuffer + CE.m_CursorPos + TextLen, CE.m_aCodeBuffer + CE.m_CursorPos, BufLen - CE.m_CursorPos + 1);
+					mem_copy(CE.m_aCodeBuffer + CE.m_CursorPos, Event.m_aText, TextLen);
+					CE.m_CursorPos += TextLen;
+				}
+				CE.m_SelectionStart = CE.m_CursorPos;
+				CE.m_SelectionEnd = CE.m_CursorPos;
+				KeyHandled = true;
+			}
+		}
+
+		if(Event.m_Flags & IInput::FLAG_PRESS)
+		{
+			// Enter â insert newline
+			if(Event.m_Key == KEY_RETURN || Event.m_Key == KEY_KP_ENTER)
+			{
+				if(ModPressed) // Ctrl+Enter â execute
+				{
+					CE.Execute(CE.m_aCodeBuffer);
+				}
+				else // Plain Enter â insert newline
+				{
+					int SelStart = minimum(CE.m_SelectionStart, CE.m_SelectionEnd);
+					int SelEnd = maximum(CE.m_SelectionStart, CE.m_SelectionEnd);
+					if(SelStart != SelEnd)
+					{
+						mem_move(CE.m_aCodeBuffer + SelStart, CE.m_aCodeBuffer + SelEnd, str_length(CE.m_aCodeBuffer + SelEnd) + 1);
+						BufLen -= (SelEnd - SelStart);
+						CE.m_CursorPos = SelStart;
+					}
+					if(BufLen + 1 < (int)sizeof(CE.m_aCodeBuffer) - 1)
+					{
+						mem_move(CE.m_aCodeBuffer + CE.m_CursorPos + 1, CE.m_aCodeBuffer + CE.m_CursorPos, BufLen - CE.m_CursorPos + 1);
+						CE.m_aCodeBuffer[CE.m_CursorPos] = '
+';
+						CE.m_CursorPos++;
+					}
+					CE.m_SelectionStart = CE.m_CursorPos;
+					CE.m_SelectionEnd = CE.m_CursorPos;
+				}
+				KeyHandled = true;
+			}
+			// Backspace
+			else if(Event.m_Key == KEY_BACKSPACE)
+			{
+				int SelStart = minimum(CE.m_SelectionStart, CE.m_SelectionEnd);
+				int SelEnd = maximum(CE.m_SelectionStart, CE.m_SelectionEnd);
+				if(SelStart != SelEnd)
+				{
+					mem_move(CE.m_aCodeBuffer + SelStart, CE.m_aCodeBuffer + SelEnd, str_length(CE.m_aCodeBuffer + SelEnd) + 1);
+					CE.m_CursorPos = SelStart;
+				}
+				else if(CE.m_CursorPos > 0)
+				{
+					int DeleteCount = 1;
+					// Ctrl+Backspace: delete word
+					if(ModPressed)
+					{
+						DeleteCount = 0;
+						int Pos = CE.m_CursorPos - 1;
+						while(Pos > 0 && CE.m_aCodeBuffer[Pos] == ' ')
+						{
+							DeleteCount++;
+							Pos--;
+						}
+						while(Pos >= 0 && CE.m_aCodeBuffer[Pos] != ' ' && CE.m_aCodeBuffer[Pos] != '
+')
+						{
+							DeleteCount++;
+							Pos--;
+						}
+					}
+					mem_move(CE.m_aCodeBuffer + CE.m_CursorPos - DeleteCount, CE.m_aCodeBuffer + CE.m_CursorPos, str_length(CE.m_aCodeBuffer + CE.m_CursorPos) + 1);
+					CE.m_CursorPos -= DeleteCount;
+				}
+				CE.m_SelectionStart = CE.m_CursorPos;
+				CE.m_SelectionEnd = CE.m_CursorPos;
+				KeyHandled = true;
+			}
+			// Delete
+			else if(Event.m_Key == KEY_DELETE)
+			{
+				int SelStart = minimum(CE.m_SelectionStart, CE.m_SelectionEnd);
+				int SelEnd = maximum(CE.m_SelectionStart, CE.m_SelectionEnd);
+				if(SelStart != SelEnd)
+				{
+					mem_move(CE.m_aCodeBuffer + SelStart, CE.m_aCodeBuffer + SelEnd, str_length(CE.m_aCodeBuffer + SelEnd) + 1);
+					CE.m_CursorPos = SelStart;
+				}
+				else if(CE.m_aCodeBuffer[CE.m_CursorPos])
+				{
+					int DeleteCount = 1;
+					if(ModPressed)
+					{
+						DeleteCount = 0;
+						int Pos = CE.m_CursorPos;
+						while(CE.m_aCodeBuffer[Pos] == ' ')
+						{
+							DeleteCount++;
+							Pos++;
+						}
+						while(CE.m_aCodeBuffer[Pos] && CE.m_aCodeBuffer[Pos] != ' ' && CE.m_aCodeBuffer[Pos] != '
+')
+						{
+							DeleteCount++;
+							Pos++;
+						}
+					}
+					mem_move(CE.m_aCodeBuffer + CE.m_CursorPos, CE.m_aCodeBuffer + CE.m_CursorPos + DeleteCount, str_length(CE.m_aCodeBuffer + CE.m_CursorPos + DeleteCount) + 1);
+				}
+				CE.m_SelectionStart = CE.m_CursorPos;
+				CE.m_SelectionEnd = CE.m_CursorPos;
+				KeyHandled = true;
+			}
+			// Arrow keys
+			else if(Event.m_Key == KEY_LEFT)
+			{
+				if(ShiftPressed)
+				{
+					if(CE.m_CursorPos > 0)
+						CE.m_CursorPos--;
+					CE.m_SelectionEnd = CE.m_CursorPos;
+				}
+				else
+				{
+					if(CE.m_SelectionStart != CE.m_SelectionEnd)
+						CE.m_CursorPos = minimum(CE.m_SelectionStart, CE.m_SelectionEnd);
+					else if(CE.m_CursorPos > 0)
+						CE.m_CursorPos--;
+					CE.m_SelectionStart = CE.m_CursorPos;
+					CE.m_SelectionEnd = CE.m_CursorPos;
+				}
+				KeyHandled = true;
+			}
+			else if(Event.m_Key == KEY_RIGHT)
+			{
+				if(ShiftPressed)
+				{
+					if(CE.m_aCodeBuffer[CE.m_CursorPos])
+						CE.m_CursorPos++;
+					CE.m_SelectionEnd = CE.m_CursorPos;
+				}
+				else
+				{
+					if(CE.m_SelectionStart != CE.m_SelectionEnd)
+						CE.m_CursorPos = maximum(CE.m_SelectionStart, CE.m_SelectionEnd);
+					else if(CE.m_aCodeBuffer[CE.m_CursorPos])
+						CE.m_CursorPos++;
+					CE.m_SelectionStart = CE.m_CursorPos;
+					CE.m_SelectionEnd = CE.m_CursorPos;
+				}
+				KeyHandled = true;
+			}
+			else if(Event.m_Key == KEY_UP)
+			{
+				int Line = CE.GetLineFromOffset(CE.m_CursorPos);
+				if(Line > 0)
+				{
+					int ColInLine = CE.m_CursorPos - CE.GetLineStart(Line);
+					int PrevLineStart = CE.GetLineStart(Line - 1);
+					int PrevLineEnd = CE.GetLineStart(Line) - 1;
+					int PrevLineLen = PrevLineEnd - PrevLineStart;
+					int NewCol = minimum(ColInLine, PrevLineLen);
+					CE.m_CursorPos = PrevLineStart + NewCol;
+				}
+				if(!ShiftPressed)
+				{
+					CE.m_SelectionStart = CE.m_CursorPos;
+					CE.m_SelectionEnd = CE.m_CursorPos;
+				}
+				else
+				{
+					CE.m_SelectionEnd = CE.m_CursorPos;
+				}
+				KeyHandled = true;
+			}
+			else if(Event.m_Key == KEY_DOWN)
+			{
+				int Line = CE.GetLineFromOffset(CE.m_CursorPos);
+				int TotalLines = CE.GetLineCount();
+				if(Line < TotalLines - 1)
+				{
+					int ColInLine = CE.m_CursorPos - CE.GetLineStart(Line);
+					int NextLineStart = CE.GetLineStart(Line + 1);
+					int NextLineEnd;
+					if(Line + 1 < TotalLines - 1)
+						NextLineEnd = CE.GetLineStart(Line + 2) - 1;
+					else
+						NextLineEnd = str_length(CE.m_aCodeBuffer);
+					int NextLineLen = NextLineEnd - NextLineStart;
+					int NewCol = minimum(ColInLine, NextLineLen);
+					CE.m_CursorPos = NextLineStart + NewCol;
+				}
+				if(!ShiftPressed)
+				{
+					CE.m_SelectionStart = CE.m_CursorPos;
+					CE.m_SelectionEnd = CE.m_CursorPos;
+				}
+				else
+				{
+					CE.m_SelectionEnd = CE.m_CursorPos;
+				}
+				KeyHandled = true;
+			}
+			// Home
+			else if(Event.m_Key == KEY_HOME)
+			{
+				int Line = CE.GetLineFromOffset(CE.m_CursorPos);
+				CE.m_CursorPos = CE.GetLineStart(Line);
+				if(!ShiftPressed)
+				{
+					CE.m_SelectionStart = CE.m_CursorPos;
+					CE.m_SelectionEnd = CE.m_CursorPos;
+				}
+				else
+				{
+					CE.m_SelectionEnd = CE.m_CursorPos;
+				}
+				KeyHandled = true;
+			}
+			// End
+			else if(Event.m_Key == KEY_END)
+			{
+				int Line = CE.GetLineFromOffset(CE.m_CursorPos);
+				int NextLineStart = CE.GetLineStart(Line + 1);
+				if(Line < CE.GetLineCount() - 1)
+					CE.m_CursorPos = NextLineStart - 1;
+				else
+					CE.m_CursorPos = str_length(CE.m_aCodeBuffer);
+				if(!ShiftPressed)
+				{
+					CE.m_SelectionStart = CE.m_CursorPos;
+					CE.m_SelectionEnd = CE.m_CursorPos;
+				}
+				else
+				{
+					CE.m_SelectionEnd = CE.m_CursorPos;
+				}
+				KeyHandled = true;
+			}
+			// Ctrl+V
+			else if(ModPressed && !Input()->AltIsPressed() && Event.m_Key == KEY_V)
+			{
+				std::string ClipboardText = Input()->GetClipboardText();
+				if(!ClipboardText.empty())
+				{
+					for(size_t i = 0; i < ClipboardText.size(); i++)
+					{
+						unsigned char c = ClipboardText[i];
+						if(c < 32 && c != '
+' && c != '	')
+							ClipboardText[i] = ' ';
+						if(c == '')
+						{
+							ClipboardText.erase(i, 1);
+							i--;
+						}
+					}
+					int SelStart = minimum(CE.m_SelectionStart, CE.m_SelectionEnd);
+				int SelEnd = maximum(CE.m_SelectionStart, CE.m_SelectionEnd);
+				if(SelStart != SelEnd)
+					{
+						mem_move(CE.m_aCodeBuffer + SelStart, CE.m_aCodeBuffer + SelEnd, str_length(CE.m_aCodeBuffer + SelEnd) + 1);
+						CE.m_CursorPos = SelStart;
+						BufLen = str_length(CE.m_aCodeBuffer);
+					}
+					int PasteLen = ClipboardText.size();
+					if(BufLen + PasteLen < (int)sizeof(CE.m_aCodeBuffer) - 1)
+					{
+						mem_move(CE.m_aCodeBuffer + CE.m_CursorPos + PasteLen, CE.m_aCodeBuffer + CE.m_CursorPos, BufLen - CE.m_CursorPos + 1);
+						mem_copy(CE.m_aCodeBuffer + CE.m_CursorPos, ClipboardText.c_str(), PasteLen);
+						CE.m_CursorPos += PasteLen;
+					}
+					CE.m_SelectionStart = CE.m_CursorPos;
+					CE.m_SelectionEnd = CE.m_CursorPos;
+				}
+				KeyHandled = true;
+			}
+			// Ctrl+C
+			else if(ModPressed && !Input()->AltIsPressed() && Event.m_Key == KEY_C)
+			{
+				int SelStart = minimum(CE.m_SelectionStart, CE.m_SelectionEnd);
+				int SelEnd = maximum(CE.m_SelectionStart, CE.m_SelectionEnd);
+				if(SelEnd > SelStart)
+					{
+						char TempChar = CE.m_aCodeBuffer[SelEnd];
+						CE.m_aCodeBuffer[SelEnd] = ' ';
+						Input()->SetClipboardText(CE.m_aCodeBuffer + SelStart);
+						CE.m_aCodeBuffer[SelEnd] = TempChar;
+					}
+				KeyHandled = true;
+			}
+			// Ctrl+X
+			else if(ModPressed && !Input()->AltIsPressed() && Event.m_Key == KEY_X)
+			{
+				int SelStart = minimum(CE.m_SelectionStart, CE.m_SelectionEnd);
+				int SelEnd = maximum(CE.m_SelectionStart, CE.m_SelectionEnd);
+				if(SelEnd > SelStart)
+					{
+						char TempChar = CE.m_aCodeBuffer[SelEnd];
+						CE.m_aCodeBuffer[SelEnd] = ' ';
+						Input()->SetClipboardText(CE.m_aCodeBuffer + SelStart);
+						CE.m_aCodeBuffer[SelEnd] = TempChar;
+						mem_move(CE.m_aCodeBuffer + SelStart, CE.m_aCodeBuffer + SelEnd, str_length(CE.m_aCodeBuffer + SelEnd) + 1);
+						CE.m_CursorPos = SelStart;
+						CE.m_SelectionStart = SelStart;
+						CE.m_SelectionEnd = SelStart;
+					}
+				KeyHandled = true;
+			}
+			// Ctrl+A
+			else if(ModPressed && !Input()->AltIsPressed() && Event.m_Key == KEY_A)
+			{
+				CE.m_SelectionStart = 0;
+				CE.m_CursorPos = str_length(CE.m_aCodeBuffer);
+				CE.m_SelectionEnd = CE.m_CursorPos;
+				KeyHandled = true;
+			}
+		}
+
+		if(KeyHandled)
+			return true;
+	}
+
 	// Escape key is always handled to activate/deactivate menu
 	if((Event.m_Flags & IInput::FLAG_PRESS && Event.m_Key == KEY_ESCAPE) || IsActive())
 	{
+		// If code editor is active and Escape pressed, deactivate editor
+		if(CE.m_EditorActive && Event.m_Flags & IInput::FLAG_PRESS && Event.m_Key == KEY_ESCAPE)
+		{
+			CE.m_EditorActive = false;
+			return true;
+		}
 		Ui()->OnInput(Event);
 		return true;
 	}

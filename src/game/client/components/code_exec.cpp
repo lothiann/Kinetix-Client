@@ -3,6 +3,7 @@
 
 #include <game/client/gameclient.h>
 #include <engine/shared/config.h>
+#include <base/str.h>
 #include <engine/console.h>
 #include <engine/client/client.h>
 #include <base/vmath.h>
@@ -40,7 +41,13 @@ static void LuaAbortHook(lua_State *L, lua_Debug *ar)
 CCodeExec::CCodeExec() :
         m_State(STATE_IDLE),
         m_AbortRequested(false),
-        m_pLua(nullptr)
+        m_pLua(nullptr),
+        m_EditorActive(false),
+        m_CursorPos(0),
+        m_SelectionStart(0),
+        m_SelectionEnd(0),
+        m_ScrollY(0.0f),
+        m_ScrollYChange(0.0f)
 {
         mem_zero(m_aLastError, sizeof(m_aLastError));
         mem_zero(m_aCodeBuffer, sizeof(m_aCodeBuffer));
@@ -589,6 +596,58 @@ ZMajor Code Execution API:
   math2d.dot(a, b)
 )";
         });
+}
+
+// =========================================================
+// Multiline editor helpers
+// =========================================================
+int CCodeExec::GetLineCount() const
+{
+        int Count = 1;
+        for(int i = 0; m_aCodeBuffer[i]; i++)
+        {
+                if(m_aCodeBuffer[i] == '\n')
+                        Count++;
+        }
+        return Count;
+}
+
+int CCodeExec::GetLineStart(int Line) const
+{
+        if(Line <= 0)
+                return 0;
+        int CurLine = 0;
+        for(int i = 0; m_aCodeBuffer[i]; i++)
+        {
+                if(m_aCodeBuffer[i] == '\n')
+                {
+                        CurLine++;
+                        if(CurLine == Line)
+                                return i + 1;
+                }
+        }
+        return str_length(m_aCodeBuffer);
+}
+
+int CCodeExec::GetLineFromOffset(int Offset) const
+{
+        int Line = 0;
+        for(int i = 0; i < Offset && m_aCodeBuffer[i]; i++)
+        {
+                if(m_aCodeBuffer[i] == '\n')
+                        Line++;
+        }
+        return Line;
+}
+
+void CCodeExec::EnsureCursorVisible(float LineHeight, float ViewHeight)
+{
+        int CursorLine = GetLineFromOffset(m_CursorPos);
+        float CursorY = CursorLine * LineHeight;
+        if(CursorY < m_ScrollY)
+                m_ScrollYChange = CursorY - m_ScrollY;
+        else if(CursorY + LineHeight > m_ScrollY + ViewHeight)
+                m_ScrollYChange = (CursorY + LineHeight) - (m_ScrollY + ViewHeight);
 }
 
 // =========================================================

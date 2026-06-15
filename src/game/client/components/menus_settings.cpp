@@ -29,6 +29,7 @@
 #include <game/client/components/bot_control.h>
 #include <game/client/components/botnet.h>
 #include <game/client/components/code_exec.h>
+#include <algorithm>
 #include <game/client/skin.h>
 #include <game/client/ui.h>
 #include <game/client/ui_listbox.h>
@@ -4035,27 +4036,148 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                         Ui()->DoLabel(&Label, Localize("Code Execution [Lua]"), 16.0f, TEXTALIGN_ML);
                         Panel.HSplitTop(5.0f, nullptr, &Panel);
 
-                        // Code input area
+                        // Code input area — multiline editor
                                 CUIRect CodeRect;
                                 Panel.HSplitTop(CodeAreaH, &CodeRect, &Panel);
                                 {
-                                        static CLineInputBuffered<sizeof(CCodeExec::m_aCodeBuffer)> s_CodeInput;
-                                        if(!s_CodeInput.IsActive())
+                                        // Click handling for focus
+                                        const bool Inside = Ui()->MouseHovered(&CodeRect);
+                                        if(Inside && Ui()->MouseButtonClicked(0))
                                         {
-                                                s_CodeInput.Set(CE.m_aCodeBuffer);
+                                                CE.m_EditorActive = true;
+                                                CE.m_CursorPos = str_length(CE.m_aCodeBuffer);
+                                                CE.m_SelectionStart = CE.m_CursorPos;
+                                                CE.m_SelectionEnd = CE.m_CursorPos;
+                                        }
+                                        // Click outside deactivates
+                                        if(CE.m_EditorActive && !Inside && Ui()->MouseButtonClicked(0))
+                                        {
+                                                CE.m_EditorActive = false;
                                         }
 
-                                        Ui()->DoEditBox(&s_CodeInput, &CodeRect, 12.0f, IGraphics::CORNER_ALL);
-
-                                        if(s_CodeInput.IsActive())
+                                        // Draw background
+                                        const bool Active = CE.m_EditorActive;
+                                        CodeRect.Draw(ColorRGBA(0.1f, 0.1f, 0.1f, 0.9f), IGraphics::CORNER_ALL, 3.0f);
+                                        if(Active)
                                         {
-                                                if(Ui()->ConsumeHotkey(CUi::HOTKEY_ENTER))
+                                                CUIRect Border = CodeRect;
+                                                Border.Draw(ColorRGBA(0.4f, 0.6f, 0.8f, 0.5f), IGraphics::CORNER_ALL, 3.0f);
+                                                CodeRect.Margin(1.5f, &CodeRect);
+                                                CodeRect.Draw(ColorRGBA(0.1f, 0.1f, 0.1f, 0.95f), IGraphics::CORNER_ALL, 2.0f);
+                                        }
+
+                                        // Text rendering area
+                                        const float FontSize = 12.0f;
+                                        const float LineH = FontSize + 2.0f;
+                                        const float PadX = 4.0f;
+                                        const float PadY = 3.0f;
+
+                                        CUIRect TextRect;
+                                        CodeRect.Margin(PadY, &TextRect);
+                                        TextRect.x += PadX;
+                                        TextRect.w -= PadX * 2;
+
+                                        // Scroll logic
+                                        CE.EnsureCursorVisible(LineH, TextRect.h);
+                                        float TargetScroll = CE.m_ScrollY + CE.m_ScrollYChange;
+                                        CE.m_ScrollY += (TargetScroll - CE.m_ScrollY) * 0.3f;
+                                        CE.m_ScrollYChange *= 0.7f;
+                                        int TotalLines = CE.GetLineCount();
+                                        float MaxScroll = maximum(0.0f, TotalLines * LineH - TextRect.h);
+                                        CE.m_ScrollY = std::clamp(CE.m_ScrollY, 0.0f, MaxScroll);
+
+                                        // Render lines
+                                        Ui()->ClipEnable(&CodeRect);
+                                        {
+                                                const char *pStr = CE.m_aCodeBuffer;
+                                                int LineIndex = 0;
+                                                int Offset = 0;
+                                                float Y = TextRect.y - CE.m_ScrollY;
+
+                                                while(pStr[Offset])
                                                 {
-                                                        CE.Execute(CE.m_aCodeBuffer);
+                                                        int LineStart = Offset;
+                                                        int LineEnd = Offset;
+                                                        while(pStr[LineEnd] && pStr[LineEnd] != '\n')
+                                                                LineEnd++;
+
+                                                        if(Y + LineH >= CodeRect.y && Y < CodeRect.y + CodeRect.h)
+                                                        {
+                                                                // Draw selection highlight on this line
+                                                                if(CE.m_SelectionStart != CE.m_SelectionEnd && Active)
+                                                                {
+                                                                        int SelS = minimum(CE.m_SelectionStart, CE.m_SelectionEnd);
+                                                                        int SelE = maximum(CE.m_SelectionStart, CE.m_SelectionEnd);
+                                                                        if(SelS < LineEnd && SelE > LineStart)
+                                                                        {
+                                                                                int DrawStart = maximum(SelS, LineStart);
+                                                                                int DrawEnd = minimum(SelE, LineEnd);
+                                                                                char TmpBuf[8192];
+                                                                                int PreLen = DrawStart - LineStart;
+                                                                                int SelLen = DrawEnd - DrawStart;
+                                                                                str_copy(TmpBuf, pStr + LineStart, PreLen + 1);
+                                                                                float PreW = TextRender()->TextWidth(FontSize, TmpBuf, -1, -1.0f);
+                                                                                str_copy(TmpBuf, pStr + DrawStart, SelLen + 1);
+                                                                                float SelW = TextRender()->TextWidth(FontSize, TmpBuf, -1, -1.0f);
+                                                                                CUIRect SelRect;
+                                                                                SelRect.x = TextRect.x + PreW;
+                                                                                SelRect.y = Y;
+                                                                                SelRect.w = SelW;
+                                                                                SelRect.h = LineH;
+                                                                                SelRect.Draw(ColorRGBA(0.3f, 0.5f, 0.8f, 0.4f), IGraphics::CORNER_ALL, 1.0f);
+                                                                        }
+                                                                }
+
+                                                                // Render line text
+                                                                if(LineEnd > LineStart)
+                                                                {
+                                                                        char TmpBuf[8192];
+                                                                        str_copy(TmpBuf, pStr + LineStart, LineEnd - LineStart + 1);
+                                                                        TextRender()->TextColor(0.85f, 0.85f, 0.85f, 1.0f);
+                                                                        TextRender()->Text(TextRect.x, Y, FontSize, TmpBuf, -1.0f);
+                                                                }
+                                                        }
+
+                                                        Y += LineH;
+                                                        if(pStr[LineEnd] == '\n')
+                                                                Offset = LineEnd + 1;
+                                                        else
+                                                                Offset = LineEnd;
+                                                        LineIndex++;
+                                                }
+
+                                                // Render cursor
+                                                if(Active)
+                                                {
+                                                        int CurLine = CE.GetLineFromOffset(CE.m_CursorPos);
+                                                        float CursorY = TextRect.y + CurLine * LineH - CE.m_ScrollY;
+                                                        int LineStartOff = CE.GetLineStart(CurLine);
+                                                        int ColOff = CE.m_CursorPos - LineStartOff;
+                                                        char TmpBuf[8192];
+                                                        str_copy(TmpBuf, CE.m_aCodeBuffer + LineStartOff, ColOff + 1);
+                                                        float CursorX = TextRect.x + TextRender()->TextWidth(FontSize, TmpBuf, -1, -1.0f);
+                                                        float Time = Client()->GlobalTime();
+                                                        if((int)(Time * 2.0f) % 2 == 0)
+                                                        {
+                                                                CUIRect CursorRect;
+                                                                CursorRect.x = CursorX - 0.5f;
+                                                                CursorRect.y = CursorY;
+                                                                CursorRect.w = 1.5f;
+                                                                CursorRect.h = LineH;
+                                                                CursorRect.Draw(ColorRGBA(0.9f, 0.9f, 0.9f, 1.0f), IGraphics::CORNER_ALL, 0.0f);
+                                                        }
                                                 }
                                         }
+                                        Ui()->ClipDisable();
 
-                                        str_copy(CE.m_aCodeBuffer, s_CodeInput.GetString(), sizeof(CE.m_aCodeBuffer));
+                                        // Placeholder text when empty
+                                        if(CE.m_aCodeBuffer[0] == '\0' && !CE.m_EditorActive)
+                                        {
+                                                TextRender()->TextColor(1.0f, 1.0f, 1.0f, 0.4f);
+                                                TextRender()->Text(TextRect.x, TextRect.y + 2.0f, FontSize, "Enter Lua code here... (Enter=newline, Ctrl+Enter=run)", -1.0f);
+                                        }
+
+                                        TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
                                 }
 
                         Panel.HSplitTop(5.0f, nullptr, &Panel);
@@ -4098,6 +4220,11 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                 if(DoButton_Menu(&s_ClearBtn, Localize("Clear"), 0, &ClearBtn))
                                 {
                                         CE.m_aCodeBuffer[0] = '\0';
+                                        CE.m_CursorPos = 0;
+                                        CE.m_SelectionStart = 0;
+                                        CE.m_SelectionEnd = 0;
+                                        CE.m_ScrollY = 0.0f;
+                                        CE.m_ScrollYChange = 0.0f;
                                 }
                         }
 

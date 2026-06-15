@@ -49,6 +49,20 @@ public:
         // Public so LuaAbortHook (static function) can read it
         volatile bool m_AbortRequested;
 
+        // --- Multiline editor state ---
+        bool m_EditorActive;           // true when the code editor has focus
+        int m_CursorPos;               // byte offset of cursor in m_aCodeBuffer
+        int m_SelectionStart;          // byte offset of selection start
+        int m_SelectionEnd;            // byte offset of selection end
+        float m_ScrollY;               // vertical scroll offset in pixels
+        float m_ScrollYChange;         // smooth scroll velocity
+
+        // Editor helpers
+        int GetLineCount() const;
+        int GetLineStart(int Line) const;
+        int GetLineFromOffset(int Offset) const;
+        void EnsureCursorVisible(float LineHeight, float ViewHeight);
+
 private:
         EExecState m_State;
         char m_aLastError[1024];
