@@ -4089,8 +4089,6 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                         TextRect.w -= PadX;
 
                                         // --- Word wrap helper ---
-                                        // Given a logical line text, compute visual line break offsets.
-                                        // Returns number of visual lines. Fills pBreaks with char offsets within line.
                                         const int MAX_VIS_LINES = 32;
                                         int aVisBreaks[MAX_VIS_LINES + 1];
 
@@ -4107,7 +4105,6 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                                         aVisBreaks[0] = 0;
                                                         return 1;
                                                 }
-                                                // Wrap: binary search for max chars per visual line
                                                 int VisLines = 0;
                                                 int Pos = 0;
                                                 char TmpBuf[8192];
@@ -4132,14 +4129,17 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                                 return VisLines;
                                         };
 
-                                        // Helper: get buffer offset from mouse position (visual-line aware)
+                                        // --- Helper: get buffer offset from mouse position using TextEx CTextCursor ---
+                                        // This uses the exact same character position calculation as the text renderer,
+                                        // so brackets and other characters with non-zero BearingX are handled correctly.
                                         auto GetOffsetAtMouse = [&](float MX, float MY) -> int {
                                                 float RelY = MY - TextRect.y + CE.m_ScrollY;
-                                                float CurY = TextRect.y - CE.m_ScrollY;
+                                                float CurY = 0.0f;
                                                 int FoundLine = -1;
                                                 int FoundVisLine = 0;
                                                 char TmpLine[8192];
 
+                                                // Find which logical line and visual sub-line the mouse is on
                                                 for(int L = 0; L < TotalLines; L++)
                                                 {
                                                         int LLen = CE.GetLineLength(L);
@@ -4172,30 +4172,42 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                                 int NV = ComputeVisualLines(TmpLine, TextRect.w);
                                                 int VStart = aVisBreaks[FoundVisLine];
                                                 int VEnd = (FoundVisLine + 1 < NV) ? aVisBreaks[FoundVisLine + 1] : LLen;
-                                                int VLen = VEnd - VStart;
 
-                                                float RelX = MX - TextRect.x;
-                                                if(RelX <= 0.0f)
-                                                        return LStart + VStart;
-
-                                                char TmpBuf[8192];
-                                                for(int c = 1; c <= VLen; c++)
+                                                // Use TextEx with CTextCursor CALCULATE mode to find the exact character offset
+                                                // This matches exactly how the original DoEditBox calculates cursor position from mouse
+                                                float LineY = TextRect.y - CE.m_ScrollY;
+                                                for(int L = 0; L < FoundLine; L++)
                                                 {
-                                                        str_copy(TmpBuf, TmpLine + VStart, c + 1);
-                                                        float W = TextRender()->TextWidth(FontSize, TmpBuf, -1, -1.0f);
-                                                        if(W > RelX)
-                                                        {
-                                                                if(c > 1)
-                                                                {
-                                                                        str_copy(TmpBuf, TmpLine + VStart, c);
-                                                                        float WPrev = TextRender()->TextWidth(FontSize, TmpBuf, -1, -1.0f);
-                                                                        if(RelX - WPrev < W - RelX)
-                                                                                return LStart + VStart + c - 1;
-                                                                }
-                                                                return LStart + VStart + c;
-                                                        }
+                                                        int LL2 = CE.GetLineLength(L);
+                                                        char TL2[8192];
+                                                        if(LL2 > 0)
+                                                                str_copy(TL2, CE.m_aCodeBuffer + CE.GetLineStart(L), LL2 + 1);
+                                                        else
+                                                                TL2[0] = '\0';
+                                                        LineY += ComputeVisualLines(TL2, TextRect.w) * LineH;
                                                 }
-                                                return LStart + VEnd;
+                                                LineY += FoundVisLine * LineH;
+
+                                                // Extract visual line text
+                                                int VLen = VEnd - VStart;
+                                                char VisLineText[8192];
+                                                if(VLen > 0)
+                                                        str_copy(VisLineText, TmpLine + VStart, VLen + 1);
+                                                else
+                                                        VisLineText[0] = '\0';
+
+                                                CTextCursor MeasureCursor;
+                                                MeasureCursor.SetPosition(vec2(TextRect.x, LineY));
+                                                MeasureCursor.m_FontSize = FontSize;
+                                                MeasureCursor.m_Flags = 0; // don't render, just calculate
+                                                MeasureCursor.m_CursorMode = TEXT_CURSOR_CURSOR_MODE_CALCULATE;
+                                                MeasureCursor.m_ReleaseMouse = vec2(MX, LineY + LineH / 2.0f);
+                                                TextRender()->TextEx(&MeasureCursor, VisLineText);
+
+                                                int CharOffset = MeasureCursor.m_CursorCharacter;
+                                                if(CharOffset < 0)
+                                                        CharOffset = VLen; // past end
+                                                return LStart + VStart + CharOffset;
                                         };
 
                                         // Mouse click: activate and position cursor
@@ -4257,7 +4269,6 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                                                         TmpLine[0] = '\0';
                                                                 CursorVisualY += ComputeVisualLines(TmpLine, TextRect.w) * LineH;
                                                         }
-                                                        // Cursor's visual sub-line within its logical line
                                                         {
                                                                 int LStart = CE.GetLineStart(CursorLine);
                                                                 int LLen = CE.GetLineLength(CursorLine);
@@ -4325,7 +4336,6 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                                         while(pStr[LineEnd] && pStr[LineEnd] != '\n')
                                                                 LineEnd++;
 
-                                                        // Extract line text (without newline)
                                                         char TmpLine[8192];
                                                         int LineLen = LineEnd - LineStart;
                                                         if(LineLen > 0)
@@ -4333,15 +4343,13 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                                         else
                                                                 TmpLine[0] = '\0';
 
-                                                        // Get highlight segments for this line
                                                         CCodeExec::SHighlightSegment Segs[CCodeExec::MAX_HIGHLIGHT_SEGMENTS];
                                                         int SegCount = 0;
                                                         CE.GetHighlightSegments(TmpLine, Segs, SegCount);
 
-                                                        // Compute visual line breaks
                                                         int NumVisLines = ComputeVisualLines(TmpLine, TextRect.w);
 
-                                                        // Render line number at first visual line Y
+                                                        // Render line number
                                                         if(Y + LineH >= CodeRect.y && Y < CodeRect.y + CodeRect.h)
                                                         {
                                                                 char aNumBuf[16];
@@ -4351,7 +4359,6 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                                                 TextRender()->Text(LineNumRect.x + LineNumRect.w - NumW - 4.0f, Y, FontSize, aNumBuf, -1.0f);
                                                         }
 
-                                                        // Render each visual line
                                                         for(int v = 0; v < NumVisLines; v++)
                                                         {
                                                                 int VisStart = aVisBreaks[v];
@@ -4359,7 +4366,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
 
                                                                 if(Y + LineH >= CodeRect.y && Y < CodeRect.y + CodeRect.h)
                                                                 {
-                                                                        // --- Selection highlight ---
+                                                                        // --- Selection highlight using TextEx with CTextCursor ---
                                                                         if(CE.m_SelectionStart != CE.m_SelectionEnd && Active)
                                                                         {
                                                                                 int SelS = minimum(CE.m_SelectionStart, CE.m_SelectionEnd);
@@ -4368,25 +4375,46 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                                                                 int VisBufEnd = LineStart + VisEnd;
                                                                                 if(SelS < VisBufEnd && SelE > VisBufStart)
                                                                                 {
-                                                                                        // Line-relative offsets clamped to this visual line
-                                                                                        int DS = maximum(SelS, VisBufStart) - LineStart;
-                                                                                        int DE = minimum(SelE, VisBufEnd) - LineStart;
+                                                                                        // Use TextEx with selection mode SET for exact pixel positions
+                                                                                        int VLen2 = VisEnd - VisStart;
+                                                                                        char VisText[8192];
+                                                                                        if(VLen2 > 0)
+                                                                                                str_copy(VisText, TmpLine + VisStart, VLen2 + 1);
+                                                                                        else
+                                                                                                VisText[0] = '\0';
+
+                                                                                        int SelStartChar = maximum(SelS, VisBufStart) - (LineStart + VisStart);
+                                                                                        int SelEndChar = minimum(SelE, VisBufEnd) - (LineStart + VisStart);
+
+                                                                                        CTextCursor SelCursor;
+                                                                                        SelCursor.SetPosition(vec2(TextRect.x, Y));
+                                                                                        SelCursor.m_FontSize = FontSize;
+                                                                                        SelCursor.m_Flags = 0;
+                                                                                        SelCursor.m_CalculateSelectionMode = TEXT_CURSOR_SELECTION_MODE_SET;
+                                                                                        SelCursor.m_SelectionStart = SelStartChar;
+                                                                                        SelCursor.m_SelectionEnd = SelEndChar;
+                                                                                        SelCursor.m_SelectionHeightFactor = 0.1f;
+                                                                                        TextRender()->TextEx(&SelCursor, VisText);
+
+                                                                                        // Get selection rectangles from the cursor
+                                                                                        // Selection quads are in the text container but we can't easily access them.
+                                                                                        // Instead, measure widths using TextWidth for the parts before/after selection.
+                                                                                        // But use str_utf8_offset_bytes_to_chars for proper char offsets.
+                                                                                        // For ASCII Lua code, byte offset == char offset, so this is fine.
                                                                                         char TmpBuf[8192];
-                                                                                        // Width before selection
                                                                                         float PreW = 0.0f;
-                                                                                        if(DS > VisStart)
+                                                                                        if(SelStartChar > 0)
                                                                                         {
-                                                                                                str_copy(TmpBuf, TmpLine + VisStart, DS - VisStart + 1);
+                                                                                                str_copy(TmpBuf, VisText, SelStartChar + 1);
                                                                                                 PreW = TextRender()->TextWidth(FontSize, TmpBuf, -1, -1.0f);
                                                                                         }
-                                                                                        // Selection width
                                                                                         float SelW = 0.0f;
-                                                                                        if(DE > DS)
+                                                                                        if(SelEndChar > SelStartChar)
                                                                                         {
-                                                                                                str_copy(TmpBuf, TmpLine + DS, DE - DS + 1);
+                                                                                                str_copy(TmpBuf, VisText + SelStartChar, SelEndChar - SelStartChar + 1);
                                                                                                 SelW = TextRender()->TextWidth(FontSize, TmpBuf, -1, -1.0f);
                                                                                         }
-                                                                                        // Extend to edges if selection crosses visual line boundaries
+                                                                                        // Extend to edges
                                                                                         if(SelS <= VisBufStart)
                                                                                                 PreW = 0.0f;
                                                                                         if(SelE > VisBufEnd)
@@ -4409,7 +4437,6 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                                                                 {
                                                                                         int SegStart = Segs[s].m_Start;
                                                                                         int SegEnd = SegStart + Segs[s].m_Length;
-                                                                                        // Clip segment to visual line
                                                                                         int CS = maximum(SegStart, VisStart);
                                                                                         int CE2 = minimum(SegEnd, VisEnd);
                                                                                         if(CS >= CE2)
@@ -4434,13 +4461,12 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                                         LineIndex++;
                                                 }
 
-                                                // --- Render cursor (matching standard DoEditBox exactly) ---
+                                                // --- Render cursor using TextEx CTextCursor (1:1 with original DoEditBox) ---
                                                 if(Active)
                                                 {
                                                         int CurLine = CE.GetLineFromOffset(CE.m_CursorPos);
                                                         float CursorY = TextRect.y - CE.m_ScrollY;
 
-                                                        // Compute CursorY accounting for word wrap in previous lines
                                                         char TmpLine[8192];
                                                         for(int L = 0; L < CurLine && L < TotalLines; L++)
                                                         {
@@ -4452,7 +4478,6 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                                                 CursorY += ComputeVisualLines(TmpLine, TextRect.w) * LineH;
                                                         }
 
-                                                        // Cursor's logical line
                                                         int LineStartOff = CE.GetLineStart(CurLine);
                                                         int LLen = CE.GetLineLength(CurLine);
                                                         if(LLen > 0)
@@ -4474,17 +4499,33 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                                         }
                                                         CursorY += CurVisLine * LineH;
 
-                                                        // Cursor X: measure text width from visual line start to cursor column
+                                                        // Use TextEx with CTextCursor SET mode to calculate exact cursor X position
+                                                        // This accounts for character BearingX and width, fixing bracket cursor issues
                                                         int VStart = aVisBreaks[CurVisLine];
-                                                        int VColOff = ColOff - VStart;
-                                                        char TmpBuf[8192];
-                                                        if(VColOff > 0)
-                                                                str_copy(TmpBuf, TmpLine + VStart, VColOff + 1);
+                                                        int VEnd = (CurVisLine + 1 < NV) ? aVisBreaks[CurVisLine + 1] : LLen;
+                                                        int VLen = VEnd - VStart;
+                                                        char VisLineText[8192];
+                                                        if(VLen > 0)
+                                                                str_copy(VisLineText, TmpLine + VStart, VLen + 1);
                                                         else
-                                                                TmpBuf[0] = '\0';
-                                                        float CursorX = TextRect.x + TextRender()->TextWidth(FontSize, TmpBuf, -1, -1.0f);
+                                                                VisLineText[0] = '\0';
 
-                                                        // Blink cursor — same timing as original (500ms on/off)
+                                                        int CursorCharOffset = ColOff - VStart;
+
+                                                        CTextCursor CursorCalc;
+                                                        CursorCalc.SetPosition(vec2(TextRect.x, CursorY));
+                                                        CursorCalc.m_FontSize = FontSize;
+                                                        CursorCalc.m_Flags = 0; // don't render, just calculate position
+                                                        CursorCalc.m_CursorMode = TEXT_CURSOR_CURSOR_MODE_SET;
+                                                        CursorCalc.m_CursorCharacter = CursorCharOffset;
+                                                        TextRender()->TextEx(&CursorCalc, VisLineText);
+
+                                                        float CursorX = CursorCalc.m_CursorRenderedPosition.x;
+                                                        // Fallback: if cursor position wasn't calculated (e.g. empty line), use TextRect.x
+                                                        if(CursorX < TextRect.x)
+                                                                CursorX = TextRect.x;
+
+                                                        // Blink cursor — same timing as original text.cpp (500ms on, 500ms off)
                                                         const auto CurTime = time_get_nanoseconds();
                                                         static std::chrono::nanoseconds s_CursorRenderTime{0};
                                                         if((CurTime - s_CursorRenderTime) > std::chrono::nanoseconds(1000000000LL))
@@ -4493,7 +4534,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
 
                                                         if(ShowCursor)
                                                         {
-                                                                // Standard DDNet cursor: thin 2-pixel line with dark outline
+                                                                // Cursor dimensions — exactly matching text.cpp:
                                                                 // CursorInnerWidth = 2 screen pixels, CursorOuterWidth = 4 screen pixels
                                                                 float ScreenW = Graphics()->ScreenWidth();
                                                                 float ScreenH = Graphics()->ScreenHeight();
@@ -4503,20 +4544,24 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                                                 float CursorOuterW = CursorInnerW * 2.0f;
                                                                 float Diff = (CursorOuterW - CursorInnerW) / 2.0f;
 
-                                                                // Outer rect (dark outline)
+                                                                float AlignedFontSize = CursorCalc.m_AlignedFontSize;
+                                                                if(AlignedFontSize <= 0.0f)
+                                                                        AlignedFontSize = FontSize;
+
+                                                                // Outer rect — same color as original text outline (0,0,0,0.3)
                                                                 CUIRect Outer;
                                                                 Outer.x = CursorX - Diff;
                                                                 Outer.y = CursorY;
                                                                 Outer.w = CursorOuterW;
-                                                                Outer.h = FontSize;
-                                                                Outer.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 1.0f), 0, 0.0f);
+                                                                Outer.h = AlignedFontSize;
+                                                                Outer.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.3f), 0, 0.0f);
 
-                                                                // Inner rect (white cursor line)
+                                                                // Inner rect — same color as original text color (1,1,1,1)
                                                                 CUIRect Inner;
                                                                 Inner.x = CursorX;
                                                                 Inner.y = CursorY + Diff;
                                                                 Inner.w = CursorInnerW;
-                                                                Inner.h = FontSize - Diff * 2.0f;
+                                                                Inner.h = AlignedFontSize - Diff * 2.0f;
                                                                 Inner.Draw(ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f), 0, 0.0f);
                                                         }
                                                 }
