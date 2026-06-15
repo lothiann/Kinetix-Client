@@ -48,7 +48,8 @@ CCodeExec::CCodeExec() :
         m_SelectionStart(0),
         m_SelectionEnd(0),
         m_ScrollY(0.0f),
-        m_ScrollYChange(0.0f)
+        m_ScrollYChange(0.0f),
+        m_HighlightParseState(0)
 {
         mem_zero(m_aLastError, sizeof(m_aLastError));
         mem_zero(m_aCodeBuffer, sizeof(m_aCodeBuffer));
@@ -651,48 +652,200 @@ void CCodeExec::EnsureCursorVisible(float LineHeight, float ViewHeight)
                 m_ScrollYChange = (CursorY + LineHeight) - (m_ScrollY + ViewHeight);
 }
 
-int CCodeExec::GetOffsetFromPos(float MouseX, float MouseY, float TextX, float TextY, float FontSize, float LineH, float ScrollY) const
+int CCodeExec::GetLineLength(int Line) const
 {
-        // Determine which line the mouse is on
-        float RelY = MouseY - TextY + ScrollY;
-        int Line = (int)(RelY / LineH);
-        if(Line < 0)
-                Line = 0;
-        int TotalLines = GetLineCount();
-        if(Line >= TotalLines)
-                Line = TotalLines - 1;
-
-        // Get the start offset of this line
         int LineOff = GetLineStart(Line);
-
-        // Find the character position within the line by measuring text widths
-        // We need ITextRender but we don't have direct access here.
-        // Instead, we'll use a simple character-count approach based on MouseX offset.
-        // The caller will use TextRender to refine this.
-        // For now, count characters until we pass MouseX.
-        float RelX = MouseX - TextX;
-        if(RelX <= 0.0f)
-                return LineOff;
-
-        // Find line length
         int LineEndOff = LineOff;
         while(m_aCodeBuffer[LineEndOff] && m_aCodeBuffer[LineEndOff] != '\n')
                 LineEndOff++;
-        int LineLen = LineEndOff - LineOff;
+        return LineEndOff - LineOff;
+}
 
-        // Binary search for the character position using text width
-        // We can't call TextRender here, so return best guess by char position
-        // The menus_settings.cpp will refine this with actual TextWidth calls
-        // Simple approach: estimate based on average char width
+// =========================================================
+// Lua syntax highlighting
+// =========================================================
+void CCodeExec::GetHighlightSegments(const char *pLine, SHighlightSegment *pSegments, int &SegmentCount)
+{
+        SegmentCount = 0;
+        int LineLen = str_length(pLine);
         if(LineLen <= 0)
-                return LineOff;
+                return;
 
-        // Approximate: assume monospace-like average width
-        float AvgCharW = FontSize * 0.5f;
-        int EstCol = (int)(RelX / AvgCharW + 0.5f);
-        if(EstCol > LineLen)
-                EstCol = LineLen;
-        return LineOff + EstCol;
+        // Lua keywords
+        static const char *s_apKeywords[] = {
+                "and", "break", "do", "else", "elseif", "end",
+                "false", "for", "function", "goto", "if", "in",
+                "local", "nil", "not", "or", "repeat", "return",
+                "then", "true", "until", "while",
+                // Common globals
+                "print", "pairs", "ipairs", "tostring", "tonumber",
+                "type", "require", "pcall", "xpcall", "error",
+                "assert", "collectgarbage", "select", "unpack",
+                "rawget", "rawset", "setmetatable", "getmetatable",
+                nullptr
+        };
+
+        auto IsAlpha = [](char c) -> bool { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'; };
+        auto IsDigit = [](char c) -> bool { return c >= '0' && c <= '9'; };
+        auto IsAlphaNum = [&](char c) -> bool { return IsAlpha(c) || IsDigit(c); };
+
+        auto AddSegment = [&](int Start, int Len, EHighlightType Type) {
+                if(SegmentCount < MAX_HIGHLIGHT_SEGMENTS && Len > 0)
+                {
+                        pSegments[SegmentCount].m_Start = Start;
+                        pSegments[SegmentCount].m_Length = Len;
+                        pSegments[SegmentCount].m_Type = Type;
+                        SegmentCount++;
+                }
+        };
+
+        int i = 0;
+        while(i < LineLen)
+        {
+                // Inside block comment --[[ ... ]]
+                if(m_HighlightParseState == 1)
+                {
+                        int Start = i;
+                        while(i < LineLen)
+                        {
+                                if(i + 1 < LineLen && pLine[i] == ']' && pLine[i + 1] == ']')
+                                {
+                                        i += 2;
+                                        m_HighlightParseState = 0;
+                                        break;
+                                }
+                                i++;
+                        }
+                        AddSegment(Start, i - Start, HIGHLIGHT_COMMENT);
+                        continue;
+                }
+
+                // Line comment --
+                if(i + 1 < LineLen && pLine[i] == '-' && pLine[i + 1] == '-')
+                {
+                        // Check for block comment --[[
+                        if(i + 3 < LineLen && pLine[i + 2] == '[' && pLine[i + 3] == '[')
+                        {
+                                int Start = i;
+                                i += 4;
+                                m_HighlightParseState = 1;
+                                // Look for ]] on same line
+                                while(i < LineLen)
+                                {
+                                        if(i + 1 < LineLen && pLine[i] == ']' && pLine[i + 1] == ']')
+                                        {
+                                                i += 2;
+                                                m_HighlightParseState = 0;
+                                                break;
+                                        }
+                                        i++;
+                                }
+                                AddSegment(Start, i - Start, HIGHLIGHT_COMMENT);
+                                continue;
+                        }
+                        // Regular line comment -- rest of line
+                        AddSegment(i, LineLen - i, HIGHLIGHT_COMMENT);
+                        i = LineLen;
+                        continue;
+                }
+
+                // String literals "..." and '...'
+                if(pLine[i] == '"' || pLine[i] == '\'')
+                {
+                        char Quote = pLine[i];
+                        int Start = i;
+                        i++;
+                        while(i < LineLen && pLine[i] != Quote)
+                        {
+                                if(pLine[i] == '\\' && i + 1 < LineLen)
+                                        i++; // skip escaped char
+                                i++;
+                        }
+                        if(i < LineLen)
+                                i++; // skip closing quote
+                        AddSegment(Start, i - Start, HIGHLIGHT_STRING);
+                        continue;
+                }
+
+                // Long string [[ ... ]]
+                if(i + 1 < LineLen && pLine[i] == '[' && pLine[i + 1] == '[')
+                {
+                        int Start = i;
+                        i += 2;
+                        while(i < LineLen)
+                        {
+                                if(i + 1 < LineLen && pLine[i] == ']' && pLine[i + 1] == ']')
+                                {
+                                        i += 2;
+                                        break;
+                                }
+                                i++;
+                        }
+                        AddSegment(Start, i - Start, HIGHLIGHT_STRING);
+                        continue;
+                }
+
+                // Number
+                if(IsDigit(pLine[i]) || (pLine[i] == '.' && i + 1 < LineLen && IsDigit(pLine[i + 1])))
+                {
+                        int Start = i;
+                        // Hex: 0x...
+                        if(pLine[i] == '0' && i + 1 < LineLen && (pLine[i + 1] == 'x' || pLine[i + 1] == 'X'))
+                        {
+                                i += 2;
+                                while(i < LineLen && (IsDigit(pLine[i]) || (pLine[i] >= 'a' && pLine[i] <= 'f') || (pLine[i] >= 'A' && pLine[i] <= 'F')))
+                                        i++;
+                        }
+                        else
+                        {
+                                while(i < LineLen && IsDigit(pLine[i]))
+                                        i++;
+                                if(i < LineLen && pLine[i] == '.')
+                                {
+                                        i++;
+                                        while(i < LineLen && IsDigit(pLine[i]))
+                                                i++;
+                                }
+                                if(i < LineLen && (pLine[i] == 'e' || pLine[i] == 'E'))
+                                {
+                                        i++;
+                                        if(i < LineLen && (pLine[i] == '+' || pLine[i] == '-'))
+                                                i++;
+                                        while(i < LineLen && IsDigit(pLine[i]))
+                                                i++;
+                                }
+                        }
+                        AddSegment(Start, i - Start, HIGHLIGHT_NUMBER);
+                        continue;
+                }
+
+                // Identifier or keyword
+                if(IsAlpha(pLine[i]))
+                {
+                        int Start = i;
+                        while(i < LineLen && IsAlphaNum(pLine[i]))
+                                i++;
+                        int WordLen = i - Start;
+
+                        // Check if keyword
+                        bool IsKeyword = false;
+                        for(int k = 0; s_apKeywords[k]; k++)
+                        {
+                                int KWLen = str_length(s_apKeywords[k]);
+                                if(WordLen == KWLen && str_comp_num(pLine + Start, s_apKeywords[k], WordLen) == 0)
+                                {
+                                        IsKeyword = true;
+                                        break;
+                                }
+                        }
+                        AddSegment(Start, WordLen, IsKeyword ? HIGHLIGHT_KEYWORD : HIGHLIGHT_DEFAULT);
+                        continue;
+                }
+
+                // Default: single character
+                AddSegment(i, 1, HIGHLIGHT_DEFAULT);
+                i++;
+        }
 }
 
 // =========================================================

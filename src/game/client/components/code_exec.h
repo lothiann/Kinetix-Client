@@ -21,6 +21,27 @@ public:
                 STATE_ERROR,       // Script ended with error
         };
 
+        // Syntax highlighting segment types
+        enum EHighlightType
+        {
+                HIGHLIGHT_DEFAULT = 0,
+                HIGHLIGHT_KEYWORD,
+                HIGHLIGHT_STRING,
+                HIGHLIGHT_COMMENT,
+                HIGHLIGHT_NUMBER,
+        };
+
+        // A colored segment of a line for syntax highlighting
+        struct SHighlightSegment
+        {
+                int m_Start;   // byte offset within the line text
+                int m_Length;
+                EHighlightType m_Type;
+        };
+
+        // Maximum highlight segments per line
+        static const int MAX_HIGHLIGHT_SEGMENTS = 128;
+
         CCodeExec();
         ~CCodeExec();
 
@@ -58,19 +79,28 @@ public:
         float m_ScrollY;               // vertical scroll offset in pixels
         float m_ScrollYChange;         // smooth scroll velocity
 
+        // --- Syntax highlighting state ---
+        int m_HighlightParseState;     // 0=normal, 1=block comment --[[ ... ]]
+
         // Editor helpers
         int GetLineCount() const;
         int GetLineStart(int Line) const;
         int GetLineFromOffset(int Offset) const;
-        int GetOffsetFromPos(float MouseX, float MouseY, float TextX, float TextY, float FontSize, float LineH, float ScrollY) const;
         void EnsureCursorVisible(float LineHeight, float ViewHeight);
 
-private:
-        EExecState m_State;
-        char m_aLastError[1024];
+        // Syntax highlighting: get colored segments for one line
+        // Updates m_HighlightParseState across calls for multi-line constructs
+        void GetHighlightSegments(const char *pLine, SHighlightSegment *pSegments, int &SegmentCount);
 
+        // Get the length of a logical line (excluding trailing \n)
+        int GetLineLength(int Line) const;
+
+private:
         // Lua state — allocated on heap due to size
         sol::state *m_pLua;
+
+        EExecState m_State;
+        char m_aLastError[1024];
 
         // Register all bindings (game state, chat, input, etc.)
         void RegisterBindings();
