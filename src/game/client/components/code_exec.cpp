@@ -42,7 +42,6 @@ CCodeExec::CCodeExec() :
         m_pLua(nullptr)
 {
         mem_zero(m_aLastError, sizeof(m_aLastError));
-        mem_zero(m_aOutputLog, sizeof(m_aOutputLog));
         mem_zero(m_aCodeBuffer, sizeof(m_aCodeBuffer));
 }
 
@@ -83,7 +82,7 @@ void CCodeExec::OnInit()
                 sol::lib::debug
         );
 
-        // Override print to capture output AND print to F1 console
+        // Override print to echo output in chat (like the echo command)
         m_pLua->set_function("print", [this](sol::variadic_args va) {
                 std::string result;
                 for(auto it = va.begin(); it != va.end(); ++it)
@@ -91,7 +90,6 @@ void CCodeExec::OnInit()
                         if(it != va.begin())
                                 result += "\t";
                         auto obj = *it;
-                        // Try to get as string, fallback to "nil" or type name
                         sol::optional<std::string> str = obj.get<sol::optional<std::string>>();
                         if(str)
                                 result += *str;
@@ -105,16 +103,10 @@ void CCodeExec::OnInit()
                         }
                 }
 
-                // Print to F1 console as "code-execution"
-                Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "code-execution", result.c_str());
-
-                result += "\n";
-
-                // Append to output log
-                int len = str_length(m_aOutputLog);
-                int remaining = (int)sizeof(m_aOutputLog) - len - 1;
-                if(remaining > 0)
-                        str_append(m_aOutputLog, result.c_str(), sizeof(m_aOutputLog));
+                // Echo to chat
+                char aCmd[1024];
+                str_format(aCmd, sizeof(aCmd), "echo \"%s\"", result.c_str());
+                Console()->ExecuteLine(aCmd, -1);
         });
 
         // Register all game bindings
@@ -139,7 +131,7 @@ void CCodeExec::OnUpdate()
 void CCodeExec::OnReset()
 {
         Stop();
-        ClearOutputLog();
+
 }
 
 // =========================================================
@@ -150,10 +142,6 @@ const char *CCodeExec::GetLastError() const
         return m_aLastError;
 }
 
-const char *CCodeExec::GetOutputLog() const
-{
-        return m_aOutputLog;
-}
 
 // =========================================================
 // Script Execution
@@ -218,10 +206,7 @@ void CCodeExec::Stop()
         m_State = STATE_IDLE;
 }
 
-void CCodeExec::ClearOutputLog()
-{
-        m_aOutputLog[0] = '\0';
-}
+
 
 // =========================================================
 // Lua Bindings — expose DDNet game state to scripts

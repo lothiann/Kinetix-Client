@@ -4023,12 +4023,8 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
 
                         const float CodeAreaH = 200.0f;
                         const float ButtonRowH = 25.0f;
-                        const float OutputH = 80.0f;
-                        int OutputLines = 0;
-                        if(CE.GetOutputLog()[0] != '\0' || CE.GetState() == CCodeExec::STATE_ERROR)
-                                OutputLines = 1;
 
-                        const float SectionH = PanelPad + 25.0f + 5.0f + CodeAreaH + 5.0f + ButtonRowH + (OutputLines ? 5.0f + OutputH : 0) + PanelPad;
+                        const float SectionH = PanelPad + 25.0f + 5.0f + CodeAreaH + 5.0f + ButtonRowH + PanelPad;
                         MainView.HSplitTop(SectionH, &PanelBg, &MainView);
                         PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
                         s_FunctionsScrollRegion.AddRect(PanelBg);
@@ -4102,7 +4098,6 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                 if(DoButton_Menu(&s_ClearBtn, Localize("Clear"), 0, &ClearBtn))
                                 {
                                         CE.m_aCodeBuffer[0] = '\0';
-                                        CE.ClearOutputLog();
                                 }
                         }
 
@@ -4111,46 +4106,19 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                 CUIRect StatusRect;
                                 BtnRow.VSplitLeft(100.0f, &StatusRect, &BtnRow);
                                 const char *pStatusText;
-                                ColorRGBA StatusColor;
                                 switch(CE.GetState())
                                 {
                                 case CCodeExec::STATE_RUNNING:
                                         pStatusText = Localize("Running...");
-                                        StatusColor = ColorRGBA(0.2f, 0.8f, 0.2f, 1.0f);
                                         break;
                                 case CCodeExec::STATE_ERROR:
                                         pStatusText = Localize("Error");
-                                        StatusColor = ColorRGBA(0.9f, 0.2f, 0.2f, 1.0f);
                                         break;
                                 default:
                                         pStatusText = Localize("Idle");
-                                        StatusColor = ColorRGBA(0.5f, 0.5f, 0.5f, 1.0f);
                                         break;
                                 }
                                 Ui()->DoLabel(&StatusRect, pStatusText, 12.0f, TEXTALIGN_ML);
-                        }
-
-                        // Output/Error area
-                        if(OutputLines)
-                        {
-                                Panel.HSplitTop(5.0f, nullptr, &Panel);
-                                CUIRect OutputRect;
-                                Panel.HSplitTop(OutputH, &OutputRect, &Panel);
-                                OutputRect.Draw(ColorRGBA(0.0f, 0.0f, 0.0f, 0.3f), IGraphics::CORNER_ALL, 3.0f);
-                                OutputRect.Margin(4.0f, &OutputRect);
-
-                                if(CE.GetState() == CCodeExec::STATE_ERROR && CE.GetLastError()[0] != '\0')
-                                {
-                                        SLabelProperties LabelProps;
-                                        LabelProps.m_MaxWidth = OutputRect.w;
-                                        Ui()->DoLabel(&OutputRect, CE.GetLastError(), 10.0f, TEXTALIGN_TL, LabelProps);
-                                }
-                                else if(CE.GetOutputLog()[0] != '\0')
-                                {
-                                        SLabelProperties LabelProps2;
-                                        LabelProps2.m_MaxWidth = OutputRect.w;
-                                        Ui()->DoLabel(&OutputRect, CE.GetOutputLog(), 10.0f, TEXTALIGN_TL, LabelProps2);
-                                }
                         }
                 }
         }

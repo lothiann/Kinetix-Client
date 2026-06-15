@@ -43,12 +43,6 @@ public:
         // Get last error message
         const char *GetLastError() const;
 
-        // Get output log (for UI display)
-        const char *GetOutputLog() const;
-
-        // Clear output log
-        void ClearOutputLog();
-
         // The Lua source code buffer (edited in UI)
         char m_aCodeBuffer[8192];
 
@@ -58,7 +52,6 @@ public:
 private:
         EExecState m_State;
         char m_aLastError[1024];
-        char m_aOutputLog[4096];
 
         // Lua state — allocated on heap due to size
         sol::state *m_pLua;
