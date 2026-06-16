@@ -1459,6 +1459,26 @@ void CCodeExec::RegisterRawAPI()
         // ===== Set global objects — gc = GameClient() =====
         lua["gc"] = std::ref(*GameClient());
 
+        // ===== trajectory(ticks) — predict character positions using REAL physics =====
+        lua.set_function("trajectory", [this](int ticks) -> sol::table {
+                auto &src = GameClient()->m_PredictedChar;
+                // Make a copy of the character core
+                CCharacterCore pred = src;
+                // Copy world/collision pointers (needed for Tick/Move)
+                pred.m_pWorld = src.m_pWorld;
+                pred.m_pCollision = src.m_pCollision;
+                auto t = lua.create_table();
+                t[0] = lua.create_table_with("x", pred.m_Pos.x, "y", pred.m_Pos.y);
+                for(int i = 1; i <= ticks; i++)
+                {
+                        pred.Tick(true);
+                        pred.Move();
+                        pred.Quantize();
+                        t[i] = lua.create_table_with("x", pred.m_Pos.x, "y", pred.m_Pos.y);
+                }
+                return t;
+        });
+
         // ===== CClient methods as 'cl' table =====
         auto cl = lua["cl"].get_or_create<sol::table>();
         cl.set_function("Connect", [this](const std::string &addr) {
