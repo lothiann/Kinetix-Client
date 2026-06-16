@@ -4443,47 +4443,10 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                                                         int VisBufEnd = LineStart + VisEnd;
                                                                         bool SelectionOnThisLine = HasSelection && SelS < VisBufEnd && SelE > VisBufStart;
 
-                                                                        // --- Render selection background FIRST (behind text) ---
-                                                                        if(SelectionOnThisLine)
-                                                                        {
-                                                                                int SelStartChar = maximum(SelS, VisBufStart) - VisBufStart;
-                                                                                int SelEndChar = minimum(SelE, VisBufEnd) - VisBufStart;
-                                                                                // Use TextEx to measure exact pixel positions for selection
-                                                                                CTextCursor SelMeasure;
-                                                                                SelMeasure.SetPosition(vec2(TextRect.x, Y));
-                                                                                SelMeasure.m_FontSize = FontSize;
-                                                                                SelMeasure.m_Flags = 0;
-                                                                                TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
-                                                                                TextRender()->TextEx(&SelMeasure, VisText);
-
-                                                                                // Measure width up to SelStartChar and SelEndChar
-                                                                                char TmpBuf[8192];
-                                                                                float PreW = 0.0f;
-                                                                                if(SelStartChar > 0)
-                                                                                {
-                                                                                        str_copy(TmpBuf, VisText, SelStartChar + 1);
-                                                                                        PreW = TextRender()->TextWidth(FontSize, TmpBuf, -1, -1.0f);
-                                                                                }
-                                                                                float SelW = 0.0f;
-                                                                                if(SelEndChar > SelStartChar)
-                                                                                {
-                                                                                        str_copy(TmpBuf, VisText + SelStartChar, SelEndChar - SelStartChar + 1);
-                                                                                        SelW = TextRender()->TextWidth(FontSize, TmpBuf, -1, -1.0f);
-                                                                                }
-                                                                                if(SelS <= VisBufStart)
-                                                                                        PreW = 0.0f;
-                                                                                if(SelE > VisBufEnd)
-                                                                                        SelW = (TextRect.x + TextRect.w) - (TextRect.x + PreW);
-                                                                                CUIRect SelRect;
-                                                                                SelRect.x = TextRect.x + PreW;
-                                                                                SelRect.y = Y;
-                                                                                SelRect.w = SelW;
-                                                                                SelRect.h = LineH;
-                                                                                SelRect.Draw(ColorRGBA(1.0f, 1.0f, 1.0f, 0.5f), 0, 0.0f);
-                                                                        }
-
-                                                                        // --- Render text with syntax highlighting in ONE TextEx call ---
-                                                                        if(VisLen > 0 || CursorOnThisLine)
+                                                                        // --- Render text + selection + cursor in ONE TextEx call ---
+                                                                        // TextEx renders in order: text quads -> selection quads (on top) -> cursor quads
+                                                                        // This matches the original CLineInput::Render() behavior exactly.
+                                                                        if(VisLen > 0 || CursorOnThisLine || SelectionOnThisLine)
                                                                         {
                                                                                 TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
                                                                                 CTextCursor RenderCursor;
@@ -4491,6 +4454,8 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                                                                 RenderCursor.m_FontSize = FontSize;
                                                                                 RenderCursor.m_Flags = TEXTFLAG_RENDER;
                                                                                 RenderCursor.m_vColorSplits = vColorSplits;
+
+                                                                                // Cursor
                                                                                 if(CursorOnThisLine)
                                                                                 {
                                                                                         RenderCursor.m_CursorMode = TEXT_CURSOR_CURSOR_MODE_SET;
@@ -4499,7 +4464,24 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                                                                         RenderCursor.m_ForceCursorRendering = (s_PrevCursorPos != CE.m_CursorPos);
                                                                                         s_PrevCursorPos = CE.m_CursorPos;
                                                                                 }
+
+                                                                                // Selection — use TextEx's built-in selection rendering
+                                                                                // which draws selection ON TOP of text, just like CLineInput::Render()
+                                                                                if(SelectionOnThisLine)
+                                                                                {
+                                                                                        int SelStartChar = maximum(SelS, VisBufStart) - VisBufStart;
+                                                                                        int SelEndChar = minimum(SelE, VisBufEnd) - VisBufStart;
+                                                                                        RenderCursor.m_CalculateSelectionMode = TEXT_CURSOR_SELECTION_MODE_SET;
+                                                                                        RenderCursor.m_SelectionStart = SelStartChar;
+                                                                                        RenderCursor.m_SelectionEnd = SelEndChar;
+                                                                                        TextRender()->TextSelectionColor(TextRender()->DefaultTextSelectionColor());
+                                                                                }
+
                                                                                 TextRender()->TextEx(&RenderCursor, VisText);
+
+                                                                                // Reset selection color to default
+                                                                                if(SelectionOnThisLine)
+                                                                                        TextRender()->TextSelectionColor(TextRender()->DefaultTextSelectionColor());
                                                                         }
                                                                 }
 
