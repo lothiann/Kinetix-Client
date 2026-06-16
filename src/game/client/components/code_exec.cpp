@@ -265,7 +265,12 @@ void CCodeExec::RegisterBindings()
         lua.new_usertype<vec2>("vec2",
                 sol::constructors<vec2(), vec2(float, float)>(),
                 "x", &vec2::x,
-                "y", &vec2::y
+                "y", &vec2::y,
+                sol::meta_function::to_string, [](vec2 &v) -> std::string {
+                        char buf[64];
+                        str_format(buf, sizeof(buf), "(%.2f, %.2f)", v.x, v.y);
+                        return std::string(buf);
+                }
         );
 
         // ----- Game state namespace -----
@@ -1230,50 +1235,50 @@ void CCodeExec::RegisterRawAPI()
         // gc.m_Camera.m_Zoom          ==  GameClient()->m_Camera.m_Zoom
         // gc.m_GameInfo.m_FlagStartsRace  ==  GameClient()->m_GameInfo.m_FlagStartsRace
         lua.new_usertype<CGameClient>("CGameClient",
-                // ---- ALL public component members ----
-                "m_InfoMessages", &CGameClient::m_InfoMessages,
-                "m_Camera", &CGameClient::m_Camera,
-                "m_Chat", &CGameClient::m_Chat,
-                "m_Censor", &CGameClient::m_Censor,
-                "m_CodeExec", &CGameClient::m_CodeExec,
-                "m_Motd", &CGameClient::m_Motd,
-                "m_Broadcast", &CGameClient::m_Broadcast,
-                "m_GameConsole", &CGameClient::m_GameConsole,
-                "m_Binds", &CGameClient::m_Binds,
-                "m_BotControl", &CGameClient::m_BotControl,
-                "m_BotNet", &CGameClient::m_BotNet,
-                "m_IRC", &CGameClient::m_IRC,
-                "m_KeyBinder", &CGameClient::m_KeyBinder,
-                "m_Particles", &CGameClient::m_Particles,
-                "m_Menus", &CGameClient::m_Menus,
+                // ---- ALL public component members (via std::ref to avoid copies) ----
+                "m_InfoMessages", sol::property([](CGameClient &gc) -> CInfoMessages& { return gc.m_InfoMessages; }),
+                "m_Camera", sol::property([](CGameClient &gc) -> CCamera& { return gc.m_Camera; }),
+                "m_Chat", sol::property([](CGameClient &gc) -> CChat& { return gc.m_Chat; }),
+                "m_Censor", sol::property([](CGameClient &gc) -> CCensor& { return gc.m_Censor; }),
+                "m_CodeExec", sol::property([](CGameClient &gc) -> CCodeExec& { return gc.m_CodeExec; }),
+                "m_Motd", sol::property([](CGameClient &gc) -> CMotd& { return gc.m_Motd; }),
+                "m_Broadcast", sol::property([](CGameClient &gc) -> CBroadcast& { return gc.m_Broadcast; }),
+                "m_GameConsole", sol::property([](CGameClient &gc) -> CGameConsole& { return gc.m_GameConsole; }),
+                "m_Binds", sol::property([](CGameClient &gc) -> CBinds& { return gc.m_Binds; }),
+                "m_BotControl", sol::property([](CGameClient &gc) -> CBotControl& { return gc.m_BotControl; }),
+                "m_BotNet", sol::property([](CGameClient &gc) -> CBotNet& { return gc.m_BotNet; }),
+                "m_IRC", sol::property([](CGameClient &gc) -> CIRC& { return gc.m_IRC; }),
+                "m_KeyBinder", sol::property([](CGameClient &gc) -> CKeyBinder& { return gc.m_KeyBinder; }),
+                "m_Particles", sol::property([](CGameClient &gc) -> CParticles& { return gc.m_Particles; }),
+                "m_Menus", sol::property([](CGameClient &gc) -> CMenus& { return gc.m_Menus; }),
                 // m_Skins, m_Skins7 EXCLUDED — contain unique_ptr<CSkin>, non-copyable
-                "m_CountryFlags", &CGameClient::m_CountryFlags,
-                "m_Flow", &CGameClient::m_Flow,
-                "m_Hud", &CGameClient::m_Hud,
-                "m_ImportantAlert", &CGameClient::m_ImportantAlert,
-                "m_DebugHud", &CGameClient::m_DebugHud,
-                "m_Controls", &CGameClient::m_Controls,
-                "m_Effects", &CGameClient::m_Effects,
-                "m_Scoreboard", &CGameClient::m_Scoreboard,
-                "m_Statboard", &CGameClient::m_Statboard,
-                "m_Sounds", &CGameClient::m_Sounds,
-                "m_Emoticon", &CGameClient::m_Emoticon,
-                "m_DamageInd", &CGameClient::m_DamageInd,
+                "m_CountryFlags", sol::property([](CGameClient &gc) -> CCountryFlags& { return gc.m_CountryFlags; }),
+                "m_Flow", sol::property([](CGameClient &gc) -> CFlow& { return gc.m_Flow; }),
+                "m_Hud", sol::property([](CGameClient &gc) -> CHud& { return gc.m_Hud; }),
+                "m_ImportantAlert", sol::property([](CGameClient &gc) -> CImportantAlert& { return gc.m_ImportantAlert; }),
+                "m_DebugHud", sol::property([](CGameClient &gc) -> CDebugHud& { return gc.m_DebugHud; }),
+                "m_Controls", sol::property([](CGameClient &gc) -> CControls& { return gc.m_Controls; }),
+                "m_Effects", sol::property([](CGameClient &gc) -> CEffects& { return gc.m_Effects; }),
+                "m_Scoreboard", sol::property([](CGameClient &gc) -> CScoreboard& { return gc.m_Scoreboard; }),
+                "m_Statboard", sol::property([](CGameClient &gc) -> CStatboard& { return gc.m_Statboard; }),
+                "m_Sounds", sol::property([](CGameClient &gc) -> CSounds& { return gc.m_Sounds; }),
+                "m_Emoticon", sol::property([](CGameClient &gc) -> CEmoticon& { return gc.m_Emoticon; }),
+                "m_DamageInd", sol::property([](CGameClient &gc) -> CDamageInd& { return gc.m_DamageInd; }),
                 // m_TouchControls EXCLUDED — contains unique_ptr, non-copyable
-                "m_Voting", &CGameClient::m_Voting,
-                "m_Spectator", &CGameClient::m_Spectator,
-                "m_Players", &CGameClient::m_Players,
-                "m_NamePlates", &CGameClient::m_NamePlates,
-                "m_FreezeBars", &CGameClient::m_FreezeBars,
-                "m_Items", &CGameClient::m_Items,
-                "m_MapImages", &CGameClient::m_MapImages,
+                "m_Voting", sol::property([](CGameClient &gc) -> CVoting& { return gc.m_Voting; }),
+                "m_Spectator", sol::property([](CGameClient &gc) -> CSpectator& { return gc.m_Spectator; }),
+                "m_Players", sol::property([](CGameClient &gc) -> CPlayers& { return gc.m_Players; }),
+                "m_NamePlates", sol::property([](CGameClient &gc) -> CNamePlates& { return gc.m_NamePlates; }),
+                "m_FreezeBars", sol::property([](CGameClient &gc) -> CFreezeBars& { return gc.m_FreezeBars; }),
+                "m_Items", sol::property([](CGameClient &gc) -> CItems& { return gc.m_Items; }),
+                "m_MapImages", sol::property([](CGameClient &gc) -> CMapImages& { return gc.m_MapImages; }),
                 // m_MapLayersBackground/Foreground, m_Background, m_MenuBackground
                 // EXCLUDED — contain vector<unique_ptr<CRenderLayer>>, non-copyable
-                "m_MapSounds", &CGameClient::m_MapSounds,
-                "m_RaceDemo", &CGameClient::m_RaceDemo,
-                "m_Ghost", &CGameClient::m_Ghost,
-                "m_Tooltips", &CGameClient::m_Tooltips,
-                "m_LocalServer", &CGameClient::m_LocalServer,
+                "m_MapSounds", sol::property([](CGameClient &gc) -> CMapSounds& { return gc.m_MapSounds; }),
+                "m_RaceDemo", sol::property([](CGameClient &gc) -> CRaceDemo& { return gc.m_RaceDemo; }),
+                "m_Ghost", sol::property([](CGameClient &gc) -> CGhost& { return gc.m_Ghost; }),
+                "m_Tooltips", sol::property([](CGameClient &gc) -> CTooltips& { return gc.m_Tooltips; }),
+                "m_LocalServer", sol::property([](CGameClient &gc) -> CLocalServer& { return gc.m_LocalServer; }),
                 // ---- Other public member variables ----
                 "m_SuppressEvents", &CGameClient::m_SuppressEvents,
                 "m_NewTick", &CGameClient::m_NewTick,
@@ -1285,11 +1290,11 @@ void CCodeExec::RegisterRawAPI()
                         return t;
                 }),
                 "m_ServerMode", &CGameClient::m_ServerMode,
-                "m_GameInfo", &CGameClient::m_GameInfo,
+                "m_GameInfo", sol::property([](CGameClient &gc) -> CGameInfo& { return gc.m_GameInfo; }),
                 "m_DemoSpecId", &CGameClient::m_DemoSpecId,
                 "m_LocalCharacterPos", &CGameClient::m_LocalCharacterPos,
-                "m_PredictedPrevChar", &CGameClient::m_PredictedPrevChar,
-                "m_PredictedChar", &CGameClient::m_PredictedChar,
+                "m_PredictedPrevChar", sol::property([](CGameClient &gc) -> CCharacterCore& { return gc.m_PredictedPrevChar; }),
+                "m_PredictedChar", sol::property([](CGameClient &gc) -> CCharacterCore& { return gc.m_PredictedChar; }),
                 "m_aLocalTuneZone", sol::property([this, &lua](CGameClient &gc) -> sol::table {
                         auto t = lua.create_table();
                         for(int i = 0; i < MAX_DUMMIES; i++)
@@ -1321,8 +1326,8 @@ void CCodeExec::RegisterRawAPI()
                                 t[i] = std::ref(gc.m_aStats[i]);
                         return t;
                 }),
-                "m_RenderTools", &CGameClient::m_RenderTools,
-                "m_RenderMap", &CGameClient::m_RenderMap,
+                "m_RenderTools", sol::property([](CGameClient &gc) -> CRenderTools& { return gc.m_RenderTools; }),
+                "m_RenderMap", sol::property([](CGameClient &gc) -> CRenderMap& { return gc.m_RenderMap; }),
                 "m_aLocalIds", sol::property([this, &lua](CGameClient &gc) -> sol::table {
                         auto t = lua.create_table();
                         for(int i = 0; i < MAX_DUMMIES; i++)
@@ -1350,10 +1355,10 @@ void CCodeExec::RegisterRawAPI()
                 "m_ReceivedDDNetPlayer", &CGameClient::m_ReceivedDDNetPlayer,
                 "m_ReceivedDDNetPlayerFinishTimes", &CGameClient::m_ReceivedDDNetPlayerFinishTimes,
                 "m_ReceivedDDNetPlayerFinishTimesMillis", &CGameClient::m_ReceivedDDNetPlayerFinishTimesMillis,
-                "m_Teams", &CGameClient::m_Teams,
-                "m_GameWorld", &CGameClient::m_GameWorld,
-                "m_PredictedWorld", &CGameClient::m_PredictedWorld,
-                "m_PrevPredictedWorld", &CGameClient::m_PrevPredictedWorld,
+                "m_Teams", sol::property([](CGameClient &gc) -> CTeamsCore& { return gc.m_Teams; }),
+                "m_GameWorld", sol::property([](CGameClient &gc) -> CGameWorld& { return gc.m_GameWorld; }),
+                "m_PredictedWorld", sol::property([](CGameClient &gc) -> CGameWorld& { return gc.m_PredictedWorld; }),
+                "m_PrevPredictedWorld", sol::property([](CGameClient &gc) -> CGameWorld& { return gc.m_PrevPredictedWorld; }),
                 "m_MultiViewTeam", &CGameClient::m_MultiViewTeam,
                 "m_MultiViewPersonalZoom", &CGameClient::m_MultiViewPersonalZoom,
                 "m_MultiViewShowHud", &CGameClient::m_MultiViewShowHud,
