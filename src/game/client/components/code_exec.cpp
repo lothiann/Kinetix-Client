@@ -115,19 +115,23 @@ void CCodeExec::OnInit()
         // Override print to output in chat as chat/lua
         m_pLua->set_function("print", [this](sol::variadic_args va) {
                 std::string result;
+                sol::state_view sv(m_pLua->lua_state());
+                sol::function tostring_fn = sv["tostring"];
                 for(auto it = va.begin(); it != va.end(); ++it)
                 {
                         if(it != va.begin())
                                 result += "\t";
                         auto obj = *it;
-                        sol::optional<std::string> str = obj.get<sol::optional<std::string>>();
-                        if(str)
-                                result += *str;
+                        if(tostring_fn.valid())
+                        {
+                                std::string s = tostring_fn(obj);
+                                result += s;
+                        }
                         else
                         {
-                                sol::optional<int> num = obj.get<sol::optional<int>>();
-                                if(num)
-                                        result += std::to_string(*num);
+                                sol::optional<std::string> str = obj.get<sol::optional<std::string>>();
+                                if(str)
+                                        result += *str;
                                 else
                                         result += sol::type_name(m_pLua->lua_state(), obj.get_type());
                         }
