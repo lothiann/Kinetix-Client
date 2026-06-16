@@ -710,10 +710,10 @@ void CCodeExec::RegisterRawAPI()
                 "m_HookHitDisabled", &CCharacterCore::m_HookHitDisabled,
                 "m_Tuning", sol::property([](CCharacterCore &c) -> CTuningParams& { return c.m_Tuning; }),
                 // Ninja (nested struct — expose as read-only sub-fields)
-                "m_Ninja_ActivationDir", [](CCharacterCore &c) -> vec2 { return c.m_Ninja.m_ActivationDir; },
-                "m_Ninja_ActivationTick", [](CCharacterCore &c) -> int { return c.m_Ninja.m_ActivationTick; },
-                "m_Ninja_CurrentMoveTime", [](CCharacterCore &c) -> int { return c.m_Ninja.m_CurrentMoveTime; },
-                "m_Ninja_OldVelAmount", [](CCharacterCore &c) -> int { return c.m_Ninja.m_OldVelAmount; },
+                "m_Ninja_ActivationDir", sol::property([](CCharacterCore &c) -> vec2 { return c.m_Ninja.m_ActivationDir; }),
+                "m_Ninja_ActivationTick", sol::property([](CCharacterCore &c) -> int { return c.m_Ninja.m_ActivationTick; }),
+                "m_Ninja_CurrentMoveTime", sol::property([](CCharacterCore &c) -> int { return c.m_Ninja.m_CurrentMoveTime; }),
+                "m_Ninja_OldVelAmount", sol::property([](CCharacterCore &c) -> int { return c.m_Ninja.m_OldVelAmount; }),
                 // Methods
                 "Reset", [](CCharacterCore &c) { c.Reset(); },
                 "Tick", [](CCharacterCore &c, bool useInput) { c.Tick(useInput); },
@@ -796,10 +796,10 @@ void CCodeExec::RegisterRawAPI()
 
         // ===== CClientData — ALL public member names =====
         lua.new_usertype<CGameClient::CClientData>("CClientData",
-                "m_aName", [](CGameClient::CClientData &d) -> std::string { return std::string(d.m_aName); },
-                "m_aClan", [](CGameClient::CClientData &d) -> std::string { return std::string(d.m_aClan); },
+                "m_aName", sol::property([](CGameClient::CClientData &d) -> std::string { return std::string(d.m_aName); }),
+                "m_aClan", sol::property([](CGameClient::CClientData &d) -> std::string { return std::string(d.m_aClan); }),
                 "m_Country", &CGameClient::CClientData::m_Country,
-                "m_aSkinName", [](CGameClient::CClientData &d) -> std::string { return std::string(d.m_aSkinName); },
+                "m_aSkinName", sol::property([](CGameClient::CClientData &d) -> std::string { return std::string(d.m_aSkinName); }),
                 "m_Team", &CGameClient::CClientData::m_Team,
                 "m_Active", &CGameClient::CClientData::m_Active,
                 "m_Friend", &CGameClient::CClientData::m_Friend,
@@ -909,7 +909,7 @@ void CCodeExec::RegisterRawAPI()
                 "m_MapWidth", &CBotNet::m_MapWidth,
                 "m_MapHeight", &CBotNet::m_MapHeight,
                 "m_MapGridLoaded", &CBotNet::m_MapGridLoaded,
-                "m_aLastMapName", [](CBotNet &bn) -> std::string { return std::string(bn.m_aLastMapName); },
+                "m_aLastMapName", sol::property([](CBotNet &bn) -> std::string { return std::string(bn.m_aLastMapName); }),
                 // Methods
                 "IsDummyActive", [](CBotNet &bn, int d) -> bool { return bn.IsDummyActive(d); },
                 "ResetDummyInputs", [](CBotNet &bn, int d) { bn.ResetDummyInputs(d); },
@@ -1366,7 +1366,7 @@ void CCodeExec::RegisterRawAPI()
                 }),
                 "m_MapBestTimeSeconds", &CGameClient::m_MapBestTimeSeconds,
                 "m_MapBestTimeMillis", &CGameClient::m_MapBestTimeMillis,
-                "m_aMapDescription", [](CGameClient &gc) -> std::string { return std::string(gc.m_aMapDescription); },
+                "m_aMapDescription", sol::property([](CGameClient &gc) -> std::string { return std::string(gc.m_aMapDescription); }),
                 "m_LanguageChanged", &CGameClient::m_LanguageChanged,
                 "m_aNextChangeInfo", sol::property([this, &lua](CGameClient &gc) -> sol::table {
                         auto t = lua.create_table();
