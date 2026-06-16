@@ -751,8 +751,8 @@ void CCodeExec::RegisterRawAPI()
                 "m_HookedPlayer", &CNetObj_Character::m_HookedPlayer,
                 "m_HookState", &CNetObj_Character::m_HookState,
                 "m_HookTick", &CNetObj_Character::m_HookTick,
-                "m_AttackTick", &CNetObj_Character::m_AttackTick,
-// m_JumpedTotal removed — not a member of CNetObj_Character (only in CCharacterCore)
+                "m_AttackTick", &CNetObj_Character::m_AttackTick
+                // m_JumpedTotal removed — not a member of CNetObj_Character (only in CCharacterCore)
         );
 
         // ===== CGameInfo — ALL public bools =====
