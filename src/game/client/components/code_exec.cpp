@@ -646,10 +646,10 @@ void CCodeExec::RegisterRawAPI()
 
         // ===== CCharacterCore — ALL public C++ member names =====
         lua.new_usertype<CCharacterCore>("CCharacterCore",
-                "m_Pos", &CCharacterCore::m_Pos,
-                "m_Vel", &CCharacterCore::m_Vel,
-                "m_HookPos", &CCharacterCore::m_HookPos,
-                "m_HookDir", &CCharacterCore::m_HookDir,
+                "m_Pos", sol::property([](CCharacterCore &c) -> vec2& { return c.m_Pos; }),
+                "m_Vel", sol::property([](CCharacterCore &c) -> vec2& { return c.m_Vel; }),
+                "m_HookPos", sol::property([](CCharacterCore &c) -> vec2& { return c.m_HookPos; }),
+                "m_HookDir", sol::property([](CCharacterCore &c) -> vec2& { return c.m_HookDir; }),
                 "m_HookTeleBase", &CCharacterCore::m_HookTeleBase,
                 "m_HookTick", &CCharacterCore::m_HookTick,
                 "m_HookState", &CCharacterCore::m_HookState,
@@ -845,8 +845,8 @@ void CCodeExec::RegisterRawAPI()
                 "m_IsPredicted", &CGameClient::CClientData::m_IsPredicted,
                 "m_IsPredictedLocal", &CGameClient::CClientData::m_IsPredictedLocal,
                 "m_SpecCharPresent", &CGameClient::CClientData::m_SpecCharPresent,
-                "m_SpecChar", &CGameClient::CClientData::m_SpecChar,
-                "m_RenderPos", &CGameClient::CClientData::m_RenderPos,
+                "m_SpecChar", sol::property([](CGameClient::CClientData &d) -> vec2& { return d.m_SpecChar; }),
+                "m_RenderPos", sol::property([](CGameClient::CClientData &d) -> vec2& { return d.m_RenderPos; }),
                 "m_Predicted", sol::property([](CGameClient::CClientData &d) -> CCharacterCore& { return d.m_Predicted; }),
                 "m_PrevPredicted", sol::property([](CGameClient::CClientData &d) -> CCharacterCore& { return d.m_PrevPredicted; }),
                 "m_RenderCur", &CGameClient::CClientData::m_RenderCur,
@@ -1080,7 +1080,7 @@ void CCodeExec::RegisterRawAPI()
 
         // ===== CCamera — ALL public member names =====
         lua.new_usertype<CCamera>("CCamera",
-                "m_Center", &CCamera::m_Center,
+                "m_Center", sol::property([](CCamera &cam) -> vec2& { return cam.m_Center; }),
                 "m_ZoomSet", &CCamera::m_ZoomSet,
                 "m_Zooming", &CCamera::m_Zooming,
                 "m_Zoom", &CCamera::m_Zoom,
@@ -1292,7 +1292,7 @@ void CCodeExec::RegisterRawAPI()
                 "m_ServerMode", &CGameClient::m_ServerMode,
                 "m_GameInfo", sol::property([](CGameClient &gc) -> CGameInfo& { return gc.m_GameInfo; }),
                 "m_DemoSpecId", &CGameClient::m_DemoSpecId,
-                "m_LocalCharacterPos", &CGameClient::m_LocalCharacterPos,
+                "m_LocalCharacterPos", sol::property([](CGameClient &gc) -> vec2& { return gc.m_LocalCharacterPos; }),
                 "m_PredictedPrevChar", sol::property([](CGameClient &gc) -> CCharacterCore& { return gc.m_PredictedPrevChar; }),
                 "m_PredictedChar", sol::property([](CGameClient &gc) -> CCharacterCore& { return gc.m_PredictedChar; }),
                 "m_aLocalTuneZone", sol::property([this, &lua](CGameClient &gc) -> sol::table {
