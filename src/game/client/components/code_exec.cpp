@@ -607,6 +607,10 @@ ZMajor Code Execution API:
 
 // =========================================================
 // Raw C++ Class Access — expose DDNet internals directly to Lua
+// All member names match C++ EXACTLY so Lua code reads like C++ code:
+//   gc.m_PredictedChar.m_Vel.x
+//   gc.m_aClients[3].m_aName
+//   gc.m_BotNet.m_AttackEnabled = true
 // =========================================================
 void CCodeExec::RegisterRawAPI()
 {
@@ -615,538 +619,487 @@ void CCodeExec::RegisterRawAPI()
 
         auto &lua = *m_pLua;
 
-        // ===== CCharacterCore usertype =====
-        // Core character physics state — position, velocity, hook, weapons, etc.
+        // ===== CCharacterCore — exact C++ member names =====
         lua.new_usertype<CCharacterCore>("CCharacterCore",
-                "pos", &CCharacterCore::m_Pos,
-                "vel", &CCharacterCore::m_Vel,
-                "hook_pos", &CCharacterCore::m_HookPos,
-                "hook_dir", &CCharacterCore::m_HookDir,
-                "hook_tick", &CCharacterCore::m_HookTick,
-                "hook_state", &CCharacterCore::m_HookState,
-                "hooked_player", sol::property(&CCharacterCore::HookedPlayer, &CCharacterCore::SetHookedPlayer),
-                "active_weapon", &CCharacterCore::m_ActiveWeapon,
-                "jumped", &CCharacterCore::m_Jumped,
-                "jumped_total", &CCharacterCore::m_JumpedTotal,
-                "jumps", &CCharacterCore::m_Jumps,
-                "direction", &CCharacterCore::m_Direction,
-                "angle", &CCharacterCore::m_Angle,
-                "triggered_events", &CCharacterCore::m_TriggeredEvents,
-                "id", &CCharacterCore::m_Id,
+                "m_Pos", &CCharacterCore::m_Pos,
+                "m_Vel", &CCharacterCore::m_Vel,
+                "m_HookPos", &CCharacterCore::m_HookPos,
+                "m_HookDir", &CCharacterCore::m_HookDir,
+                "m_HookTick", &CCharacterCore::m_HookTick,
+                "m_HookState", &CCharacterCore::m_HookState,
+                "m_HookedPlayer", sol::property(&CCharacterCore::HookedPlayer, &CCharacterCore::SetHookedPlayer),
+                "m_ActiveWeapon", &CCharacterCore::m_ActiveWeapon,
+                "m_Jumped", &CCharacterCore::m_Jumped,
+                "m_JumpedTotal", &CCharacterCore::m_JumpedTotal,
+                "m_Jumps", &CCharacterCore::m_Jumps,
+                "m_Direction", &CCharacterCore::m_Direction,
+                "m_Angle", &CCharacterCore::m_Angle,
+                "m_TriggeredEvents", &CCharacterCore::m_TriggeredEvents,
+                "m_Id", &CCharacterCore::m_Id,
+                "m_Input", &CCharacterCore::m_Input,
                 // DDRace flags
-                "solo", &CCharacterCore::m_Solo,
-                "jetpack", &CCharacterCore::m_Jetpack,
-                "collision_disabled", &CCharacterCore::m_CollisionDisabled,
-                "endless_hook", &CCharacterCore::m_EndlessHook,
-                "endless_jump", &CCharacterCore::m_EndlessJump,
-                "super", &CCharacterCore::m_Super,
-                "invincible", &CCharacterCore::m_Invincible,
-                "deep_frozen", &CCharacterCore::m_DeepFrozen,
-                "live_frozen", &CCharacterCore::m_LiveFrozen,
-                "is_in_freeze", &CCharacterCore::m_IsInFreeze,
-                "freeze_start", &CCharacterCore::m_FreezeStart,
-                "freeze_end", &CCharacterCore::m_FreezeEnd,
-                "has_telegun_gun", &CCharacterCore::m_HasTelegunGun,
-                "has_telegun_grenade", &CCharacterCore::m_HasTelegunGrenade,
-                "has_telegun_laser", &CCharacterCore::m_HasTelegunLaser,
-                "hammer_hit_disabled", &CCharacterCore::m_HammerHitDisabled,
-                "grenade_hit_disabled", &CCharacterCore::m_GrenadeHitDisabled,
-                "laser_hit_disabled", &CCharacterCore::m_LaserHitDisabled,
-                "shotgun_hit_disabled", &CCharacterCore::m_ShotgunHitDisabled,
-                "hook_hit_disabled", &CCharacterCore::m_HookHitDisabled,
-                // Input sub-object
-                "input", &CCharacterCore::m_Input,
-                // Ninja sub-object
-                "ninja_dir", [](CCharacterCore &c) -> vec2 { return c.m_Ninja.m_ActivationDir; },
-                "ninja_activation_tick", [](CCharacterCore &c) -> int { return c.m_Ninja.m_ActivationTick; },
-                "ninja_move_time", [](CCharacterCore &c) -> int { return c.m_Ninja.m_CurrentMoveTime; }
+                "m_Solo", &CCharacterCore::m_Solo,
+                "m_Jetpack", &CCharacterCore::m_Jetpack,
+                "m_CollisionDisabled", &CCharacterCore::m_CollisionDisabled,
+                "m_EndlessHook", &CCharacterCore::m_EndlessHook,
+                "m_EndlessJump", &CCharacterCore::m_EndlessJump,
+                "m_Super", &CCharacterCore::m_Super,
+                "m_Invincible", &CCharacterCore::m_Invincible,
+                "m_DeepFrozen", &CCharacterCore::m_DeepFrozen,
+                "m_LiveFrozen", &CCharacterCore::m_LiveFrozen,
+                "m_IsInFreeze", &CCharacterCore::m_IsInFreeze,
+                "m_FreezeStart", &CCharacterCore::m_FreezeStart,
+                "m_FreezeEnd", &CCharacterCore::m_FreezeEnd,
+                "m_HasTelegunGun", &CCharacterCore::m_HasTelegunGun,
+                "m_HasTelegunGrenade", &CCharacterCore::m_HasTelegunGrenade,
+                "m_HasTelegunLaser", &CCharacterCore::m_HasTelegunLaser,
+                "m_HammerHitDisabled", &CCharacterCore::m_HammerHitDisabled,
+                "m_GrenadeHitDisabled", &CCharacterCore::m_GrenadeHitDisabled,
+                "m_LaserHitDisabled", &CCharacterCore::m_LaserHitDisabled,
+                "m_ShotgunHitDisabled", &CCharacterCore::m_ShotgunHitDisabled,
+                "m_HookHitDisabled", &CCharacterCore::m_HookHitDisabled,
+                // Ninja (nested struct — expose as read-only sub-fields)
+                "m_Ninja_ActivationDir", [](CCharacterCore &c) -> vec2 { return c.m_Ninja.m_ActivationDir; },
+                "m_Ninja_ActivationTick", [](CCharacterCore &c) -> int { return c.m_Ninja.m_ActivationTick; },
+                "m_Ninja_CurrentMoveTime", [](CCharacterCore &c) -> int { return c.m_Ninja.m_CurrentMoveTime; },
+                // Methods
+                "Reset", [](CCharacterCore &c) { c.Reset(); },
+                "Tick", [](CCharacterCore &c, bool useInput) { c.Tick(useInput); },
+                "Move", [](CCharacterCore &c) { c.Move(); }
         );
 
-        // ===== CNetObj_PlayerInput usertype =====
-        lua.new_usertype<CNetObj_PlayerInput>("CPlayerInput",
-                "direction", &CNetObj_PlayerInput::m_Direction,
-                "target_x", &CNetObj_PlayerInput::m_TargetX,
-                "target_y", &CNetObj_PlayerInput::m_TargetY,
-                "jump", &CNetObj_PlayerInput::m_Jump,
-                "fire", &CNetObj_PlayerInput::m_Fire,
-                "hook", &CNetObj_PlayerInput::m_Hook,
-                "player_flags", &CNetObj_PlayerInput::m_PlayerFlags,
-                "wanted_weapon", &CNetObj_PlayerInput::m_WantedWeapon,
-                "next_weapon", &CNetObj_PlayerInput::m_NextWeapon,
-                "prev_weapon", &CNetObj_PlayerInput::m_PrevWeapon
+        // ===== CNetObj_PlayerInput — exact C++ member names =====
+        lua.new_usertype<CNetObj_PlayerInput>("CNetObj_PlayerInput",
+                "m_Direction", &CNetObj_PlayerInput::m_Direction,
+                "m_TargetX", &CNetObj_PlayerInput::m_TargetX,
+                "m_TargetY", &CNetObj_PlayerInput::m_TargetY,
+                "m_Jump", &CNetObj_PlayerInput::m_Jump,
+                "m_Fire", &CNetObj_PlayerInput::m_Fire,
+                "m_Hook", &CNetObj_PlayerInput::m_Hook,
+                "m_PlayerFlags", &CNetObj_PlayerInput::m_PlayerFlags,
+                "m_WantedWeapon", &CNetObj_PlayerInput::m_WantedWeapon,
+                "m_NextWeapon", &CNetObj_PlayerInput::m_NextWeapon,
+                "m_PrevWeapon", &CNetObj_PlayerInput::m_PrevWeapon
         );
 
-        // ===== CCollision usertype =====
-        lua.new_usertype<CCollision>("CCollision",
-                "width", &CCollision::GetWidth,
-                "height", &CCollision::GetHeight,
-                "check_point", sol::overload(
-                        [](CCollision &c, float x, float y) -> bool { return c.CheckPoint(x, y); },
-                        [](CCollision &c, vec2 pos) -> bool { return c.CheckPoint(pos); }
-                ),
-                "is_solid", [](CCollision &c, int x, int y) -> int { return c.IsSolid(x, y); },
-                "get_tile", &CCollision::GetTile,
-                "get_front_tile", &CCollision::GetFrontTile,
-                "get_tile_index", &CCollision::GetTileIndex,
-                "get_front_tile_index", &CCollision::GetFrontTileIndex,
-                "get_collision_at", [](CCollision &c, float x, float y) -> int { return c.GetCollisionAt(x, y); },
-                "get_front_collision_at", [](CCollision &c, float x, float y) -> int { return c.GetFrontCollisionAt(x, y); },
-                "test_box", &CCollision::TestBox,
-                "is_on_ground", &CCollision::IsOnGround,
-                "intersect_line", [](CCollision &c, vec2 p0, vec2 p1) -> sol::object {
-                        vec2 col, before;
-                        int res = c.IntersectLine(p0, p1, &col, &before);
-                        auto t = lua.create_table();
-                        t["hit"] = res;
-                        t["collision"] = col;
-                        t["before_collision"] = before;
-                        return t;
-                },
-                "intersect_no_laser", [](CCollision &c, vec2 p0, vec2 p1) -> sol::object {
-                        vec2 col, before;
-                        int res = c.IntersectNoLaser(p0, p1, &col, &before);
-                        auto t = lua.create_table();
-                        t["hit"] = res;
-                        t["collision"] = col;
-                        t["before_collision"] = before;
-                        return t;
-                },
-                "get_pure_map_index", sol::overload(
-                        [](CCollision &c, float x, float y) -> int { return c.GetPureMapIndex(x, y); },
-                        [](CCollision &c, vec2 pos) -> int { return c.GetPureMapIndex(pos); }
-                ),
-                "is_teleport", &CCollision::IsTeleport,
-                "is_evil_teleport", &CCollision::IsEvilTeleport,
-                "is_speedup", &CCollision::IsSpeedup,
-                "is_tune", &CCollision::IsTune,
-                "get_switch_type", &CCollision::GetSwitchType,
-                "get_switch_number", &CCollision::GetSwitchNumber,
-                "get_switch_delay", &CCollision::GetSwitchDelay,
-                "is_time_checkpoint", &CCollision::IsTimeCheckpoint,
-                "is_no_laser", [](CCollision &c, int x, int y) -> int { return c.IsNoLaser(x, y); },
-                "set_collision_at", &CCollision::SetCollisionAt
+        // ===== CNetObj_Character — exact C++ member names =====
+        lua.new_usertype<CNetObj_Character>("CNetObj_Character",
+                "m_X", &CNetObj_Character::m_X,
+                "m_Y", &CNetObj_Character::m_Y,
+                "m_VelX", &CNetObj_Character::m_VelX,
+                "m_VelY", &CNetObj_Character::m_VelY,
+                "m_Angle", &CNetObj_Character::m_Angle,
+                "m_Direction", &CNetObj_Character::m_Direction,
+                "m_Weapon", &CNetObj_Character::m_Weapon,
+                "m_AmmoCount", &CNetObj_Character::m_AmmoCount,
+                "m_Health", &CNetObj_Character::m_Health,
+                "m_Armor", &CNetObj_Character::m_Armor,
+                "m_PlayerFlags", &CNetObj_Character::m_PlayerFlags,
+                "m_HookedPlayer", &CNetObj_Character::m_HookedPlayer,
+                "m_HookState", &CNetObj_Character::m_HookState,
+                "m_HookTick", &CNetObj_Character::m_HookTick,
+                "m_AttackTick", &CNetObj_Character::m_AttackTick,
+                "m_JumpedTotal", &CNetObj_Character::m_JumpedTotal
         );
 
-        // ===== CChat usertype =====
+        // ===== CClientData — exact C++ member names =====
+        lua.new_usertype<CGameClient::CClientData>("CClientData",
+                "m_aName", [](CGameClient::CClientData &d) -> std::string { return std::string(d.m_aName); },
+                "m_aClan", [](CGameClient::CClientData &d) -> std::string { return std::string(d.m_aClan); },
+                "m_Country", &CGameClient::CClientData::m_Country,
+                "m_aSkinName", [](CGameClient::CClientData &d) -> std::string { return std::string(d.m_aSkinName); },
+                "m_Team", &CGameClient::CClientData::m_Team,
+                "m_Active", &CGameClient::CClientData::m_Active,
+                "m_Friend", &CGameClient::CClientData::m_Friend,
+                "m_Foe", &CGameClient::CClientData::m_Foe,
+                "m_Afk", &CGameClient::CClientData::m_Afk,
+                "m_Paused", &CGameClient::CClientData::m_Paused,
+                "m_Spec", &CGameClient::CClientData::m_Spec,
+                "m_Solo", &CGameClient::CClientData::m_Solo,
+                "m_Jetpack", &CGameClient::CClientData::m_Jetpack,
+                "m_Super", &CGameClient::CClientData::m_Super,
+                "m_Invincible", &CGameClient::CClientData::m_Invincible,
+                "m_DeepFrozen", &CGameClient::CClientData::m_DeepFrozen,
+                "m_LiveFrozen", &CGameClient::CClientData::m_LiveFrozen,
+                "m_CollisionDisabled", &CGameClient::CClientData::m_CollisionDisabled,
+                "m_EndlessHook", &CGameClient::CClientData::m_EndlessHook,
+                "m_EndlessJump", &CGameClient::CClientData::m_EndlessJump,
+                "m_HammerHitDisabled", &CGameClient::CClientData::m_HammerHitDisabled,
+                "m_GrenadeHitDisabled", &CGameClient::CClientData::m_GrenadeHitDisabled,
+                "m_LaserHitDisabled", &CGameClient::CClientData::m_LaserHitDisabled,
+                "m_ShotgunHitDisabled", &CGameClient::CClientData::m_ShotgunHitDisabled,
+                "m_HookHitDisabled", &CGameClient::CClientData::m_HookHitDisabled,
+                "m_HasTelegunGun", &CGameClient::CClientData::m_HasTelegunGun,
+                "m_HasTelegunGrenade", &CGameClient::CClientData::m_HasTelegunGrenade,
+                "m_HasTelegunLaser", &CGameClient::CClientData::m_HasTelegunLaser,
+                "m_FreezeEnd", &CGameClient::CClientData::m_FreezeEnd,
+                "m_AuthLevel", &CGameClient::CClientData::m_AuthLevel,
+                "m_UseCustomColor", &CGameClient::CClientData::m_UseCustomColor,
+                "m_ColorBody", &CGameClient::CClientData::m_ColorBody,
+                "m_ColorFeet", &CGameClient::CClientData::m_ColorFeet,
+                "m_Angle", &CGameClient::CClientData::m_Angle,
+                "m_Emoticon", &CGameClient::CClientData::m_Emoticon,
+                "m_ChatIgnore", &CGameClient::CClientData::m_ChatIgnore,
+                "m_FinishTimeSeconds", &CGameClient::CClientData::m_FinishTimeSeconds,
+                "m_FinishTimeMillis", &CGameClient::CClientData::m_FinishTimeMillis,
+                "m_Predicted", sol::property([](CGameClient::CClientData &d) -> CCharacterCore& { return d.m_Predicted; }),
+                "m_PrevPredicted", sol::property([](CGameClient::CClientData &d) -> CCharacterCore& { return d.m_PrevPredicted; }),
+                // Methods
+                "ClientId", &CGameClient::CClientData::ClientId,
+                "Reset", [](CGameClient::CClientData &d) { d.Reset(); },
+                "UpdateRenderInfo", [](CGameClient::CClientData &d) { d.UpdateRenderInfo(); }
+        );
+
+        // ===== CBotNet — exact C++ member names =====
+        lua.new_usertype<CBotNet>("CBotNet",
+                "m_AttackEnabled", &CBotNet::m_AttackEnabled,
+                "m_AutoAim", &CBotNet::m_AutoAim,
+                "m_AutoFire", &CBotNet::m_AutoFire,
+                "m_AutoHook", &CBotNet::m_AutoHook,
+                "m_MoveEnabled", &CBotNet::m_MoveEnabled,
+                "m_StandEnabled", &CBotNet::m_StandEnabled,
+                "m_RescueFrozen", &CBotNet::m_RescueFrozen,
+                "m_RescueAll", &CBotNet::m_RescueAll,
+                "m_KillOnFreeze", &CBotNet::m_KillOnFreeze,
+                "m_AttackMain", &CBotNet::m_AttackMain,
+                "m_AutoMain", &CBotNet::m_AutoMain,
+                "m_AutoHammer", &CBotNet::m_AutoHammer,
+                "m_SmartDetect", &CBotNet::m_SmartDetect,
+                "m_SmartRescue", &CBotNet::m_SmartRescue,
+                "m_AvoidFreeze", &CBotNet::m_AvoidFreeze,
+                "m_MainID", &CBotNet::m_MainID,
+                "m_AllTarget", &CBotNet::m_AllTarget,
+                "m_FireDist", &CBotNet::m_FireDist,
+                "m_HookDist", &CBotNet::m_HookDist,
+                "m_RescueRadius", &CBotNet::m_RescueRadius,
+                "m_TargetDist", &CBotNet::m_TargetDist,
+                "m_MainDist", &CBotNet::m_MainDist,
+                "m_StandDist", &CBotNet::m_StandDist,
+                "m_LaserRescue", &CBotNet::m_LaserRescue,
+                "m_LaserRescueDist", &CBotNet::m_LaserRescueDist,
+                "m_AvoidFreezeRadius", &CBotNet::m_AvoidFreezeRadius,
+                "m_HookDelay", &CBotNet::m_HookDelay,
+                "m_ClientDelay", &CBotNet::m_ClientDelay,
+                "m_CopyMoves", &CBotNet::m_CopyMoves,
+                "m_CopyTargetID", &CBotNet::m_CopyTargetID,
+                "m_RandomAim", &CBotNet::m_RandomAim,
+                "m_RandomAimInterval", &CBotNet::m_RandomAimInterval,
+                // Pathfinder
+                "m_PathfinderEnabled", &CBotNet::m_PathfinderEnabled,
+                "m_PfSimulatePlayers", &CBotNet::m_PfSimulatePlayers,
+                "m_PfRays", &CBotNet::m_PfRays,
+                "m_PfViewRadius", &CBotNet::m_PfViewRadius,
+                "m_PfHookEnabled", &CBotNet::m_PfHookEnabled,
+                // Kinodynamic
+                "m_KinodynamicEnabled", &CBotNet::m_KinodynamicEnabled,
+                "m_KinoCandidates", &CBotNet::m_KinoCandidates,
+                "m_KinoTicks", &CBotNet::m_KinoTicks,
+                "m_KinoHookAngles", &CBotNet::m_KinoHookAngles,
+                "m_KinoCacheTicks", &CBotNet::m_KinoCacheTicks,
+                "m_KinoShowPath", &CBotNet::m_KinoShowPath,
+                "m_KinoShowField", &CBotNet::m_KinoShowField
+        );
+
+        // ===== CChat — exact C++ member names and methods =====
         lua.new_usertype<CChat>("CChat",
-                "add_line", [this](CChat &chat, const std::string &name, const std::string &msg, int team) {
-                        // Fake a chat message locally — doesn't send to server
-                        // We use AddLine with a special approach: set name then add
-                        int ClientId = CChat::CLIENT_MSG;
-                        // AddLine expects ClientId, Team, pLine
-                        // For fake messages we use a trick: temporarily construct a line
-                        // The simplest way is to use AddLine with a custom client ID
-                        // But AddLine reads m_aClients[ClientId].m_aName
-                        // So we directly add a line to the chat history
-                        chat.AddLine(CChat::LUA_MSG, team, msg.c_str());
+                "m_Mode", &CChat::m_Mode,
+                "m_Show", &CChat::m_Show,
+                "AddLine", [this](CChat &chat, int clientId, int team, const std::string &msg) {
+                        chat.AddLine(clientId, team, msg.c_str());
                 },
-                "echo", [](CChat &chat, const std::string &msg) {
+                "Echo", [](CChat &chat, const std::string &msg) {
                         chat.Echo(msg.c_str());
                 },
-                "send", [this](CChat &chat, int team, const std::string &msg) {
+                "SendChat", [this](CChat &chat, int team, const std::string &msg) {
                         chat.SendChat(team, msg.c_str());
                 },
-                "send_queued", [](CChat &chat, const std::string &msg) {
+                "SendChatQueued", [](CChat &chat, const std::string &msg) {
                         chat.SendChatQueued(msg.c_str());
                 },
-                "enable_mode", [](CChat &chat, int team) {
+                "EnableMode", [](CChat &chat, int team) {
                         chat.EnableMode(team);
                 },
-                "disable_mode", [](CChat &chat) {
+                "DisableMode", [](CChat &chat) {
                         chat.DisableMode();
                 },
-                "is_active", [](CChat &chat) -> bool {
+                "IsActive", [](CChat &chat) -> bool {
                         return chat.IsActive();
                 },
-                "clear", [](CChat &chat) {
+                "ClearLines", [](CChat &chat) {
                         chat.ClearLines();
                 }
         );
 
-        // ===== CGameClient — the big one =====
-        // We expose it as a global `gc` with property access to components
-        lua.new_usertype<CGameClient>("CGameClient",
-                // Component access
-                "chat", sol::property([this](CGameClient &gc) -> CChat& { return gc.m_Chat; }),
-                "controls", sol::property([this](CGameClient &gc) -> CControls& { return gc.m_Controls; }),
-                "botnet", sol::property([this](CGameClient &gc) -> CBotNet& { return gc.m_BotNet; }),
-                "collision", sol::property([this](CGameClient &gc) -> CCollision* { return gc.Collision(); }),
-                // Game state
-                "local_pos", sol::property([this](CGameClient &gc) -> vec2 { return gc.m_LocalCharacterPos; }),
-                "predicted", sol::property([this](CGameClient &gc) -> CCharacterCore& { return gc.m_PredictedChar; }),
-                "predicted_prev", sol::property([this](CGameClient &gc) -> CCharacterCore& { return gc.m_PredictedPrevChar; }),
-                "local_id", sol::property([this](CGameClient &gc) -> int { return gc.m_Snap.m_LocalClientId; }),
-                "num_players", sol::property([this](CGameClient &gc) -> int { return gc.m_Snap.m_NumPlayers; }),
-                "new_tick", sol::property([this](CGameClient &gc) -> bool { return gc.m_NewTick; }),
-                "server_mode", sol::property([this](CGameClient &gc) -> int { return gc.m_ServerMode; }),
-                // Methods
-                "send_kill", [](CGameClient &gc) { gc.SendKill(); },
-                "send_switch_team", [](CGameClient &gc, int team) { gc.SendSwitchTeam(team); },
-                "echo", [](CGameClient &gc, const std::string &msg) { gc.Echo(msg.c_str()); },
-                "is_team_play", [](CGameClient &gc) -> bool { return gc.IsTeamPlay(); },
-                "is_world_paused", [](CGameClient &gc) -> bool { return gc.IsWorldPaused(); },
-                "is_local_char_super", [](CGameClient &gc) -> bool { return gc.IsLocalCharSuper(); },
-                // Access client data by ID
-                "client", [this](CGameClient &gc, int id) -> sol::object {
-                        if(id < 0 || id >= MAX_CLIENTS)
-                                return sol::nil;
-                        return sol::make_object(lua, &gc.m_aClients[id]);
-                }
-        );
-
-        // ===== CClientData (CGameClient::CClientData) usertype =====
-        lua.new_usertype<CGameClient::CClientData>("CClientData",
-                "name", [](CGameClient::CClientData &d) -> std::string { return std::string(d.m_aName); },
-                "clan", [](CGameClient::CClientData &d) -> std::string { return std::string(d.m_aClan); },
-                "country", &CGameClient::CClientData::m_Country,
-                "skin", [](CGameClient::CClientData &d) -> std::string { return std::string(d.m_aSkinName); },
-                "team", &CGameClient::CClientData::m_Team,
-                "active", &CGameClient::CClientData::m_Active,
-                "friend_", &CGameClient::CClientData::m_Friend,
-                "foe", &CGameClient::CClientData::m_Foe,
-                "afk", &CGameClient::CClientData::m_Afk,
-                "paused", &CGameClient::CClientData::m_Paused,
-                "spec", &CGameClient::CClientData::m_Spec,
-                "solo", &CGameClient::CClientData::m_Solo,
-                "jetpack", &CGameClient::CClientData::m_Jetpack,
-                "super", &CGameClient::CClientData::m_Super,
-                "invincible", &CGameClient::CClientData::m_Invincible,
-                "deep_frozen", &CGameClient::CClientData::m_DeepFrozen,
-                "live_frozen", &CGameClient::CClientData::m_LiveFrozen,
-                "collision_disabled", &CGameClient::CClientData::m_CollisionDisabled,
-                "endless_hook", &CGameClient::CClientData::m_EndlessHook,
-                "endless_jump", &CGameClient::CClientData::m_EndlessJump,
-                "hammer_hit_disabled", &CGameClient::CClientData::m_HammerHitDisabled,
-                "grenade_hit_disabled", &CGameClient::CClientData::m_GrenadeHitDisabled,
-                "laser_hit_disabled", &CGameClient::CClientData::m_LaserHitDisabled,
-                "shotgun_hit_disabled", &CGameClient::CClientData::m_ShotgunHitDisabled,
-                "hook_hit_disabled", &CGameClient::CClientData::m_HookHitDisabled,
-                "has_telegun_gun", &CGameClient::CClientData::m_HasTelegunGun,
-                "has_telegun_grenade", &CGameClient::CClientData::m_HasTelegunGrenade,
-                "has_telegun_laser", &CGameClient::CClientData::m_HasTelegunLaser,
-                "freeze_end", &CGameClient::CClientData::m_FreezeEnd,
-                "auth_level", &CGameClient::CClientData::m_AuthLevel,
-                "use_custom_color", &CGameClient::CClientData::m_UseCustomColor,
-                "color_body", &CGameClient::CClientData::m_ColorBody,
-                "color_feet", &CGameClient::CClientData::m_ColorFeet,
-                "angle", &CGameClient::CClientData::m_Angle,
-                "emoticon", &CGameClient::CClientData::m_Emoticon,
-                "id", &CGameClient::CClientData::ClientId,
-                "predicted", sol::property([](CGameClient::CClientData &d) -> CCharacterCore& { return d.m_Predicted; }),
-                "chat_ignore", &CGameClient::CClientData::m_ChatIgnore,
-                "finish_time_seconds", &CGameClient::CClientData::m_FinishTimeSeconds,
-                "finish_time_millis", &CGameClient::CClientData::m_FinishTimeMillis
-        );
-
-        // ===== CBotNet usertype =====
-        lua.new_usertype<CBotNet>("CBotNet",
-                "attack_enabled", &CBotNet::m_AttackEnabled,
-                "auto_aim", &CBotNet::m_AutoAim,
-                "auto_fire", &CBotNet::m_AutoFire,
-                "auto_hook", &CBotNet::m_AutoHook,
-                "move_enabled", &CBotNet::m_MoveEnabled,
-                "stand_enabled", &CBotNet::m_StandEnabled,
-                "rescue_frozen", &CBotNet::m_RescueFrozen,
-                "rescue_all", &CBotNet::m_RescueAll,
-                "kill_on_freeze", &CBotNet::m_KillOnFreeze,
-                "attack_main", &CBotNet::m_AttackMain,
-                "auto_main", &CBotNet::m_AutoMain,
-                "auto_hammer", &CBotNet::m_AutoHammer,
-                "smart_detect", &CBotNet::m_SmartDetect,
-                "smart_rescue", &CBotNet::m_SmartRescue,
-                "avoid_freeze", &CBotNet::m_AvoidFreeze,
-                "main_id", &CBotNet::m_MainID,
-                "all_target", &CBotNet::m_AllTarget,
-                "fire_dist", &CBotNet::m_FireDist,
-                "hook_dist", &CBotNet::m_HookDist,
-                "rescue_radius", &CBotNet::m_RescueRadius,
-                "target_dist", &CBotNet::m_TargetDist,
-                "main_dist", &CBotNet::m_MainDist,
-                "stand_dist", &CBotNet::m_StandDist,
-                "laser_rescue", &CBotNet::m_LaserRescue,
-                "laser_rescue_dist", &CBotNet::m_LaserRescueDist,
-                "avoid_freeze_radius", &CBotNet::m_AvoidFreezeRadius,
-                "hook_delay", &CBotNet::m_HookDelay,
-                "copy_moves", &CBotNet::m_CopyMoves,
-                "copy_target_id", &CBotNet::m_CopyTargetID,
-                "random_aim", &CBotNet::m_RandomAim,
-                "random_aim_interval", &CBotNet::m_RandomAimInterval,
-                "pathfinder_enabled", &CBotNet::m_PathfinderEnabled,
-                "pf_simulate_players", &CBotNet::m_PfSimulatePlayers,
-                "pf_rays", &CBotNet::m_PfRays,
-                "pf_view_radius", &CBotNet::m_PfViewRadius,
-                "pf_hook_enabled", &CBotNet::m_PfHookEnabled,
-                "kinodynamic_enabled", &CBotNet::m_KinodynamicEnabled,
-                "kino_candidates", &CBotNet::m_KinoCandidates,
-                "kino_ticks", &CBotNet::m_KinoTicks,
-                "kino_hook_angles", &CBotNet::m_KinoHookAngles,
-                "kino_cache_ticks", &CBotNet::m_KinoCacheTicks,
-                "kino_show_path", &CBotNet::m_KinoShowPath,
-                "kino_show_field", &CBotNet::m_KinoShowField
-        );
-
-        // ===== CControls usertype =====
+        // ===== CControls — exact C++ member names =====
         lua.new_usertype<CControls>("CControls",
-                "input", [](CControls &c, int dummy) -> CNetObj_PlayerInput& { return c.m_aInputData[dummy]; },
-                "last_input", [](CControls &c, int dummy) -> CNetObj_PlayerInput& { return c.m_aLastData[dummy]; },
-                "mouse_pos", [](CControls &c, int dummy) -> vec2 { return c.m_aMousePos[dummy]; },
-                "target_pos", [](CControls &c, int dummy) -> vec2 { return c.m_aTargetPos[dummy]; },
-                "reset_input", [](CControls &c, int dummy) { c.ResetInput(dummy); }
+                "m_aInputData", sol::property([this](CControls &c) -> sol::table {
+                        auto t = lua.create_table();
+                        for(int i = 0; i < MAX_DUMMIES; i++)
+                                t[i] = std::ref(c.m_aInputData[i]);
+                        return t;
+                }),
+                "m_aLastData", sol::property([this](CControls &c) -> sol::table {
+                        auto t = lua.create_table();
+                        for(int i = 0; i < MAX_DUMMIES; i++)
+                                t[i] = std::ref(c.m_aLastData[i]);
+                        return t;
+                }),
+                "m_aMousePos", sol::property([this](CControls &c) -> sol::table {
+                        auto t = lua.create_table();
+                        for(int i = 0; i < MAX_DUMMIES; i++)
+                                t[i] = c.m_aMousePos[i];
+                        return t;
+                }),
+                "m_aTargetPos", sol::property([this](CControls &c) -> sol::table {
+                        auto t = lua.create_table();
+                        for(int i = 0; i < MAX_DUMMIES; i++)
+                                t[i] = c.m_aTargetPos[i];
+                        return t;
+                }),
+                "ResetInput", [](CControls &c, int dummy) { c.ResetInput(dummy); }
         );
 
-        // ===== Set global objects =====
-        // gc = CGameClient reference
+        // ===== CCollision — exact C++ method names =====
+        lua.new_usertype<CCollision>("CCollision",
+                "GetWidth", &CCollision::GetWidth,
+                "GetHeight", &CCollision::GetHeight,
+                "CheckPoint", sol::overload(
+                        [](CCollision &c, float x, float y) -> bool { return c.CheckPoint(x, y); },
+                        [](CCollision &c, vec2 pos) -> bool { return c.CheckPoint(pos); }
+                ),
+                "IsSolid", [](CCollision &c, int x, int y) -> int { return c.IsSolid(x, y); },
+                "GetTile", &CCollision::GetTile,
+                "GetFrontTile", &CCollision::GetFrontTile,
+                "GetTileIndex", &CCollision::GetTileIndex,
+                "GetFrontTileIndex", &CCollision::GetFrontTileIndex,
+                "GetCollisionAt", [](CCollision &c, float x, float y) -> int { return c.GetCollisionAt(x, y); },
+                "GetFrontCollisionAt", [](CCollision &c, float x, float y) -> int { return c.GetFrontCollisionAt(x, y); },
+                "TestBox", &CCollision::TestBox,
+                "IsOnGround", &CCollision::IsOnGround,
+                "IntersectLine", [this](CCollision &c, vec2 p0, vec2 p1) -> sol::object {
+                        vec2 col, before;
+                        int res = c.IntersectLine(p0, p1, &col, &before);
+                        auto t = lua.create_table();
+                        t["hit"] = res;
+                        t["Collision"] = col;
+                        t["BeforeCollision"] = before;
+                        return t;
+                },
+                "IntersectNoLaser", [this](CCollision &c, vec2 p0, vec2 p1) -> sol::object {
+                        vec2 col, before;
+                        int res = c.IntersectNoLaser(p0, p1, &col, &before);
+                        auto t = lua.create_table();
+                        t["hit"] = res;
+                        t["Collision"] = col;
+                        t["BeforeCollision"] = before;
+                        return t;
+                },
+                "GetPureMapIndex", sol::overload(
+                        [](CCollision &c, float x, float y) -> int { return c.GetPureMapIndex(x, y); },
+                        [](CCollision &c, vec2 pos) -> int { return c.GetPureMapIndex(pos); }
+                ),
+                "IsTeleport", &CCollision::IsTeleport,
+                "IsEvilTeleport", &CCollision::IsEvilTeleport,
+                "IsSpeedup", &CCollision::IsSpeedup,
+                "IsTune", &CCollision::IsTune,
+                "GetSwitchType", &CCollision::GetSwitchType,
+                "GetSwitchNumber", &CCollision::GetSwitchNumber,
+                "GetSwitchDelay", &CCollision::GetSwitchDelay,
+                "IsTimeCheckpoint", &CCollision::IsTimeCheckpoint,
+                "IsNoLaser", [](CCollision &c, int x, int y) -> int { return c.IsNoLaser(x, y); },
+                "SetCollisionAt", &CCollision::SetCollisionAt
+        );
+
+        // ===== CGameClient — THE BIG ONE — exact C++ member names =====
+        // This is what makes Lua code look like C++ code.
+        // gc.m_PredictedChar.m_Vel.x  ==  GameClient()->m_PredictedChar.m_Vel.x
+        // gc.m_aClients[3].m_aName    ==  GameClient()->m_aClients[3].m_aName
+        lua.new_usertype<CGameClient>("CGameClient",
+                // Direct member variables — SAME NAMES as in gameclient.h
+                "m_Chat", &CGameClient::m_Chat,
+                "m_Controls", &CGameClient::m_Controls,
+                "m_BotNet", &CGameClient::m_BotNet,
+                "m_LocalCharacterPos", &CGameClient::m_LocalCharacterPos,
+                "m_PredictedChar", &CGameClient::m_PredictedChar,
+                "m_PredictedPrevChar", &CGameClient::m_PredictedPrevChar,
+                "m_NewTick", &CGameClient::m_NewTick,
+                "m_ServerMode", &CGameClient::m_ServerMode,
+                "m_Teams", &CGameClient::m_Teams,
+                // m_Snap — nested struct, expose key fields
+                "m_Snap_m_LocalClientId", sol::property([this](CGameClient &gc) -> int { return gc.m_Snap.m_LocalClientId; }),
+                "m_Snap_m_NumPlayers", sol::property([this](CGameClient &gc) -> int { return gc.m_Snap.m_NumPlayers; }),
+                "m_Snap_m_HighestClientId", sol::property([this](CGameClient &gc) -> int { return gc.m_Snap.m_HighestClientId; }),
+                "m_Snap_m_aCharacters", sol::property([this](CGameClient &gc) -> sol::table {
+                        auto t = lua.create_table();
+                        for(int i = 0; i < MAX_CLIENTS; i++)
+                                if(gc.m_Snap.m_aCharacters[i].m_Active)
+                                        t[i] = sol::ref(gc.m_Snap.m_aCharacters[i]);
+                        return t;
+                }),
+                "m_Snap_m_apPlayerInfos", sol::property([this](CGameClient &gc) -> sol::table {
+                        auto t = lua.create_table();
+                        for(int i = 0; i < MAX_CLIENTS; i++)
+                                t[i] = gc.m_Snap.m_apPlayerInfos[i] != nullptr;
+                        return t;
+                }),
+                // m_aClients array — gc.m_aClients[3].m_aName
+                "m_aClients", sol::property([this](CGameClient &gc) -> sol::table {
+                        auto t = lua.create_table();
+                        for(int i = 0; i < MAX_CLIENTS; i++)
+                                t[i] = std::ref(gc.m_aClients[i]);
+                        return t;
+                }),
+                // Collision() — method, exposed as property
+                "Collision", sol::property([this](CGameClient &gc) -> CCollision* { return gc.Collision(); }),
+                // CGameClient methods — SAME NAMES as in gameclient.h
+                "SendKill", [](CGameClient &gc) { gc.SendKill(); },
+                "SendSwitchTeam", [](CGameClient &gc, int team) { gc.SendSwitchTeam(team); },
+                "Echo", [](CGameClient &gc, const std::string &msg) { gc.Echo(msg.c_str()); },
+                "IsTeamPlay", [](CGameClient &gc) -> bool { return gc.IsTeamPlay(); },
+                "IsWorldPaused", [](CGameClient &gc) -> bool { return gc.IsWorldPaused(); },
+                "IsLocalCharSuper", [](CGameClient &gc) -> bool { return gc.IsLocalCharSuper(); },
+                "IsOtherTeam", [](CGameClient &gc, int id) -> bool { return gc.IsOtherTeam(id); },
+                "CurrentRaceTime", [](CGameClient &gc) -> int { return gc.CurrentRaceTime(); }
+        );
+
+        // ===== Set global objects — gc = GameClient() =====
         lua["gc"] = std::ref(*GameClient());
 
-        // cl = CClient pointer (through IClient interface)
-        // We expose the most useful CClient methods through a table
+        // ===== CClient methods as 'cl' table =====
+        // These are methods (not member variables) so they can't be direct usertypes
         auto cl = lua["cl"].get_or_create<sol::table>();
-        cl.set_function("connect", [this](const std::string &addr) {
+        cl.set_function("Connect", [this](const std::string &addr) {
                 Client()->Connect(addr.c_str());
         });
-        cl.set_function("disconnect", [this]() {
+        cl.set_function("Disconnect", [this]() {
                 Client()->Disconnect();
         });
-        cl.set_function("enter_game", [this]() {
+        cl.set_function("EnterGame", [this]() {
                 Client()->EnterGame(0);
         });
-        cl.set_function("rcon_auth", [this](const std::string &user, const std::string &pass) {
+        cl.set_function("RconAuth", [this](const std::string &user, const std::string &pass) {
                 Client()->RconAuth(user.c_str(), pass.c_str(), 0);
         });
-        cl.set_function("rcon", [this](const std::string &cmd) {
+        cl.set_function("Rcon", [this](const std::string &cmd) {
                 Client()->Rcon(cmd.c_str());
         });
-        cl.set_function("rcon_authed", [this]() -> bool {
+        cl.set_function("RconAuthed", [this]() -> bool {
                 return Client()->RconAuthed();
         });
-        cl.set_function("game_tick", [this]() -> int {
+        cl.set_function("GameTick", [this]() -> int {
                 return Client()->GameTick(0);
         });
-        cl.set_function("game_tick_speed", [this]() -> int {
+        cl.set_function("GameTickSpeed", [this]() -> int {
                 return Client()->GameTickSpeed();
         });
-        cl.set_function("connection_problems", [this]() -> bool {
+        cl.set_function("ConnectionProblems", [this]() -> bool {
                 return Client()->ConnectionProblems();
         });
-        cl.set_function("dummy_connect", [this](int d) {
+        cl.set_function("DummyConnect", [this](int d) {
                 Client()->DummyConnect(d);
         });
-        cl.set_function("dummy_disconnect", [this](int d) {
+        cl.set_function("DummyDisconnect", [this](int d) {
                 Client()->DummyDisconnect(d, "Lua script");
         });
-        cl.set_function("dummy_connected", [this](int d) -> bool {
+        cl.set_function("DummyConnected", [this](int d) -> bool {
                 return Client()->DummyConnected(d);
         });
-        cl.set_function("dummy_count", [this]() -> int {
+        cl.set_function("DummyCount", [this]() -> int {
                 return Client()->DummyCount();
         });
-        cl.set_function("quit", [this]() {
+        cl.set_function("Quit", [this]() {
                 Client()->Quit();
         });
-        cl.set_function("restart", [this]() {
+        cl.set_function("Restart", [this]() {
                 Client()->Restart();
         });
-        cl.set_function("player_name", [this]() -> std::string {
+        cl.set_function("PlayerName", [this]() -> std::string {
                 return std::string(Client()->PlayerName());
         });
+        cl.set_function("SendPackMsgActive", [this](CMsgPacker *pMsg, int flags) {
+                Client()->SendMsgActive(pMsg, flags);
+        });
 
-        // ===== Additional helpers =====
-
-        // chat.fake(name, msg, team) — display a fake chat message locally
+        // ===== chat.fake() — still useful convenience =====
         auto chatNs = lua["chat"].get_or_create<sol::table>();
         chatNs.set_function("fake", [this](const std::string &name, const std::string &msg, sol::optional<int> team) {
-                // Directly add a line to chat as a server message with the name prepended
                 char aBuf[512];
                 str_format(aBuf, sizeof(aBuf), "%s: %s", name.c_str(), msg.c_str());
                 int Team = team.value_or(0);
                 GameClient()->m_Chat.AddLine(CChat::CLIENT_MSG, Team, aBuf);
         });
 
-        // game.client_info(id) — full client info as table
-        auto gameNs = lua["game"].get_or_create<sol::table>();
-        gameNs.set_function("client_info", [this](int id) -> sol::object {
-                if(id < 0 || id >= MAX_CLIENTS || !GameClient()->m_Snap.m_apPlayerInfos[id])
-                        return sol::nil;
-                auto &c = GameClient()->m_aClients[id];
-                auto t = lua.create_table();
-                t["name"] = std::string(c.m_aName);
-                t["clan"] = std::string(c.m_aClan);
-                t["country"] = c.m_Country;
-                t["skin"] = std::string(c.m_aSkinName);
-                t["team"] = c.m_Team;
-                t["active"] = c.m_Active;
-                t["friend"] = c.m_Friend;
-                t["foe"] = c.m_Foe;
-                t["afk"] = c.m_Afk;
-                t["paused"] = c.m_Paused;
-                t["spec"] = c.m_Spec;
-                t["solo"] = c.m_Solo;
-                t["jetpack"] = c.m_Jetpack;
-                t["super"] = c.m_Super;
-                t["invincible"] = c.m_Invincible;
-                t["deep_frozen"] = c.m_DeepFrozen;
-                t["live_frozen"] = c.m_LiveFrozen;
-                t["collision_disabled"] = c.m_CollisionDisabled;
-                t["endless_hook"] = c.m_EndlessHook;
-                t["endless_jump"] = c.m_EndlessJump;
-                t["auth_level"] = c.m_AuthLevel;
-                t["freeze_end"] = c.m_FreezeEnd;
-                t["has_telegun_gun"] = c.m_HasTelegunGun;
-                t["has_telegun_grenade"] = c.m_HasTelegunGrenade;
-                t["has_telegun_laser"] = c.m_HasTelegunLaser;
-                return t;
-        });
-
-        // game.char_info(id) — character snapshot data as table
-        gameNs.set_function("char_info", [this](int id) -> sol::object {
-                if(id < 0 || id >= MAX_CLIENTS)
-                        return sol::nil;
-                auto &info = GameClient()->m_Snap.m_aCharacters[id];
-                if(!info.m_Active)
-                        return sol::nil;
-                auto t = lua.create_table();
-                t["x"] = (float)info.m_Cur.m_X / 100.0f;
-                t["y"] = (float)info.m_Cur.m_Y / 100.0f;
-                t["vel_x"] = (float)info.m_Cur.m_VelX / 100.0f;
-                t["vel_y"] = (float)info.m_Cur.m_VelY / 100.0f;
-                t["angle"] = info.m_Cur.m_Angle;
-                t["direction"] = info.m_Cur.m_Direction;
-                t["weapon"] = info.m_Cur.m_Weapon;
-                t["ammo_count"] = info.m_Cur.m_AmmoCount;
-                t["health"] = info.m_Cur.m_Health;
-                t["armor"] = info.m_Cur.m_Armor;
-                t["player_flags"] = info.m_Cur.m_PlayerFlags;
-                t["hooked_player"] = info.m_Cur.m_HookedPlayer;
-                t["hook_state"] = info.m_Cur.m_HookState;
-                t["hook_tick"] = info.m_Cur.m_HookTick;
-                t["attack_tick"] = info.m_Cur.m_AttackTick;
-                t["jumped_total"] = info.m_Cur.m_JumpedTotal;
-                // DDNet extended
-                if(info.m_HasExtendedData)
-                {
-                        t["dd_flags"] = info.m_ExtendedData.m_Flags;
-                        t["dd_freeze_end"] = info.m_ExtendedData.m_FreezeEnd;
-                        t["dd_jumps"] = info.m_ExtendedData.m_Jumps;
-                        t["dd_strong_weak_id"] = info.m_ExtendedData.m_StrongWeakId;
-                        t["dd_target_x"] = info.m_ExtendedData.m_TargetX;
-                        t["dd_target_y"] = info.m_ExtendedData.m_TargetY;
-                }
-                return t;
-        });
-
-        // game.all_players() — iterate all active players
-        gameNs.set_function("all_players", [this]() -> sol::object {
-                auto t = lua.create_table();
-                for(int i = 0; i < MAX_CLIENTS; i++)
-                {
-                        if(!GameClient()->m_Snap.m_apPlayerInfos[i])
-                                continue;
-                        auto p = lua.create_table();
-                        p["id"] = i;
-                        p["name"] = std::string(GameClient()->m_aClients[i].m_aName);
-                        p["clan"] = std::string(GameClient()->m_aClients[i].m_aClan);
-                        p["team"] = GameClient()->m_aClients[i].m_Team;
-                        p["alive"] = GameClient()->m_Snap.m_aCharacters[i].m_Active;
-                        p["afk"] = GameClient()->m_aClients[i].m_Afk;
-                        p["solo"] = GameClient()->m_aClients[i].m_Solo;
-                        p["super"] = GameClient()->m_aClients[i].m_Super;
-                        if(GameClient()->m_Snap.m_aCharacters[i].m_Active)
-                        {
-                                p["x"] = (float)GameClient()->m_Snap.m_aCharacters[i].m_Cur.m_X / 100.0f;
-                                p["y"] = (float)GameClient()->m_Snap.m_aCharacters[i].m_Cur.m_Y / 100.0f;
-                        }
-                        t[i + 1] = p; // Lua 1-indexed
-                }
-                return t;
-        });
-
-        // ===== Updated API info =====
+        // ===== API info =====
         lua.set_function("raw_api_info", []() -> std::string {
                 return R"(
-ZMajor Raw C++ API:
-  gc : CGameClient — direct access to game client
-    gc.chat           -> CChat
-    gc.controls       -> CControls
-    gc.botnet         -> CBotNet
-    gc.collision      -> CCollision
-    gc.local_pos      -> vec2
-    gc.predicted      -> CCharacterCore
-    gc.predicted_prev -> CCharacterCore
-    gc.local_id       -> int
-    gc.num_players    -> int
-    gc.new_tick       -> bool
-    gc.server_mode    -> int
-    gc:send_kill()
-    gc:send_switch_team(team)
-    gc:echo(msg)
-    gc:is_team_play() -> bool
-    gc:is_world_paused() -> bool
-    gc:is_local_char_super() -> bool
-    gc:client(id) -> CClientData
+ZMajor Raw C++ API — ALL NAMES MATCH C++ EXACTLY:
 
-  CClientData:
-    .name .clan .country .skin .team .active
-    .friend .foe .afk .paused .spec
-    .solo .jetpack .super .invincible
-    .deep_frozen .live_frozen .freeze_end
-    .collision_disabled .endless_hook .endless_jump
-    .hammer/grenade/laser/shotgun/hook_hit_disabled
-    .has_telegun_gun/grenade/laser
-    .auth_level .angle .emoticon
-    .predicted -> CCharacterCore
+  gc = GameClient() reference (CGameClient&)
 
-  CCharacterCore:
-    .pos .vel .hook_pos .hook_dir
-    .hook_tick .hook_state .hooked_player
-    .active_weapon .direction .angle
-    .jumped .jumped_total .jumps
-    .solo .jetpack .super .invincible
-    .deep_frozen .live_frozen .is_in_freeze
-    .freeze_start .freeze_end
-    .endless_hook .endless_jump .collision_disabled
-    .input -> CPlayerInput
+  -- Read/write game state EXACTLY like C++ code:
+  gc.m_PredictedChar.m_Vel.x
+  gc.m_PredictedChar.m_Pos
+  gc.m_PredictedChar.m_Input.m_Direction = 1
+  gc.m_PredictedChar.m_Input.m_Jump = 1
+  gc.m_LocalCharacterPos
+  gc.m_aClients[3].m_aName
+  gc.m_aClients[3].m_Predicted.m_Vel
+  gc.m_aClients[3].m_Solo
+  gc.m_aClients[3].m_FreezeEnd
+  gc.m_BotNet.m_AttackEnabled = true
+  gc.m_BotNet.m_MoveEnabled = false
+  gc.m_Chat:AddLine(-2, 0, "hello")
+  gc.m_Chat:Echo("message")
+  gc.m_Controls.m_aInputData[0].m_Direction = 1
+  gc.m_Controls.m_aInputData[0].m_Fire = 1
 
-  CPlayerInput:
-    .direction .target_x .target_y
-    .jump .fire .hook .player_flags
-    .wanted_weapon .next_weapon .prev_weapon
+  gc:SendKill()
+  gc:SendSwitchTeam(0)
+  gc:Echo("msg")
+  gc:Collision():IsSolid(tx, ty)
+  gc:Collision():IntersectLine(p0, p1)
 
-  CCollision:
-    :width() :height() :check_point(x,y)
-    :is_solid(x,y) :get_tile(x,y) :get_front_tile(x,y)
-    :intersect_line(p0, p1) -> table
-    :is_teleport(idx) :is_speedup(idx) :is_tune(idx)
+  cl.Connect("addr")
+  cl.RconAuth("user", "pass")
+  cl.Rcon("command")
+  cl.DummyConnect(1)
 
-  CChat:
-    :add_line(name, msg, team) :echo(msg)
-    :send(team, msg) :send_queued(msg)
-    :enable_mode(team) :disable_mode()
-    :is_active() :clear()
+  chat.fake("Name", "Message")
 
-  CControls:
-    :input(dummy) -> CPlayerInput
-    :mouse_pos(dummy) -> vec2
-    :target_pos(dummy) -> vec2
-    :reset_input(dummy)
+  CCharacterCore:  m_Pos m_Vel m_HookPos m_HookDir m_HookState
+    m_HookedPlayer m_ActiveWeapon m_Jumped m_JumpedTotal m_Jumps
+    m_Direction m_Angle m_Input m_Id
+    m_Solo m_Jetpack m_Super m_Invincible m_DeepFrozen m_LiveFrozen
+    m_FreezeStart m_FreezeEnd m_IsInFreeze m_EndlessHook m_EndlessJump
+    m_CollisionDisabled m_HasTelegunGun/Grenade/Laser
+    m_HammerHitDisabled m_GrenadeHitDisabled etc.
 
-  CBotNet:
-    .attack_enabled .auto_aim .auto_fire .auto_hook
-    .move_enabled .stand_enabled .rescue_frozen
-    .kill_on_freeze .avoid_freeze .main_id
-    .fire_dist .hook_dist .rescue_radius
-    .pathfinder_enabled .kinodynamic_enabled
-    (and many more — see raw_api_info())
+  CNetObj_PlayerInput: m_Direction m_TargetX m_TargetY
+    m_Jump m_Fire m_Hook m_PlayerFlags m_WantedWeapon
 
-  cl: connect/disconnect/enter_game
-     rcon_auth/rcon/rcon_authed
-     dummy_connect/dummy_disconnect/dummy_connected
-     game_tick/game_tick_speed
-     connection_problems/quit/restart
+  CNetObj_Character: m_X m_Y m_VelX m_VelY m_Angle m_Direction
+    m_Weapon m_AmmoCount m_Health m_Armor m_PlayerFlags
+    m_HookedPlayer m_HookState m_HookTick m_AttackTick
 
-  chat.fake(name, msg, team)
-  game.client_info(id) -> table
-  game.char_info(id) -> table
-  game.all_players() -> table
+  CClientData: m_aName m_aClan m_Country m_aSkinName m_Team
+    m_Active m_Friend m_Foe m_Afk m_Paused m_Spec
+    m_Solo m_Jetpack m_Super m_Invincible m_DeepFrozen m_LiveFrozen
+    m_FreezeEnd m_AuthLevel m_Predicted m_PrevPredicted
+    m_CollisionDisabled m_EndlessHook m_EndlessJump etc.
+
+  CBotNet: m_AttackEnabled m_MoveEnabled m_AutoAim m_AutoFire
+    m_RescueFrozen m_KillOnFreeze m_AvoidFreeze m_MainID
+    m_PathfinderEnabled m_KinodynamicEnabled etc.
+
+  CChat: m_Mode m_Show AddLine Echo SendChat SendChatQueued
+    EnableMode DisableMode IsActive ClearLines
+
+  CControls: m_aInputData m_aLastData m_aMousePos m_aTargetPos
+    ResetInput
+
+  CCollision: GetWidth GetHeight CheckPoint IsSolid GetTile
+    GetFrontTile IntersectLine IntersectNoLaser
+    IsTeleport IsSpeedup IsTune SetCollisionAt etc.
 )";
         });
 }
