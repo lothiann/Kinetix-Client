@@ -105,6 +105,9 @@ private:
         // Register all bindings (game state, chat, input, etc.)
         void RegisterBindings();
 
+        // Register raw C++ class access (direct pointers, usertypes)
+        void RegisterRawAPI();
+
         // Console commands
         static void ConExec(IConsole::IResult *pResult, void *pUserData);
         static void ConStop(IConsole::IResult *pResult, void *pUserData);
