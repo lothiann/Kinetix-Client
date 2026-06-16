@@ -1115,7 +1115,7 @@ void CCodeExec::RegisterRawAPI()
                 "FreezingFlakes", [](CEffects &e, vec2 pos, vec2 size, float alpha) { e.FreezingFlakes(pos, size, alpha); },
                 "SparkleTrail", [](CEffects &e, vec2 pos, float alpha) { e.SparkleTrail(pos, alpha); },
                 "Confetti", [](CEffects &e, vec2 pos, float alpha) { e.Confetti(pos, alpha); },
-                "Update", [](CEffects &e) { e.Update(); }
+                "OnRender", [](CEffects &e) { e.OnRender(); }
         );
 
         // ===== CFlow — ALL public methods =====
