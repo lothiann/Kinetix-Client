@@ -1246,8 +1246,7 @@ void CCodeExec::RegisterRawAPI()
                 "m_KeyBinder", &CGameClient::m_KeyBinder,
                 "m_Particles", &CGameClient::m_Particles,
                 "m_Menus", &CGameClient::m_Menus,
-                "m_Skins", &CGameClient::m_Skins,
-                "m_Skins7", &CGameClient::m_Skins7,
+                // m_Skins, m_Skins7 EXCLUDED — contain unique_ptr<CSkin>, non-copyable
                 "m_CountryFlags", &CGameClient::m_CountryFlags,
                 "m_Flow", &CGameClient::m_Flow,
                 "m_Hud", &CGameClient::m_Hud,
@@ -1260,7 +1259,7 @@ void CCodeExec::RegisterRawAPI()
                 "m_Sounds", &CGameClient::m_Sounds,
                 "m_Emoticon", &CGameClient::m_Emoticon,
                 "m_DamageInd", &CGameClient::m_DamageInd,
-                "m_TouchControls", &CGameClient::m_TouchControls,
+                // m_TouchControls EXCLUDED — contains unique_ptr, non-copyable
                 "m_Voting", &CGameClient::m_Voting,
                 "m_Spectator", &CGameClient::m_Spectator,
                 "m_Players", &CGameClient::m_Players,
@@ -1268,10 +1267,8 @@ void CCodeExec::RegisterRawAPI()
                 "m_FreezeBars", &CGameClient::m_FreezeBars,
                 "m_Items", &CGameClient::m_Items,
                 "m_MapImages", &CGameClient::m_MapImages,
-                "m_MapLayersBackground", &CGameClient::m_MapLayersBackground,
-                "m_MapLayersForeground", &CGameClient::m_MapLayersForeground,
-                "m_Background", &CGameClient::m_Background,
-                "m_MenuBackground", &CGameClient::m_MenuBackground,
+                // m_MapLayersBackground/Foreground, m_Background, m_MenuBackground
+                // EXCLUDED — contain vector<unique_ptr<CRenderLayer>>, non-copyable
                 "m_MapSounds", &CGameClient::m_MapSounds,
                 "m_RaceDemo", &CGameClient::m_RaceDemo,
                 "m_Ghost", &CGameClient::m_Ghost,
