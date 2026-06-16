@@ -663,25 +663,25 @@ void CCodeExec::RegisterRawAPI()
                 "m_Colliding", &CCharacterCore::m_Colliding,
                 "m_LeftWall", &CCharacterCore::m_LeftWall,
                 // Weapons — expose as sub-fields (read-only)
-                "m_aWeapons_Ammo", sol::property([this](CCharacterCore &c) -> sol::table {
+                "m_aWeapons_Ammo", sol::property([this, &lua](CCharacterCore &c) -> sol::table {
                         auto t = lua.create_table();
                         for(int i = 0; i < NUM_WEAPONS; i++)
                                 t[i] = c.m_aWeapons[i].m_Ammo;
                         return t;
                 }),
-                "m_aWeapons_AmmoRegenStart", sol::property([this](CCharacterCore &c) -> sol::table {
+                "m_aWeapons_AmmoRegenStart", sol::property([this, &lua](CCharacterCore &c) -> sol::table {
                         auto t = lua.create_table();
                         for(int i = 0; i < NUM_WEAPONS; i++)
                                 t[i] = c.m_aWeapons[i].m_AmmoRegenStart;
                         return t;
                 }),
-                "m_aWeapons_Ammocost", sol::property([this](CCharacterCore &c) -> sol::table {
+                "m_aWeapons_Ammocost", sol::property([this, &lua](CCharacterCore &c) -> sol::table {
                         auto t = lua.create_table();
                         for(int i = 0; i < NUM_WEAPONS; i++)
                                 t[i] = c.m_aWeapons[i].m_Ammocost;
                         return t;
                 }),
-                "m_aWeapons_Got", sol::property([this](CCharacterCore &c) -> sol::table {
+                "m_aWeapons_Got", sol::property([this, &lua](CCharacterCore &c) -> sol::table {
                         auto t = lua.create_table();
                         for(int i = 0; i < NUM_WEAPONS; i++)
                                 t[i] = c.m_aWeapons[i].m_Got;
@@ -752,7 +752,7 @@ void CCodeExec::RegisterRawAPI()
                 "m_HookState", &CNetObj_Character::m_HookState,
                 "m_HookTick", &CNetObj_Character::m_HookTick,
                 "m_AttackTick", &CNetObj_Character::m_AttackTick,
-                "m_JumpedTotal", &CNetObj_Character::m_JumpedTotal
+// m_JumpedTotal removed — not a member of CNetObj_Character (only in CCharacterCore)
         );
 
         // ===== CGameInfo — ALL public bools =====
@@ -920,8 +920,8 @@ void CCodeExec::RegisterRawAPI()
 
         // ===== CChat — ALL public member names and methods =====
         lua.new_usertype<CChat>("CChat",
-                "m_Mode", &CChat::m_Mode,
-                "m_Show", &CChat::m_Show,
+                "m_Mode", sol::property([](CChat &chat) -> int { return chat.IsActive() ? 1 : 0; }),
+                "m_Show", sol::property([](CChat &chat) -> bool { return chat.IsActive(); }),
                 "AddLine", [this](CChat &chat, int clientId, int team, const std::string &msg) {
                         chat.AddLine(clientId, team, msg.c_str());
                 },
@@ -959,55 +959,55 @@ void CCodeExec::RegisterRawAPI()
 
         // ===== CControls — ALL public member names =====
         lua.new_usertype<CControls>("CControls",
-                "m_aInputData", sol::property([this](CControls &c) -> sol::table {
+                "m_aInputData", sol::property([this, &lua](CControls &c) -> sol::table {
                         auto t = lua.create_table();
                         for(int i = 0; i < MAX_DUMMIES; i++)
                                 t[i] = std::ref(c.m_aInputData[i]);
                         return t;
                 }),
-                "m_aLastData", sol::property([this](CControls &c) -> sol::table {
+                "m_aLastData", sol::property([this, &lua](CControls &c) -> sol::table {
                         auto t = lua.create_table();
                         for(int i = 0; i < MAX_DUMMIES; i++)
                                 t[i] = std::ref(c.m_aLastData[i]);
                         return t;
                 }),
-                "m_aMousePos", sol::property([this](CControls &c) -> sol::table {
+                "m_aMousePos", sol::property([this, &lua](CControls &c) -> sol::table {
                         auto t = lua.create_table();
                         for(int i = 0; i < MAX_DUMMIES; i++)
                                 t[i] = c.m_aMousePos[i];
                         return t;
                 }),
-                "m_aMousePosOnAction", sol::property([this](CControls &c) -> sol::table {
+                "m_aMousePosOnAction", sol::property([this, &lua](CControls &c) -> sol::table {
                         auto t = lua.create_table();
                         for(int i = 0; i < MAX_DUMMIES; i++)
                                 t[i] = c.m_aMousePosOnAction[i];
                         return t;
                 }),
-                "m_aTargetPos", sol::property([this](CControls &c) -> sol::table {
+                "m_aTargetPos", sol::property([this, &lua](CControls &c) -> sol::table {
                         auto t = lua.create_table();
                         for(int i = 0; i < MAX_DUMMIES; i++)
                                 t[i] = c.m_aTargetPos[i];
                         return t;
                 }),
-                "m_aAmmoCount", sol::property([this](CControls &c) -> sol::table {
+                "m_aAmmoCount", sol::property([this, &lua](CControls &c) -> sol::table {
                         auto t = lua.create_table();
                         for(int i = 0; i < NUM_WEAPONS; i++)
                                 t[i] = c.m_aAmmoCount[i];
                         return t;
                 }),
-                "m_aInputDirectionLeft", sol::property([this](CControls &c) -> sol::table {
+                "m_aInputDirectionLeft", sol::property([this, &lua](CControls &c) -> sol::table {
                         auto t = lua.create_table();
                         for(int i = 0; i < MAX_DUMMIES; i++)
                                 t[i] = c.m_aInputDirectionLeft[i];
                         return t;
                 }),
-                "m_aInputDirectionRight", sol::property([this](CControls &c) -> sol::table {
+                "m_aInputDirectionRight", sol::property([this, &lua](CControls &c) -> sol::table {
                         auto t = lua.create_table();
                         for(int i = 0; i < MAX_DUMMIES; i++)
                                 t[i] = c.m_aInputDirectionRight[i];
                         return t;
                 }),
-                "m_aShowHookColl", sol::property([this](CControls &c) -> sol::table {
+                "m_aShowHookColl", sol::property([this, &lua](CControls &c) -> sol::table {
                         auto t = lua.create_table();
                         for(int i = 0; i < MAX_DUMMIES; i++)
                                 t[i] = c.m_aShowHookColl[i];
@@ -1039,7 +1039,7 @@ void CCodeExec::RegisterRawAPI()
                 "GetFrontCollisionAt", [](CCollision &c, float x, float y) -> int { return c.GetFrontCollisionAt(x, y); },
                 "TestBox", &CCollision::TestBox,
                 "IsOnGround", &CCollision::IsOnGround,
-                "IntersectLine", [this](CCollision &c, vec2 p0, vec2 p1) -> sol::object {
+                "IntersectLine", [this, &lua](CCollision &c, vec2 p0, vec2 p1) -> sol::object {
                         vec2 col, before;
                         int res = c.IntersectLine(p0, p1, &col, &before);
                         auto t = lua.create_table();
@@ -1048,7 +1048,7 @@ void CCodeExec::RegisterRawAPI()
                         t["BeforeCollision"] = before;
                         return t;
                 },
-                "IntersectNoLaser", [this](CCollision &c, vec2 p0, vec2 p1) -> sol::object {
+                "IntersectNoLaser", [this, &lua](CCollision &c, vec2 p0, vec2 p1) -> sol::object {
                         vec2 col, before;
                         int res = c.IntersectNoLaser(p0, p1, &col, &before);
                         auto t = lua.create_table();
@@ -1084,7 +1084,7 @@ void CCodeExec::RegisterRawAPI()
                 "m_AutoSpecCamera", &CCamera::m_AutoSpecCamera,
                 "m_UserZoomTarget", &CCamera::m_UserZoomTarget,
                 "m_DyncamTargetCameraOffset", &CCamera::m_DyncamTargetCameraOffset,
-                "m_aDyncamCurrentCameraOffset", sol::property([this](CCamera &cam) -> sol::table {
+                "m_aDyncamCurrentCameraOffset", sol::property([this, &lua](CCamera &cam) -> sol::table {
                         auto t = lua.create_table();
                         for(int i = 0; i < MAX_DUMMIES; i++)
                                 t[i] = cam.m_aDyncamCurrentCameraOffset[i];
@@ -1201,13 +1201,13 @@ void CCodeExec::RegisterRawAPI()
 
         // ===== CClientStats — key public members =====
         lua.new_usertype<CGameClient::CClientStats>("CClientStats",
-                "m_aFragsWith", sol::property([this](CGameClient::CClientStats &s) -> sol::table {
+                "m_aFragsWith", sol::property([this, &lua](CGameClient::CClientStats &s) -> sol::table {
                         auto t = lua.create_table();
                         for(int i = 0; i < NUM_WEAPONS; i++)
                                 t[i] = s.m_aFragsWith[i];
                         return t;
                 }),
-                "m_aDeathsFrom", sol::property([this](CGameClient::CClientStats &s) -> sol::table {
+                "m_aDeathsFrom", sol::property([this, &lua](CGameClient::CClientStats &s) -> sol::table {
                         auto t = lua.create_table();
                         for(int i = 0; i < NUM_WEAPONS; i++)
                                 t[i] = s.m_aDeathsFrom[i];
@@ -1281,7 +1281,7 @@ void CCodeExec::RegisterRawAPI()
                 "m_SuppressEvents", &CGameClient::m_SuppressEvents,
                 "m_NewTick", &CGameClient::m_NewTick,
                 "m_NewPredictedTick", &CGameClient::m_NewPredictedTick,
-                "m_aFlagDropTick", sol::property([this](CGameClient &gc) -> sol::table {
+                "m_aFlagDropTick", sol::property([this, &lua](CGameClient &gc) -> sol::table {
                         auto t = lua.create_table();
                         for(int i = 0; i < 2; i++)
                                 t[i] = gc.m_aFlagDropTick[i];
@@ -1293,32 +1293,32 @@ void CCodeExec::RegisterRawAPI()
                 "m_LocalCharacterPos", &CGameClient::m_LocalCharacterPos,
                 "m_PredictedPrevChar", &CGameClient::m_PredictedPrevChar,
                 "m_PredictedChar", &CGameClient::m_PredictedChar,
-                "m_aLocalTuneZone", sol::property([this](CGameClient &gc) -> sol::table {
+                "m_aLocalTuneZone", sol::property([this, &lua](CGameClient &gc) -> sol::table {
                         auto t = lua.create_table();
                         for(int i = 0; i < MAX_DUMMIES; i++)
                                 t[i] = gc.m_aLocalTuneZone[i];
                         return t;
                 }),
-                "m_aReceivedTuning", sol::property([this](CGameClient &gc) -> sol::table {
+                "m_aReceivedTuning", sol::property([this, &lua](CGameClient &gc) -> sol::table {
                         auto t = lua.create_table();
                         for(int i = 0; i < MAX_DUMMIES; i++)
                                 t[i] = gc.m_aReceivedTuning[i];
                         return t;
                 }),
-                "m_aTuning", sol::property([this](CGameClient &gc) -> sol::table {
+                "m_aTuning", sol::property([this, &lua](CGameClient &gc) -> sol::table {
                         auto t = lua.create_table();
                         for(int i = 0; i < MAX_DUMMIES; i++)
                                 t[i] = std::ref(gc.m_aTuning[i]);
                         return t;
                 }),
                 "m_CursorInfo", &CGameClient::m_CursorInfo,
-                "m_aClients", sol::property([this](CGameClient &gc) -> sol::table {
+                "m_aClients", sol::property([this, &lua](CGameClient &gc) -> sol::table {
                         auto t = lua.create_table();
                         for(int i = 0; i < MAX_CLIENTS; i++)
                                 t[i] = std::ref(gc.m_aClients[i]);
                         return t;
                 }),
-                "m_aStats", sol::property([this](CGameClient &gc) -> sol::table {
+                "m_aStats", sol::property([this, &lua](CGameClient &gc) -> sol::table {
                         auto t = lua.create_table();
                         for(int i = 0; i < MAX_CLIENTS; i++)
                                 t[i] = std::ref(gc.m_aStats[i]);
@@ -1326,25 +1326,25 @@ void CCodeExec::RegisterRawAPI()
                 }),
                 "m_RenderTools", &CGameClient::m_RenderTools,
                 "m_RenderMap", &CGameClient::m_RenderMap,
-                "m_aLocalIds", sol::property([this](CGameClient &gc) -> sol::table {
+                "m_aLocalIds", sol::property([this, &lua](CGameClient &gc) -> sol::table {
                         auto t = lua.create_table();
                         for(int i = 0; i < MAX_DUMMIES; i++)
                                 t[i] = gc.m_aLocalIds[i];
                         return t;
                 }),
-                "m_aDummyInput", sol::property([this](CGameClient &gc) -> sol::table {
+                "m_aDummyInput", sol::property([this, &lua](CGameClient &gc) -> sol::table {
                         auto t = lua.create_table();
                         for(int i = 0; i < MAX_DUMMIES; i++)
                                 t[i] = std::ref(gc.m_aDummyInput[i]);
                         return t;
                 }),
-                "m_aHammerInput", sol::property([this](CGameClient &gc) -> sol::table {
+                "m_aHammerInput", sol::property([this, &lua](CGameClient &gc) -> sol::table {
                         auto t = lua.create_table();
                         for(int i = 0; i < MAX_DUMMIES; i++)
                                 t[i] = std::ref(gc.m_aHammerInput[i]);
                         return t;
                 }),
-                "m_aDummyFire", sol::property([this](CGameClient &gc) -> sol::table {
+                "m_aDummyFire", sol::property([this, &lua](CGameClient &gc) -> sol::table {
                         auto t = lua.create_table();
                         for(int i = 0; i < MAX_DUMMIES; i++)
                                 t[i] = (double)gc.m_aDummyFire[i]; // unsigned int -> double
@@ -1361,7 +1361,7 @@ void CCodeExec::RegisterRawAPI()
                 "m_MultiViewPersonalZoom", &CGameClient::m_MultiViewPersonalZoom,
                 "m_MultiViewShowHud", &CGameClient::m_MultiViewShowHud,
                 "m_MultiViewActivated", &CGameClient::m_MultiViewActivated,
-                "m_aMultiViewId", sol::property([this](CGameClient &gc) -> sol::table {
+                "m_aMultiViewId", sol::property([this, &lua](CGameClient &gc) -> sol::table {
                         auto t = lua.create_table();
                         for(int i = 0; i < MAX_CLIENTS; i++)
                                 t[i] = gc.m_aMultiViewId[i];
@@ -1371,37 +1371,37 @@ void CCodeExec::RegisterRawAPI()
                 "m_MapBestTimeMillis", &CGameClient::m_MapBestTimeMillis,
                 "m_aMapDescription", [](CGameClient &gc) -> std::string { return std::string(gc.m_aMapDescription); },
                 "m_LanguageChanged", &CGameClient::m_LanguageChanged,
-                "m_aNextChangeInfo", sol::property([this](CGameClient &gc) -> sol::table {
+                "m_aNextChangeInfo", sol::property([this, &lua](CGameClient &gc) -> sol::table {
                         auto t = lua.create_table();
                         for(int i = 0; i < MAX_DUMMIES; i++)
                                 t[i] = gc.m_aNextChangeInfo[i];
                         return t;
                 }),
                 // ---- m_Snap — nested struct, expose key fields ----
-                "m_Snap", sol::property([this](CGameClient &gc) -> sol::table {
+                "m_Snap", sol::property([this, &lua](CGameClient &gc) -> sol::table {
                         auto t = lua.create_table();
                         t["m_LocalClientId"] = gc.m_Snap.m_LocalClientId;
                         t["m_NumPlayers"] = gc.m_Snap.m_NumPlayers;
                         t["m_HighestClientId"] = gc.m_Snap.m_HighestClientId;
                         t["m_NumFlags"] = gc.m_Snap.m_NumFlags;
                         // Team sizes
-                        auto teams = lua.create_table();
+                        auto teams = lua.create_table(); // &lua already captured
                         for(int i = 0; i < 2; i++)
                                 teams[i] = gc.m_Snap.m_aTeamSize[i];
                         t["m_aTeamSize"] = teams;
                         // Characters
-                        auto chars = lua.create_table();
+                        auto chars = lua.create_table(); // &lua already captured
                         for(int i = 0; i < MAX_CLIENTS; i++)
                                 if(gc.m_Snap.m_aCharacters[i].m_Active)
                                         chars[i] = std::ref(gc.m_Snap.m_aCharacters[i]);
                         t["m_aCharacters"] = chars;
                         // Player info presence
-                        auto infos = lua.create_table();
+                        auto infos = lua.create_table(); // &lua already captured
                         for(int i = 0; i < MAX_CLIENTS; i++)
                                 infos[i] = gc.m_Snap.m_apPlayerInfos[i] != nullptr;
                         t["m_apPlayerInfos"] = infos;
                         // Spec info
-                        auto spec = lua.create_table();
+                        auto spec = lua.create_table(); // &lua already captured
                         spec["m_Active"] = gc.m_Snap.m_SpecInfo.m_Active;
                         spec["m_SpectatorId"] = gc.m_Snap.m_SpecInfo.m_SpectatorId;
                         spec["m_UsePosition"] = gc.m_Snap.m_SpecInfo.m_UsePosition;
