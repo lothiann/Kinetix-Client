@@ -727,7 +727,8 @@ void CCodeExec::RegisterRawAPI()
                 "Reset", [](CCharacterCore &c) { c.Reset(); },
                 "Tick", [](CCharacterCore &c, bool useInput) { c.Tick(useInput); },
                 "Move", [](CCharacterCore &c) { c.Move(); },
-                "Quantize", [](CCharacterCore &c) { c.Quantize(); }
+                "Quantize", [](CCharacterCore &c) { c.Quantize(); },
+                "Clone", [](CCharacterCore &c) -> CCharacterCore { return c; }
         );
 
         // ===== CNetObj_PlayerInput — ALL member names =====
