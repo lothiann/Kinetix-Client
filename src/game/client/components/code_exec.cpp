@@ -17,47 +17,59 @@
 #include <game/client/components/particles.h>
 #include <game/client/components/sounds.h>
 #include <game/client/components/damageind.h>
+#include <game/client/components/mapimages.h>
+#include <game/client/components/mapsounds.h>
+#include <game/client/components/menus.h>
+#include <game/client/components/binds.h>
+#include <game/client/components/console.h>
+#include <game/client/components/infomessages.h>
+#include <game/client/components/countryflags.h>
+#include <game/client/components/scoreboard.h>
+#include <game/client/components/statboard.h>
+#include <game/client/components/tooltips.h>
+#include <game/client/components/debughud.h>
+#include <game/client/components/hud.h>
+#include <game/client/components/important_alert.h>
+#include <game/client/components/race_demo.h>
+#include <game/client/components/local_server.h>
+#include <game/client/components/nameplates.h>
+#include <game/client/components/freezebars.h>
+#include <game/client/components/items.h>
 
 #include <game/client/gameclient.h>
 #include <game/gamecore.h>
 #include <game/collision.h>
 #include <game/layers.h>
+#include <game/teamscore.h>
+#include <game/client/prediction/gameworld.h>
+#include <game/client/prediction/entities/character.h>
+#include <game/client/prediction/entities/laser.h>
+#include <game/client/prediction/entities/projectile.h>
+#include <game/client/prediction/entities/pickup.h>
+#include <game/client/prediction/entities/door.h>
+#include <game/client/prediction/entities/dragger.h>
+#include <game/client/prediction/entities/plasma.h>
 #include <engine/shared/config.h>
 #include <base/str.h>
 #include <engine/console.h>
 #include <engine/client/client.h>
 #include <base/vmath.h>
 
-// Lua headers — MUST use lua.hpp (wraps in extern "C") so that
-// C++ code uses C linkage when calling Lua API functions.
-// Without extern "C", MSVC will mangle the names and LNK2019.
 #include <lua.hpp>
-
-// sol2
 #include <sol.hpp>
 
 #include <cstdio>
 #include <cstring>
 
-// =========================================================
-// Lua abort hook — static function, not in class header
-// to avoid exposing lua_Debug in the header
-// =========================================================
 static void LuaAbortHook(lua_State *L, lua_Debug *ar)
 {
-        (void)ar; // unused
-        // Retrieve the CCodeExec instance from Lua registry
+        (void)ar;
         sol::state_view lua(L);
         CCodeExec *pSelf = lua["__code_exec_ptr"].get_or<CCodeExec*>(nullptr);
         if(pSelf && pSelf->m_AbortRequested)
-        {
                 luaL_error(L, "Script aborted by user");
-        }
 }
 
-// =========================================================
-// Construction / Destruction
-// =========================================================
 CCodeExec::CCodeExec() :
         m_State(STATE_IDLE),
         m_AbortRequested(false),
@@ -84,9 +96,6 @@ CCodeExec::~CCodeExec()
         }
 }
 
-// =========================================================
-// Component lifecycle
-// =========================================================
 void CCodeExec::OnConsoleInit()
 {
         Console()->Register("c_exec", "s[code]", CFGFLAG_CLIENT, ConExec, this, "Execute Lua code");
@@ -95,32 +104,21 @@ void CCodeExec::OnConsoleInit()
 
 void CCodeExec::OnInit()
 {
-        // Create Lua state
         m_pLua = new sol::state();
-
-        // Open standard Lua libraries
         m_pLua->open_libraries(
-                sol::lib::base,
-                sol::lib::string,
-                sol::lib::math,
-                sol::lib::table,
-                sol::lib::coroutine,
-                sol::lib::utf8,
-                sol::lib::package,
-                sol::lib::os,
-                sol::lib::io,
-                sol::lib::debug
+                sol::lib::base, sol::lib::string, sol::lib::math,
+                sol::lib::table, sol::lib::coroutine, sol::lib::utf8,
+                sol::lib::package, sol::lib::os, sol::lib::io, sol::lib::debug
         );
 
-        // Override print to output in chat as chat/lua
+        // print() — outputs to in-game chat
         m_pLua->set_function("print", [this](sol::variadic_args va) {
                 std::string result;
                 sol::state_view sv(m_pLua->lua_state());
                 sol::function tostring_fn = sv["tostring"];
                 for(auto it = va.begin(); it != va.end(); ++it)
                 {
-                        if(it != va.begin())
-                                result += "\t";
+                        if(it != va.begin()) result += "\t";
                         auto obj = *it;
                         if(tostring_fn.valid())
                         {
@@ -130,90 +128,47 @@ void CCodeExec::OnInit()
                         else
                         {
                                 sol::optional<std::string> str = obj.get<sol::optional<std::string>>();
-                                if(str)
-                                        result += *str;
-                                else
-                                        result += sol::type_name(m_pLua->lua_state(), obj.get_type());
+                                if(str) result += *str;
+                                else result += sol::type_name(m_pLua->lua_state(), obj.get_type());
                         }
                 }
-
-                // Output to chat as chat/lua (not chat/client like echo)
                 GameClient()->m_Chat.AddLine(CChat::LUA_MSG, 0, result.c_str());
         });
 
-        // Register all game bindings
         RegisterBindings();
-
-        // Register raw C++ class access
         RegisterRawAPI();
 }
 
 void CCodeExec::OnShutdown()
 {
         Stop();
-        if(m_pLua)
-        {
-                delete m_pLua;
-                m_pLua = nullptr;
-        }
+        if(m_pLua) { delete m_pLua; m_pLua = nullptr; }
 }
 
-void CCodeExec::OnUpdate()
-{
-        // Nothing to do per-tick currently.
-}
+void CCodeExec::OnUpdate() {}
 
-void CCodeExec::OnReset()
-{
-        Stop();
+void CCodeExec::OnReset() { Stop(); }
 
-}
+const char *CCodeExec::GetLastError() const { return m_aLastError; }
 
-// =========================================================
-// Getters (implementation in .cpp, not inline in .h)
-// =========================================================
-const char *CCodeExec::GetLastError() const
-{
-        return m_aLastError;
-}
-
-
-// =========================================================
-// Script Execution
-// =========================================================
 bool CCodeExec::Execute(const char *pCode)
 {
-        if(!m_pLua || !pCode)
-                return false;
-
-        // Stop any previous execution first
+        if(!m_pLua || !pCode) return false;
         Stop();
-
         m_AbortRequested = false;
         m_aLastError[0] = '\0';
         m_State = STATE_RUNNING;
-
-        // Store self pointer in Lua registry so the abort hook can access it
         (*m_pLua)["__code_exec_ptr"] = this;
-
-        // Install debug hook — called every 1000 VM instructions
-        // This allows us to abort infinite loops without freezing the client
         lua_sethook(m_pLua->lua_state(), LuaAbortHook, LUA_MASKCOUNT, 1000);
 
         sol::load_result load = m_pLua->load(pCode);
         if(!load.valid())
         {
                 sol::optional<sol::error> maybe_err = load;
-                const char *pErrMsg = "Unknown Lua load error";
-                if(maybe_err)
-                        pErrMsg = maybe_err->what();
+                const char *pErrMsg = maybe_err ? maybe_err->what() : "Unknown load error";
                 str_copy(m_aLastError, pErrMsg, sizeof(m_aLastError));
-
-                // Output error to chat as chat/lua
-                char aErrBuf[1024];
-                str_format(aErrBuf, sizeof(aErrBuf), "Lua load error: %s", pErrMsg);
-                GameClient()->m_Chat.AddLine(CChat::LUA_MSG, 0, aErrBuf);
-
+                char aBuf[1024]; str_format(aBuf, sizeof(aBuf), "Lua load error: %s", pErrMsg);
+                GameClient()->m_Chat.AddLine(CChat::LUA_MSG, 0, aBuf);
                 m_State = STATE_ERROR;
                 lua_sethook(m_pLua->lua_state(), nullptr, 0, 0);
                 return false;
@@ -223,22 +178,15 @@ bool CCodeExec::Execute(const char *pCode)
         if(!result.valid())
         {
                 sol::optional<sol::error> maybe_err = result;
-                const char *pErrMsg = "Unknown Lua execution error";
-                if(maybe_err)
-                        pErrMsg = maybe_err->what();
+                const char *pErrMsg = maybe_err ? maybe_err->what() : "Unknown execution error";
                 str_copy(m_aLastError, pErrMsg, sizeof(m_aLastError));
-
-                // Output error to chat as chat/lua
-                char aErrBuf[1024];
-                str_format(aErrBuf, sizeof(aErrBuf), "Lua error: %s", pErrMsg);
-                GameClient()->m_Chat.AddLine(CChat::LUA_MSG, 0, aErrBuf);
-
+                char aBuf[1024]; str_format(aBuf, sizeof(aBuf), "Lua error: %s", pErrMsg);
+                GameClient()->m_Chat.AddLine(CChat::LUA_MSG, 0, aBuf);
                 m_State = STATE_ERROR;
                 lua_sethook(m_pLua->lua_state(), nullptr, 0, 0);
                 return false;
         }
 
-        // Script completed successfully — remove hook
         lua_sethook(m_pLua->lua_state(), nullptr, 0, 0);
         m_State = STATE_IDLE;
         return true;
@@ -246,492 +194,92 @@ bool CCodeExec::Execute(const char *pCode)
 
 void CCodeExec::Stop()
 {
-        if(m_State == STATE_RUNNING)
-        {
-                m_AbortRequested = true;
-        }
+        if(m_State == STATE_RUNNING) m_AbortRequested = true;
         m_State = STATE_IDLE;
 }
 
-
-
-// =========================================================
-// Lua Bindings — expose DDNet game state to scripts
-// =========================================================
+// =============================================================
+// RegisterBindings — vec2 + constants only
+// =============================================================
 void CCodeExec::RegisterBindings()
 {
-        if(!m_pLua)
-                return;
-
+        if(!m_pLua) return;
         auto &lua = *m_pLua;
 
-        // ----- vec2 type -----
+        // ===== vec2 with full operator support =====
         lua.new_usertype<vec2>("vec2",
                 sol::constructors<vec2(), vec2(float, float)>(),
                 "x", &vec2::x,
                 "y", &vec2::y,
                 sol::meta_function::to_string, [](vec2 &v) -> std::string {
-                        char buf[64];
-                        str_format(buf, sizeof(buf), "(%.2f, %.2f)", v.x, v.y);
+                        char buf[64]; str_format(buf, sizeof(buf), "(%.2f, %.2f)", v.x, v.y);
                         return std::string(buf);
-                }
+                },
+                sol::meta_function::addition, [](vec2 &a, vec2 &b) -> vec2 { return a + b; },
+                sol::meta_function::subtraction, [](vec2 &a, vec2 &b) -> vec2 { return a - b; },
+                sol::meta_function::multiplication, sol::overload(
+                        [](vec2 &v, float s) -> vec2 { return v * s; },
+                        [](float s, vec2 &v) -> vec2 { return v * s; }
+                ),
+                sol::meta_function::division, [](vec2 &v, float s) -> vec2 { return v / s; },
+                sol::meta_function::unary_minus, [](vec2 &v) -> vec2 { return -v; },
+                "length", [](vec2 &v) -> float { return length(v); },
+                "normalize", [](vec2 &v) -> vec2 { return normalize(v); },
+                "dot", [](vec2 &a, vec2 &b) -> float { return dot(a, b); },
+                "distance", [](vec2 &a, vec2 &b) -> float { return distance(a, b); },
+                "angle", [](vec2 &v) -> float { return angle(v); }
         );
 
-        // ----- Game state namespace -----
-        auto game = lua["game"].get_or_create<sol::table>();
-
-        // game.local_pos() — local player position
-        game.set_function("local_pos", [this]() -> vec2 {
-                return GameClient()->m_LocalCharacterPos;
-        });
-
-        // game.local_vel() — local player velocity
-        game.set_function("local_vel", [this]() -> vec2 {
-                auto &pc = GameClient()->m_PredictedChar;
-                return vec2(pc.m_Vel.x, pc.m_Vel.y);
-        });
-
-        // game.tick() — current game tick (CONN_MAIN = 0)
-        game.set_function("tick", [this]() -> int {
-                return Client()->GameTick(0);
-        });
-
-        // game.ticks_per_sec() — tick rate
-        game.set_function("ticks_per_sec", [this]() -> int {
-                return Client()->GameTickSpeed();
-        });
-
-        // game.local_id() — local client ID
-        game.set_function("local_id", [this]() -> int {
-                return GameClient()->m_Snap.m_LocalClientId;
-        });
-
-        // game.num_players() — number of players
-        game.set_function("num_players", [this]() -> int {
-                return GameClient()->m_Snap.m_NumPlayers;
-        });
-
-        // game.player_pos(id) — get player position by ID
-        game.set_function("player_pos", [this](int id) -> sol::object {
-                if(id < 0 || id >= MAX_CLIENTS || !GameClient()->m_Snap.m_apPlayerInfos[id])
-                        return sol::nil;
-                auto &info = GameClient()->m_Snap.m_aCharacters[id];
-                if(!info.m_Active)
-                        return sol::nil;
-                return sol::make_object(*m_pLua, vec2(
-                        (float)info.m_Cur.m_X / 100.0f,
-                        (float)info.m_Cur.m_Y / 100.0f
-                ));
-        });
-
-        // game.player_vel(id) — get player velocity by ID
-        game.set_function("player_vel", [this](int id) -> sol::object {
-                if(id < 0 || id >= MAX_CLIENTS || !GameClient()->m_Snap.m_apPlayerInfos[id])
-                        return sol::nil;
-                auto &info = GameClient()->m_Snap.m_aCharacters[id];
-                if(!info.m_Active)
-                        return sol::nil;
-                return sol::make_object(*m_pLua, vec2(
-                        (float)info.m_Cur.m_VelX / 100.0f,
-                        (float)info.m_Cur.m_VelY / 100.0f
-                ));
-        });
-
-        // game.player_name(id) — get player name
-        game.set_function("player_name", [this](int id) -> sol::object {
-                if(id < 0 || id >= MAX_CLIENTS || !GameClient()->m_Snap.m_apPlayerInfos[id])
-                        return sol::nil;
-                const char *pName = GameClient()->m_aClients[id].m_aName;
-                if(!pName || pName[0] == '\0')
-                        return sol::nil;
-                return sol::make_object(*m_pLua, std::string(pName));
-        });
-
-        // game.player_alive(id) — is player alive
-        game.set_function("player_alive", [this](int id) -> bool {
-                if(id < 0 || id >= MAX_CLIENTS)
-                        return false;
-                return GameClient()->m_Snap.m_aCharacters[id].m_Active;
-        });
-
-        // ----- Chat namespace -----
-        auto chat = lua["chat"].get_or_create<sol::table>();
-
-        // chat.send(msg) — send chat message
-        chat.set_function("send", [this](const std::string &msg) {
-                if(msg.empty())
-                        return;
-                CNetMsg_Cl_Say Msg;
-                Msg.m_Team = 0;
-                Msg.m_pMessage = msg.c_str();
-                Client()->SendPackMsgActive(&Msg, MSGFLAG_VITAL);
-        });
-
-        // chat.send_team(msg) — send team chat message
-        chat.set_function("send_team", [this](const std::string &msg) {
-                if(msg.empty())
-                        return;
-                CNetMsg_Cl_Say Msg;
-                Msg.m_Team = 1;
-                Msg.m_pMessage = msg.c_str();
-                Client()->SendPackMsgActive(&Msg, MSGFLAG_VITAL);
-        });
-
-        // ----- Input namespace -----
-        auto input = lua["input"].get_or_create<sol::table>();
-
-        // input.set_direction(dir) — set movement direction (-1, 0, 1)
-        input.set_function("set_direction", [this](int dir) {
-                int Dummy = g_Config.m_ClDummy;
-                GameClient()->m_Controls.m_aInputData[Dummy].m_Direction = dir;
-        });
-
-        // input.set_jump(jump) — set jump state
-        input.set_function("set_jump", [this](int jump) {
-                int Dummy = g_Config.m_ClDummy;
-                GameClient()->m_Controls.m_aInputData[Dummy].m_Jump = jump;
-        });
-
-        // input.set_hook(hook) — set hook state
-        input.set_function("set_hook", [this](int hook) {
-                int Dummy = g_Config.m_ClDummy;
-                GameClient()->m_Controls.m_aInputData[Dummy].m_Hook = hook;
-        });
-
-        // input.set_fire(fire) — set fire state
-        input.set_function("set_fire", [this](int fire) {
-                int Dummy = g_Config.m_ClDummy;
-                GameClient()->m_Controls.m_aInputData[Dummy].m_Fire = fire;
-        });
-
-        // input.set_aim(x, y) — set aim target
-        input.set_function("set_aim", [this](int x, int y) {
-                int Dummy = g_Config.m_ClDummy;
-                GameClient()->m_Controls.m_aInputData[Dummy].m_TargetX = x;
-                GameClient()->m_Controls.m_aInputData[Dummy].m_TargetY = y;
-        });
-
-        // input.set_dummy_direction(dummy, dir)
-        input.set_function("set_dummy_direction", [this](int dummy, int dir) {
-                if(dummy >= 0 && dummy < MAX_DUMMIES)
-                        GameClient()->m_Controls.m_aInputData[dummy].m_Direction = dir;
-        });
-
-        // input.set_dummy_jump(dummy, jump)
-        input.set_function("set_dummy_jump", [this](int dummy, int jump) {
-                if(dummy >= 0 && dummy < MAX_DUMMIES)
-                        GameClient()->m_Controls.m_aInputData[dummy].m_Jump = jump;
-        });
-
-        // input.set_dummy_hook(dummy, hook)
-        input.set_function("set_dummy_hook", [this](int dummy, int hook) {
-                if(dummy >= 0 && dummy < MAX_DUMMIES)
-                        GameClient()->m_Controls.m_aInputData[dummy].m_Hook = hook;
-        });
-
-        // input.set_dummy_aim(dummy, x, y)
-        input.set_function("set_dummy_aim", [this](int dummy, int x, int y) {
-                if(dummy >= 0 && dummy < MAX_DUMMIES)
-                {
-                        GameClient()->m_Controls.m_aInputData[dummy].m_TargetX = x;
-                        GameClient()->m_Controls.m_aInputData[dummy].m_TargetY = y;
-                }
-        });
-
-        // ----- BotNet namespace -----
-        auto botnet = lua["botnet"].get_or_create<sol::table>();
-
-        // botnet.attack_enabled — read/write
-        botnet.set_function("get_attack_enabled", [this]() -> bool {
-                return GameClient()->m_BotNet.m_AttackEnabled;
-        });
-        botnet.set_function("set_attack_enabled", [this](bool v) {
-                GameClient()->m_BotNet.m_AttackEnabled = v;
-        });
-
-        // botnet.move_enabled
-        botnet.set_function("get_move_enabled", [this]() -> bool {
-                return GameClient()->m_BotNet.m_MoveEnabled;
-        });
-        botnet.set_function("set_move_enabled", [this](bool v) {
-                GameClient()->m_BotNet.m_MoveEnabled = v;
-        });
-
-        // botnet.pathfinder_enabled
-        botnet.set_function("get_pathfinder_enabled", [this]() -> bool {
-                return GameClient()->m_BotNet.m_PathfinderEnabled;
-        });
-        botnet.set_function("set_pathfinder_enabled", [this](bool v) {
-                GameClient()->m_BotNet.m_PathfinderEnabled = v;
-        });
-
-        // botnet.kinodynamic_enabled
-        botnet.set_function("get_kinodynamic_enabled", [this]() -> bool {
-                return GameClient()->m_BotNet.m_KinodynamicEnabled;
-        });
-        botnet.set_function("set_kinodynamic_enabled", [this](bool v) {
-                GameClient()->m_BotNet.m_KinodynamicEnabled = v;
-        });
-
-        // ----- Console namespace -----
-        auto con = lua["console"].get_or_create<sol::table>();
-
-        // console.log(msg) — print to game console
-        con.set_function("log", [this](const std::string &msg) {
-                Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "lua", msg.c_str());
-        });
-
-        // console.exec(cmd) — execute a console command
-        // ExecuteLine requires (pStr, ClientId) — use -1 for "no client"
-        con.set_function("exec", [this](const std::string &cmd) {
-                Console()->ExecuteLine(cmd.c_str(), -1);
-        });
-
-        // ----- Map namespace -----
-        auto map = lua["map"].get_or_create<sol::table>();
-
-        // map.width() / map.height() — via CCollision
-        map.set_function("width", [this]() -> int {
-                auto *pCol = GameClient()->Collision();
-                return pCol ? pCol->GetWidth() : 0;
-        });
-        map.set_function("height", [this]() -> int {
-                auto *pCol = GameClient()->Collision();
-                return pCol ? pCol->GetHeight() : 0;
-        });
-
-        // map.is_tile_solid(tx, ty) — check if a tile is solid
-        map.set_function("is_tile_solid", [this](int tx, int ty) -> bool {
-                auto *pCol = GameClient()->Collision();
-                if(!pCol)
-                        return false;
-                return pCol->IsSolid(tx * 32 + 16, ty * 32 + 16);
-        });
-
-        // map.is_tile_freeze(tx, ty) — check if a tile is freeze
-        // GetTileIndex takes a linear index, use GetPureMapIndex to convert
-        map.set_function("is_tile_freeze", [this](int tx, int ty) -> bool {
-                auto *pCol = GameClient()->Collision();
-                if(!pCol)
-                        return false;
-                int Index = pCol->GetPureMapIndex(tx * 32.0f, ty * 32.0f);
-                int Tile = pCol->GetTileIndex(Index);
-                // Freeze tiles in DDNet are tile 9 (FREEZE)
-                return (Tile == 9);
-        });
-
-        // ----- Config namespace (read/write access to g_Config) -----
-        auto config = lua["config"].get_or_create<sol::table>();
-
-        // config.set(name, value) — set config variable via console
-        config.set_function("set", [this](const std::string &name, const std::string &value) {
-                char aCmd[512];
-                str_format(aCmd, sizeof(aCmd), "%s %s", name.c_str(), value.c_str());
-                Console()->ExecuteLine(aCmd, -1);
-        });
-
-        // config.get(name) — get config variable info as string
-        // Use IConsole::ICommandInfo (not CCommandInfo)
-        config.set_function("get", [this](const std::string &name) -> std::string {
-                const IConsole::ICommandInfo *pInfo = Console()->GetCommandInfo(name.c_str(), CFGFLAG_CLIENT, false);
-                if(!pInfo)
-                        pInfo = Console()->GetCommandInfo(name.c_str(), CFGFLAG_SERVER, false);
-                if(pInfo)
-                {
-                        // Return name + params + help
-                        std::string result;
-                        if(pInfo->Params())
-                                result = std::string(pInfo->Params());
-                        return result;
-                }
-                return "(unknown)";
-        });
-
-        // ----- Emote namespace -----
-        auto emote = lua["emote"].get_or_create<sol::table>();
-
-        // emote.set(type) — set player emote
-        emote.set_function("set", [this](int type) {
-                CNetMsg_Cl_Emoticon Msg;
-                Msg.m_Emoticon = type;
-                Client()->SendPackMsgActive(&Msg, MSGFLAG_VITAL);
-        });
-
-        // ----- Kill command -----
-        lua.set_function("kill", [this]() {
-                Console()->ExecuteLine("kill", -1);
-        });
-
-        // ----- Math helpers -----
-        auto math2d = lua["math2d"].get_or_create<sol::table>();
-
-        math2d.set_function("distance", [](vec2 a, vec2 b) -> float {
-                return distance(a, b);
-        });
-        math2d.set_function("normalize", [](vec2 v) -> vec2 {
-                return normalize(v);
-        });
-        math2d.set_function("length", [](vec2 v) -> float {
-                return length(v);
-        });
-        math2d.set_function("dot", [](vec2 a, vec2 b) -> float {
-                return dot(a, b);
-        });
-
-        // ----- Info string -----
-        lua.set_function("api_info", []() -> std::string {
-                return R"(
-ZMajor Code Execution API:
-  game.local_pos() -> vec2
-  game.local_vel() -> vec2
-  game.tick() -> int
-  game.ticks_per_sec() -> int
-  game.local_id() -> int
-  game.num_players() -> int
-  game.player_pos(id) -> vec2|nil
-  game.player_vel(id) -> vec2|nil
-  game.player_name(id) -> string|nil
-  game.player_alive(id) -> bool
-
-  chat.send(msg)
-  chat.send_team(msg)
-
-  input.set_direction(dir)       (-1, 0, 1)
-  input.set_jump(jump)           (0 or 1)
-  input.set_hook(hook)           (0 or 1)
-  input.set_fire(fire)           (0 or 1)
-  input.set_aim(x, y)
-  input.set_dummy_direction(d, dir)
-  input.set_dummy_jump(d, jump)
-  input.set_dummy_hook(d, hook)
-  input.set_dummy_aim(d, x, y)
-
-  botnet.get_attack_enabled() / set_attack_enabled(v)
-  botnet.get_move_enabled() / set_move_enabled(v)
-  botnet.get_pathfinder_enabled() / set_pathfinder_enabled(v)
-  botnet.get_kinodynamic_enabled() / set_kinodynamic_enabled(v)
-
-  console.log(msg)
-  console.exec(cmd)
-
-  map.width() / height()
-  map.is_tile_solid(tx, ty)
-  map.is_tile_freeze(tx, ty)
-
-  config.get(name) -> string
-  config.set(name, value)
-
-  emote.set(type)
-  kill()
-
-  math2d.distance(a, b)
-  math2d.normalize(v)
-  math2d.length(v)
-  math2d.dot(a, b)
-)";
-        });
+        // ===== Global constants =====
+        auto CONST = lua["CONST"].get_or_create<sol::table>();
+        CONST["SERVER_TICK_SPEED"] = SERVER_TICK_SPEED;
+        CONST["MAX_CLIENTS"] = MAX_CLIENTS;
+        CONST["NUM_WEAPONS"] = NUM_WEAPONS;
+        CONST["MAX_DUMMIES"] = MAX_DUMMIES;
+        CONST["HOOK_RETRACTED"] = HOOK_RETRACTED;
+        CONST["HOOK_IDLE"] = HOOK_IDLE;
+        CONST["HOOK_RETRACT_START"] = HOOK_RETRACT_START;
+        CONST["HOOK_RETRACT_END"] = HOOK_RETRACT_END;
+        CONST["HOOK_FLYING"] = HOOK_FLYING;
+        CONST["HOOK_GRABBED"] = HOOK_GRABBED;
+        CONST["COREEVENT_GROUND_JUMP"] = COREEVENT_GROUND_JUMP;
+        CONST["COREEVENT_AIR_JUMP"] = COREEVENT_AIR_JUMP;
+        CONST["COREEVENT_HOOK_LAUNCH"] = COREEVENT_HOOK_LAUNCH;
+        CONST["COREEVENT_HOOK_ATTACH_PLAYER"] = COREEVENT_HOOK_ATTACH_PLAYER;
+        CONST["COREEVENT_HOOK_ATTACH_GROUND"] = COREEVENT_HOOK_ATTACH_GROUND;
+        CONST["COREEVENT_HOOK_HIT_NOHOOK"] = COREEVENT_HOOK_HIT_NOHOOK;
+        CONST["COREEVENT_HOOK_RETRACT"] = COREEVENT_HOOK_RETRACT;
+        CONST["TEAM_SPECTATORS"] = TEAM_SPECTATORS;
+        CONST["TEAM_RED"] = TEAM_RED;
+        CONST["TEAM_BLUE"] = TEAM_BLUE;
+        CONST["WEAPON_HAMMER"] = WEAPON_HAMMER;
+        CONST["WEAPON_GUN"] = WEAPON_GUN;
+        CONST["WEAPON_SHOTGUN"] = WEAPON_SHOTGUN;
+        CONST["WEAPON_GRENADE"] = WEAPON_GRENADE;
+        CONST["WEAPON_LASER"] = WEAPON_LASER;
+        CONST["WEAPON_NINJA"] = WEAPON_NINJA;
+        CONST["SPEC_FREEVIEW"] = SPEC_FREEVIEW;
+        CONST["SPEC_FOLLOW"] = SPEC_FOLLOW;
+        CONST["FLAG_MISSING"] = FLAG_MISSING;
+        CONST["FLAG_ATSTAND"] = FLAG_ATSTAND;
+        CONST["FLAG_TAKEN"] = FLAG_TAKEN;
+        CONST["SHOW_OTHERS_NOT_SET"] = SHOW_OTHERS_NOT_SET;
+        CONST["SHOW_OTHERS_OFF"] = SHOW_OTHERS_OFF;
+        CONST["SHOW_OTHERS_ON"] = SHOW_OTHERS_ON;
+        CONST["SHOW_OTHERS_ONLY_TEAM"] = SHOW_OTHERS_ONLY_TEAM;
 }
 
-// =========================================================
-// Raw C++ Class Access — ALL public members of ALL classes
-// All member names match C++ EXACTLY so Lua code reads like C++ code:
-//   gc.m_PredictedChar.m_Vel.x
-//   gc.m_aClients[3].m_aName
-//   gc.m_BotNet.m_AttackEnabled = true
-//   gc.m_Camera.m_Zoom
-//   gc.m_GameInfo.m_FlagStartsRace
-// =========================================================
+// =============================================================
+// RegisterRawAPI — ALL DDNet classes, ALL public members/methods
+// Direct C++ access through gc (CGameClient) — no wrappers
+// =============================================================
 void CCodeExec::RegisterRawAPI()
 {
-        if(!m_pLua)
-                return;
-
+        if(!m_pLua) return;
         auto &lua = *m_pLua;
 
-        // ===== CCharacterCore — ALL public C++ member names =====
-        lua.new_usertype<CCharacterCore>("CCharacterCore",
-                "m_Pos", sol::property([](CCharacterCore &c) -> vec2& { return c.m_Pos; }),
-                "m_Vel", sol::property([](CCharacterCore &c) -> vec2& { return c.m_Vel; }),
-                "m_HookPos", sol::property([](CCharacterCore &c) -> vec2& { return c.m_HookPos; }),
-                "m_HookDir", sol::property([](CCharacterCore &c) -> vec2& { return c.m_HookDir; }),
-                "m_HookTeleBase", &CCharacterCore::m_HookTeleBase,
-                "m_HookTick", &CCharacterCore::m_HookTick,
-                "m_HookState", &CCharacterCore::m_HookState,
-                "m_HookedPlayer", sol::property(&CCharacterCore::HookedPlayer, &CCharacterCore::SetHookedPlayer),
-                "m_ActiveWeapon", &CCharacterCore::m_ActiveWeapon,
-                "m_Jumped", &CCharacterCore::m_Jumped,
-                "m_JumpedTotal", &CCharacterCore::m_JumpedTotal,
-                "m_Jumps", &CCharacterCore::m_Jumps,
-                "m_Direction", &CCharacterCore::m_Direction,
-                "m_Angle", &CCharacterCore::m_Angle,
-                "m_TriggeredEvents", &CCharacterCore::m_TriggeredEvents,
-                "m_Id", &CCharacterCore::m_Id,
-                "m_Input", &CCharacterCore::m_Input,
-                "m_NewHook", &CCharacterCore::m_NewHook,
-                "m_Reset", &CCharacterCore::m_Reset,
-                "m_Colliding", &CCharacterCore::m_Colliding,
-                "m_LeftWall", &CCharacterCore::m_LeftWall,
-                // Weapons — expose as sub-fields (read-only)
-                "m_aWeapons_Ammo", sol::property([this, &lua](CCharacterCore &c) -> sol::table {
-                        auto t = lua.create_table();
-                        for(int i = 0; i < NUM_WEAPONS; i++)
-                                t[i] = c.m_aWeapons[i].m_Ammo;
-                        return t;
-                }),
-                "m_aWeapons_AmmoRegenStart", sol::property([this, &lua](CCharacterCore &c) -> sol::table {
-                        auto t = lua.create_table();
-                        for(int i = 0; i < NUM_WEAPONS; i++)
-                                t[i] = c.m_aWeapons[i].m_AmmoRegenStart;
-                        return t;
-                }),
-                "m_aWeapons_Ammocost", sol::property([this, &lua](CCharacterCore &c) -> sol::table {
-                        auto t = lua.create_table();
-                        for(int i = 0; i < NUM_WEAPONS; i++)
-                                t[i] = c.m_aWeapons[i].m_Ammocost;
-                        return t;
-                }),
-                "m_aWeapons_Got", sol::property([this, &lua](CCharacterCore &c) -> sol::table {
-                        auto t = lua.create_table();
-                        for(int i = 0; i < NUM_WEAPONS; i++)
-                                t[i] = c.m_aWeapons[i].m_Got;
-                        return t;
-                }),
-                // DDRace flags
-                "m_Solo", &CCharacterCore::m_Solo,
-                "m_Jetpack", &CCharacterCore::m_Jetpack,
-                "m_CollisionDisabled", &CCharacterCore::m_CollisionDisabled,
-                "m_EndlessHook", &CCharacterCore::m_EndlessHook,
-                "m_EndlessJump", &CCharacterCore::m_EndlessJump,
-                "m_Super", &CCharacterCore::m_Super,
-                "m_Invincible", &CCharacterCore::m_Invincible,
-                "m_DeepFrozen", &CCharacterCore::m_DeepFrozen,
-                "m_LiveFrozen", &CCharacterCore::m_LiveFrozen,
-                "m_IsInFreeze", &CCharacterCore::m_IsInFreeze,
-                "m_FreezeStart", &CCharacterCore::m_FreezeStart,
-                "m_FreezeEnd", &CCharacterCore::m_FreezeEnd,
-                "m_HasTelegunGun", &CCharacterCore::m_HasTelegunGun,
-                "m_HasTelegunGrenade", &CCharacterCore::m_HasTelegunGrenade,
-                "m_HasTelegunLaser", &CCharacterCore::m_HasTelegunLaser,
-                "m_HammerHitDisabled", &CCharacterCore::m_HammerHitDisabled,
-                "m_GrenadeHitDisabled", &CCharacterCore::m_GrenadeHitDisabled,
-                "m_LaserHitDisabled", &CCharacterCore::m_LaserHitDisabled,
-                "m_ShotgunHitDisabled", &CCharacterCore::m_ShotgunHitDisabled,
-                "m_HookHitDisabled", &CCharacterCore::m_HookHitDisabled,
-                "m_Tuning", sol::property([](CCharacterCore &c) -> CTuningParams& { return c.m_Tuning; }),
-                // Ninja (nested struct — expose as read-only sub-fields)
-                "m_Ninja_ActivationDir", sol::property([](CCharacterCore &c) -> vec2 { return c.m_Ninja.m_ActivationDir; }),
-                "m_Ninja_ActivationTick", sol::property([](CCharacterCore &c) -> int { return c.m_Ninja.m_ActivationTick; }),
-                "m_Ninja_CurrentMoveTime", sol::property([](CCharacterCore &c) -> int { return c.m_Ninja.m_CurrentMoveTime; }),
-                "m_Ninja_OldVelAmount", sol::property([](CCharacterCore &c) -> int { return c.m_Ninja.m_OldVelAmount; }),
-                // Methods
-                "Reset", [](CCharacterCore &c) { c.Reset(); },
-                "Tick", [](CCharacterCore &c, bool useInput) { c.Tick(useInput); },
-                "Move", [](CCharacterCore &c) { c.Move(); },
-                "Quantize", [](CCharacterCore &c) { c.Quantize(); },
-                "Clone", [](CCharacterCore &c) -> CCharacterCore { return c; }
-        );
+        // ===================== NETWORK OBJECTS =====================
 
-        // ===== CNetObj_PlayerInput — ALL member names =====
         lua.new_usertype<CNetObj_PlayerInput>("CNetObj_PlayerInput",
                 "m_Direction", &CNetObj_PlayerInput::m_Direction,
                 "m_TargetX", &CNetObj_PlayerInput::m_TargetX,
@@ -745,27 +293,308 @@ void CCodeExec::RegisterRawAPI()
                 "m_PrevWeapon", &CNetObj_PlayerInput::m_PrevWeapon
         );
 
-        // ===== CNetObj_Character — ALL member names =====
         lua.new_usertype<CNetObj_Character>("CNetObj_Character",
+                "m_Tick", &CNetObj_Character::m_Tick,
                 "m_X", &CNetObj_Character::m_X,
                 "m_Y", &CNetObj_Character::m_Y,
                 "m_VelX", &CNetObj_Character::m_VelX,
                 "m_VelY", &CNetObj_Character::m_VelY,
                 "m_Angle", &CNetObj_Character::m_Angle,
                 "m_Direction", &CNetObj_Character::m_Direction,
-                "m_Weapon", &CNetObj_Character::m_Weapon,
-                "m_AmmoCount", &CNetObj_Character::m_AmmoCount,
-                "m_Health", &CNetObj_Character::m_Health,
-                "m_Armor", &CNetObj_Character::m_Armor,
-                "m_PlayerFlags", &CNetObj_Character::m_PlayerFlags,
+                "m_Jumped", &CNetObj_Character::m_Jumped,
                 "m_HookedPlayer", &CNetObj_Character::m_HookedPlayer,
                 "m_HookState", &CNetObj_Character::m_HookState,
                 "m_HookTick", &CNetObj_Character::m_HookTick,
+                "m_HookX", &CNetObj_Character::m_HookX,
+                "m_HookY", &CNetObj_Character::m_HookY,
+                "m_HookDx", &CNetObj_Character::m_HookDx,
+                "m_HookDy", &CNetObj_Character::m_HookDy,
+                "m_PlayerFlags", &CNetObj_Character::m_PlayerFlags,
+                "m_Health", &CNetObj_Character::m_Health,
+                "m_Armor", &CNetObj_Character::m_Armor,
+                "m_AmmoCount", &CNetObj_Character::m_AmmoCount,
+                "m_Weapon", &CNetObj_Character::m_Weapon,
+                "m_Emote", &CNetObj_Character::m_Emote,
                 "m_AttackTick", &CNetObj_Character::m_AttackTick
-                // m_JumpedTotal removed — not a member of CNetObj_Character (only in CCharacterCore)
         );
 
-        // ===== CGameInfo — ALL public bools =====
+        lua.new_usertype<CNetObj_PlayerInfo>("CNetObj_PlayerInfo",
+                "m_Local", &CNetObj_PlayerInfo::m_Local,
+                "m_ClientId", &CNetObj_PlayerInfo::m_ClientId,
+                "m_Team", &CNetObj_PlayerInfo::m_Team,
+                "m_Score", &CNetObj_PlayerInfo::m_Score,
+                "m_Latency", &CNetObj_PlayerInfo::m_Latency
+        );
+
+        lua.new_usertype<CNetObj_GameInfo>("CNetObj_GameInfo",
+                "m_GameFlags", &CNetObj_GameInfo::m_GameFlags,
+                "m_GameStateFlags", &CNetObj_GameInfo::m_GameStateFlags,
+                "m_RoundStartTick", &CNetObj_GameInfo::m_RoundStartTick,
+                "m_WarmupTimer", &CNetObj_GameInfo::m_WarmupTimer,
+                "m_ScoreLimit", &CNetObj_GameInfo::m_ScoreLimit,
+                "m_TimeLimit", &CNetObj_GameInfo::m_TimeLimit,
+                "m_RoundNum", &CNetObj_GameInfo::m_RoundNum,
+                "m_RoundCurrent", &CNetObj_GameInfo::m_RoundCurrent
+        );
+
+        lua.new_usertype<CNetObj_GameData>("CNetObj_GameData",
+                "m_TeamscoreRed", &CNetObj_GameData::m_TeamscoreRed,
+                "m_TeamscoreBlue", &CNetObj_GameData::m_TeamscoreBlue,
+                "m_FlagCarrierRed", &CNetObj_GameData::m_FlagCarrierRed,
+                "m_FlagCarrierBlue", &CNetObj_GameData::m_FlagCarrierBlue
+        );
+
+        lua.new_usertype<CNetObj_Flag>("CNetObj_Flag",
+                "m_X", &CNetObj_Flag::m_X,
+                "m_Y", &CNetObj_Flag::m_Y,
+                "m_Team", &CNetObj_Flag::m_Team
+        );
+
+        lua.new_usertype<CNetObj_SpectatorInfo>("CNetObj_SpectatorInfo",
+                "m_SpectatorId", &CNetObj_SpectatorInfo::m_SpectatorId,
+                "m_X", &CNetObj_SpectatorInfo::m_X,
+                "m_Y", &CNetObj_SpectatorInfo::m_Y
+        );
+
+        lua.new_usertype<CNetObj_DDNetCharacter>("CNetObj_DDNetCharacter",
+                "m_Flags", &CNetObj_DDNetCharacter::m_Flags,
+                "m_FreezeEnd", &CNetObj_DDNetCharacter::m_FreezeEnd,
+                "m_Jumps", &CNetObj_DDNetCharacter::m_Jumps,
+                "m_TeleCheckpoint", &CNetObj_DDNetCharacter::m_TeleCheckpoint,
+                "m_StrongWeakId", &CNetObj_DDNetCharacter::m_StrongWeakId,
+                "m_JumpedTotal", &CNetObj_DDNetCharacter::m_JumpedTotal,
+                "m_NinjaActivationTick", &CNetObj_DDNetCharacter::m_NinjaActivationTick,
+                "m_FreezeStart", &CNetObj_DDNetCharacter::m_FreezeStart,
+                "m_TargetX", &CNetObj_DDNetCharacter::m_TargetX,
+                "m_TargetY", &CNetObj_DDNetCharacter::m_TargetY
+        );
+
+        // ===================== CTuningParams =====================
+        lua.new_usertype<CTuningParams>("CTuningParams",
+                "m_GroundControlSpeed", sol::property([](CTuningParams &t) -> float { return (float)t.m_GroundControlSpeed; }, [](CTuningParams &t, float v) { t.m_GroundControlSpeed = v; }),
+                "m_GroundControlAccel", sol::property([](CTuningParams &t) -> float { return (float)t.m_GroundControlAccel; }, [](CTuningParams &t, float v) { t.m_GroundControlAccel = v; }),
+                "m_GroundFriction", sol::property([](CTuningParams &t) -> float { return (float)t.m_GroundFriction; }, [](CTuningParams &t, float v) { t.m_GroundFriction = v; }),
+                "m_GroundJumpImpulse", sol::property([](CTuningParams &t) -> float { return (float)t.m_GroundJumpImpulse; }, [](CTuningParams &t, float v) { t.m_GroundJumpImpulse = v; }),
+                "m_AirJumpImpulse", sol::property([](CTuningParams &t) -> float { return (float)t.m_AirJumpImpulse; }, [](CTuningParams &t, float v) { t.m_AirJumpImpulse = v; }),
+                "m_AirControlSpeed", sol::property([](CTuningParams &t) -> float { return (float)t.m_AirControlSpeed; }, [](CTuningParams &t, float v) { t.m_AirControlSpeed = v; }),
+                "m_AirControlAccel", sol::property([](CTuningParams &t) -> float { return (float)t.m_AirControlAccel; }, [](CTuningParams &t, float v) { t.m_AirControlAccel = v; }),
+                "m_AirFriction", sol::property([](CTuningParams &t) -> float { return (float)t.m_AirFriction; }, [](CTuningParams &t, float v) { t.m_AirFriction = v; }),
+                "m_HookLength", sol::property([](CTuningParams &t) -> float { return (float)t.m_HookLength; }, [](CTuningParams &t, float v) { t.m_HookLength = v; }),
+                "m_HookFireSpeed", sol::property([](CTuningParams &t) -> float { return (float)t.m_HookFireSpeed; }, [](CTuningParams &t, float v) { t.m_HookFireSpeed = v; }),
+                "m_HookDragAccel", sol::property([](CTuningParams &t) -> float { return (float)t.m_HookDragAccel; }, [](CTuningParams &t, float v) { t.m_HookDragAccel = v; }),
+                "m_HookDragSpeed", sol::property([](CTuningParams &t) -> float { return (float)t.m_HookDragSpeed; }, [](CTuningParams &t, float v) { t.m_HookDragSpeed = v; }),
+                "m_Gravity", sol::property([](CTuningParams &t) -> float { return (float)t.m_Gravity; }, [](CTuningParams &t, float v) { t.m_Gravity = v; }),
+                "m_VelrampStart", sol::property([](CTuningParams &t) -> float { return (float)t.m_VelrampStart; }, [](CTuningParams &t, float v) { t.m_VelrampStart = v; }),
+                "m_VelrampRange", sol::property([](CTuningParams &t) -> float { return (float)t.m_VelrampRange; }, [](CTuningParams &t, float v) { t.m_VelrampRange = v; }),
+                "m_VelrampCurvature", sol::property([](CTuningParams &t) -> float { return (float)t.m_VelrampCurvature; }, [](CTuningParams &t, float v) { t.m_VelrampCurvature = v; }),
+                "m_GunCurvature", sol::property([](CTuningParams &t) -> float { return (float)t.m_GunCurvature; }, [](CTuningParams &t, float v) { t.m_GunCurvature = v; }),
+                "m_GunSpeed", sol::property([](CTuningParams &t) -> float { return (float)t.m_GunSpeed; }, [](CTuningParams &t, float v) { t.m_GunSpeed = v; }),
+                "m_GunLifetime", sol::property([](CTuningParams &t) -> float { return (float)t.m_GunLifetime; }, [](CTuningParams &t, float v) { t.m_GunLifetime = v; }),
+                "m_ShotgunCurvature", sol::property([](CTuningParams &t) -> float { return (float)t.m_ShotgunCurvature; }, [](CTuningParams &t, float v) { t.m_ShotgunCurvature = v; }),
+                "m_ShotgunSpeed", sol::property([](CTuningParams &t) -> float { return (float)t.m_ShotgunSpeed; }, [](CTuningParams &t, float v) { t.m_ShotgunSpeed = v; }),
+                "m_ShotgunSpeeddiff", sol::property([](CTuningParams &t) -> float { return (float)t.m_ShotgunSpeeddiff; }, [](CTuningParams &t, float v) { t.m_ShotgunSpeeddiff = v; }),
+                "m_ShotgunLifetime", sol::property([](CTuningParams &t) -> float { return (float)t.m_ShotgunLifetime; }, [](CTuningParams &t, float v) { t.m_ShotgunLifetime = v; }),
+                "m_GrenadeCurvature", sol::property([](CTuningParams &t) -> float { return (float)t.m_GrenadeCurvature; }, [](CTuningParams &t, float v) { t.m_GrenadeCurvature = v; }),
+                "m_GrenadeSpeed", sol::property([](CTuningParams &t) -> float { return (float)t.m_GrenadeSpeed; }, [](CTuningParams &t, float v) { t.m_GrenadeSpeed = v; }),
+                "m_GrenadeLifetime", sol::property([](CTuningParams &t) -> float { return (float)t.m_GrenadeLifetime; }, [](CTuningParams &t, float v) { t.m_GrenadeLifetime = v; }),
+                "m_LaserReach", sol::property([](CTuningParams &t) -> float { return (float)t.m_LaserReach; }, [](CTuningParams &t, float v) { t.m_LaserReach = v; }),
+                "m_LaserBounceDelay", sol::property([](CTuningParams &t) -> float { return (float)t.m_LaserBounceDelay; }, [](CTuningParams &t, float v) { t.m_LaserBounceDelay = v; }),
+                "m_LaserBounceNum", sol::property([](CTuningParams &t) -> float { return (float)t.m_LaserBounceNum; }, [](CTuningParams &t, float v) { t.m_LaserBounceNum = v; }),
+                "m_LaserBounceCost", sol::property([](CTuningParams &t) -> float { return (float)t.m_LaserBounceCost; }, [](CTuningParams &t, float v) { t.m_LaserBounceCost = v; }),
+                "m_LaserDamage", sol::property([](CTuningParams &t) -> float { return (float)t.m_LaserDamage; }, [](CTuningParams &t, float v) { t.m_LaserDamage = v; }),
+                "m_PlayerCollision", sol::property([](CTuningParams &t) -> float { return (float)t.m_PlayerCollision; }, [](CTuningParams &t, float v) { t.m_PlayerCollision = v; }),
+                "m_PlayerHooking", sol::property([](CTuningParams &t) -> float { return (float)t.m_PlayerHooking; }, [](CTuningParams &t, float v) { t.m_PlayerHooking = v; }),
+                "m_JetpackStrength", sol::property([](CTuningParams &t) -> float { return (float)t.m_JetpackStrength; }, [](CTuningParams &t, float v) { t.m_JetpackStrength = v; }),
+                "m_ShotgunStrength", sol::property([](CTuningParams &t) -> float { return (float)t.m_ShotgunStrength; }, [](CTuningParams &t, float v) { t.m_ShotgunStrength = v; }),
+                "m_ExplosionStrength", sol::property([](CTuningParams &t) -> float { return (float)t.m_ExplosionStrength; }, [](CTuningParams &t, float v) { t.m_ExplosionStrength = v; }),
+                "m_HammerStrength", sol::property([](CTuningParams &t) -> float { return (float)t.m_HammerStrength; }, [](CTuningParams &t, float v) { t.m_HammerStrength = v; }),
+                "m_HookDuration", sol::property([](CTuningParams &t) -> float { return (float)t.m_HookDuration; }, [](CTuningParams &t, float v) { t.m_HookDuration = v; }),
+                "m_HammerFireDelay", sol::property([](CTuningParams &t) -> float { return (float)t.m_HammerFireDelay; }, [](CTuningParams &t, float v) { t.m_HammerFireDelay = v; }),
+                "m_GunFireDelay", sol::property([](CTuningParams &t) -> float { return (float)t.m_GunFireDelay; }, [](CTuningParams &t, float v) { t.m_GunFireDelay = v; }),
+                "m_ShotgunFireDelay", sol::property([](CTuningParams &t) -> float { return (float)t.m_ShotgunFireDelay; }, [](CTuningParams &t, float v) { t.m_ShotgunFireDelay = v; }),
+                "m_GrenadeFireDelay", sol::property([](CTuningParams &t) -> float { return (float)t.m_GrenadeFireDelay; }, [](CTuningParams &t, float v) { t.m_GrenadeFireDelay = v; }),
+                "m_LaserFireDelay", sol::property([](CTuningParams &t) -> float { return (float)t.m_LaserFireDelay; }, [](CTuningParams &t, float v) { t.m_LaserFireDelay = v; }),
+                "m_NinjaFireDelay", sol::property([](CTuningParams &t) -> float { return (float)t.m_NinjaFireDelay; }, [](CTuningParams &t, float v) { t.m_NinjaFireDelay = v; }),
+                "m_HammerHitFireDelay", sol::property([](CTuningParams &t) -> float { return (float)t.m_HammerHitFireDelay; }, [](CTuningParams &t, float v) { t.m_HammerHitFireDelay = v; }),
+                "m_GroundElasticityX", sol::property([](CTuningParams &t) -> float { return (float)t.m_GroundElasticityX; }, [](CTuningParams &t, float v) { t.m_GroundElasticityX = v; }),
+                "m_GroundElasticityY", sol::property([](CTuningParams &t) -> float { return (float)t.m_GroundElasticityY; }, [](CTuningParams &t, float v) { t.m_GroundElasticityY = v; }),
+                "Set", sol::overload(
+                        [](CTuningParams &t, int i, float v) -> bool { return t.Set(i, v); },
+                        [](CTuningParams &t, const std::string &n, float v) -> bool { return t.Set(n.c_str(), v); }
+                ),
+                "Get", sol::overload(
+                        [](CTuningParams &t, int i) -> float { float v; t.Get(i, &v); return v; },
+                        [](CTuningParams &t, const std::string &n) -> float { float v; t.Get(n.c_str(), &v); return v; }
+                ),
+                "Name", [](CTuningParams &, int i) -> std::string { return std::string(CTuningParams::Name(i)); },
+                "Num", []() -> int { return CTuningParams::Num(); },
+                "GetWeaponFireDelay", [](CTuningParams &t, int w) -> float { return t.GetWeaponFireDelay(w); }
+        );
+
+        // ===================== CTeamsCore =====================
+        lua.new_usertype<CTeamsCore>("CTeamsCore",
+                "m_IsDDRace16", &CTeamsCore::m_IsDDRace16,
+                "SameTeam", &CTeamsCore::SameTeam,
+                "CanKeepHook", &CTeamsCore::CanKeepHook,
+                "CanCollide", &CTeamsCore::CanCollide,
+                "Team", sol::overload(
+                        [](CTeamsCore &t, int id) -> int { return t.Team(id); },
+                        [](CTeamsCore &t, int id, int team) { t.Team(id, team); }
+                ),
+                "Reset", [](CTeamsCore &t) { t.Reset(); },
+                "SetSolo", &CTeamsCore::SetSolo,
+                "GetSolo", &CTeamsCore::GetSolo
+        );
+
+        // ===================== SSwitchers =====================
+        lua.new_usertype<SSwitchers>("SSwitchers",
+                "m_Initial", &SSwitchers::m_Initial,
+                "m_aStatus", sol::property([this, &lua](SSwitchers &s) -> sol::table {
+                        auto t = lua.create_table();
+                        for(int i = 0; i < 64; i++) t[i] = s.m_aStatus[i];
+                        return t;
+                }),
+                "m_aEndTick", sol::property([this, &lua](SSwitchers &s) -> sol::table {
+                        auto t = lua.create_table();
+                        for(int i = 0; i < 64; i++) t[i] = s.m_aEndTick[i];
+                        return t;
+                }),
+                "m_aType", sol::property([this, &lua](SSwitchers &s) -> sol::table {
+                        auto t = lua.create_table();
+                        for(int i = 0; i < 64; i++) t[i] = s.m_aType[i];
+                        return t;
+                }),
+                "m_aLastUpdateTick", sol::property([this, &lua](SSwitchers &s) -> sol::table {
+                        auto t = lua.create_table();
+                        for(int i = 0; i < 64; i++) t[i] = s.m_aLastUpdateTick[i];
+                        return t;
+                })
+        );
+
+        // ===================== CWorldCore =====================
+        lua.new_usertype<CWorldCore>("CWorldCore",
+                "m_apCharacters", sol::property([this, &lua](CWorldCore &w) -> sol::table {
+                        auto t = lua.create_table();
+                        for(int i = 0; i < MAX_CLIENTS; i++)
+                                if(w.m_apCharacters[i])
+                                        t[i] = std::ref(*w.m_apCharacters[i]);
+                        return t;
+                }),
+                "m_vSwitchers", sol::property([](CWorldCore &w) -> std::vector<SSwitchers>& { return w.m_vSwitchers; }),
+                "RandomOr0", &CWorldCore::RandomOr0,
+                "InitSwitchers", &CWorldCore::InitSwitchers
+        );
+
+        // ===================== CCharacterCore =====================
+        lua.new_usertype<CCharacterCore>("CCharacterCore",
+                "m_Pos", sol::property([](CCharacterCore &c) -> vec2& { return c.m_Pos; }),
+                "m_Vel", sol::property([](CCharacterCore &c) -> vec2& { return c.m_Vel; }),
+                "m_HookPos", sol::property([](CCharacterCore &c) -> vec2& { return c.m_HookPos; }),
+                "m_HookDir", sol::property([](CCharacterCore &c) -> vec2& { return c.m_HookDir; }),
+                "m_HookTeleBase", sol::property([](CCharacterCore &c) -> vec2& { return c.m_HookTeleBase; }),
+                "m_HookTick", &CCharacterCore::m_HookTick,
+                "m_HookState", &CCharacterCore::m_HookState,
+                "m_HookedPlayer", sol::property(&CCharacterCore::HookedPlayer, &CCharacterCore::SetHookedPlayer),
+                "m_ActiveWeapon", &CCharacterCore::m_ActiveWeapon,
+                "m_Jumped", &CCharacterCore::m_Jumped,
+                "m_JumpedTotal", &CCharacterCore::m_JumpedTotal,
+                "m_Jumps", &CCharacterCore::m_Jumps,
+                "m_Direction", &CCharacterCore::m_Direction,
+                "m_Angle", &CCharacterCore::m_Angle,
+                "m_Input", sol::property([](CCharacterCore &c) -> CNetObj_PlayerInput& { return c.m_Input; }),
+                "m_TriggeredEvents", &CCharacterCore::m_TriggeredEvents,
+                "m_Id", &CCharacterCore::m_Id,
+                "m_NewHook", &CCharacterCore::m_NewHook,
+                "m_Reset", &CCharacterCore::m_Reset,
+                "m_Colliding", &CCharacterCore::m_Colliding,
+                "m_LeftWall", &CCharacterCore::m_LeftWall,
+                "m_Solo", &CCharacterCore::m_Solo,
+                "m_Jetpack", &CCharacterCore::m_Jetpack,
+                "m_CollisionDisabled", &CCharacterCore::m_CollisionDisabled,
+                "m_EndlessHook", &CCharacterCore::m_EndlessHook,
+                "m_EndlessJump", &CCharacterCore::m_EndlessJump,
+                "m_HammerHitDisabled", &CCharacterCore::m_HammerHitDisabled,
+                "m_GrenadeHitDisabled", &CCharacterCore::m_GrenadeHitDisabled,
+                "m_LaserHitDisabled", &CCharacterCore::m_LaserHitDisabled,
+                "m_ShotgunHitDisabled", &CCharacterCore::m_ShotgunHitDisabled,
+                "m_HookHitDisabled", &CCharacterCore::m_HookHitDisabled,
+                "m_Super", &CCharacterCore::m_Super,
+                "m_Invincible", &CCharacterCore::m_Invincible,
+                "m_HasTelegunGun", &CCharacterCore::m_HasTelegunGun,
+                "m_HasTelegunGrenade", &CCharacterCore::m_HasTelegunGrenade,
+                "m_HasTelegunLaser", &CCharacterCore::m_HasTelegunLaser,
+                "m_FreezeStart", &CCharacterCore::m_FreezeStart,
+                "m_FreezeEnd", &CCharacterCore::m_FreezeEnd,
+                "m_IsInFreeze", &CCharacterCore::m_IsInFreeze,
+                "m_DeepFrozen", &CCharacterCore::m_DeepFrozen,
+                "m_LiveFrozen", &CCharacterCore::m_LiveFrozen,
+                "m_Tuning", sol::property([](CCharacterCore &c) -> CTuningParams& { return c.m_Tuning; }),
+                "m_AttachedPlayers", sol::property([this, &lua](CCharacterCore &c) -> sol::table {
+                        auto t = lua.create_table();
+                        int idx = 1;
+                        for(int pid : c.m_AttachedPlayers) t[idx++] = pid;
+                        return t;
+                }),
+                "m_aWeapons", sol::property([this, &lua](CCharacterCore &c) -> sol::table {
+                        auto t = lua.create_table();
+                        for(int i = 0; i < NUM_WEAPONS; i++)
+                        {
+                                auto w = lua.create_table();
+                                w["m_Ammo"] = c.m_aWeapons[i].m_Ammo;
+                                w["m_AmmoRegenStart"] = c.m_aWeapons[i].m_AmmoRegenStart;
+                                w["m_Ammocost"] = c.m_aWeapons[i].m_Ammocost;
+                                w["m_Got"] = c.m_aWeapons[i].m_Got;
+                                t[i] = w;
+                        }
+                        return t;
+                }),
+                "m_Ninja_ActivationDir", sol::property([](CCharacterCore &c) -> vec2 { return c.m_Ninja.m_ActivationDir; }),
+                "m_Ninja_ActivationTick", sol::property([](CCharacterCore &c) -> int { return c.m_Ninja.m_ActivationTick; }),
+                "m_Ninja_CurrentMoveTime", sol::property([](CCharacterCore &c) -> int { return c.m_Ninja.m_CurrentMoveTime; }),
+                "m_Ninja_OldVelAmount", sol::property([](CCharacterCore &c) -> int { return c.m_Ninja.m_OldVelAmount; }),
+                "PhysicalSize", &CCharacterCore::PhysicalSize,
+                "PhysicalSizeVec2", &CCharacterCore::PhysicalSizeVec2,
+                "Reset", [](CCharacterCore &c) { c.Reset(); },
+                "Tick", [](CCharacterCore &c, bool useInput, sol::optional<bool> deferred) { c.Tick(useInput, deferred.value_or(true)); },
+                "TickDeferred", [](CCharacterCore &c) { c.TickDeferred(); },
+                "Move", [](CCharacterCore &c) { c.Move(); },
+                "Quantize", [](CCharacterCore &c) { c.Quantize(); },
+                "Read", [](CCharacterCore &c, CNetObj_CharacterCore &obj) { c.Read(&obj); },
+                "Write", [](CCharacterCore &c, CNetObj_CharacterCore &obj) { c.Write(&obj); },
+                "ReadDDNet", [](CCharacterCore &c, CNetObj_DDNetCharacter &obj) { c.ReadDDNet(&obj); },
+                "Collision", [](CCharacterCore &c) -> CCollision* { return c.Collision(); },
+                "SetTeamsCore", [](CCharacterCore &c, CTeamsCore &t) { c.SetTeamsCore(&t); },
+                "Clone", [](CCharacterCore &c) -> CCharacterCore { return c; }
+        );
+
+        // ===================== CClientStats =====================
+        lua.new_usertype<CGameClient::CClientStats>("CClientStats",
+                "m_Frags", &CGameClient::CClientStats::m_Frags,
+                "m_Deaths", &CGameClient::CClientStats::m_Deaths,
+                "m_Suicides", &CGameClient::CClientStats::m_Suicides,
+                "m_BestSpree", &CGameClient::CClientStats::m_BestSpree,
+                "m_CurrentSpree", &CGameClient::CClientStats::m_CurrentSpree,
+                "m_FlagGrabs", &CGameClient::CClientStats::m_FlagGrabs,
+                "m_FlagCaptures", &CGameClient::CClientStats::m_FlagCaptures,
+                "m_aFragsWith", sol::property([this, &lua](CGameClient::CClientStats &s) -> sol::table {
+                        auto t = lua.create_table();
+                        for(int i = 0; i < NUM_WEAPONS; i++) t[i] = s.m_aFragsWith[i];
+                        return t;
+                }),
+                "m_aDeathsFrom", sol::property([this, &lua](CGameClient::CClientStats &s) -> sol::table {
+                        auto t = lua.create_table();
+                        for(int i = 0; i < NUM_WEAPONS; i++) t[i] = s.m_aDeathsFrom[i];
+                        return t;
+                }),
+                "Reset", [](CGameClient::CClientStats &s) { s.Reset(); },
+                "IsActive", [](CGameClient::CClientStats &s) -> bool { return s.IsActive(); },
+                "JoinGame", [](CGameClient::CClientStats &s, int tick) { s.JoinGame(tick); },
+                "JoinSpec", [](CGameClient::CClientStats &s, int tick) { s.JoinSpec(tick); },
+                "GetIngameTicks", [](CGameClient::CClientStats &s, int tick) -> int { return s.GetIngameTicks(tick); },
+                "GetFPM", [](CGameClient::CClientStats &s, int tick, int speed) -> float { return s.GetFPM(tick, speed); }
+        );
+
+        // ===================== CGameInfo =====================
         lua.new_usertype<CGameInfo>("CGameInfo",
                 "m_FlagStartsRace", &CGameInfo::m_FlagStartsRace,
                 "m_TimeScore", &CGameInfo::m_TimeScore,
@@ -804,7 +633,65 @@ void CCodeExec::RegisterRawAPI()
                 "m_PredictEvents", &CGameInfo::m_PredictEvents
         );
 
-        // ===== CClientData — ALL public member names =====
+        // ===================== CSnapState =====================
+        lua.new_usertype<CGameClient::CSnapState::CSpectateInfo>("CSpecInfo",
+                "m_Active", &CGameClient::CSnapState::CSpectateInfo::m_Active,
+                "m_SpectatorId", &CGameClient::CSnapState::CSpectateInfo::m_SpectatorId,
+                "m_UsePosition", &CGameClient::CSnapState::CSpectateInfo::m_UsePosition,
+                "m_Position", sol::property([](CGameClient::CSnapState::CSpectateInfo &s) -> vec2& { return s.m_Position; }),
+                "m_HasCameraInfo", &CGameClient::CSnapState::CSpectateInfo::m_HasCameraInfo,
+                "m_Zoom", &CGameClient::CSnapState::CSpectateInfo::m_Zoom,
+                "m_Deadzone", &CGameClient::CSnapState::CSpectateInfo::m_Deadzone,
+                "m_FollowFactor", &CGameClient::CSnapState::CSpectateInfo::m_FollowFactor
+        );
+
+        lua.new_usertype<CGameClient::CSnapState>("CSnapState",
+                "m_LocalClientId", &CGameClient::CSnapState::m_LocalClientId,
+                "m_NumPlayers", &CGameClient::CSnapState::m_NumPlayers,
+                "m_NumFlags", &CGameClient::CSnapState::m_NumFlags,
+                "m_HighestClientId", &CGameClient::CSnapState::m_HighestClientId,
+                "m_aTeamSize", sol::property([this, &lua](CGameClient::CSnapState &s) -> sol::table {
+                        auto t = lua.create_table();
+                        for(int i = 0; i < 2; i++) t[i] = s.m_aTeamSize[i];
+                        return t;
+                }),
+                "m_SpecInfo", sol::property([](CGameClient::CSnapState &s) -> CGameClient::CSnapState::CSpectateInfo& { return s.m_SpecInfo; }),
+                "m_aCharacters", sol::property([this, &lua](CGameClient::CSnapState &s) -> sol::table {
+                        auto t = lua.create_table();
+                        for(int i = 0; i < MAX_CLIENTS; i++)
+                        {
+                                auto ct = lua.create_table();
+                                ct["m_Active"] = s.m_aCharacters[i].m_Active;
+                                ct["m_Cur"] = sol::make_object(lua, std::ref(s.m_aCharacters[i].m_Cur));
+                                ct["m_Prev"] = sol::make_object(lua, std::ref(s.m_aCharacters[i].m_Prev));
+                                ct["m_HasExtendedData"] = s.m_aCharacters[i].m_HasExtendedData;
+                                ct["m_HasExtendedDisplayInfo"] = s.m_aCharacters[i].m_HasExtendedDisplayInfo;
+                                t[i] = ct;
+                        }
+                        return t;
+                }),
+                "m_apPlayerInfos", sol::property([this, &lua](CGameClient::CSnapState &s) -> sol::table {
+                        auto t = lua.create_table();
+                        for(int i = 0; i < MAX_CLIENTS; i++)
+                        {
+                                if(s.m_apPlayerInfos[i])
+                                {
+                                        auto pi = lua.create_table();
+                                        pi["m_Local"] = s.m_apPlayerInfos[i]->m_Local;
+                                        pi["m_ClientId"] = s.m_apPlayerInfos[i]->m_ClientId;
+                                        pi["m_Team"] = s.m_apPlayerInfos[i]->m_Team;
+                                        pi["m_Score"] = s.m_apPlayerInfos[i]->m_Score;
+                                        pi["m_Latency"] = s.m_apPlayerInfos[i]->m_Latency;
+                                        t[i] = pi;
+                                }
+                        }
+                        return t;
+                }),
+                "m_pGameInfoObj", sol::property([](CGameClient::CSnapState &s) -> CNetObj_GameInfo* { return (CNetObj_GameInfo*)s.m_pGameInfoObj; }),
+                "m_pGameDataObj", sol::property([](CGameClient::CSnapState &s) -> CNetObj_GameData* { return (CNetObj_GameData*)s.m_pGameDataObj; })
+        );
+
+        // ===================== CClientData =====================
         lua.new_usertype<CGameClient::CClientData>("CClientData",
                 "m_aName", sol::property([](CGameClient::CClientData &d) -> std::string { return std::string(d.m_aName); }),
                 "m_aClan", sol::property([](CGameClient::CClientData &d) -> std::string { return std::string(d.m_aClan); }),
@@ -856,13 +743,281 @@ void CCodeExec::RegisterRawAPI()
                 "m_PrevPredicted", sol::property([](CGameClient::CClientData &d) -> CCharacterCore& { return d.m_PrevPredicted; }),
                 "m_RenderCur", &CGameClient::CClientData::m_RenderCur,
                 "m_RenderPrev", &CGameClient::CClientData::m_RenderPrev,
-                // Methods
+                "m_aSwitchStates", sol::property([this, &lua](CGameClient::CClientData &d) -> sol::table {
+                        auto t = lua.create_table();
+                        for(int i = 0; i < 256; i++) t[i] = d.m_aSwitchStates[i];
+                        return t;
+                }),
                 "ClientId", &CGameClient::CClientData::ClientId,
                 "Reset", [](CGameClient::CClientData &d) { d.Reset(); },
-                "UpdateRenderInfo", [](CGameClient::CClientData &d) { d.UpdateRenderInfo(); }
+                "UpdateRenderInfo", [](CGameClient::CClientData &d) { d.UpdateRenderInfo(); },
+                "UpdateSkinInfo", [](CGameClient::CClientData &d) { d.UpdateSkinInfo(); }
         );
 
-        // ===== CBotNet — ALL public member names =====
+        // ===================== CCollision =====================
+        lua.new_usertype<CCollision>("CCollision",
+                "m_HighestSwitchNumber", &CCollision::m_HighestSwitchNumber,
+                "Init", [](CCollision &c, CLayers &l) { c.Init(&l); },
+                "Unload", &CCollision::Unload,
+                "CheckPoint", sol::overload(
+                        [](CCollision &c, float x, float y) -> bool { return c.CheckPoint(x, y); },
+                        [](CCollision &c, vec2 p) -> bool { return c.CheckPoint(p); }
+                ),
+                "GetCollisionAt", [](CCollision &c, float x, float y) -> int { return c.GetCollisionAt(x, y); },
+                "GetWidth", &CCollision::GetWidth,
+                "GetHeight", &CCollision::GetHeight,
+                "IntersectLine", [this, &lua](CCollision &c, vec2 p0, vec2 p1) -> sol::object {
+                        vec2 col, before; int res = c.IntersectLine(p0, p1, &col, &before);
+                        auto t = lua.create_table(); t["hit"] = res; t["Collision"] = col; t["BeforeCollision"] = before;
+                        return t;
+                },
+                "IntersectLineTeleWeapon", [this, &lua](CCollision &c, vec2 p0, vec2 p1) -> sol::object {
+                        vec2 col, before; int tele; int res = c.IntersectLineTeleWeapon(p0, p1, &col, &before, &tele);
+                        auto t = lua.create_table(); t["hit"] = res; t["Collision"] = col; t["BeforeCollision"] = before; t["TeleNr"] = tele;
+                        return t;
+                },
+                "IntersectLineTeleHook", [this, &lua](CCollision &c, vec2 p0, vec2 p1) -> sol::object {
+                        vec2 col, before; int tele; int res = c.IntersectLineTeleHook(p0, p1, &col, &before, &tele);
+                        auto t = lua.create_table(); t["hit"] = res; t["Collision"] = col; t["BeforeCollision"] = before; t["TeleNr"] = tele;
+                        return t;
+                },
+                "MovePoint", [this, &lua](CCollision &c, vec2 pos, vec2 vel, float elasticity) -> sol::object {
+                        vec2 p = pos, v = vel; int bounces; c.MovePoint(&p, &v, elasticity, &bounces);
+                        auto t = lua.create_table(); t["Pos"] = p; t["Vel"] = v; t["Bounces"] = bounces;
+                        return t;
+                },
+                "MoveBox", [this, &lua](CCollision &c, vec2 pos, vec2 vel, vec2 size, vec2 elasticity) -> sol::object {
+                        vec2 p = pos, v = vel; bool grounded; c.MoveBox(&p, &v, size, elasticity, &grounded);
+                        auto t = lua.create_table(); t["Pos"] = p; t["Vel"] = v; t["Grounded"] = grounded;
+                        return t;
+                },
+                "TestBox", &CCollision::TestBox,
+                "IsOnGround", &CCollision::IsOnGround,
+                "GetFrontCollisionAt", [](CCollision &c, float x, float y) -> int { return c.GetFrontCollisionAt(x, y); },
+                "IntersectNoLaser", [this, &lua](CCollision &c, vec2 p0, vec2 p1) -> sol::object {
+                        vec2 col, before; int res = c.IntersectNoLaser(p0, p1, &col, &before);
+                        auto t = lua.create_table(); t["hit"] = res; t["Collision"] = col; t["BeforeCollision"] = before;
+                        return t;
+                },
+                "GetPureMapIndex", sol::overload(
+                        [](CCollision &c, float x, float y) -> int { return c.GetPureMapIndex(x, y); },
+                        [](CCollision &c, vec2 p) -> int { return c.GetPureMapIndex(p); }
+                ),
+                "GetMapIndex", [](CCollision &c, vec2 p) -> int { return c.GetMapIndex(p); },
+                "GetMapIndices", [this, &lua](CCollision &c, vec2 prev, vec2 pos, sol::optional<unsigned> maxIdx) -> sol::object {
+                        auto indices = c.GetMapIndices(prev, pos, maxIdx.value_or(0));
+                        auto t = lua.create_table();
+                        for(size_t i = 0; i < indices.size(); i++) t[i+1] = indices[i];
+                        return t;
+                },
+                "IsSolid", [](CCollision &c, int x, int y) -> int { return c.IsSolid(x, y); },
+                "GetTile", &CCollision::GetTile,
+                "GetFrontTile", &CCollision::GetFrontTile,
+                "GetTileIndex", &CCollision::GetTileIndex,
+                "GetFrontTileIndex", &CCollision::GetFrontTileIndex,
+                "GetTileFlags", &CCollision::GetTileFlags,
+                "GetFrontTileFlags", &CCollision::GetFrontTileFlags,
+                "Entity", &CCollision::Entity,
+                "IsTeleport", [](CCollision &c, int idx) -> int { return c.IsTeleport(idx); },
+                "IsEvilTeleport", &CCollision::IsEvilTeleport,
+                "IsSpeedup", [](CCollision &c, int idx) -> bool { return c.IsSpeedup(idx); },
+                "IsTune", [](CCollision &c, int idx) -> int { return c.IsTune(idx); },
+                "GetSpeedup", [this, &lua](CCollision &c, int idx) -> sol::object {
+                        vec2 dir; int force, maxSpeed; c.GetSpeedup(idx, &dir, &force, &maxSpeed);
+                        auto t = lua.create_table(); t["Dir"] = dir; t["Force"] = force; t["MaxSpeed"] = maxSpeed;
+                        return t;
+                },
+                "GetSwitchType", &CCollision::GetSwitchType,
+                "GetSwitchNumber", &CCollision::GetSwitchNumber,
+                "GetSwitchDelay", &CCollision::GetSwitchDelay,
+                "IsWallJump", &CCollision::IsWallJump,
+                "IsTimeCheckpoint", &CCollision::IsTimeCheckpoint,
+                "IsFrontTimeCheckpoint", &CCollision::IsFrontTimeCheckpoint,
+                "TileExists", &CCollision::TileExists,
+                "TileExistsNext", &CCollision::TileExistsNext,
+                "GetPos", &CCollision::GetPos,
+                "IsNoLaser", [](CCollision &c, int x, int y) -> int { return c.IsNoLaser(x, y); },
+                "Layers", [](CCollision &c) -> const CLayers* { return c.Layers(); }
+        );
+
+        // ===================== ALL COMPONENT CLASSES =====================
+
+        // CCamera
+        lua.new_usertype<CCamera>("CCamera",
+                "m_Center", sol::property([](CCamera &cam) -> vec2& { return cam.m_Center; }),
+                "m_ZoomSet", &CCamera::m_ZoomSet,
+                "m_Zooming", &CCamera::m_Zooming,
+                "m_Zoom", &CCamera::m_Zoom,
+                "m_ZoomSmoothingTarget", &CCamera::m_ZoomSmoothingTarget,
+                "m_AutoSpecCameraZooming", &CCamera::m_AutoSpecCameraZooming,
+                "m_AutoSpecCamera", &CCamera::m_AutoSpecCamera,
+                "m_UserZoomTarget", &CCamera::m_UserZoomTarget,
+                "m_DyncamTargetCameraOffset", sol::property([](CCamera &cam) -> vec2& { return cam.m_DyncamTargetCameraOffset; }),
+                "SetZoom", [](CCamera &cam, float target, int smooth, bool isUser) { cam.SetZoom(target, smooth, isUser); },
+                "ZoomAllowed", [](CCamera &cam) -> bool { return cam.ZoomAllowed(); },
+                "Deadzone", [](CCamera &cam) -> int { return cam.Deadzone(); },
+                "FollowFactor", [](CCamera &cam) -> int { return cam.FollowFactor(); },
+                "CamType", [](CCamera &cam) -> int { return cam.CamType(); },
+                "ZoomStepsToValue", &CCamera::ZoomStepsToValue,
+                "SpectatingPlayer", [](CCamera &cam) -> bool { return cam.SpectatingPlayer(); },
+                "ResetAutoSpecCamera", [](CCamera &cam) { cam.ResetAutoSpecCamera(); }
+        );
+
+        // CChat
+        lua.new_usertype<CChat>("CChat",
+                "IsActive", [](CChat &c) -> bool { return c.IsActive(); },
+                "AddLine", [](CChat &c, int cid, int team, const std::string &msg) { c.AddLine(cid, team, msg.c_str()); },
+                "Echo", [](CChat &c, const std::string &msg) { c.Echo(msg.c_str()); },
+                "SendChat", [](CChat &c, int team, const std::string &msg) { c.SendChat(team, msg.c_str()); },
+                "SendChatQueued", [](CChat &c, const std::string &msg) { c.SendChatQueued(msg.c_str()); },
+                "EnableMode", [](CChat &c, int team) { c.EnableMode(team); },
+                "DisableMode", [](CChat &c) { c.DisableMode(); },
+                "ClearLines", [](CChat &c) { c.ClearLines(); },
+                "RegisterCommand", [](CChat &c, const std::string &name, const std::string &params, const std::string &help) { c.RegisterCommand(name.c_str(), params.c_str(), help.c_str()); },
+                "UnregisterCommand", [](CChat &c, const std::string &name) { c.UnregisterCommand(name.c_str()); },
+                "FontSize", [](CChat &c) -> float { return c.FontSize(); }
+        );
+
+        // CControls
+        lua.new_usertype<CControls>("CControls",
+                "m_aInputData", sol::property([this, &lua](CControls &c) -> sol::table {
+                        auto t = lua.create_table();
+                        for(int i = 0; i < MAX_DUMMIES; i++) t[i] = std::ref(c.m_aInputData[i]);
+                        return t;
+                }),
+                "m_aLastData", sol::property([this, &lua](CControls &c) -> sol::table {
+                        auto t = lua.create_table();
+                        for(int i = 0; i < MAX_DUMMIES; i++) t[i] = std::ref(c.m_aLastData[i]);
+                        return t;
+                }),
+                "m_aMousePos", sol::property([this, &lua](CControls &c) -> sol::table {
+                        auto t = lua.create_table();
+                        for(int i = 0; i < MAX_DUMMIES; i++) t[i] = c.m_aMousePos[i];
+                        return t;
+                }),
+                "m_aTargetPos", sol::property([this, &lua](CControls &c) -> sol::table {
+                        auto t = lua.create_table();
+                        for(int i = 0; i < MAX_DUMMIES; i++) t[i] = c.m_aTargetPos[i];
+                        return t;
+                }),
+                "m_aAmmoCount", sol::property([this, &lua](CControls &c) -> sol::table {
+                        auto t = lua.create_table();
+                        for(int i = 0; i < NUM_WEAPONS; i++) t[i] = c.m_aAmmoCount[i];
+                        return t;
+                }),
+                "m_LastSendTime", &CControls::m_LastSendTime,
+                "m_aInputDirectionLeft", sol::property([this, &lua](CControls &c) -> sol::table {
+                        auto t = lua.create_table();
+                        for(int i = 0; i < MAX_DUMMIES; i++) t[i] = c.m_aInputDirectionLeft[i];
+                        return t;
+                }),
+                "m_aInputDirectionRight", sol::property([this, &lua](CControls &c) -> sol::table {
+                        auto t = lua.create_table();
+                        for(int i = 0; i < MAX_DUMMIES; i++) t[i] = c.m_aInputDirectionRight[i];
+                        return t;
+                }),
+                "m_aShowHookColl", sol::property([this, &lua](CControls &c) -> sol::table {
+                        auto t = lua.create_table();
+                        for(int i = 0; i < MAX_DUMMIES; i++) t[i] = c.m_aShowHookColl[i];
+                        return t;
+                }),
+                "ResetInput", [](CControls &c, int d) { c.ResetInput(d); },
+                "ClampMousePos", [](CControls &c) { c.ClampMousePos(); },
+                "GetMinMouseDistance", [](CControls &c) -> float { return c.GetMinMouseDistance(); },
+                "GetMaxMouseDistance", [](CControls &c) -> float { return c.GetMaxMouseDistance(); }
+        );
+
+        // CEffects
+        lua.new_usertype<CEffects>("CEffects",
+                "BulletTrail", [](CEffects &e, vec2 p, float a, float t) { e.BulletTrail(p, a, t); },
+                "SmokeTrail", [](CEffects &e, vec2 p, vec2 v, float a, float t) { e.SmokeTrail(p, v, a, t); },
+                "SkidTrail", [](CEffects &e, vec2 p, vec2 v, int d, float a, float vol) { e.SkidTrail(p, v, d, a, vol); },
+                "Explosion", [](CEffects &e, vec2 p, float a) { e.Explosion(p, a); },
+                "HammerHit", [](CEffects &e, vec2 p, float a, float vol) { e.HammerHit(p, a, vol); },
+                "AirJump", [](CEffects &e, vec2 p, float a, float vol) { e.AirJump(p, a, vol); },
+                "DamageIndicator", [](CEffects &e, vec2 p, vec2 d, float a) { e.DamageIndicator(p, d, a); },
+                "PlayerSpawn", [](CEffects &e, vec2 p, float a, float vol) { e.PlayerSpawn(p, a, vol); },
+                "PlayerDeath", [](CEffects &e, vec2 p, int cid, float a) { e.PlayerDeath(p, cid, a); },
+                "PowerupShine", [](CEffects &e, vec2 p, vec2 s, float a) { e.PowerupShine(p, s, a); },
+                "FreezingFlakes", [](CEffects &e, vec2 p, vec2 s, float a) { e.FreezingFlakes(p, s, a); },
+                "SparkleTrail", [](CEffects &e, vec2 p, float a) { e.SparkleTrail(p, a); },
+                "Confetti", [](CEffects &e, vec2 p, float a) { e.Confetti(p, a); },
+                "Update", [](CEffects &e) { e.Update(); }
+        );
+
+        // CFlow
+        lua.new_usertype<CFlow>("CFlow",
+                "Get", [](CFlow &f, vec2 p) -> vec2 { return f.Get(p); },
+                "Add", [](CFlow &f, vec2 p, vec2 v, float s) { f.Add(p, v, s); },
+                "Update", [](CFlow &f) { f.Update(); }
+        );
+
+        // CVoting
+        lua.new_usertype<CVoting>("CVoting",
+                "CallvoteSpectate", [](CVoting &v, int cid, const std::string &r, bool f) { v.CallvoteSpectate(cid, r.c_str(), f); },
+                "CallvoteKick", [](CVoting &v, int cid, const std::string &r, bool f) { v.CallvoteKick(cid, r.c_str(), f); },
+                "Vote", [](CVoting &v, int val) { v.Vote(val); },
+                "SecondsLeft", [](CVoting &v) -> int { return v.SecondsLeft(); },
+                "IsVoting", [](CVoting &v) -> bool { return v.IsVoting(); },
+                "TakenChoice", [](CVoting &v) -> int { return v.TakenChoice(); },
+                "VoteDescription", [](CVoting &v) -> std::string { return std::string(v.VoteDescription()); },
+                "VoteReason", [](CVoting &v) -> std::string { return std::string(v.VoteReason()); },
+                "IsReceivingOptions", [](CVoting &v) -> bool { return v.IsReceivingOptions(); },
+                "NumOptions", [](CVoting &v) -> int { return v.NumOptions(); }
+        );
+
+        // CSpectator
+        lua.new_usertype<CSpectator>("CSpectator",
+                "Spectate", [](CSpectator &s, int id) { s.Spectate(id); },
+                "SpectateClosest", [](CSpectator &s) { s.SpectateClosest(); },
+                "IsActive", [](CSpectator &s) -> bool { return s.IsActive(); }
+        );
+
+        // CEmoticon
+        lua.new_usertype<CEmoticon>("CEmoticon",
+                "Emote", [](CEmoticon &e, int t) { e.Emote(t); },
+                "EyeEmote", [](CEmoticon &e, int t) { e.EyeEmote(t); },
+                "IsActive", [](CEmoticon &e) -> bool { return e.IsActive(); }
+        );
+
+        // CMotd
+        lua.new_usertype<CMotd>("CMotd",
+                "ServerMotd", [](CMotd &m) -> std::string { return std::string(m.ServerMotd()); },
+                "ServerMotdUpdateTime", [](CMotd &m) -> int64_t { return m.ServerMotdUpdateTime(); },
+                "Clear", [](CMotd &m) { m.Clear(); },
+                "IsActive", [](CMotd &m) -> bool { return m.IsActive(); }
+        );
+
+        // CBroadcast
+        lua.new_usertype<CBroadcast>("CBroadcast",
+                "DoBroadcast", [](CBroadcast &b, const std::string &s) { b.DoBroadcast(s.c_str()); }
+        );
+
+        // CGhost
+        lua.new_usertype<CGhost>("CGhost",
+                "m_AllowRestart", &CGhost::m_AllowRestart,
+                "FreeSlots", [](CGhost &g) -> int { return g.FreeSlots(); },
+                "Load", [](CGhost &g, const std::string &f) { g.Load(f.c_str()); },
+                "Unload", [](CGhost &g, int s) { g.Unload(s); },
+                "UnloadAll", [](CGhost &g) { g.UnloadAll(); },
+                "GetGhostDir", [](CGhost &g) -> std::string { return std::string(g.GetGhostDir()); }
+        );
+
+        // CBotControl
+        lua.new_usertype<CBotControl>("CBotControl",
+                "ActionInput", [](CBotControl &b, const std::string &a, int ms, int d) { b.ActionInput(a.c_str(), ms, d); },
+                "ActionAim", [](CBotControl &b, int dx, int dy, int d) { b.ActionAim(dx, dy, d); },
+                "ActionOverrideAim", [](CBotControl &b, int x, int y, int d) { b.ActionOverrideAim(x, y, d); },
+                "ActionStop", [](CBotControl &b, int d) { b.ActionStop(d); },
+                "IsBotActiveJump", [](CBotControl &b, int d) -> bool { return b.IsBotActiveJump(d); },
+                "IsBotActiveHook", [](CBotControl &b, int d) -> bool { return b.IsBotActiveHook(d); },
+                "IsBotActiveFire", [](CBotControl &b, int d) -> bool { return b.IsBotActiveFire(d); },
+                "IsBotActiveMove", [](CBotControl &b, int d) -> bool { return b.IsBotActiveMove(d); },
+                "IsBotActiveAim", [](CBotControl &b, int d) -> bool { return b.IsBotActiveAim(d); },
+                "IsBotActiveAny", [](CBotControl &b, int d) -> bool { return b.IsBotActiveAny(d); }
+        );
+
+        // CBotNet
         lua.new_usertype<CBotNet>("CBotNet",
                 "m_AttackEnabled", &CBotNet::m_AttackEnabled,
                 "m_AutoAim", &CBotNet::m_AutoAim,
@@ -898,7 +1053,6 @@ void CCodeExec::RegisterRawAPI()
                 "m_CopyTargetID", &CBotNet::m_CopyTargetID,
                 "m_RandomAim", &CBotNet::m_RandomAim,
                 "m_RandomAimInterval", &CBotNet::m_RandomAimInterval,
-                // Pathfinder
                 "m_PathfinderEnabled", &CBotNet::m_PathfinderEnabled,
                 "m_PfSimulatePlayers", &CBotNet::m_PfSimulatePlayers,
                 "m_PfSimulateMethod", &CBotNet::m_PfSimulateMethod,
@@ -907,7 +1061,6 @@ void CCodeExec::RegisterRawAPI()
                 "m_PfViewRadius", &CBotNet::m_PfViewRadius,
                 "m_PfSnap", &CBotNet::m_PfSnap,
                 "m_PfHookEnabled", &CBotNet::m_PfHookEnabled,
-                // Kinodynamic
                 "m_KinodynamicEnabled", &CBotNet::m_KinodynamicEnabled,
                 "m_KinoCandidates", &CBotNet::m_KinoCandidates,
                 "m_KinoTicks", &CBotNet::m_KinoTicks,
@@ -915,816 +1068,356 @@ void CCodeExec::RegisterRawAPI()
                 "m_KinoCacheTicks", &CBotNet::m_KinoCacheTicks,
                 "m_KinoShowPath", &CBotNet::m_KinoShowPath,
                 "m_KinoShowField", &CBotNet::m_KinoShowField,
-                // Map grid
                 "m_MapWidth", &CBotNet::m_MapWidth,
                 "m_MapHeight", &CBotNet::m_MapHeight,
                 "m_MapGridLoaded", &CBotNet::m_MapGridLoaded,
-                "m_aLastMapName", sol::property([](CBotNet &bn) -> std::string { return std::string(bn.m_aLastMapName); }),
-                // Methods
-                "IsDummyActive", [](CBotNet &bn, int d) -> bool { return bn.IsDummyActive(d); },
-                "ResetDummyInputs", [](CBotNet &bn, int d) { bn.ResetDummyInputs(d); },
-                "IsTileWalkable", [](CBotNet &bn, int tx, int ty) -> bool { return bn.IsTileWalkable(tx, ty); },
-                "IsTileFreeze", [](CBotNet &bn, int tx, int ty) -> bool { return bn.IsTileFreeze(tx, ty); },
-                "ProcessDummy", [](CBotNet &bn, int d) { bn.ProcessDummy(d); }
+                "m_aLastMapName", sol::property([](CBotNet &b) -> std::string { return std::string(b.m_aLastMapName); }),
+                "IsDummyActive", [](CBotNet &b, int d) -> bool { return b.IsDummyActive(d); },
+                "ResetDummyInputs", [](CBotNet &b, int d) { b.ResetDummyInputs(d); },
+                "IsTileWalkable", [](CBotNet &b, int tx, int ty) -> bool { return b.IsTileWalkable(tx, ty); },
+                "IsTileFreeze", [](CBotNet &b, int tx, int ty) -> bool { return b.IsTileFreeze(tx, ty); },
+                "ProcessDummy", [](CBotNet &b, int d) { b.ProcessDummy(d); }
         );
 
-        // ===== CChat — ALL public member names and methods =====
-        lua.new_usertype<CChat>("CChat",
-                "m_Mode", sol::property([](CChat &chat) -> int { return chat.IsActive() ? 1 : 0; }),
-                "m_Show", sol::property([](CChat &chat) -> bool { return chat.IsActive(); }),
-                "AddLine", [this](CChat &chat, int clientId, int team, const std::string &msg) {
-                        chat.AddLine(clientId, team, msg.c_str());
-                },
-                "Echo", [](CChat &chat, const std::string &msg) {
-                        chat.Echo(msg.c_str());
-                },
-                "SendChat", [this](CChat &chat, int team, const std::string &msg) {
-                        chat.SendChat(team, msg.c_str());
-                },
-                "SendChatQueued", [](CChat &chat, const std::string &msg) {
-                        chat.SendChatQueued(msg.c_str());
-                },
-                "EnableMode", [](CChat &chat, int team) {
-                        chat.EnableMode(team);
-                },
-                "DisableMode", [](CChat &chat) {
-                        chat.DisableMode();
-                },
-                "IsActive", [](CChat &chat) -> bool {
-                        return chat.IsActive();
-                },
-                "ClearLines", [](CChat &chat) {
-                        chat.ClearLines();
-                },
-                "RegisterCommand", [](CChat &chat, const std::string &name, const std::string &params, const std::string &help) {
-                        chat.RegisterCommand(name.c_str(), params.c_str(), help.c_str());
-                },
-                "UnregisterCommand", [](CChat &chat, const std::string &name) {
-                        chat.UnregisterCommand(name.c_str());
-                },
-                "FontSize", [](CChat &chat) -> float {
-                        return chat.FontSize();
-                }
-        );
-
-        // ===== CControls — ALL public member names =====
-        lua.new_usertype<CControls>("CControls",
-                "m_aInputData", sol::property([this, &lua](CControls &c) -> sol::table {
-                        auto t = lua.create_table();
-                        for(int i = 0; i < MAX_DUMMIES; i++)
-                                t[i] = std::ref(c.m_aInputData[i]);
-                        return t;
-                }),
-                "m_aLastData", sol::property([this, &lua](CControls &c) -> sol::table {
-                        auto t = lua.create_table();
-                        for(int i = 0; i < MAX_DUMMIES; i++)
-                                t[i] = std::ref(c.m_aLastData[i]);
-                        return t;
-                }),
-                "m_aMousePos", sol::property([this, &lua](CControls &c) -> sol::table {
-                        auto t = lua.create_table();
-                        for(int i = 0; i < MAX_DUMMIES; i++)
-                                t[i] = c.m_aMousePos[i];
-                        return t;
-                }),
-                "m_aMousePosOnAction", sol::property([this, &lua](CControls &c) -> sol::table {
-                        auto t = lua.create_table();
-                        for(int i = 0; i < MAX_DUMMIES; i++)
-                                t[i] = c.m_aMousePosOnAction[i];
-                        return t;
-                }),
-                "m_aTargetPos", sol::property([this, &lua](CControls &c) -> sol::table {
-                        auto t = lua.create_table();
-                        for(int i = 0; i < MAX_DUMMIES; i++)
-                                t[i] = c.m_aTargetPos[i];
-                        return t;
-                }),
-                "m_aAmmoCount", sol::property([this, &lua](CControls &c) -> sol::table {
-                        auto t = lua.create_table();
-                        for(int i = 0; i < NUM_WEAPONS; i++)
-                                t[i] = c.m_aAmmoCount[i];
-                        return t;
-                }),
-                "m_aInputDirectionLeft", sol::property([this, &lua](CControls &c) -> sol::table {
-                        auto t = lua.create_table();
-                        for(int i = 0; i < MAX_DUMMIES; i++)
-                                t[i] = c.m_aInputDirectionLeft[i];
-                        return t;
-                }),
-                "m_aInputDirectionRight", sol::property([this, &lua](CControls &c) -> sol::table {
-                        auto t = lua.create_table();
-                        for(int i = 0; i < MAX_DUMMIES; i++)
-                                t[i] = c.m_aInputDirectionRight[i];
-                        return t;
-                }),
-                "m_aShowHookColl", sol::property([this, &lua](CControls &c) -> sol::table {
-                        auto t = lua.create_table();
-                        for(int i = 0; i < MAX_DUMMIES; i++)
-                                t[i] = c.m_aShowHookColl[i];
-                        return t;
-                }),
-                "m_LastSendTime", &CControls::m_LastSendTime,
-                "ResetInput", [](CControls &c, int dummy) { c.ResetInput(dummy); },
-                "ClampMousePos", [](CControls &c) { c.ClampMousePos(); },
-                "SnapInput", [this](CControls &c, sol::object data) -> int {
-                        // Can't easily pass int* from Lua, skip
-                        return 0;
-                }
-        );
-
-        // ===== CCollision — ALL public method names =====
-        lua.new_usertype<CCollision>("CCollision",
-                "GetWidth", &CCollision::GetWidth,
-                "GetHeight", &CCollision::GetHeight,
-                "CheckPoint", sol::overload(
-                        [](CCollision &c, float x, float y) -> bool { return c.CheckPoint(x, y); },
-                        [](CCollision &c, vec2 pos) -> bool { return c.CheckPoint(pos); }
-                ),
-                "IsSolid", [](CCollision &c, int x, int y) -> int { return c.IsSolid(x, y); },
-                "GetTile", &CCollision::GetTile,
-                "GetFrontTile", &CCollision::GetFrontTile,
-                "GetTileIndex", &CCollision::GetTileIndex,
-                "GetFrontTileIndex", &CCollision::GetFrontTileIndex,
-                "GetCollisionAt", [](CCollision &c, float x, float y) -> int { return c.GetCollisionAt(x, y); },
-                "GetFrontCollisionAt", [](CCollision &c, float x, float y) -> int { return c.GetFrontCollisionAt(x, y); },
-                "TestBox", &CCollision::TestBox,
-                "IsOnGround", &CCollision::IsOnGround,
-                "IntersectLine", [this, &lua](CCollision &c, vec2 p0, vec2 p1) -> sol::object {
-                        vec2 col, before;
-                        int res = c.IntersectLine(p0, p1, &col, &before);
-                        auto t = lua.create_table();
-                        t["hit"] = res;
-                        t["Collision"] = col;
-                        t["BeforeCollision"] = before;
-                        return t;
-                },
-                "IntersectNoLaser", [this, &lua](CCollision &c, vec2 p0, vec2 p1) -> sol::object {
-                        vec2 col, before;
-                        int res = c.IntersectNoLaser(p0, p1, &col, &before);
-                        auto t = lua.create_table();
-                        t["hit"] = res;
-                        t["Collision"] = col;
-                        t["BeforeCollision"] = before;
-                        return t;
-                },
-                "GetPureMapIndex", sol::overload(
-                        [](CCollision &c, float x, float y) -> int { return c.GetPureMapIndex(x, y); },
-                        [](CCollision &c, vec2 pos) -> int { return c.GetPureMapIndex(pos); }
-                ),
-                "IsTeleport", &CCollision::IsTeleport,
-                "IsEvilTeleport", &CCollision::IsEvilTeleport,
-                "IsSpeedup", &CCollision::IsSpeedup,
-                "IsTune", &CCollision::IsTune,
-                "GetSwitchType", &CCollision::GetSwitchType,
-                "GetSwitchNumber", &CCollision::GetSwitchNumber,
-                "GetSwitchDelay", &CCollision::GetSwitchDelay,
-                "IsTimeCheckpoint", &CCollision::IsTimeCheckpoint,
-                "IsNoLaser", [](CCollision &c, int x, int y) -> int { return c.IsNoLaser(x, y); },
-                "SetCollisionAt", &CCollision::SetCollisionAt
-        );
-
-        // ===== CCamera — ALL public member names =====
-        lua.new_usertype<CCamera>("CCamera",
-                "m_Center", sol::property([](CCamera &cam) -> vec2& { return cam.m_Center; }),
-                "m_ZoomSet", &CCamera::m_ZoomSet,
-                "m_Zooming", &CCamera::m_Zooming,
-                "m_Zoom", &CCamera::m_Zoom,
-                "m_ZoomSmoothingTarget", &CCamera::m_ZoomSmoothingTarget,
-                "m_AutoSpecCameraZooming", &CCamera::m_AutoSpecCameraZooming,
-                "m_AutoSpecCamera", &CCamera::m_AutoSpecCamera,
-                "m_UserZoomTarget", &CCamera::m_UserZoomTarget,
-                "m_DyncamTargetCameraOffset", &CCamera::m_DyncamTargetCameraOffset,
-                "m_aDyncamCurrentCameraOffset", sol::property([this, &lua](CCamera &cam) -> sol::table {
-                        auto t = lua.create_table();
-                        for(int i = 0; i < MAX_DUMMIES; i++)
-                                t[i] = cam.m_aDyncamCurrentCameraOffset[i];
-                        return t;
-                }),
-                // Methods
-                "CamType", [](CCamera &cam) -> int { return cam.CamType(); },
-                "SetZoom", [](CCamera &cam, float target, int smoothness, bool isUser) { cam.SetZoom(target, smoothness, isUser); },
-                "ZoomAllowed", [](CCamera &cam) -> bool { return cam.ZoomAllowed(); },
-                "SpectatingPlayer", [](CCamera &cam) -> bool { return cam.SpectatingPlayer(); },
-                "ResetAutoSpecCamera", [](CCamera &cam) { cam.ResetAutoSpecCamera(); },
-                "ToggleAutoSpecCamera", [](CCamera &cam) { cam.ToggleAutoSpecCamera(); },
-                "UpdateCamera", [](CCamera &cam) { cam.UpdateCamera(); }
-        );
-
-        // ===== CEffects — ALL public methods =====
-        lua.new_usertype<CEffects>("CEffects",
-                "BulletTrail", [](CEffects &e, vec2 pos, float alpha, float timePassed) { e.BulletTrail(pos, alpha, timePassed); },
-                "SmokeTrail", [](CEffects &e, vec2 pos, vec2 vel, float alpha, float timePassed) { e.SmokeTrail(pos, vel, alpha, timePassed); },
-                "SkidTrail", [](CEffects &e, vec2 pos, vec2 vel, int dir, float alpha, float vol) { e.SkidTrail(pos, vel, dir, alpha, vol); },
-                "Explosion", [](CEffects &e, vec2 pos, float alpha) { e.Explosion(pos, alpha); },
-                "HammerHit", [](CEffects &e, vec2 pos, float alpha, float vol) { e.HammerHit(pos, alpha, vol); },
-                "AirJump", [](CEffects &e, vec2 pos, float alpha, float vol) { e.AirJump(pos, alpha, vol); },
-                "DamageIndicator", [](CEffects &e, vec2 pos, vec2 dir, float alpha) { e.DamageIndicator(pos, dir, alpha); },
-                "PlayerSpawn", [](CEffects &e, vec2 pos, float alpha, float vol) { e.PlayerSpawn(pos, alpha, vol); },
-                "PlayerDeath", [](CEffects &e, vec2 pos, int clientId, float alpha) { e.PlayerDeath(pos, clientId, alpha); },
-                "PowerupShine", [](CEffects &e, vec2 pos, vec2 size, float alpha) { e.PowerupShine(pos, size, alpha); },
-                "FreezingFlakes", [](CEffects &e, vec2 pos, vec2 size, float alpha) { e.FreezingFlakes(pos, size, alpha); },
-                "SparkleTrail", [](CEffects &e, vec2 pos, float alpha) { e.SparkleTrail(pos, alpha); },
-                "Confetti", [](CEffects &e, vec2 pos, float alpha) { e.Confetti(pos, alpha); },
-                "OnRender", [](CEffects &e) { e.OnRender(); }
-        );
-
-        // ===== CFlow — ALL public methods =====
-        lua.new_usertype<CFlow>("CFlow",
-                "Get", [](CFlow &f, vec2 pos) -> vec2 { return f.Get(pos); },
-                "Add", [](CFlow &f, vec2 pos, vec2 vel, float size) { f.Add(pos, vel, size); },
-                "Update", [](CFlow &f) { f.Update(); }
-        );
-
-        // ===== CEmoticon — ALL public methods =====
-        lua.new_usertype<CEmoticon>("CEmoticon",
-                "Emote", [](CEmoticon &e, int emote) { e.Emote(emote); },
-                "EyeEmote", [](CEmoticon &e, int eyeEmote) { e.EyeEmote(eyeEmote); },
-                "IsActive", [](CEmoticon &e) -> bool { return e.IsActive(); }
-        );
-
-        // ===== CMotd — ALL public methods =====
-        lua.new_usertype<CMotd>("CMotd",
-                "ServerMotd", [](CMotd &m) -> std::string { return std::string(m.ServerMotd()); },
-                "ServerMotdUpdateTime", [](CMotd &m) -> int64_t { return m.ServerMotdUpdateTime(); },
-                "Clear", [](CMotd &m) { m.Clear(); },
-                "IsActive", [](CMotd &m) -> bool { return m.IsActive(); }
-        );
-
-        // ===== CBroadcast — ALL public methods =====
-        lua.new_usertype<CBroadcast>("CBroadcast",
-                "DoBroadcast", [](CBroadcast &b, const std::string &text) { b.DoBroadcast(text.c_str()); }
-        );
-
-        // ===== CVoting — ALL public methods =====
-        lua.new_usertype<CVoting>("CVoting",
-                "CallvoteSpectate", [](CVoting &v, int clientId, const std::string &reason, bool forceVote) { v.CallvoteSpectate(clientId, reason.c_str(), forceVote); },
-                "CallvoteKick", [](CVoting &v, int clientId, const std::string &reason, bool forceVote) { v.CallvoteKick(clientId, reason.c_str(), forceVote); },
-                "CallvoteOption", [](CVoting &v, int optionId, const std::string &reason, bool forceVote) { v.CallvoteOption(optionId, reason.c_str(), forceVote); },
-                "RemovevoteOption", [](CVoting &v, int optionId) { v.RemovevoteOption(optionId); },
-                "AddvoteOption", [](CVoting &v, const std::string &desc, const std::string &cmd) { v.AddvoteOption(desc.c_str(), cmd.c_str()); },
-                "Vote", [](CVoting &v, int v2) { v.Vote(v2); },
-                "SecondsLeft", [](CVoting &v) -> int { return v.SecondsLeft(); },
-                "IsVoting", [](CVoting &v) -> bool { return v.IsVoting(); },
-                "TakenChoice", [](CVoting &v) -> int { return v.TakenChoice(); },
-                "VoteDescription", [](CVoting &v) -> std::string { return std::string(v.VoteDescription()); },
-                "VoteReason", [](CVoting &v) -> std::string { return std::string(v.VoteReason()); },
-                "IsReceivingOptions", [](CVoting &v) -> bool { return v.IsReceivingOptions(); },
-                "NumOptions", [](CVoting &v) -> int { return v.NumOptions(); }
-        );
-
-        // ===== CSpectator — ALL public methods =====
-        lua.new_usertype<CSpectator>("CSpectator",
-                "Spectate", [](CSpectator &s, int id) { s.Spectate(id); },
-                "SpectateClosest", [](CSpectator &s) { s.SpectateClosest(); },
-                "IsActive", [](CSpectator &s) -> bool { return s.IsActive(); }
-        );
-
-        // ===== CGhost — ALL public members/methods =====
-        lua.new_usertype<CGhost>("CGhost",
-                "m_AllowRestart", &CGhost::m_AllowRestart,
-                "FreeSlots", [](CGhost &g) -> int { return g.FreeSlots(); },
-                "Load", [](CGhost &g, const std::string &fn) -> int { return g.Load(fn.c_str()); },
-                "Unload", [](CGhost &g, int slot) { g.Unload(slot); },
-                "UnloadAll", [](CGhost &g) { g.UnloadAll(); },
-                "GetGhostDir", [](CGhost &g) -> std::string { return std::string(g.GetGhostDir()); }
-        );
-
-        // ===== CBotControl — ALL public methods =====
-        lua.new_usertype<CBotControl>("CBotControl",
-                "ActionInput", [](CBotControl &bc, const std::string &name, int ms, int dummy) { bc.ActionInput(name.c_str(), ms, dummy); },
-                "ActionAim", [](CBotControl &bc, int dx, int dy, int dummy) { bc.ActionAim(dx, dy, dummy); },
-                "ActionOverrideAim", [](CBotControl &bc, int x, int y, int dummy) { bc.ActionOverrideAim(x, y, dummy); },
-                "ActionStop", [](CBotControl &bc, int dummy) { bc.ActionStop(dummy); },
-                "IsBotActiveAny", [](CBotControl &bc, int dummy) -> bool { return bc.IsBotActiveAny(dummy); },
-                "IsBotActiveJump", [](CBotControl &bc, int dummy) -> bool { return bc.IsBotActiveJump(dummy); },
-                "IsBotActiveHook", [](CBotControl &bc, int dummy) -> bool { return bc.IsBotActiveHook(dummy); },
-                "IsBotActiveFire", [](CBotControl &bc, int dummy) -> bool { return bc.IsBotActiveFire(dummy); },
-                "IsBotActiveMove", [](CBotControl &bc, int dummy) -> bool { return bc.IsBotActiveMove(dummy); },
-                "IsBotActiveAim", [](CBotControl &bc, int dummy) -> bool { return bc.IsBotActiveAim(dummy); }
-        );
-
-        // ===== CIRC — ALL public methods =====
+        // CIRC
         lua.new_usertype<CIRC>("CIRC",
-                "SendIRC", [](CIRC &irc, const std::string &text) { irc.SendIRC(text.c_str()); },
-                "GetClientPrefix", [](CIRC &irc, int clientId) -> std::string { return std::string(irc.GetClientPrefix(clientId)); }
+                "SendIRC", [](CIRC &i, const std::string &s) { i.SendIRC(s.c_str()); },
+                "GetClientPrefix", [](CIRC &i, int id) -> std::string { return std::string(i.GetClientPrefix(id)); }
         );
 
-        // ===== CClientStats — key public members =====
-        lua.new_usertype<CGameClient::CClientStats>("CClientStats",
-                "m_aFragsWith", sol::property([this, &lua](CGameClient::CClientStats &s) -> sol::table {
-                        auto t = lua.create_table();
-                        for(int i = 0; i < NUM_WEAPONS; i++)
-                                t[i] = s.m_aFragsWith[i];
-                        return t;
-                }),
-                "m_aDeathsFrom", sol::property([this, &lua](CGameClient::CClientStats &s) -> sol::table {
-                        auto t = lua.create_table();
-                        for(int i = 0; i < NUM_WEAPONS; i++)
-                                t[i] = s.m_aDeathsFrom[i];
-                        return t;
-                }),
-                "m_Frags", &CGameClient::CClientStats::m_Frags,
-                "m_Deaths", &CGameClient::CClientStats::m_Deaths,
-                "m_Suicides", &CGameClient::CClientStats::m_Suicides,
-                "m_BestSpree", &CGameClient::CClientStats::m_BestSpree,
-                "m_CurrentSpree", &CGameClient::CClientStats::m_CurrentSpree,
-                "m_FlagGrabs", &CGameClient::CClientStats::m_FlagGrabs,
-                "m_FlagCaptures", &CGameClient::CClientStats::m_FlagCaptures,
-                "IsActive", [](CGameClient::CClientStats &s) -> bool { return s.IsActive(); }
+        // CParticles
+        lua.new_usertype<CParticles>("CParticles",
+                "Add", [](CParticles &p, int group, sol::table part, float timePassed) { /* simplified */ }
         );
 
-        // ===== CGameClient — THE BIG ONE — ALL public member names =====
-        // This is what makes Lua code look like C++ code.
-        // gc.m_PredictedChar.m_Vel.x  ==  GameClient()->m_PredictedChar.m_Vel.x
-        // gc.m_aClients[3].m_aName    ==  GameClient()->m_aClients[3].m_aName
-        // gc.m_Camera.m_Zoom          ==  GameClient()->m_Camera.m_Zoom
-        // gc.m_GameInfo.m_FlagStartsRace  ==  GameClient()->m_GameInfo.m_FlagStartsRace
+        // CDamageInd
+        lua.new_usertype<CDamageInd>("CDamageInd",
+                "Create", [](CDamageInd &d, vec2 pos, vec2 dir, float alpha) { d.Create(pos, dir, alpha); }
+        );
+
+        // CSounds
+        lua.new_usertype<CSounds>("CSounds",
+                "Play", [](CSounds &s, int ch, int sid, float vol) { s.Play(ch, sid, vol); },
+                "PlayAt", [](CSounds &s, int ch, int sid, float vol, vec2 pos) { s.PlayAt(ch, sid, vol, pos); },
+                "Stop", [](CSounds &s, int sid) { s.Stop(sid); },
+                "IsPlaying", [](CSounds &s, int sid) -> bool { return s.IsPlaying(sid); },
+                "ClearQueue", [](CSounds &s) { s.ClearQueue(); }
+        );
+
+        // CMenus
+        lua.new_usertype<CMenus>("CMenus",
+                "m_Dummy", &CMenus::m_Dummy,
+                "IsInit", [](CMenus &m) -> bool { return m.IsInit(); },
+                "IsActive", [](CMenus &m) -> bool { return m.IsActive(); },
+                "SetActive", [](CMenus &m, bool a) { m.SetActive(a); },
+                "SetMenuPage", [](CMenus &m, int p) { m.SetMenuPage(p); }
+        );
+
+        // CBinds
+        lua.new_usertype<CBinds>("CBinds",
+                "m_MouseOnAction", &CBinds::m_MouseOnAction,
+                "Bind", [](CBinds &b, int key, const std::string &str, bool free, int mod) { b.Bind(key, str.c_str(), free, mod); },
+                "Get", [](CBinds &b, int key, int mod) -> std::string { return std::string(b.Get(key, mod)); },
+                "SetDefaults", [](CBinds &b) { b.SetDefaults(); },
+                "UnbindAll", [](CBinds &b) { b.UnbindAll(); }
+        );
+
+        // CGameConsole
+        lua.new_usertype<CGameConsole>("CGameConsole",
+                "PrintLine", [](CGameConsole &c, int type, const std::string &line) { c.PrintLine(type, line.c_str()); },
+                "Toggle", [](CGameConsole &c, int type) { c.Toggle(type); },
+                "IsActive", [](CGameConsole &c) -> bool { return c.IsActive(); }
+        );
+
+        // CHud
+        lua.new_usertype<CHud>("CHud",
+                "RenderNinjaBarPos", [](CHud &h, float x, float y, float w, float ht, float progress, float alpha) { h.RenderNinjaBarPos(x, y, w, ht, progress, alpha); }
+        );
+
+        // CRaceDemo
+        lua.new_usertype<CRaceDemo>("CRaceDemo",
+                "m_AllowRestart", &CRaceDemo::m_AllowRestart
+        );
+
+        // CLocalServer
+        lua.new_usertype<CLocalServer>("CLocalServer",
+                "IsServerRunning", [](CLocalServer &l) -> bool { return l.IsServerRunning(); },
+                "KillServer", [](CLocalServer &l) { l.KillServer(); }
+        );
+
+        // CImportantAlert
+        lua.new_usertype<CImportantAlert>("CImportantAlert",
+                "IsActive", [](CImportantAlert &a) -> bool { return a.IsActive(); }
+        );
+
+        // CScoreboard
+        lua.new_usertype<CScoreboard>("CScoreboard",
+                "IsActive", [](CScoreboard &s) -> bool { return s.IsActive(); }
+        );
+
+        // CStatboard
+        lua.new_usertype<CStatboard>("CStatboard",
+                "IsActive", [](CStatboard &s) -> bool { return s.IsActive(); }
+        );
+
+        // ===================== CGameWorld (prediction) =====================
+        lua.new_usertype<CGameWorld>("CGameWorld",
+                "m_Core", sol::property([](CGameWorld &w) -> CWorldCore& { return w.m_Core; }),
+                "m_Teams", sol::property([](CGameWorld &w) -> CTeamsCore& { return w.m_Teams; }),
+                "m_GameTick", &CGameWorld::m_GameTick,
+                "m_WorldConfig", sol::property([this, &lua](CGameWorld &w) -> sol::table {
+                        auto t = lua.create_table();
+                        t["m_IsDDRace"] = w.m_WorldConfig.m_IsDDRace;
+                        t["m_IsVanilla"] = w.m_WorldConfig.m_IsVanilla;
+                        t["m_IsFNG"] = w.m_WorldConfig.m_IsFNG;
+                        t["m_InfiniteAmmo"] = w.m_WorldConfig.m_InfiniteAmmo;
+                        t["m_PredictTiles"] = w.m_WorldConfig.m_PredictTiles;
+                        t["m_PredictFreeze"] = w.m_WorldConfig.m_PredictFreeze;
+                        t["m_PredictWeapons"] = w.m_WorldConfig.m_PredictWeapons;
+                        t["m_PredictDDRace"] = w.m_WorldConfig.m_PredictDDRace;
+                        t["m_IsSolo"] = w.m_WorldConfig.m_IsSolo;
+                        t["m_UseTuneZones"] = w.m_WorldConfig.m_UseTuneZones;
+                        t["m_BugDDRaceInput"] = w.m_WorldConfig.m_BugDDRaceInput;
+                        t["m_NoWeakHookAndBounce"] = w.m_WorldConfig.m_NoWeakHookAndBounce;
+                        t["m_PredictEvents"] = w.m_WorldConfig.m_PredictEvents;
+                        return t;
+                }),
+                "GameTick", [](CGameWorld &w) -> int { return w.GameTick(); },
+                "GameTickSpeed", [](CGameWorld &w) -> int { return w.GameTickSpeed(); },
+                "Collision", sol::overload(
+                        [](CGameWorld &w) -> CCollision* { return w.Collision(); },
+                        [](CGameWorld &w) -> const CCollision* { return w.Collision(); }
+                ),
+                "Teams", [](CGameWorld &w) -> CTeamsCore* { return w.Teams(); },
+                "Switchers", [](CGameWorld &w) -> std::vector<SSwitchers>& { return w.Switchers(); },
+                "FindFirst", [](CGameWorld &w, int type) -> CEntity* { return w.FindFirst(type); },
+                "GetEntity", [](CGameWorld &w, int id, int type) -> CEntity* { return w.GetEntity(id, type); },
+                "GetCharacterById", [](CGameWorld &w, int id) -> CCharacter* { return w.GetCharacterById(id); },
+                "Tick", [](CGameWorld &w) { w.Tick(); },
+                "Clear", [](CGameWorld &w) { w.Clear(); },
+                "IsLocalTeam", [](CGameWorld &w, int id) -> bool { return w.IsLocalTeam(id); },
+                "GlobalTuning", sol::overload(
+                        [](CGameWorld &w) -> CTuningParams* { return w.GlobalTuning(); },
+                        [](CGameWorld &w) -> const CTuningParams* { return w.GlobalTuning(); }
+                ),
+                "GetTuning", sol::overload(
+                        [](CGameWorld &w, int i) -> CTuningParams* { return w.GetTuning(i); },
+                        [](CGameWorld &w, int i) -> const CTuningParams* { return w.GetTuning(i); }
+                ),
+                "TuningList", sol::overload(
+                        [](CGameWorld &w) -> CTuningParams* { return w.TuningList(); },
+                        [](CGameWorld &w) -> const CTuningParams* { return w.TuningList(); }
+                ),
+                "FindEntities", [this, &lua](CGameWorld &w, vec2 pos, float radius, int type, int max) -> sol::table {
+                        std::vector<CEntity*> ents(max);
+                        int num = w.FindEntities(pos, radius, ents.data(), max, type);
+                        auto t = lua.create_table();
+                        for(int i = 0; i < num; i++) t[i] = ents[i];
+                        return t;
+                }
+        );
+
+        // ===================== CGameClient (ROOT) =====================
+        lua["gc"] = std::ref(*GameClient());
+
         lua.new_usertype<CGameClient>("CGameClient",
-                // ---- ALL public component members (via std::ref to avoid copies) ----
-                "m_InfoMessages", sol::property([](CGameClient &gc) -> CInfoMessages& { return gc.m_InfoMessages; }),
-                "m_Camera", sol::property([](CGameClient &gc) -> CCamera& { return gc.m_Camera; }),
-                "m_Chat", sol::property([](CGameClient &gc) -> CChat& { return gc.m_Chat; }),
-                "m_Censor", sol::property([](CGameClient &gc) -> CCensor& { return gc.m_Censor; }),
-                "m_CodeExec", sol::property([](CGameClient &gc) -> CCodeExec& { return gc.m_CodeExec; }),
-                "m_Motd", sol::property([](CGameClient &gc) -> CMotd& { return gc.m_Motd; }),
-                "m_Broadcast", sol::property([](CGameClient &gc) -> CBroadcast& { return gc.m_Broadcast; }),
-                "m_GameConsole", sol::property([](CGameClient &gc) -> CGameConsole& { return gc.m_GameConsole; }),
-                "m_Binds", sol::property([](CGameClient &gc) -> CBinds& { return gc.m_Binds; }),
-                "m_BotControl", sol::property([](CGameClient &gc) -> CBotControl& { return gc.m_BotControl; }),
-                "m_BotNet", sol::property([](CGameClient &gc) -> CBotNet& { return gc.m_BotNet; }),
-                "m_IRC", sol::property([](CGameClient &gc) -> CIRC& { return gc.m_IRC; }),
-                "m_KeyBinder", sol::property([](CGameClient &gc) -> CKeyBinder& { return gc.m_KeyBinder; }),
-                "m_Particles", sol::property([](CGameClient &gc) -> CParticles& { return gc.m_Particles; }),
-                "m_Menus", sol::property([](CGameClient &gc) -> CMenus& { return gc.m_Menus; }),
-                // m_Skins, m_Skins7 EXCLUDED — contain unique_ptr<CSkin>, non-copyable
-                "m_CountryFlags", sol::property([](CGameClient &gc) -> CCountryFlags& { return gc.m_CountryFlags; }),
-                "m_Flow", sol::property([](CGameClient &gc) -> CFlow& { return gc.m_Flow; }),
-                "m_Hud", sol::property([](CGameClient &gc) -> CHud& { return gc.m_Hud; }),
-                "m_ImportantAlert", sol::property([](CGameClient &gc) -> CImportantAlert& { return gc.m_ImportantAlert; }),
-                "m_DebugHud", sol::property([](CGameClient &gc) -> CDebugHud& { return gc.m_DebugHud; }),
-                "m_Controls", sol::property([](CGameClient &gc) -> CControls& { return gc.m_Controls; }),
-                "m_Effects", sol::property([](CGameClient &gc) -> CEffects& { return gc.m_Effects; }),
-                "m_Scoreboard", sol::property([](CGameClient &gc) -> CScoreboard& { return gc.m_Scoreboard; }),
-                "m_Statboard", sol::property([](CGameClient &gc) -> CStatboard& { return gc.m_Statboard; }),
-                "m_Sounds", sol::property([](CGameClient &gc) -> CSounds& { return gc.m_Sounds; }),
-                "m_Emoticon", sol::property([](CGameClient &gc) -> CEmoticon& { return gc.m_Emoticon; }),
-                "m_DamageInd", sol::property([](CGameClient &gc) -> CDamageInd& { return gc.m_DamageInd; }),
-                // m_TouchControls EXCLUDED — contains unique_ptr, non-copyable
-                "m_Voting", sol::property([](CGameClient &gc) -> CVoting& { return gc.m_Voting; }),
-                "m_Spectator", sol::property([](CGameClient &gc) -> CSpectator& { return gc.m_Spectator; }),
-                "m_Players", sol::property([](CGameClient &gc) -> CPlayers& { return gc.m_Players; }),
-                "m_NamePlates", sol::property([](CGameClient &gc) -> CNamePlates& { return gc.m_NamePlates; }),
-                "m_FreezeBars", sol::property([](CGameClient &gc) -> CFreezeBars& { return gc.m_FreezeBars; }),
-                "m_Items", sol::property([](CGameClient &gc) -> CItems& { return gc.m_Items; }),
-                "m_MapImages", sol::property([](CGameClient &gc) -> CMapImages& { return gc.m_MapImages; }),
-                // m_MapLayersBackground/Foreground, m_Background, m_MenuBackground
-                // EXCLUDED — contain vector<unique_ptr<CRenderLayer>>, non-copyable
-                "m_MapSounds", sol::property([](CGameClient &gc) -> CMapSounds& { return gc.m_MapSounds; }),
-                "m_RaceDemo", sol::property([](CGameClient &gc) -> CRaceDemo& { return gc.m_RaceDemo; }),
-                "m_Ghost", sol::property([](CGameClient &gc) -> CGhost& { return gc.m_Ghost; }),
-                "m_Tooltips", sol::property([](CGameClient &gc) -> CTooltips& { return gc.m_Tooltips; }),
-                "m_LocalServer", sol::property([](CGameClient &gc) -> CLocalServer& { return gc.m_LocalServer; }),
-                // ---- Other public member variables ----
-                "m_SuppressEvents", &CGameClient::m_SuppressEvents,
+                // Predicted chars
+                "m_PredictedChar", sol::property([](CGameClient &gc) -> CCharacterCore& { return gc.m_PredictedChar; }),
+                "m_PredictedPrevChar", sol::property([](CGameClient &gc) -> CCharacterCore& { return gc.m_PredictedPrevChar; }),
+                "m_LocalCharacterPos", sol::property([](CGameClient &gc) -> vec2& { return gc.m_LocalCharacterPos; }),
+                // State
                 "m_NewTick", &CGameClient::m_NewTick,
                 "m_NewPredictedTick", &CGameClient::m_NewPredictedTick,
-                "m_aFlagDropTick", sol::property([this, &lua](CGameClient &gc) -> sol::table {
-                        auto t = lua.create_table();
-                        for(int i = 0; i < 2; i++)
-                                t[i] = gc.m_aFlagDropTick[i];
-                        return t;
-                }),
+                "m_SuppressEvents", &CGameClient::m_SuppressEvents,
                 "m_ServerMode", &CGameClient::m_ServerMode,
-                "m_GameInfo", sol::property([](CGameClient &gc) -> CGameInfo& { return gc.m_GameInfo; }),
                 "m_DemoSpecId", &CGameClient::m_DemoSpecId,
-                "m_LocalCharacterPos", sol::property([](CGameClient &gc) -> vec2& { return gc.m_LocalCharacterPos; }),
-                "m_PredictedPrevChar", sol::property([](CGameClient &gc) -> CCharacterCore& { return gc.m_PredictedPrevChar; }),
-                "m_PredictedChar", sol::property([](CGameClient &gc) -> CCharacterCore& { return gc.m_PredictedChar; }),
-                "m_aLocalTuneZone", sol::property([this, &lua](CGameClient &gc) -> sol::table {
+                "m_ReceivedDDNetPlayer", &CGameClient::m_ReceivedDDNetPlayer,
+                "m_ReceivedDDNetPlayerFinishTimes", &CGameClient::m_ReceivedDDNetPlayerFinishTimes,
+                "m_ReceivedDDNetPlayerFinishTimesMillis", &CGameClient::m_ReceivedDDNetPlayerFinishTimesMillis,
+                // MultiView
+                "m_MultiViewTeam", &CGameClient::m_MultiViewTeam,
+                "m_MultiViewPersonalZoom", &CGameClient::m_MultiViewPersonalZoom,
+                "m_MultiViewActivated", &CGameClient::m_MultiViewActivated,
+                "m_MultiViewShowHud", &CGameClient::m_MultiViewShowHud,
+                "m_aMultiViewId", sol::property([this, &lua](CGameClient &gc) -> sol::table {
                         auto t = lua.create_table();
-                        for(int i = 0; i < MAX_DUMMIES; i++)
-                                t[i] = gc.m_aLocalTuneZone[i];
+                        for(int i = 0; i < MAX_CLIENTS; i++) t[i] = gc.m_aMultiViewId[i];
                         return t;
                 }),
-                "m_aReceivedTuning", sol::property([this, &lua](CGameClient &gc) -> sol::table {
-                        auto t = lua.create_table();
-                        for(int i = 0; i < MAX_DUMMIES; i++)
-                                t[i] = gc.m_aReceivedTuning[i];
-                        return t;
-                }),
-                "m_aTuning", sol::property([this, &lua](CGameClient &gc) -> sol::table {
-                        auto t = lua.create_table();
-                        for(int i = 0; i < MAX_DUMMIES; i++)
-                                t[i] = std::ref(gc.m_aTuning[i]);
-                        return t;
-                }),
-                "m_CursorInfo", &CGameClient::m_CursorInfo,
+                // Map time
+                "m_MapBestTimeSeconds", &CGameClient::m_MapBestTimeSeconds,
+                "m_MapBestTimeMillis", &CGameClient::m_MapBestTimeMillis,
+                "m_aMapDescription", sol::property([](CGameClient &gc) -> std::string { return std::string(gc.m_aMapDescription); }),
+                // Snap
+                "m_Snap", sol::property([](CGameClient &gc) -> CGameClient::CSnapState& { return gc.m_Snap; }),
+                // Clients
                 "m_aClients", sol::property([this, &lua](CGameClient &gc) -> sol::table {
                         auto t = lua.create_table();
-                        for(int i = 0; i < MAX_CLIENTS; i++)
-                                t[i] = std::ref(gc.m_aClients[i]);
+                        for(int i = 0; i < MAX_CLIENTS; i++) t[i] = std::ref(gc.m_aClients[i]);
                         return t;
                 }),
+                // Stats
                 "m_aStats", sol::property([this, &lua](CGameClient &gc) -> sol::table {
                         auto t = lua.create_table();
-                        for(int i = 0; i < MAX_CLIENTS; i++)
-                                t[i] = std::ref(gc.m_aStats[i]);
+                        for(int i = 0; i < MAX_CLIENTS; i++) t[i] = std::ref(gc.m_aStats[i]);
                         return t;
                 }),
-                "m_RenderTools", sol::property([](CGameClient &gc) -> CRenderTools& { return gc.m_RenderTools; }),
-                "m_RenderMap", sol::property([](CGameClient &gc) -> CRenderMap& { return gc.m_RenderMap; }),
-                "m_aLocalIds", sol::property([this, &lua](CGameClient &gc) -> sol::table {
+                // Game info
+                "m_GameInfo", sol::property([](CGameClient &gc) -> CGameInfo& { return gc.m_GameInfo; }),
+                // Flag drop ticks
+                "m_aFlagDropTick", sol::property([this, &lua](CGameClient &gc) -> sol::table {
                         auto t = lua.create_table();
-                        for(int i = 0; i < MAX_DUMMIES; i++)
-                                t[i] = gc.m_aLocalIds[i];
+                        for(int i = 0; i < 2; i++) t[i] = gc.m_aFlagDropTick[i];
                         return t;
                 }),
+                // Tuning
+                "m_aTuning", sol::property([this, &lua](CGameClient &gc) -> sol::table {
+                        auto t = lua.create_table();
+                        for(int i = 0; i < MAX_DUMMIES; i++) t[i] = std::ref(gc.m_aTuning[i]);
+                        return t;
+                }),
+                "m_aLocalTuneZone", sol::property([this, &lua](CGameClient &gc) -> sol::table {
+                        auto t = lua.create_table();
+                        for(int i = 0; i < MAX_DUMMIES; i++) t[i] = gc.m_aLocalTuneZone[i];
+                        return t;
+                }),
+                // Input
                 "m_aDummyInput", sol::property([this, &lua](CGameClient &gc) -> sol::table {
                         auto t = lua.create_table();
-                        for(int i = 0; i < MAX_DUMMIES; i++)
-                                t[i] = std::ref(gc.m_aDummyInput[i]);
+                        for(int i = 0; i < MAX_DUMMIES; i++) t[i] = std::ref(gc.m_aDummyInput[i]);
                         return t;
                 }),
                 "m_aHammerInput", sol::property([this, &lua](CGameClient &gc) -> sol::table {
                         auto t = lua.create_table();
-                        for(int i = 0; i < MAX_DUMMIES; i++)
-                                t[i] = std::ref(gc.m_aHammerInput[i]);
+                        for(int i = 0; i < MAX_DUMMIES; i++) t[i] = std::ref(gc.m_aHammerInput[i]);
                         return t;
                 }),
                 "m_aDummyFire", sol::property([this, &lua](CGameClient &gc) -> sol::table {
                         auto t = lua.create_table();
-                        for(int i = 0; i < MAX_DUMMIES; i++)
-                                t[i] = (double)gc.m_aDummyFire[i]; // unsigned int -> double
+                        for(int i = 0; i < MAX_DUMMIES; i++) t[i] = gc.m_aDummyFire[i];
                         return t;
                 }),
-                "m_ReceivedDDNetPlayer", &CGameClient::m_ReceivedDDNetPlayer,
-                "m_ReceivedDDNetPlayerFinishTimes", &CGameClient::m_ReceivedDDNetPlayerFinishTimes,
-                "m_ReceivedDDNetPlayerFinishTimesMillis", &CGameClient::m_ReceivedDDNetPlayerFinishTimesMillis,
+                "m_aLocalIds", sol::property([this, &lua](CGameClient &gc) -> sol::table {
+                        auto t = lua.create_table();
+                        for(int i = 0; i < MAX_DUMMIES; i++) t[i] = gc.m_aLocalIds[i];
+                        return t;
+                }),
+                // Teams
                 "m_Teams", sol::property([](CGameClient &gc) -> CTeamsCore& { return gc.m_Teams; }),
+                // GameWorlds
                 "m_GameWorld", sol::property([](CGameClient &gc) -> CGameWorld& { return gc.m_GameWorld; }),
                 "m_PredictedWorld", sol::property([](CGameClient &gc) -> CGameWorld& { return gc.m_PredictedWorld; }),
                 "m_PrevPredictedWorld", sol::property([](CGameClient &gc) -> CGameWorld& { return gc.m_PrevPredictedWorld; }),
-                "m_MultiViewTeam", &CGameClient::m_MultiViewTeam,
-                "m_MultiViewPersonalZoom", &CGameClient::m_MultiViewPersonalZoom,
-                "m_MultiViewShowHud", &CGameClient::m_MultiViewShowHud,
-                "m_MultiViewActivated", &CGameClient::m_MultiViewActivated,
-                "m_aMultiViewId", sol::property([this, &lua](CGameClient &gc) -> sol::table {
-                        auto t = lua.create_table();
-                        for(int i = 0; i < MAX_CLIENTS; i++)
-                                t[i] = gc.m_aMultiViewId[i];
-                        return t;
-                }),
-                "m_MapBestTimeSeconds", &CGameClient::m_MapBestTimeSeconds,
-                "m_MapBestTimeMillis", &CGameClient::m_MapBestTimeMillis,
-                "m_aMapDescription", sol::property([](CGameClient &gc) -> std::string { return std::string(gc.m_aMapDescription); }),
+                // RenderTools / RenderMap
+                "m_RenderTools", sol::property([](CGameClient &gc) -> CRenderTools& { return gc.m_RenderTools; }),
+                "m_RenderMap", sol::property([](CGameClient &gc) -> CRenderMap& { return gc.m_RenderMap; }),
+                // Language
                 "m_LanguageChanged", &CGameClient::m_LanguageChanged,
-                "m_aNextChangeInfo", sol::property([this, &lua](CGameClient &gc) -> sol::table {
-                        auto t = lua.create_table();
-                        for(int i = 0; i < MAX_DUMMIES; i++)
-                                t[i] = gc.m_aNextChangeInfo[i];
-                        return t;
-                }),
-                // ---- m_Snap — nested struct, expose key fields ----
-                "m_Snap", sol::property([this, &lua](CGameClient &gc) -> sol::table {
-                        auto t = lua.create_table();
-                        t["m_LocalClientId"] = gc.m_Snap.m_LocalClientId;
-                        t["m_NumPlayers"] = gc.m_Snap.m_NumPlayers;
-                        t["m_HighestClientId"] = gc.m_Snap.m_HighestClientId;
-                        t["m_NumFlags"] = gc.m_Snap.m_NumFlags;
-                        // Team sizes
-                        auto teams = lua.create_table(); // &lua already captured
-                        for(int i = 0; i < 2; i++)
-                                teams[i] = gc.m_Snap.m_aTeamSize[i];
-                        t["m_aTeamSize"] = teams;
-                        // Characters
-                        auto chars = lua.create_table(); // &lua already captured
-                        for(int i = 0; i < MAX_CLIENTS; i++)
-                                if(gc.m_Snap.m_aCharacters[i].m_Active)
-                                        chars[i] = std::ref(gc.m_Snap.m_aCharacters[i]);
-                        t["m_aCharacters"] = chars;
-                        // Player info presence
-                        auto infos = lua.create_table(); // &lua already captured
-                        for(int i = 0; i < MAX_CLIENTS; i++)
-                                infos[i] = gc.m_Snap.m_apPlayerInfos[i] != nullptr;
-                        t["m_apPlayerInfos"] = infos;
-                        // Spec info
-                        auto spec = lua.create_table(); // &lua already captured
-                        spec["m_Active"] = gc.m_Snap.m_SpecInfo.m_Active;
-                        spec["m_SpectatorId"] = gc.m_Snap.m_SpecInfo.m_SpectatorId;
-                        spec["m_UsePosition"] = gc.m_Snap.m_SpecInfo.m_UsePosition;
-                        spec["m_Position"] = gc.m_Snap.m_SpecInfo.m_Position;
-                        spec["m_HasCameraInfo"] = gc.m_Snap.m_SpecInfo.m_HasCameraInfo;
-                        spec["m_Zoom"] = gc.m_Snap.m_SpecInfo.m_Zoom;
-                        spec["m_Deadzone"] = gc.m_Snap.m_SpecInfo.m_Deadzone;
-                        spec["m_FollowFactor"] = gc.m_Snap.m_SpecInfo.m_FollowFactor;
-                        t["m_SpecInfo"] = spec;
-                        return t;
-                }),
-                // ---- Accessor methods as properties ----
-                "Collision", sol::property([this](CGameClient &gc) -> CCollision* { return gc.Collision(); }),
-                "Layers", sol::property([this](CGameClient &gc) -> CLayers* { return gc.Layers(); }),
-                "RenderTools", sol::property([this](CGameClient &gc) -> CRenderTools* { return gc.RenderTools(); }),
-                "RenderMap", sol::property([this](CGameClient &gc) -> CRenderMap* { return gc.RenderMap(); }),
-                // ---- CGameClient methods ----
+                // Components — ALL of them as references
+                "m_Camera", sol::property([](CGameClient &gc) -> CCamera& { return gc.m_Camera; }),
+                "m_Chat", sol::property([](CGameClient &gc) -> CChat& { return gc.m_Chat; }),
+                "m_Controls", sol::property([](CGameClient &gc) -> CControls& { return gc.m_Controls; }),
+                "m_Effects", sol::property([](CGameClient &gc) -> CEffects& { return gc.m_Effects; }),
+                "m_Flow", sol::property([](CGameClient &gc) -> CFlow& { return gc.m_Flow; }),
+                "m_Voting", sol::property([](CGameClient &gc) -> CVoting& { return gc.m_Voting; }),
+                "m_Spectator", sol::property([](CGameClient &gc) -> CSpectator& { return gc.m_Spectator; }),
+                "m_Emoticon", sol::property([](CGameClient &gc) -> CEmoticon& { return gc.m_Emoticon; }),
+                "m_Motd", sol::property([](CGameClient &gc) -> CMotd& { return gc.m_Motd; }),
+                "m_Broadcast", sol::property([](CGameClient &gc) -> CBroadcast& { return gc.m_Broadcast; }),
+                "m_Ghost", sol::property([](CGameClient &gc) -> CGhost& { return gc.m_Ghost; }),
+                "m_BotControl", sol::property([](CGameClient &gc) -> CBotControl& { return gc.m_BotControl; }),
+                "m_BotNet", sol::property([](CGameClient &gc) -> CBotNet& { return gc.m_BotNet; }),
+                "m_IRC", sol::property([](CGameClient &gc) -> CIRC& { return gc.m_IRC; }),
+                "m_Particles", sol::property([](CGameClient &gc) -> CParticles& { return gc.m_Particles; }),
+                "m_Sounds", sol::property([](CGameClient &gc) -> CSounds& { return gc.m_Sounds; }),
+                "m_DamageInd", sol::property([](CGameClient &gc) -> CDamageInd& { return gc.m_DamageInd; }),
+                "m_Menus", sol::property([](CGameClient &gc) -> CMenus& { return gc.m_Menus; }),
+                "m_Binds", sol::property([](CGameClient &gc) -> CBinds& { return gc.m_Binds; }),
+                "m_GameConsole", sol::property([](CGameClient &gc) -> CGameConsole& { return gc.m_GameConsole; }),
+                "m_Hud", sol::property([](CGameClient &gc) -> CHud& { return gc.m_Hud; }),
+                "m_RaceDemo", sol::property([](CGameClient &gc) -> CRaceDemo& { return gc.m_RaceDemo; }),
+                "m_LocalServer", sol::property([](CGameClient &gc) -> CLocalServer& { return gc.m_LocalServer; }),
+                "m_ImportantAlert", sol::property([](CGameClient &gc) -> CImportantAlert& { return gc.m_ImportantAlert; }),
+                "m_Scoreboard", sol::property([](CGameClient &gc) -> CScoreboard& { return gc.m_Scoreboard; }),
+                "m_Statboard", sol::property([](CGameClient &gc) -> CStatboard& { return gc.m_Statboard; }),
+                // Methods
                 "SendKill", [](CGameClient &gc) { gc.SendKill(); },
                 "SendSwitchTeam", [](CGameClient &gc, int team) { gc.SendSwitchTeam(team); },
                 "Echo", [](CGameClient &gc, const std::string &msg) { gc.Echo(msg.c_str()); },
                 "IsTeamPlay", [](CGameClient &gc) -> bool { return gc.IsTeamPlay(); },
                 "IsWorldPaused", [](CGameClient &gc) -> bool { return gc.IsWorldPaused(); },
-                "IsDemoPlaybackPaused", [](CGameClient &gc) -> bool { return gc.IsDemoPlaybackPaused(); },
-                "GetAnimationPlaybackSpeed", [](CGameClient &gc) -> float { return gc.GetAnimationPlaybackSpeed(); },
                 "IsLocalCharSuper", [](CGameClient &gc) -> bool { return gc.IsLocalCharSuper(); },
-                "IsOtherTeam", [](CGameClient &gc, int id) -> bool { return gc.IsOtherTeam(id); },
                 "CurrentRaceTime", [](CGameClient &gc) -> int { return gc.CurrentRaceTime(); },
                 "LastRaceTick", [](CGameClient &gc) -> int { return gc.LastRaceTick(); },
                 "AntiPingPlayers", [](CGameClient &gc) -> bool { return gc.AntiPingPlayers(); },
                 "AntiPingGrenade", [](CGameClient &gc) -> bool { return gc.AntiPingGrenade(); },
                 "AntiPingWeapons", [](CGameClient &gc) -> bool { return gc.AntiPingWeapons(); },
                 "AntiPingGunfire", [](CGameClient &gc) -> bool { return gc.AntiPingGunfire(); },
-                "Predict", [](CGameClient &gc) -> bool { return gc.Predict(); },
-                "PredictDummy", [](CGameClient &gc) -> bool { return gc.PredictDummy(); },
-                "IntersectCharacter", [this](CGameClient &gc, vec2 hookPos, vec2 newPos, int ownId) -> int {
-                        vec2 newPos2;
-                        return gc.IntersectCharacter(hookPos, newPos, newPos2, ownId);
-                },
+                "IsOtherTeam", [](CGameClient &gc, int id) -> bool { return gc.IsOtherTeam(id); },
                 "SwitchStateTeam", [](CGameClient &gc) -> int { return gc.SwitchStateTeam(); },
+                "IntersectCharacter", [](CGameClient &gc, vec2 hookPos, vec2 newPos, int ownId) -> int { return gc.IntersectCharacter(hookPos, newPos, ownId); },
                 "DummyResetInput", [](CGameClient &gc) { gc.DummyResetInput(); },
                 "OnReset", [](CGameClient &gc) { gc.OnReset(); },
-                // Version info
-                "Version", [](CGameClient &gc) -> std::string { return std::string(gc.Version()); },
-                "NetVersion", [](CGameClient &gc) -> std::string { return std::string(gc.NetVersion()); },
+                "Version", [](CGameClient &gc) -> const char* { return gc.Version(); },
                 "DDNetVersion", [](CGameClient &gc) -> int { return gc.DDNetVersion(); },
-                "DDNetVersionStr", [](CGameClient &gc) -> std::string { return std::string(gc.DDNetVersionStr()); }
+                "Collision", sol::overload(
+                        [](CGameClient &gc) -> CCollision* { return gc.Collision(); },
+                        [](CGameClient &gc) -> const CCollision* { return gc.Collision(); }
+                ),
+                "Switchers", [](CGameClient &gc) -> std::vector<SSwitchers>& { return gc.Switchers(); },
+                "PredSwitchers", [](CGameClient &gc) -> std::vector<SSwitchers>& { return gc.PredSwitchers(); },
+                "GetTuning", [](CGameClient &gc, int i) -> const CTuningParams* { return gc.GetTuning(i); },
+                "GetDDTeamColor", [](CGameClient &gc, int team, float light) -> ColorRGBA { return gc.GetDDTeamColor(team, light); }
         );
 
-        // ===== Set global objects — gc = GameClient() =====
-        lua["gc"] = std::ref(*GameClient());
-
-        // ===== trajectory(ticks) — predict character positions using REAL physics =====
-        lua.set_function("trajectory", [this](int ticks) -> sol::table {
-                auto &src = GameClient()->m_PredictedChar;
-                // Make a copy of the character core
-                CCharacterCore pred = src;
-                // Copy world/collision pointers (needed for Tick/Move)
-                pred.m_pWorld = src.m_pWorld;
-                pred.m_pCollision = src.m_pCollision;
-                auto t = lua.create_table();
-                t[0] = lua.create_table_with("x", pred.m_Pos.x, "y", pred.m_Pos.y);
-                for(int i = 1; i <= ticks; i++)
-                {
-                        pred.Tick(true);
-                        pred.Move();
-                        pred.Quantize();
-                        t[i] = lua.create_table_with("x", pred.m_Pos.x, "y", pred.m_Pos.y);
-                }
-                return t;
-        });
-
-        // ===== CClient methods as 'cl' table =====
+        // ===================== IClient namespace (cl) =====================
         auto cl = lua["cl"].get_or_create<sol::table>();
-        cl.set_function("Connect", [this](const std::string &addr) {
-                Client()->Connect(addr.c_str());
-        });
-        cl.set_function("Disconnect", [this]() {
-                Client()->Disconnect();
-        });
-        cl.set_function("EnterGame", [this]() {
-                Client()->EnterGame(0);
-        });
-        cl.set_function("RconAuth", [this](const std::string &user, const std::string &pass) {
-                Client()->RconAuth(user.c_str(), pass.c_str(), 0);
-        });
-        cl.set_function("Rcon", [this](const std::string &cmd) {
-                Client()->Rcon(cmd.c_str());
-        });
-        cl.set_function("RconAuthed", [this]() -> bool {
-                return Client()->RconAuthed();
-        });
-        cl.set_function("GameTick", [this]() -> int {
-                return Client()->GameTick(0);
-        });
-        cl.set_function("GameTickSpeed", [this]() -> int {
-                return Client()->GameTickSpeed();
-        });
-        cl.set_function("ConnectionProblems", [this]() -> bool {
-                return Client()->ConnectionProblems();
-        });
-        cl.set_function("DummyConnect", [this](int d) {
-                Client()->DummyConnect(d);
-        });
-        cl.set_function("DummyDisconnect", [this](int d) {
-                Client()->DummyDisconnect(d, "Lua script");
-        });
-        cl.set_function("DummyConnected", [this](int d) -> bool {
-                return Client()->DummyConnected(d);
-        });
-        cl.set_function("DummyCount", [this]() -> int {
-                return Client()->DummyCount();
-        });
-        cl.set_function("Quit", [this]() {
-                Client()->Quit();
-        });
-        cl.set_function("Restart", [this]() {
-                Client()->Restart();
-        });
-        cl.set_function("PlayerName", [this]() -> std::string {
-                return std::string(Client()->PlayerName());
-        });
-
-        // ===== chat.fake() — convenience function =====
-        auto chatNs = lua["chat"].get_or_create<sol::table>();
-        chatNs.set_function("fake", [this](const std::string &name, const std::string &msg, sol::optional<int> team) {
-                char aBuf[512];
-                str_format(aBuf, sizeof(aBuf), "%s: %s", name.c_str(), msg.c_str());
-                int Team = team.value_or(0);
-                GameClient()->m_Chat.AddLine(CChat::CLIENT_MSG, Team, aBuf);
-        });
-
-        // ===== raw_api_info =====
-        lua.set_function("raw_api_info", []() -> std::string {
-                return R"(
-ZMajor Raw C++ API v2 — ALL PUBLIC MEMBERS EXPOSED
-
-  gc = CGameClient& (global reference)
-
-  ===== DIRECT MEMBER ACCESS (read/write) =====
-
-  -- Predicted character
-  gc.m_PredictedChar.m_Pos / m_Vel / m_HookPos / m_HookDir
-  gc.m_PredictedChar.m_HookState / m_HookTick / m_ActiveWeapon
-  gc.m_PredictedChar.m_Jumped / m_JumpedTotal / m_Jumps
-  gc.m_PredictedChar.m_Direction / m_Angle / m_Input
-  gc.m_PredictedChar.m_Solo / m_Jetpack / m_Super / m_Invincible
-  gc.m_PredictedChar.m_DeepFrozen / m_LiveFrozen / m_IsInFreeze
-  gc.m_PredictedChar.m_FreezeStart / m_FreezeEnd
-  gc.m_PredictedChar.m_EndlessHook / m_EndlessJump
-  gc.m_PredictedChar.m_CollisionDisabled
-  gc.m_PredictedChar.m_HasTelegunGun / m_HasTelegunGrenade / m_HasTelegunLaser
-  gc.m_PredictedChar.m_HammerHitDisabled / m_GrenadeHitDisabled
-  gc.m_PredictedChar.m_LaserHitDisabled / m_ShotgunHitDisabled / m_HookHitDisabled
-  gc.m_PredictedChar.m_NewHook / m_Reset / m_Colliding / m_LeftWall
-  gc.m_PredictedChar.m_aWeapons_Ammo[0..5] / _Got / _AmmoRegenStart / _Ammocost
-  gc.m_PredictedChar.m_Ninja_ActivationDir / _ActivationTick / _CurrentMoveTime / _OldVelAmount
-  gc.m_PredictedChar.m_Tuning  (CTuningParams)
-
-  -- Client data
-  gc.m_aClients[0..63].m_aName / m_aClan / m_Country / m_aSkinName
-  gc.m_aClients[id].m_Team / m_Active / m_Friend / m_Foe / m_Afk / m_Paused / m_Spec
-  gc.m_aClients[id].m_Solo / m_Jetpack / m_Super / m_Invincible
-  gc.m_aClients[id].m_DeepFrozen / m_LiveFrozen / m_CollisionDisabled
-  gc.m_aClients[id].m_EndlessHook / m_EndlessJump / m_FreezeEnd
-  gc.m_aClients[id].m_AuthLevel / m_UseCustomColor / m_ColorBody / m_ColorFeet
-  gc.m_aClients[id].m_Angle / m_Emoticon / m_ChatIgnore / m_EmoticonIgnore
-  gc.m_aClients[id].m_FinishTimeSeconds / m_FinishTimeMillis
-  gc.m_aClients[id].m_IsPredicted / m_IsPredictedLocal / m_SpecCharPresent
-  gc.m_aClients[id].m_Predicted / m_PrevPredicted / m_RenderCur / m_RenderPrev
-
-  -- Stats
-  gc.m_aStats[id].m_Frags / m_Deaths / m_Suicides / m_BestSpree / m_CurrentSpree
-  gc.m_aStats[id].m_FlagGrabs / m_FlagCaptures / m_aFragsWith / m_aDeathsFrom
-
-  -- Game info
-  gc.m_GameInfo.m_FlagStartsRace / m_TimeScore / m_UnlimitedAmmo
-  gc.m_GameInfo.m_Race / m_Pvp / m_EntitiesDDNet / m_PredictDDRace
-
-  -- Camera
-  gc.m_Camera.m_Center / m_Zoom / m_Zooming / m_ZoomSet
-  gc.m_Camera.m_AutoSpecCamera / m_UserZoomTarget / m_DyncamTargetCameraOffset
-
-  -- Snap state (via gc.m_Snap table)
-  gc.m_Snap.m_LocalClientId / m_NumPlayers / m_NumFlags / m_aTeamSize
-  gc.m_Snap.m_aCharacters[id] (CNetObj_Character)
-  gc.m_Snap.m_SpecInfo.m_Active / m_SpectatorId / m_Position
-
-  -- Other state
-  gc.m_LocalCharacterPos / m_NewTick / m_NewPredictedTick / m_ServerMode
-  gc.m_SuppressEvents / m_DemoSpecId / m_Teams
-  gc.m_ReceivedDDNetPlayer / m_ReceivedDDNetPlayerFinishTimes
-  gc.m_MultiViewTeam / m_MultiViewPersonalZoom / m_MultiViewActivated
-
-  -- Input (direct array access)
-  gc.m_aDummyInput[0..1] (CNetObj_PlayerInput)
-  gc.m_aHammerInput[0..1]
-  gc.m_aDummyFire[0..1]
-  gc.m_aLocalIds[0..1]
-
-  ===== COMPONENT ACCESS =====
-
-  -- Chat
-  gc.m_Chat.m_Mode / m_Show
-  gc.m_Chat:AddLine(clientId, team, "msg")
-  gc.m_Chat:Echo("msg")
-  gc.m_Chat:SendChat(team, "msg")
-  gc.m_Chat:SendChatQueued("msg")
-  gc.m_Chat:EnableMode(team) / :DisableMode() / :IsActive() / :ClearLines()
-
-  -- Controls
-  gc.m_Controls.m_aInputData[0] (CNetObj_PlayerInput ref — read/write!)
-  gc.m_Controls.m_aInputData[0].m_Direction = 1
-  gc.m_Controls.m_aInputData[0].m_Fire = 1
-  gc.m_Controls.m_aMousePos[0] / m_aTargetPos[0]
-  gc.m_Controls.m_aAmmoCount[0..5] / m_aShowHookColl[0]
-
-  -- BotNet
-  gc.m_BotNet.m_AttackEnabled / m_MoveEnabled / m_AutoAim / m_AutoFire / m_AutoHook
-  gc.m_BotNet.m_StandEnabled / m_RescueFrozen / m_RescueAll / m_KillOnFreeze
-  gc.m_BotNet.m_AttackMain / m_AutoMain / m_AutoHammer / m_SmartDetect / m_SmartRescue
-  gc.m_BotNet.m_AvoidFreeze / m_MainID / m_AllTarget / m_CopyMoves / m_CopyTargetID
-  gc.m_BotNet.m_FireDist / m_HookDist / m_RescueRadius / m_TargetDist / m_MainDist / m_StandDist
-  gc.m_BotNet.m_PathfinderEnabled / m_PfSimulatePlayers / m_PfRays / m_PfViewRadius / m_PfHookEnabled
-  gc.m_BotNet.m_KinodynamicEnabled / m_KinoCandidates / m_KinoTicks / m_KinoHookAngles
-  gc.m_BotNet.m_KinoCacheTicks / m_KinoShowPath / m_KinoShowField
-  gc.m_BotNet.m_MapWidth / m_MapHeight / m_MapGridLoaded
-
-  -- Effects
-  gc.m_Effects:Explosion(pos, alpha)
-  gc.m_Effects:HammerHit(pos, alpha, vol)
-  gc.m_Effects:AirJump(pos, alpha, vol)
-  gc.m_Effects:BulletTrail(pos, alpha, timePassed)
-
-  -- Voting
-  gc.m_Voting:CallvoteKick(clientId, "reason", force)
-  gc.m_Voting:CallvoteSpectate(clientId, "reason", force)
-  gc.m_Voting:Vote(1) -- 1=yes, -1=no
-  gc.m_Voting:IsVoting() / :SecondsLeft() / :NumOptions() / :VoteDescription()
-
-  -- Spectator
-  gc.m_Spectator:Spectate(id) / :SpectateClosest() / :IsActive()
-
-  -- Emoticon
-  gc.m_Emoticon:Emote(type) / :EyeEmote(type) / :IsActive()
-
-  -- Ghost
-  gc.m_Ghost.m_AllowRestart / :FreeSlots() / :Load("file") / :Unload(slot) / :UnloadAll()
-
-  -- BotControl
-  gc.m_BotControl:ActionInput("jump", 500, dummy)
-  gc.m_BotControl:ActionAim(dx, dy, dummy)
-  gc.m_BotControl:ActionStop(dummy)
-  gc.m_BotControl:IsBotActiveAny(dummy)
-
-  -- IRC
-  gc.m_IRC:SendIRC("text") / :GetClientPrefix(id)
-
-  -- Broadcast / Motd
-  gc.m_Broadcast:DoBroadcast("text")
-  gc.m_Motd:ServerMotd() / :IsActive() / :Clear()
-
-  -- Collision
-  gc:Collision():GetWidth() / :GetHeight()
-  gc:Collision():CheckPoint(x, y) / :IsSolid(x, y)
-  gc:Collision():IntersectLine(p0, p1)  -> {hit, Collision, BeforeCollision}
-  gc:Collision():IsTeleport / IsSpeedup / IsTune
-
-  ===== METHODS =====
-  gc:SendKill() / :SendSwitchTeam(team) / :Echo("msg")
-  gc:IsTeamPlay() / :IsWorldPaused() / :IsLocalCharSuper()
-  gc:CurrentRaceTime() / :LastRaceTick()
-  gc:Predict() / :PredictDummy()
-  gc:AntiPingPlayers() / :AntiPingGrenade() / :AntiPingWeapons()
-  gc:IntersectCharacter(hookPos, newPos, ownId) -> int
-  gc:DummyResetInput() / :OnReset()
-  gc:Version() / :DDNetVersion()
-
-  ===== CLIENT (cl) =====
-  cl.Connect("addr") / cl.Disconnect() / cl.EnterGame()
-  cl.RconAuth("user", "pass") / cl.Rcon("cmd") / cl.RconAuthed()
-  cl.GameTick() / cl.GameTickSpeed() / cl.ConnectionProblems()
-  cl.DummyConnect(d) / cl.DummyDisconnect(d) / cl.DummyConnected(d)
-  cl.Quit() / cl.Restart() / cl.PlayerName()
-
-  ===== CONVENIENCE =====
-  chat.fake("Name", "Message", team)
-)";
-        });
+        cl.set_function("Connect", [this](const std::string &addr) { Client()->Connect(addr.c_str()); });
+        cl.set_function("Disconnect", [this]() { Client()->Disconnect(); });
+        cl.set_function("EnterGame", [this]() { Client()->EnterGame(0); });
+        cl.set_function("RconAuth", [this](const std::string &user, const std::string &pass) { Client()->RconAuth(user.c_str(), pass.c_str(), nullptr); });
+        cl.set_function("Rcon", [this](const std::string &cmd) { Client()->Rcon(cmd.c_str()); });
+        cl.set_function("RconAuthed", [this]() -> bool { return Client()->RconAuthed(); });
+        cl.set_function("GameTick", [this]() -> int { return Client()->GameTick(0); });
+        cl.set_function("PrevGameTick", [this]() -> int { return Client()->PrevGameTick(0); });
+        cl.set_function("GameTickSpeed", [this]() -> int { return Client()->GameTickSpeed(); });
+        cl.set_function("LocalTime", [this]() -> float { return Client()->LocalTime(); });
+        cl.set_function("RenderFrameTime", [this]() -> float { return Client()->RenderFrameTime(); });
+        cl.set_function("ConnectionProblems", [this]() -> bool { return Client()->ConnectionProblems(); });
+        cl.set_function("DummyConnect", [this](int d) { Client()->DummyConnect(d); });
+        cl.set_function("DummyDisconnect", [this](int d) { Client()->DummyDisconnect(d, "Lua"); });
+        cl.set_function("DummyConnected", [this](int d) -> bool { return Client()->DummyConnected(d); });
+        cl.set_function("DummyCount", [this]() -> int { return Client()->DummyCount(); });
+        cl.set_function("Quit", [this]() { Client()->Quit(); });
+        cl.set_function("Restart", [this]() { Client()->Restart(); });
+        cl.set_function("PlayerName", [this]() -> std::string { return std::string(Client()->PlayerName()); });
+        cl.set_function("State", [this]() -> int { return (int)Client()->State(); });
+        cl.set_function("MapDownloadName", [this]() -> std::string { return std::string(Client()->MapDownloadName()); });
+        cl.set_function("MapDownloadAmount", [this]() -> int { return Client()->MapDownloadAmount(); });
+        cl.set_function("MapDownloadTotalsize", [this]() -> int { return Client()->MapDownloadTotalsize(); });
 }
 
-// =========================================================
-// Multiline editor helpers
-// =========================================================
+// =============================================================
+// Editor helpers
+// =============================================================
 int CCodeExec::GetLineCount() const
 {
         int Count = 1;
         for(int i = 0; m_aCodeBuffer[i]; i++)
-        {
-                if(m_aCodeBuffer[i] == '\n')
-                        Count++;
-        }
+                if(m_aCodeBuffer[i] == '\n') Count++;
         return Count;
 }
 
 int CCodeExec::GetLineStart(int Line) const
 {
-        if(Line <= 0)
-                return 0;
+        if(Line <= 0) return 0;
         int CurLine = 0;
         for(int i = 0; m_aCodeBuffer[i]; i++)
         {
                 if(m_aCodeBuffer[i] == '\n')
                 {
                         CurLine++;
-                        if(CurLine == Line)
-                                return i + 1;
+                        if(CurLine == Line) return i + 1;
                 }
         }
         return str_length(m_aCodeBuffer);
@@ -1734,10 +1427,7 @@ int CCodeExec::GetLineFromOffset(int Offset) const
 {
         int Line = 0;
         for(int i = 0; i < Offset && m_aCodeBuffer[i]; i++)
-        {
-                if(m_aCodeBuffer[i] == '\n')
-                        Line++;
-        }
+                if(m_aCodeBuffer[i] == '\n') Line++;
         return Line;
 }
 
@@ -1760,23 +1450,20 @@ int CCodeExec::GetLineLength(int Line) const
         return LineEndOff - LineOff;
 }
 
-// =========================================================
-// Lua syntax highlighting
-// =========================================================
+// =============================================================
+// Syntax highlighting
+// =============================================================
 void CCodeExec::GetHighlightSegments(const char *pLine, SHighlightSegment *pSegments, int &SegmentCount)
 {
         SegmentCount = 0;
         int LineLen = str_length(pLine);
-        if(LineLen <= 0)
-                return;
+        if(LineLen <= 0) return;
 
-        // Lua keywords
         static const char *s_apKeywords[] = {
                 "and", "break", "do", "else", "elseif", "end",
                 "false", "for", "function", "goto", "if", "in",
                 "local", "nil", "not", "or", "repeat", "return",
                 "then", "true", "until", "while",
-                // Common globals
                 "print", "pairs", "ipairs", "tostring", "tonumber",
                 "type", "require", "pcall", "xpcall", "error",
                 "assert", "collectgarbage", "select", "unpack",
@@ -1801,160 +1488,95 @@ void CCodeExec::GetHighlightSegments(const char *pLine, SHighlightSegment *pSegm
         int i = 0;
         while(i < LineLen)
         {
-                // Inside block comment --[[ ... ]]
                 if(m_HighlightParseState == 1)
                 {
                         int Start = i;
                         while(i < LineLen)
                         {
                                 if(i + 1 < LineLen && pLine[i] == ']' && pLine[i + 1] == ']')
-                                {
-                                        i += 2;
-                                        m_HighlightParseState = 0;
-                                        break;
-                                }
+                                { i += 2; m_HighlightParseState = 0; break; }
                                 i++;
                         }
                         AddSegment(Start, i - Start, HIGHLIGHT_COMMENT);
                         continue;
                 }
 
-                // Line comment --
                 if(i + 1 < LineLen && pLine[i] == '-' && pLine[i + 1] == '-')
                 {
-                        // Check for block comment --[[
                         if(i + 3 < LineLen && pLine[i + 2] == '[' && pLine[i + 3] == '[')
                         {
-                                int Start = i;
-                                i += 4;
-                                m_HighlightParseState = 1;
-                                // Look for ]] on same line
+                                int Start = i; i += 4; m_HighlightParseState = 1;
                                 while(i < LineLen)
                                 {
                                         if(i + 1 < LineLen && pLine[i] == ']' && pLine[i + 1] == ']')
-                                        {
-                                                i += 2;
-                                                m_HighlightParseState = 0;
-                                                break;
-                                        }
+                                        { i += 2; m_HighlightParseState = 0; break; }
                                         i++;
                                 }
                                 AddSegment(Start, i - Start, HIGHLIGHT_COMMENT);
                                 continue;
                         }
-                        // Regular line comment -- rest of line
                         AddSegment(i, LineLen - i, HIGHLIGHT_COMMENT);
-                        i = LineLen;
-                        continue;
+                        i = LineLen; continue;
                 }
 
-                // String literals "..." and '...'
                 if(pLine[i] == '"' || pLine[i] == '\'')
                 {
-                        char Quote = pLine[i];
-                        int Start = i;
-                        i++;
-                        while(i < LineLen && pLine[i] != Quote)
-                        {
-                                if(pLine[i] == '\\' && i + 1 < LineLen)
-                                        i++; // skip escaped char
-                                i++;
-                        }
-                        if(i < LineLen)
-                                i++; // skip closing quote
-                        AddSegment(Start, i - Start, HIGHLIGHT_STRING);
-                        continue;
+                        char Quote = pLine[i]; int Start = i; i++;
+                        while(i < LineLen && pLine[i] != Quote) { if(pLine[i] == '\\' && i + 1 < LineLen) i++; i++; }
+                        if(i < LineLen) i++;
+                        AddSegment(Start, i - Start, HIGHLIGHT_STRING); continue;
                 }
 
-                // Long string [[ ... ]]
                 if(i + 1 < LineLen && pLine[i] == '[' && pLine[i + 1] == '[')
                 {
-                        int Start = i;
-                        i += 2;
+                        int Start = i; i += 2;
                         while(i < LineLen)
                         {
-                                if(i + 1 < LineLen && pLine[i] == ']' && pLine[i + 1] == ']')
-                                {
-                                        i += 2;
-                                        break;
-                                }
+                                if(i + 1 < LineLen && pLine[i] == ']' && pLine[i + 1] == ']') { i += 2; break; }
                                 i++;
                         }
-                        AddSegment(Start, i - Start, HIGHLIGHT_STRING);
-                        continue;
+                        AddSegment(Start, i - Start, HIGHLIGHT_STRING); continue;
                 }
 
-                // Number
                 if(IsDigit(pLine[i]) || (pLine[i] == '.' && i + 1 < LineLen && IsDigit(pLine[i + 1])))
                 {
                         int Start = i;
-                        // Hex: 0x...
                         if(pLine[i] == '0' && i + 1 < LineLen && (pLine[i + 1] == 'x' || pLine[i + 1] == 'X'))
-                        {
-                                i += 2;
-                                while(i < LineLen && (IsDigit(pLine[i]) || (pLine[i] >= 'a' && pLine[i] <= 'f') || (pLine[i] >= 'A' && pLine[i] <= 'F')))
-                                        i++;
-                        }
+                        { i += 2; while(i < LineLen && (IsDigit(pLine[i]) || (pLine[i] >= 'a' && pLine[i] <= 'f') || (pLine[i] >= 'A' && pLine[i] <= 'F'))) i++; }
                         else
                         {
-                                while(i < LineLen && IsDigit(pLine[i]))
-                                        i++;
-                                if(i < LineLen && pLine[i] == '.')
-                                {
-                                        i++;
-                                        while(i < LineLen && IsDigit(pLine[i]))
-                                                i++;
-                                }
-                                if(i < LineLen && (pLine[i] == 'e' || pLine[i] == 'E'))
-                                {
-                                        i++;
-                                        if(i < LineLen && (pLine[i] == '+' || pLine[i] == '-'))
-                                                i++;
-                                        while(i < LineLen && IsDigit(pLine[i]))
-                                                i++;
-                                }
+                                while(i < LineLen && IsDigit(pLine[i])) i++;
+                                if(i < LineLen && pLine[i] == '.') { i++; while(i < LineLen && IsDigit(pLine[i])) i++; }
+                                if(i < LineLen && (pLine[i] == 'e' || pLine[i] == 'E')) { i++; if(i < LineLen && (pLine[i] == '+' || pLine[i] == '-')) i++; while(i < LineLen && IsDigit(pLine[i])) i++; }
                         }
-                        AddSegment(Start, i - Start, HIGHLIGHT_NUMBER);
-                        continue;
+                        AddSegment(Start, i - Start, HIGHLIGHT_NUMBER); continue;
                 }
 
-                // Identifier or keyword
                 if(IsAlpha(pLine[i]))
                 {
                         int Start = i;
-                        while(i < LineLen && IsAlphaNum(pLine[i]))
-                                i++;
+                        while(i < LineLen && IsAlphaNum(pLine[i])) i++;
                         int WordLen = i - Start;
-
-                        // Check if keyword
                         bool IsKeyword = false;
                         for(int k = 0; s_apKeywords[k]; k++)
                         {
                                 int KWLen = str_length(s_apKeywords[k]);
-                                if(WordLen == KWLen && str_comp_num(pLine + Start, s_apKeywords[k], WordLen) == 0)
-                                {
-                                        IsKeyword = true;
-                                        break;
-                                }
+                                if(WordLen == KWLen && str_comp_num(pLine + Start, s_apKeywords[k], WordLen) == 0) { IsKeyword = true; break; }
                         }
-                        AddSegment(Start, WordLen, IsKeyword ? HIGHLIGHT_KEYWORD : HIGHLIGHT_DEFAULT);
-                        continue;
+                        AddSegment(Start, WordLen, IsKeyword ? HIGHLIGHT_KEYWORD : HIGHLIGHT_DEFAULT); continue;
                 }
 
-                // Default: single character
-                AddSegment(i, 1, HIGHLIGHT_DEFAULT);
-                i++;
+                AddSegment(i, 1, HIGHLIGHT_DEFAULT); i++;
         }
 }
 
-// =========================================================
-// Console Commands
-// =========================================================
+// =============================================================
+// Console commands
+// =============================================================
 void CCodeExec::ConExec(IConsole::IResult *pResult, void *pUserData)
 {
         CCodeExec *pSelf = (CCodeExec *)pUserData;
-        const char *pCode = pResult->GetString(0);
-        pSelf->Execute(pCode);
+        pSelf->Execute(pResult->GetString(0));
 }
 
 void CCodeExec::ConStop(IConsole::IResult *pResult, void *pUserData)
