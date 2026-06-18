@@ -941,8 +941,7 @@ void CCodeExec::RegisterRawAPI()
                 "PowerupShine", [](CEffects &e, vec2 p, vec2 s, float a) { e.PowerupShine(p, s, a); },
                 "FreezingFlakes", [](CEffects &e, vec2 p, vec2 s, float a) { e.FreezingFlakes(p, s, a); },
                 "SparkleTrail", [](CEffects &e, vec2 p, float a) { e.SparkleTrail(p, a); },
-                "Confetti", [](CEffects &e, vec2 p, float a) { e.Confetti(p, a); },
-                "Update", [](CEffects &e) { e.Update(); }
+                "Confetti", [](CEffects &e, vec2 p, float a) { e.Confetti(p, a); }
         );
 
         // CFlow
