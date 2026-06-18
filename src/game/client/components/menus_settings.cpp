@@ -11,6 +11,8 @@
 #include <base/str.h>
 #include <base/time.h>
 
+#include <unordered_map>
+
 #include <engine/font_icons.h>
 #include <engine/graphics.h>
 #include <engine/shared/config.h>
@@ -4089,20 +4091,56 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                         TextRect.w -= PadX;
 
                                         // --- Word wrap helper ---
+                                        // Per-frame cache so we don't recompute TextWidth (expensive) for
+                                        // every line on every frame and during mouse-hit testing. The cache
+                                        // key is the line index; cleared implicitly each frame because the
+                                        // lambda captures a fresh local map.
                                         const int MAX_VIS_LINES = 32;
                                         int aVisBreaks[MAX_VIS_LINES + 1];
 
-                                        auto ComputeVisualLines = [&](const char *pLineText, float MaxW) -> int {
+                                        struct VisLineCacheEntry
+                                        {
+                                                int m_NumVisLines;
+                                                int m_aBreaks[MAX_VIS_LINES + 1];
+                                        };
+                                        std::unordered_map<int, VisLineCacheEntry> VisLineCache;
+                                        int VisLineCacheKey = -1; // last key used to fill aVisBreaks
+
+                                        auto FillBreaks = [&](int Key) {
+                                                if(VisLineCacheKey == Key) return;
+                                                auto it = VisLineCache.find(Key);
+                                                if(it != VisLineCache.end())
+                                                {
+                                                        mem_copy(aVisBreaks, it->second.m_aBreaks, sizeof(aVisBreaks));
+                                                        VisLineCacheKey = Key;
+                                                }
+                                        };
+
+                                        auto ComputeVisualLines = [&](const char *pLineText, float MaxW, int CacheKey = -1) -> int {
+                                                // If cached, return cached result (and fill aVisBreaks).
+                                                if(CacheKey >= 0)
+                                                {
+                                                        auto it = VisLineCache.find(CacheKey);
+                                                        if(it != VisLineCache.end())
+                                                        {
+                                                                mem_copy(aVisBreaks, it->second.m_aBreaks, sizeof(aVisBreaks));
+                                                                VisLineCacheKey = CacheKey;
+                                                                return it->second.m_NumVisLines;
+                                                        }
+                                                }
+
                                                 int Len = str_length(pLineText);
                                                 if(Len <= 0 || MaxW <= 0.0f)
                                                 {
                                                         aVisBreaks[0] = 0;
+                                                        if(CacheKey >= 0) { VisLineCacheEntry e; e.m_NumVisLines = 1; mem_copy(e.m_aBreaks, aVisBreaks, sizeof(aVisBreaks)); VisLineCache[CacheKey] = e; VisLineCacheKey = CacheKey; }
                                                         return 1;
                                                 }
                                                 float FullW = TextRender()->TextWidth(FontSize, pLineText, -1, -1.0f);
                                                 if(FullW <= MaxW)
                                                 {
                                                         aVisBreaks[0] = 0;
+                                                        if(CacheKey >= 0) { VisLineCacheEntry e; e.m_NumVisLines = 1; mem_copy(e.m_aBreaks, aVisBreaks, sizeof(aVisBreaks)); VisLineCache[CacheKey] = e; VisLineCacheKey = CacheKey; }
                                                         return 1;
                                                 }
                                                 int VisLines = 0;
@@ -4126,6 +4164,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                                         Pos = Lo;
                                                         VisLines++;
                                                 }
+                                                if(CacheKey >= 0) { VisLineCacheEntry e; e.m_NumVisLines = VisLines; mem_copy(e.m_aBreaks, aVisBreaks, sizeof(aVisBreaks)); VisLineCache[CacheKey] = e; VisLineCacheKey = CacheKey; }
                                                 return VisLines;
                                         };
 
@@ -4147,7 +4186,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                                                 str_copy(TmpLine, CE.m_aCodeBuffer + CE.GetLineStart(L), LLen + 1);
                                                         else
                                                                 TmpLine[0] = '\0';
-                                                        int NV = ComputeVisualLines(TmpLine, TextRect.w);
+                                                        int NV = ComputeVisualLines(TmpLine, TextRect.w, L);
                                                         for(int v = 0; v < NV; v++)
                                                         {
                                                                 if(CurY <= RelY && RelY < CurY + LineH)
@@ -4179,7 +4218,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                                 else
                                                         TmpLine[0] = '\0';
 
-                                                int NV = ComputeVisualLines(TmpLine, TextRect.w);
+                                                int NV = ComputeVisualLines(TmpLine, TextRect.w, FoundLine);
                                                 int VStart = aVisBreaks[FoundVisLine];
                                                 int VEnd = (FoundVisLine + 1 < NV) ? aVisBreaks[FoundVisLine + 1] : LLen;
 
@@ -4194,7 +4233,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                                                 str_copy(TL2, CE.m_aCodeBuffer + CE.GetLineStart(L), LL2 + 1);
                                                         else
                                                                 TL2[0] = '\0';
-                                                        LineY += ComputeVisualLines(TL2, TextRect.w) * LineH;
+                                                        LineY += ComputeVisualLines(TL2, TextRect.w, L) * LineH;
                                                 }
                                                 LineY += FoundVisLine * LineH;
 
@@ -4263,7 +4302,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                                                 str_copy(TmpLine, CE.m_aCodeBuffer + CE.GetLineStart(L), LLen + 1);
                                                         else
                                                                 TmpLine[0] = '\0';
-                                                        TotalVisualH += ComputeVisualLines(TmpLine, TextRect.w) * LineH;
+                                                        TotalVisualH += ComputeVisualLines(TmpLine, TextRect.w, L) * LineH;
                                                 }
 
                                                 // Ensure cursor visible
@@ -4277,7 +4316,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                                                         str_copy(TmpLine, CE.m_aCodeBuffer + CE.GetLineStart(L), LLen + 1);
                                                                 else
                                                                         TmpLine[0] = '\0';
-                                                                CursorVisualY += ComputeVisualLines(TmpLine, TextRect.w) * LineH;
+                                                                CursorVisualY += ComputeVisualLines(TmpLine, TextRect.w, L) * LineH;
                                                         }
                                                         {
                                                                 int LStart = CE.GetLineStart(CursorLine);
@@ -4286,7 +4325,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                                                         str_copy(TmpLine, CE.m_aCodeBuffer + LStart, LLen + 1);
                                                                 else
                                                                         TmpLine[0] = '\0';
-                                                                int NV = ComputeVisualLines(TmpLine, TextRect.w);
+                                                                int NV = ComputeVisualLines(TmpLine, TextRect.w, CursorLine);
                                                                 int ColOff = CE.m_CursorPos - LStart;
                                                                 for(int v = 0; v < NV; v++)
                                                                 {
@@ -4355,7 +4394,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                                                 str_copy(TmpL, CE.m_aCodeBuffer + CE.GetLineStart(CurLine), LL + 1);
                                                         else
                                                                 TmpL[0] = '\0';
-                                                        int NV = ComputeVisualLines(TmpL, TextRect.w);
+                                                        int NV = ComputeVisualLines(TmpL, TextRect.w, CurLine);
                                                         int ColOff = CE.m_CursorPos - CE.GetLineStart(CurLine);
                                                         for(int v = 0; v < NV; v++)
                                                         {
@@ -4397,7 +4436,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                                         int SegCount = 0;
                                                         CE.GetHighlightSegments(TmpLine, Segs, SegCount);
 
-                                                        int NumVisLines = ComputeVisualLines(TmpLine, TextRect.w);
+                                                        int NumVisLines = ComputeVisualLines(TmpLine, TextRect.w, LineIndex);
 
                                                         // Render line number
                                                         if(Y + LineH >= CodeRect.y && Y < CodeRect.y + CodeRect.h)
@@ -4456,6 +4495,11 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                                                         // --- Render text + selection + cursor in ONE TextEx call ---
                                                                         // TextEx renders in order: text quads -> selection quads (on top) -> cursor quads
                                                                         // This matches the original CLineInput::Render() behavior exactly.
+                                                                        // NOTE: TextEx's selection/cursor offsets are in CHARACTERS (UTF-8 code points),
+                                                                        // not bytes. We must convert byte offsets -> char offsets via
+                                                                        // str_utf8_offset_bytes_to_chars, otherwise multi-byte text (Russian,
+                                                                        // accented Latin, etc.) renders selection at the wrong position or not
+                                                                        // at all on multi-line selections.
                                                                         if(VisLen > 0 || CursorOnThisLine || SelectionOnThisLine)
                                                                         {
                                                                                 TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
@@ -4465,11 +4509,13 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                                                                 RenderCursor.m_Flags = TEXTFLAG_RENDER;
                                                                                 RenderCursor.m_vColorSplits = vColorSplits;
 
-                                                                                // Cursor
+                                                                                // Cursor (CursorCharOff is a byte offset within TmpLine; convert to chars within VisText)
                                                                                 if(CursorOnThisLine)
                                                                                 {
+                                                                                        int CursorByteInVis = CursorCharOff; // already relative to VisStart
+                                                                                        int CursorCharInVis = (int)str_utf8_offset_bytes_to_chars(VisText, (size_t)CursorByteInVis);
                                                                                         RenderCursor.m_CursorMode = TEXT_CURSOR_CURSOR_MODE_SET;
-                                                                                        RenderCursor.m_CursorCharacter = CursorCharOff;
+                                                                                        RenderCursor.m_CursorCharacter = CursorCharInVis;
                                                                                         static int s_PrevCursorPos = -1;
                                                                                         RenderCursor.m_ForceCursorRendering = (s_PrevCursorPos != CE.m_CursorPos);
                                                                                         s_PrevCursorPos = CE.m_CursorPos;
@@ -4479,8 +4525,15 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                                                                 // which draws selection ON TOP of text, just like CLineInput::Render()
                                                                                 if(SelectionOnThisLine)
                                                                                 {
-                                                                                        int SelStartChar = maximum(SelS, VisBufStart) - VisBufStart;
-                                                                                        int SelEndChar = minimum(SelE, VisBufEnd) - VisBufStart;
+                                                                                        // byte offsets within the visual line
+                                                                                        int SelStartByteInVis = maximum(SelS, VisBufStart) - VisBufStart;
+                                                                                        int SelEndByteInVis = minimum(SelE, VisBufEnd) - VisBufStart;
+                                                                                        // clamp to visual line bounds
+                                                                                        if(SelStartByteInVis < 0) SelStartByteInVis = 0;
+                                                                                        if(SelEndByteInVis > VisLen) SelEndByteInVis = VisLen;
+                                                                                        // convert to character offsets (what TextEx expects)
+                                                                                        int SelStartChar = (int)str_utf8_offset_bytes_to_chars(VisText, (size_t)SelStartByteInVis);
+                                                                                        int SelEndChar = (int)str_utf8_offset_bytes_to_chars(VisText, (size_t)SelEndByteInVis);
                                                                                         RenderCursor.m_CalculateSelectionMode = TEXT_CURSOR_SELECTION_MODE_SET;
                                                                                         RenderCursor.m_SelectionStart = SelStartChar;
                                                                                         RenderCursor.m_SelectionEnd = SelEndChar;

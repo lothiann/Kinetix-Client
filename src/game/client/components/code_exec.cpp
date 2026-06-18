@@ -161,7 +161,20 @@ bool CCodeExec::Execute(const char *pCode)
         (*m_pLua)["__code_exec_ptr"] = this;
         lua_sethook(m_pLua->lua_state(), LuaAbortHook, LUA_MASKCOUNT, 1000);
 
-        sol::load_result load = m_pLua->load(pCode);
+        // Sanitize the source start. If the editor buffer got a stray UTF-8
+        // BOM (EF BB BF) or a leading continuation byte (10xxxxxx) at offset 0
+        // (which can happen after certain paste/backspace edge cases), Lua's
+        // load() fails with "unexpected symbol near '<0xAE>'". Skip leading
+        // BOM and any stray continuation bytes so the script still runs.
+        const char *pSrc = pCode;
+        // skip UTF-8 BOM
+        if((unsigned char)pSrc[0] == 0xEF && (unsigned char)pSrc[1] == 0xBB && (unsigned char)pSrc[2] == 0xBF)
+                pSrc += 3;
+        // skip leading continuation bytes (10xxxxxx) that have no lead byte
+        while((unsigned char)pSrc[0] >= 0x80 && (unsigned char)pSrc[0] <= 0xBF)
+                pSrc++;
+
+        sol::load_result load = m_pLua->load(pSrc);
         if(!load.valid())
         {
                 sol::optional<sol::error> maybe_err = load;
