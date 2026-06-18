@@ -823,8 +823,8 @@ void CCodeExec::RegisterRawAPI()
                 "IsSpeedup", [](CCollision &c, int idx) -> bool { return c.IsSpeedup(idx); },
                 "IsTune", [](CCollision &c, int idx) -> int { return c.IsTune(idx); },
                 "GetSpeedup", [this, &lua](CCollision &c, int idx) -> sol::object {
-                        vec2 dir; int force, maxSpeed; c.GetSpeedup(idx, &dir, &force, &maxSpeed);
-                        auto t = lua.create_table(); t["Dir"] = dir; t["Force"] = force; t["MaxSpeed"] = maxSpeed;
+                        vec2 dir; int force, maxSpeed, type; c.GetSpeedup(idx, &dir, &force, &maxSpeed, &type);
+                        auto t = lua.create_table(); t["Dir"] = dir; t["Force"] = force; t["MaxSpeed"] = maxSpeed; t["Type"] = type;
                         return t;
                 },
                 "GetSwitchType", &CCollision::GetSwitchType,
@@ -1355,7 +1355,15 @@ void CCodeExec::RegisterRawAPI()
                 "AntiPingGunfire", [](CGameClient &gc) -> bool { return gc.AntiPingGunfire(); },
                 "IsOtherTeam", [](CGameClient &gc, int id) -> bool { return gc.IsOtherTeam(id); },
                 "SwitchStateTeam", [](CGameClient &gc) -> int { return gc.SwitchStateTeam(); },
-                "IntersectCharacter", [](CGameClient &gc, vec2 hookPos, vec2 newPos, int ownId) -> int { return gc.IntersectCharacter(hookPos, newPos, ownId); },
+                "IntersectCharacter", [this, &lua](CGameClient &gc, vec2 hookPos, vec2 newPos, int ownId) -> sol::object {
+                        vec2 newPos2, playerPos;
+                        int id = gc.IntersectCharacter(hookPos, newPos, newPos2, ownId, &playerPos);
+                        auto t = lua.create_table();
+                        t["ClientId"] = id;
+                        t["NewPos2"] = newPos2;
+                        t["PlayerPosition"] = playerPos;
+                        return t;
+                },
                 "DummyResetInput", [](CGameClient &gc) { gc.DummyResetInput(); },
                 "OnReset", [](CGameClient &gc) { gc.OnReset(); },
                 "Version", [](CGameClient &gc) -> const char* { return gc.Version(); },
@@ -1375,7 +1383,7 @@ void CCodeExec::RegisterRawAPI()
         cl.set_function("Connect", [this](const std::string &addr) { Client()->Connect(addr.c_str()); });
         cl.set_function("Disconnect", [this]() { Client()->Disconnect(); });
         cl.set_function("EnterGame", [this]() { Client()->EnterGame(0); });
-        cl.set_function("RconAuth", [this](const std::string &user, const std::string &pass) { Client()->RconAuth(user.c_str(), pass.c_str(), nullptr); });
+        cl.set_function("RconAuth", [this](const std::string &user, const std::string &pass) { Client()->RconAuth(user.c_str(), pass.c_str(), 0); });
         cl.set_function("Rcon", [this](const std::string &cmd) { Client()->Rcon(cmd.c_str()); });
         cl.set_function("RconAuthed", [this]() -> bool { return Client()->RconAuthed(); });
         cl.set_function("GameTick", [this]() -> int { return Client()->GameTick(0); });
