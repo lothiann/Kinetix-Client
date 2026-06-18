@@ -4160,7 +4160,17 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                                 }
 
                                                 if(FoundLine < 0)
+                                                {
+                                                        // Clamp like the pre-word-wrap version (72585ac):
+                                                        // mouse above the first line -> start of buffer,
+                                                        // mouse below the last line -> end of buffer.
+                                                        // Without this, dragging outside the text area returned
+                                                        // the end of the buffer unconditionally, which broke
+                                                        // multi-line drag selection.
+                                                        if(RelY < 0.0f)
+                                                                return 0;
                                                         return str_length(CE.m_aCodeBuffer);
+                                                }
 
                                                 int LStart = CE.GetLineStart(FoundLine);
                                                 int LLen = CE.GetLineLength(FoundLine);

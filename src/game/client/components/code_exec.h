@@ -65,7 +65,7 @@ public:
         const char *GetLastError() const;
 
         // The Lua source code buffer (edited in UI)
-        char m_aCodeBuffer[8192];
+        char m_aCodeBuffer[65536];
 
         // Public so LuaAbortHook (static function) can read it
         volatile bool m_AbortRequested;
