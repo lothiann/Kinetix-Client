@@ -4036,7 +4036,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
 
                         // Header
                         Panel.HSplitTop(25.0f, &Label, &Panel);
-                        Ui()->DoLabel(&Label, Localize("Code Execution [Lua]"), 16.0f, TEXTALIGN_ML);
+                        Ui()->DoLabel(&Label, Localize("Lua Execution [Experimental]"), 16.0f, TEXTALIGN_ML);
                         Panel.HSplitTop(5.0f, nullptr, &Panel);
 
                         // Code input area — multiline editor with line numbers + syntax highlighting + word wrap
