@@ -252,7 +252,15 @@ MACRO_CONFIG_INT(ClDummyResetOnSwitch, cl_dummy_resetonswitch, 0, 0, 2, CFGFLAG_
 MACRO_CONFIG_INT(ClDummyRestoreWeapon, cl_dummy_restore_weapon, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Whether dummy should switch to last weapon after hammerfly")
 MACRO_CONFIG_INT(ClDummyCopyMoves, cl_dummy_copy_moves, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_INSENSITIVE, "Whether dummy should copy your moves")
 MACRO_CONFIG_INT(ClVersionSpoof, cl_version_spoof, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Spoof DDNet client version number")
-MACRO_CONFIG_INT(ClVersionSpoofId, cl_version_spoof_id, 20000, 10000, 21000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "DDNet version number to spoof (10000-21000, step 10)")
+MACRO_CONFIG_INT(ClVersionSpoofId, cl_version_spoof_id, 20000, 10000, 21000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "DDNet version number to spoof (10000-21000)")
+
+// Client identity spoof (sent in NETMSG_CLIENTVER as DDNetVersionStr)
+MACRO_CONFIG_INT(ClSpoofClientStr, cl_spoof_client_str, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Spoof client name/version string sent to server")
+MACRO_CONFIG_INT(ClSpoofClientPreset, cl_spoof_client_preset, 0, 0, 3, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Client preset: 0=DDNet, 1=TClient, 2=BestClient, 3=Custom")
+MACRO_CONFIG_STR(ClSpoofClientName, cl_spoof_client_name, 24, "TClient", CFGFLAG_CLIENT | CFGFLAG_SAVE, "Client name to spoof (replaces GAME_NAME in DDNetVersionStr)")
+MACRO_CONFIG_STR(ClSpoofClientVersion, cl_spoof_client_version, 16, "10.8.7", CFGFLAG_CLIENT | CFGFLAG_SAVE, "Client version string to spoof (replaces GAME_RELEASE_VERSION)")
+MACRO_CONFIG_INT(ClSpoofGitHashEnabled, cl_spoof_git_hash_enabled, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Enable custom git hash spoof")
+MACRO_CONFIG_STR(ClSpoofGitHash, cl_spoof_git_hash, 24, "", CFGFLAG_CLIENT | CFGFLAG_SAVE, "Git hash to spoof (empty = use real, 'none' = hide)")
 
 // more controllable dummy command
 MACRO_CONFIG_INT(ClDummyControl, cl_dummy_control, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_INSENSITIVE, "Whether you can control dummy at the same time (cl_dummy_jump, cl_dummy_fire, cl_dummy_hook)")

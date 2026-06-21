@@ -90,9 +90,49 @@ using namespace std::chrono_literals;
 const char *CGameClient::Version() const { return GAME_VERSION; }
 const char *CGameClient::NetVersion() const { return GAME_NETVERSION; }
 const char *CGameClient::NetVersion7() const { return GAME_NETVERSION7; }
-int CGameClient::DDNetVersion() const { return g_Config.m_ClVersionSpoof ? g_Config.m_ClVersionSpoofId : DDNET_VERSION_NUMBER; }
-const char *CGameClient::DDNetVersionStr() const { return m_aDDNetVersionStr; }
+int CGameClient::DDNetVersion() const { return g_Config.m_ClSpoofClientStr ? g_Config.m_ClVersionSpoofId : DDNET_VERSION_NUMBER; }
+const char *CGameClient::DDNetVersionStr() const
+{
+        // Rebuild on every read so spoof settings changed at runtime (Settings UI)
+        // take effect on the next connect, not only after a full client restart.
+        UpdateDDNetVersionStr();
+        return m_aDDNetVersionStr;
+}
 int CGameClient::ClientVersion7() const { return CLIENT_VERSION7; }
+
+void CGameClient::UpdateDDNetVersionStr() const
+{
+        // Client identity spoof: when enabled, replace GAME_NAME / GAME_RELEASE_VERSION
+        // / GIT_SHORTREV_HASH with user-configured values. This only affects the
+        // string sent to the server in NETMSG_CLIENTVER (DDNetVersionStr); the
+        // real GAME_NAME is still used for window title, HTTP UA, etc.
+        if(g_Config.m_ClSpoofClientStr)
+        {
+                const char *pName = g_Config.m_ClSpoofClientName[0] ? g_Config.m_ClSpoofClientName : GAME_NAME;
+                const char *pVer = g_Config.m_ClSpoofClientVersion[0] ? g_Config.m_ClSpoofClientVersion : GAME_RELEASE_VERSION;
+                if(g_Config.m_ClSpoofGitHashEnabled)
+                {
+                        const char *pHash = g_Config.m_ClSpoofGitHash[0] ? g_Config.m_ClSpoofGitHash : "0";
+                        str_format(m_aDDNetVersionStr, sizeof(m_aDDNetVersionStr), "%s %s (%s)", pName, pVer, pHash);
+                }
+                else if(GIT_SHORTREV_HASH)
+                {
+                        str_format(m_aDDNetVersionStr, sizeof(m_aDDNetVersionStr), "%s %s (%s)", pName, pVer, GIT_SHORTREV_HASH);
+                }
+                else
+                {
+                        str_format(m_aDDNetVersionStr, sizeof(m_aDDNetVersionStr), "%s %s", pName, pVer);
+                }
+        }
+        else if(GIT_SHORTREV_HASH)
+        {
+                str_format(m_aDDNetVersionStr, sizeof(m_aDDNetVersionStr), "%s %s (%s)", GAME_NAME, GAME_RELEASE_VERSION, GIT_SHORTREV_HASH);
+        }
+        else
+        {
+                str_format(m_aDDNetVersionStr, sizeof(m_aDDNetVersionStr), "%s %s", GAME_NAME, GAME_RELEASE_VERSION);
+        }
+}
 const char *CGameClient::GetItemName(int Type) const { return m_NetObjHandler.GetObjName(Type); }
 
 void CGameClient::OnConsoleInit()
@@ -349,14 +389,10 @@ void CGameClient::OnInit()
         m_RenderTools.Init(Graphics(), TextRender());
         m_RenderMap.Init(Graphics(), TextRender());
 
-        if(GIT_SHORTREV_HASH)
-        {
-                str_format(m_aDDNetVersionStr, sizeof(m_aDDNetVersionStr), "%s %s (%s)", GAME_NAME, GAME_RELEASE_VERSION, GIT_SHORTREV_HASH);
-        }
-        else
-        {
-                str_format(m_aDDNetVersionStr, sizeof(m_aDDNetVersionStr), "%s %s", GAME_NAME, GAME_RELEASE_VERSION);
-        }
+        // Build initial m_aDDNetVersionStr from current config. The string is
+        // rebuilt on every read of DDNetVersionStr() so spoof settings changed
+        // at runtime (in Settings UI) take effect on the next connect.
+        UpdateDDNetVersionStr();
 
         // TODO: this should be different
         // setup item sizes

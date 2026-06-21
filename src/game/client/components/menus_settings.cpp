@@ -5178,11 +5178,40 @@ void CMenus::RenderSettingsBotSettings(CUIRect MainView)
 
         MainView.HSplitTop(PanelGap, nullptr, &MainView);
 
-        // === Version Spoof Panel ===
+        // === Spoofer Panel ===
+        // One unified container that replaces both the old "Version Spoof" panel
+        // and the old "Client Identity Spoof" panel. Spoofs DDNetVersion (int),
+        // DDNetVersionStr (name + version + git hash) sent in NETMSG_CLIENTVER.
+        // Real GAME_NAME (window title, HTTP UA, logs) is NOT touched.
+        // Server never kicks on these fields — they are only logged / displayed.
         {
-                float SectionH = PanelPad + 25.0f + 5.0f + 20.0f;
-                if(g_Config.m_ClVersionSpoof)
-                        SectionH += RowGap + 20.0f;
+                // Presets table: index = ClSpoofClientPreset
+                // 0 = DDNet 19.8.2 (latest stable, git cbb22df93df2d97c)
+                // 1 = T-Client     (CLIENT_NAME="TClient", version="10.8.7", DDNetVersion=19080)
+                // 2 = Best Client  (CLIENT_NAME="BestClient", version="1.9 beta", DDNetVersion=19080)
+                // 3 = Custom       (user-provided)
+                enum ESpooferPreset
+                {
+                        PRESET_DDNET = 0,
+                        PRESET_TCLIENT = 1,
+                        PRESET_BESTCLIENT = 2,
+                        PRESET_CUSTOM = 3,
+                };
+                static const char *const s_apPresetClientNames[] = {"DDNet", "TClient", "BestClient", ""};
+                static const char *const s_apPresetVersions[] = {"19.8.2", "10.8.7", "1.9 beta", ""};
+                static const int s_aPresetVersionIds[] = {19082, 19080, 19080, 20000};
+
+                float SectionH = PanelPad + 25.0f + 5.0f + 20.0f; // header + enable checkbox
+                if(g_Config.m_ClSpoofClientStr)
+                {
+                        SectionH += RowGap + 20.0f; // Version ID slider
+                        SectionH += RowGap + 20.0f; // Client name dropdown
+                        if(g_Config.m_ClSpoofClientPreset == PRESET_CUSTOM)
+                                SectionH += RowGap + 20.0f; // Custom client name field
+                        SectionH += RowGap + 20.0f; // Client version field
+                        SectionH += RowGap + 20.0f; // Git hash checkbox + field (same row)
+                        SectionH += RowGap + 15.0f; // hint line
+                }
                 SectionH += PanelPad;
                 MainView.HSplitTop(SectionH, &PanelBg, &MainView);
                 PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
@@ -5191,21 +5220,105 @@ void CMenus::RenderSettingsBotSettings(CUIRect MainView)
 
                 // Header
                 Panel.HSplitTop(25.0f, &Label, &Panel);
-                Ui()->DoLabel(&Label, Localize("Version Spoof"), 16.0f, TEXTALIGN_ML);
+                Ui()->DoLabel(&Label, Localize("Spoofer"), 16.0f, TEXTALIGN_ML);
                 Panel.HSplitTop(5.0f, nullptr, &Panel);
 
                 // Enable checkbox
                 Panel.HSplitTop(20.0f, &Row, &Panel);
-                if(DoButton_CheckBox(&g_Config.m_ClVersionSpoof, Localize("Spoof DDNet version"), g_Config.m_ClVersionSpoof, &Row))
-                        g_Config.m_ClVersionSpoof ^= 1;
+                if(DoButton_CheckBox(&g_Config.m_ClSpoofClientStr, Localize("Spoofer"), g_Config.m_ClSpoofClientStr, &Row))
+                        g_Config.m_ClSpoofClientStr ^= 1;
+                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClSpoofClientStr, &Row, Localize("Spoof client identity (name, version, git hash, version ID) sent to the server in NETMSG_CLIENTVER. Does not affect NetVersion — server won't kick."));
 
-                if(g_Config.m_ClVersionSpoof)
+                if(g_Config.m_ClSpoofClientStr)
                 {
+                        // Row: Version ID (slider, 10000-21000, exact value)
                         Panel.HSplitTop(RowGap, nullptr, &Panel);
                         Panel.HSplitTop(20.0f, &Row, &Panel);
-                        int SpoofId = (g_Config.m_ClVersionSpoofId / 10) * 10;
+                        int SpoofId = g_Config.m_ClVersionSpoofId;
                         Ui()->DoScrollbarOption(&g_Config.m_ClVersionSpoofId, &SpoofId, &Row, Localize("Version ID"), 10000, 21000, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
-                        g_Config.m_ClVersionSpoofId = (SpoofId / 10) * 10;
+                        g_Config.m_ClVersionSpoofId = SpoofId;
+
+                        // Row: Client name (dropdown)
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
+                        Panel.HSplitTop(20.0f, &Row, &Panel);
+                        {
+                                CUIRect Lab, DropDown;
+                                Row.VSplitLeft(110.0f, &Lab, &DropDown);
+                                Ui()->DoLabel(&Lab, Localize("Client name"), 12.0f, TEXTALIGN_ML);
+                                const char *apPresetNames[] = {Localize("DDNet"), Localize("T-Client"), Localize("Best Client"), Localize("Custom")};
+                                static CUi::SDropDownState s_PresetDropDownState;
+                                static CScrollRegion s_PresetDropDownScrollRegion;
+                                s_PresetDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_PresetDropDownScrollRegion;
+                                const int NewPreset = Ui()->DoDropDown(&DropDown, g_Config.m_ClSpoofClientPreset, apPresetNames, 4, s_PresetDropDownState);
+                                if(NewPreset != g_Config.m_ClSpoofClientPreset)
+                                {
+                                        g_Config.m_ClSpoofClientPreset = NewPreset;
+                                        // Auto-apply preset: name, version, version ID
+                                        if(NewPreset != PRESET_CUSTOM)
+                                        {
+                                                str_copy(g_Config.m_ClSpoofClientName, s_apPresetClientNames[NewPreset], sizeof(g_Config.m_ClSpoofClientName));
+                                                str_copy(g_Config.m_ClSpoofClientVersion, s_apPresetVersions[NewPreset], sizeof(g_Config.m_ClSpoofClientVersion));
+                                                g_Config.m_ClVersionSpoofId = s_aPresetVersionIds[NewPreset];
+                                        }
+                                }
+                        }
+
+                        // Row: Custom client name (only when preset = Custom)
+                        if(g_Config.m_ClSpoofClientPreset == PRESET_CUSTOM)
+                        {
+                                Panel.HSplitTop(RowGap, nullptr, &Panel);
+                                Panel.HSplitTop(20.0f, &Row, &Panel);
+                                CUIRect Lab, Field;
+                                Row.VSplitLeft(110.0f, &Lab, &Field);
+                                Ui()->DoLabel(&Lab, Localize("Custom client name"), 12.0f, TEXTALIGN_ML);
+                                static CLineInput s_NameInput(g_Config.m_ClSpoofClientName, sizeof(g_Config.m_ClSpoofClientName));
+                                s_NameInput.SetEmptyText("MyClient");
+                                Ui()->DoEditBox(&s_NameInput, &Field, 12.0f);
+                        }
+
+                        // Row: Client version (auto-filled from preset, but editable)
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
+                        Panel.HSplitTop(20.0f, &Row, &Panel);
+                        {
+                                CUIRect Lab, Field;
+                                Row.VSplitLeft(110.0f, &Lab, &Field);
+                                Ui()->DoLabel(&Lab, Localize("Client version"), 12.0f, TEXTALIGN_ML);
+                                static CLineInput s_VerInput(g_Config.m_ClSpoofClientVersion, sizeof(g_Config.m_ClSpoofClientVersion));
+                                s_VerInput.SetEmptyText("20.0");
+                                Ui()->DoEditBox(&s_VerInput, &Field, 12.0f);
+                        }
+
+                        // Row: Git hash checkbox + (if enabled) Git hash field
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
+                        Panel.HSplitTop(20.0f, &Row, &Panel);
+                        {
+                                CUIRect CbRect, Field;
+                                Row.VSplitLeft(110.0f, &CbRect, &Field);
+                                if(DoButton_CheckBox(&g_Config.m_ClSpoofGitHashEnabled, Localize("Git hash"), g_Config.m_ClSpoofGitHashEnabled, &CbRect))
+                                        g_Config.m_ClSpoofGitHashEnabled ^= 1;
+                                if(g_Config.m_ClSpoofGitHashEnabled)
+                                {
+                                        static CLineInput s_HashInput(g_Config.m_ClSpoofGitHash, sizeof(g_Config.m_ClSpoofGitHash));
+                                        s_HashInput.SetEmptyText("abc1234def567890");
+                                        Ui()->DoEditBox(&s_HashInput, &Field, 12.0f);
+                                }
+                                else
+                                {
+                                        // Clear hash when checkbox is off → real git hash is used
+                                        g_Config.m_ClSpoofGitHash[0] = '\0';
+                                }
+                        }
+
+                        // Hint / preview line
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
+                        Panel.HSplitTop(15.0f, &Row, &Panel);
+                        TextRender()->TextColor(0.5f, 0.5f, 0.5f, 1.0f);
+                        char aPreview[96];
+                        const char *pPreviewName = g_Config.m_ClSpoofClientName[0] ? g_Config.m_ClSpoofClientName : s_apPresetClientNames[g_Config.m_ClSpoofClientPreset];
+                        const char *pPreviewVer = g_Config.m_ClSpoofClientVersion[0] ? g_Config.m_ClSpoofClientVersion : s_apPresetVersions[g_Config.m_ClSpoofClientPreset];
+                        str_format(aPreview, sizeof(aPreview), Localize("Server will see: \"%s %s (...)\""), pPreviewName, pPreviewVer);
+                        Ui()->DoLabel(&Row, aPreview, 11.0f, TEXTALIGN_ML);
+                        TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
                 }
         }
 

@@ -250,7 +250,7 @@ private:
 
         int m_aCheckInfo[MAX_DUMMIES];
 
-        char m_aDDNetVersionStr[64];
+        mutable char m_aDDNetVersionStr[64];
 
         static void ConTeam(IConsole::IResult *pResult, void *pUserData);
         static void ConKill(IConsole::IResult *pResult, void *pUserData);
@@ -653,6 +653,10 @@ public:
         int DDNetVersion() const override;
         const char *DDNetVersionStr() const override;
         int ClientVersion7() const override;
+
+        // Rebuilds m_aDDNetVersionStr from current spoof config. Called lazily
+        // from DDNetVersionStr() so the string is always up-to-date when sent.
+        void UpdateDDNetVersionStr() const;
 
         void DoTeamChangeMessage7(const char *pName, int ClientId, int Team, const char *pPrefix = "");
 
