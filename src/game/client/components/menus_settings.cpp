@@ -3914,7 +3914,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                 // Cache Ticks slider
                                 Panel.HSplitTop(LineSize, &Row, &Panel);
                                 Panel.HSplitTop(RowGap, nullptr, &Panel);
-                                Ui()->DoScrollbarOption(&BN.m_KinoCacheTicks, &BN.m_KinoCacheTicks, &Row, Localize("Cache Ticks"), 1, 30, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
+                                Ui()->DoScrollbarOption(&BN.m_KinoCacheTicks, &BN.m_KinoCacheTicks, &Row, Localize("Cache Ticks"), 1, 128, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
 
                                 // Show Path + Show Field
                                 Panel.HSplitTop(LineSize, &Row, &Panel);

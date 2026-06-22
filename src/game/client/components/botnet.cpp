@@ -104,10 +104,12 @@ CBotNet::CBotNet()
 
         // Kinodynamic A* (State-Lattice) defaults
         m_KinodynamicEnabled = false;
-        m_KinoCandidates = 200; // A* node budget
-        m_KinoTicks = 6;        // max search depth (primitives)
+        m_KinoCandidates = 400; // A* node budget — enough for hook-swing maneuvers
+        m_KinoTicks = 8;        // max search depth (primitives) — covers full jump+hook sequences
         m_KinoHookAngles = 8;   // hook-angle primitives
-        m_KinoCacheTicks = 10;  // receding horizon window
+        m_KinoCacheTicks = 128; // receding horizon window — 128 = KINO_MAX_TICKS = apply full plan
+        // (was 10, which cut plans mid-maneuver and caused the bot to oscillate
+        //  in hook-swing scenarios.  Drift check (48px) is the real invalidation.)
         m_KinoShowPath = true;
         m_KinoShowField = false;
 
@@ -182,7 +184,7 @@ void CBotNet::OnConsoleInit()
         Console()->Register("c_kino_candidates", "i[count]", CFGFLAG_CLIENT, ConKinoCandidates, this, "Kinodynamic: A* node budget (100-2000)");
         Console()->Register("c_kino_ticks", "i[depth]", CFGFLAG_CLIENT, ConKinoTicks, this, "Kinodynamic: max search depth in primitives (3-12)");
         Console()->Register("c_kino_hook_angles", "i[angles]", CFGFLAG_CLIENT, ConKinoHookAngles, this, "Kinodynamic: number of hook angles (4-32)");
-        Console()->Register("c_kino_cache_ticks", "i[ticks]", CFGFLAG_CLIENT, ConKinoCacheTicks, this, "Kinodynamic: cache duration in ticks (1-30)");
+        Console()->Register("c_kino_cache_ticks", "i[ticks]", CFGFLAG_CLIENT, ConKinoCacheTicks, this, "Kinodynamic: cache duration in ticks (1-128, 128=full plan)");
         Console()->Register("c_kino_show_path", "i[on]", CFGFLAG_CLIENT, ConKinoShowPath, this, "Kinodynamic: show predicted path");
         Console()->Register("c_kino_show_field", "i[on]", CFGFLAG_CLIENT, ConKinoShowField, this, "Kinodynamic: show vector field");
         Console()->Register("c_send", "s[dummyids] r[command]", CFGFLAG_CLIENT, ConSendDummy, this, "Execute command on dummies (-1=all, 0,1,2=specific)");
@@ -2934,7 +2936,7 @@ void CBotNet::ConKinoCacheTicks(IConsole::IResult *pResult, void *pUserData)
 {
         CBotNet *p = (CBotNet *)pUserData;
         int v = pResult->GetInteger(0);
-        if(v >= 1 && v <= 30)
+        if(v >= 1 && v <= 128)
                 p->m_KinoCacheTicks = v;
 }
 
