@@ -3017,8 +3017,13 @@ static void BuildPrimitiveTable(int hookAngles, SMotionPrimitive *pPrims, int &o
 // DDNet jump/hook state machines reset cleanly between primitives (jump is
 // level-triggered on m_Jumped, hook is a state machine on m_HookState — both
 // live inside CCharacterCore and are restored via SetCore).
-static void BuildPrimitiveInputs(const SMotionPrimitive &prim, CNetObj_PlayerInput *pInputs)
+//
+// For hook primitives, pass a non-zero pAimRel to aim at a specific grab point
+// (relative to bot).  When pAimRel is null or its weight is 0, the primitive's
+// fixed HookAngle is used (legacy behaviour — kept only as a fallback).
+static void BuildPrimitiveInputs(const SMotionPrimitive &prim, CNetObj_PlayerInput *pInputs, const vec2 *pAimRel = nullptr)
 {
+        bool useAimRel = (pAimRel != nullptr);
         for(int t = 0; t < prim.Ticks; t++)
         {
                 pInputs[t].m_Direction = prim.Direction;
@@ -3028,10 +3033,22 @@ static void BuildPrimitiveInputs(const SMotionPrimitive &prim, CNetObj_PlayerInp
 
                 if(hookActive)
                 {
-                        // Aim at the hook angle (relative to the bot)
-                        float aimDist = 200.0f;
-                        pInputs[t].m_TargetX = (int)(cosf(prim.HookAngle) * aimDist);
-                        pInputs[t].m_TargetY = (int)(sinf(prim.HookAngle) * aimDist);
+                        if(useAimRel)
+                        {
+                                // Aim at the actual grab point discovered by raycast.
+                                // Direction is what matters (server normalises), but we
+                                // also scale the vector so the visual cursor sits on
+                                // the grab point rather than 200px out along the angle.
+                                pInputs[t].m_TargetX = (int)pAimRel->x;
+                                pInputs[t].m_TargetY = (int)pAimRel->y;
+                        }
+                        else
+                        {
+                                // Fallback: fixed-angle aim (legacy)
+                                float aimDist = 200.0f;
+                                pInputs[t].m_TargetX = (int)(cosf(prim.HookAngle) * aimDist);
+                                pInputs[t].m_TargetY = (int)(sinf(prim.HookAngle) * aimDist);
+                        }
                 }
                 else
                 {
@@ -3085,7 +3102,35 @@ struct SLatticeNode
         int PrimIdx; // primitive used from parent (-1 = root)
         uint64_t StateKey;
         bool Closed;
+        // Hook aim point (relative to bot at expansion time) used by hook
+        // primitives.  Computed by raycasting at expansion time so the hook
+        // always aims at a real hookable surface, not a blind fixed angle.
+        // AimRelW == 0.0f means "no specific aim — use primitive's angle".
+        float AimRelX;
+        float AimRelY;
+        float AimRelW;
 };
+
+// Raycast from `from` in direction `angle` and return true if a hookable
+// surface is found within maxDist.  outGrab = world position of the grab point.
+// Returns false for: no hit, TILE_NOHOOK (hook would retract, not grab),
+// TILE_TELEINHOOK (teleport-hook — too complex to plan around reliably).
+static bool FindHookGrabPoint(CCollision *pColl, vec2 from, float angle, float maxDist, vec2 &outGrab)
+{
+        vec2 dir = vec2(cosf(angle), sinf(angle));
+        vec2 endPos = from + dir * maxDist;
+        vec2 hitPos, hitBefore;
+        int hit = pColl->IntersectLineTeleHook(from, endPos, &hitPos, &hitBefore, nullptr);
+        if(hit == 0)
+                return false; // no hit — hook would fly into the void
+        if(hit == TILE_NOHOOK)
+                return false; // hook would retract, not grab
+        if(hit == TILE_TELEINHOOK)
+                return false; // teleport-hook — skip for predictability
+        // Any other solid tile is hookable.
+        outGrab = hitPos;
+        return true;
+}
 
 void CBotNet::ComputeKinodynamic(int Dummy, const vec2 &MyPos, int botTX, int botTY, int targetTX, int targetTY, CBotNetDummy &State)
 {
@@ -3168,9 +3213,22 @@ void CBotNet::ComputeKinodynamic(int Dummy, const vec2 &MyPos, int botTX, int bo
                 bool hooked = (root.Core.m_HookState == HOOK_GRABBED);
                 root.StateKey = MakeStateKey(botTX, botTY, velDir, onGround, hooked);
                 root.Closed = false;
+                root.AimRelX = 0.0f;
+                root.AimRelY = 0.0f;
+                root.AimRelW = 0.0f;
                 vNodes.push_back(root);
                 bestG[root.StateKey] = 0.0f;
         }
+
+        // Hook length for raycasting.  Read from the bot's tuning so custom
+        // tuning zones are respected.  Clamp to a sane range so a broken
+        // tuning (e.g. 0 or 1e9) can't paralyse or explode the search.
+        float hookLength = pBot->GetCore().m_Tuning.m_HookLength;
+        if(!(hookLength > 1.0f) || !(hookLength < 10000.0f))
+                hookLength = 900.0f; // DDNet default
+        CCollision *pColl = FutureWorld.Collision();
+        if(!pColl)
+                return; // no collision — can't raycast, can't plan safely
 
         auto fnCmp = [&vNodes](int a, int b) { return vNodes[a].F > vNodes[b].F; };
         std::priority_queue<int, std::vector<int>, decltype(fnCmp)> open(fnCmp);
@@ -3217,9 +3275,35 @@ void CBotNet::ComputeKinodynamic(int Dummy, const vec2 &MyPos, int botTX, int bo
                         CCharacterCore savedCore = pBot->GetCore();
                         vec2 savedPos = pBot->m_Pos;
 
+                        // For hook primitives: raycast from the bot's current
+                        // position to find a REAL hookable surface in the
+                        // primitive's aim direction.  Skip the primitive if
+                        // nothing hookable is in range — firing a hook into the
+                        // void wastes a tick and visually spams a long hook
+                        // line toward nothing.
+                        //
+                        // Also refuse to fire if the hook state machine isn't
+                        // idle (a previous primitive left it FLYING/GRABBED).
+                        vec2 aimRel(0.0f, 0.0f);
+                        bool haveAim = false;
+                        const bool isHookPrim = (prim.HookStartTick >= 0 && prim.HookHoldTicks > 0);
+                        if(isHookPrim)
+                        {
+                                // Hook not ready — skip.
+                                if(savedCore.m_HookState != HOOK_IDLE)
+                                        continue;
+
+                                vec2 grabPos;
+                                if(!FindHookGrabPoint(pColl, savedPos, prim.HookAngle, hookLength, grabPos))
+                                        continue; // no hookable surface in range — skip
+
+                                aimRel = grabPos - savedPos;
+                                haveAim = true;
+                        }
+
                         // Build the primitive's input array
                         CNetObj_PlayerInput aPrimInputs[LATTICE_PRIM_MAX_TICKS];
-                        BuildPrimitiveInputs(prim, aPrimInputs);
+                        BuildPrimitiveInputs(prim, aPrimInputs, haveAim ? &aimRel : nullptr);
 
                         // Simulate the primitive
                         bool died = false;
@@ -3300,6 +3384,11 @@ void CBotNet::ComputeKinodynamic(int Dummy, const vec2 &MyPos, int botTX, int bo
                         child.PrimIdx = primI;
                         child.StateKey = newKey;
                         child.Closed = false;
+                        // Preserve the aim point used at expansion time so the
+                        // plan-replay step can reproduce the exact same inputs.
+                        child.AimRelX = haveAim ? aimRel.x : 0.0f;
+                        child.AimRelY = haveAim ? aimRel.y : 0.0f;
+                        child.AimRelW = haveAim ? 1.0f : 0.0f;
                         vNodes.push_back(child);
                         open.push((int)vNodes.size() - 1);
                 }
@@ -3336,12 +3425,16 @@ void CBotNet::ComputeKinodynamic(int Dummy, const vec2 &MyPos, int botTX, int bo
         }
 
         // === Reconstruct the primitive path (root → result) ===
-        std::vector<int> vPrimPath;
+        // Walk parents to get the sequence of child node indices (each child
+        // stores which primitive was used to reach it AND the aim point that
+        // was raycast at expansion time).  We need the child indices (not just
+        // primIdx) so we can replay with the exact same aim point.
+        std::vector<int> vChildNodeIdx;
         for(int idx = resultNodeIdx; idx > 0; idx = vNodes[idx].ParentIdx)
-                vPrimPath.push_back(vNodes[idx].PrimIdx);
-        std::reverse(vPrimPath.begin(), vPrimPath.end());
+                vChildNodeIdx.push_back(idx);
+        std::reverse(vChildNodeIdx.begin(), vChildNodeIdx.end());
 
-        if(vPrimPath.empty())
+        if(vChildNodeIdx.empty())
         {
                 State.m_KinoCache.Reset();
                 return;
@@ -3350,11 +3443,15 @@ void CBotNet::ComputeKinodynamic(int Dummy, const vec2 &MyPos, int botTX, int bo
         // === Flatten the primitive sequence into a single input array ===
         CNetObj_PlayerInput aPlanInputs[KINO_MAX_TICKS];
         int planTicks = 0;
-        for(int primIdx : vPrimPath)
+        for(int childIdx : vChildNodeIdx)
         {
+                const SLatticeNode &child = vNodes[childIdx];
+                const SMotionPrimitive &prim = aPrims[child.PrimIdx];
+
                 CNetObj_PlayerInput aPrimInputs[LATTICE_PRIM_MAX_TICKS];
-                BuildPrimitiveInputs(aPrims[primIdx], aPrimInputs);
-                for(int t = 0; t < aPrims[primIdx].Ticks; t++)
+                vec2 aimRel(child.AimRelX, child.AimRelY);
+                BuildPrimitiveInputs(prim, aPrimInputs, (child.AimRelW > 0.5f) ? &aimRel : nullptr);
+                for(int t = 0; t < prim.Ticks; t++)
                 {
                         if(planTicks >= KINO_MAX_TICKS)
                                 break;
