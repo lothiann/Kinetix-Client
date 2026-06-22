@@ -3125,9 +3125,9 @@ void CBotNet::ComputeKinodynamic(int Dummy, const vec2 &MyPos, int botTX, int bo
         CGameWorld FutureWorld;
         FutureWorld.CopyWorld(&pGame->m_PredictedWorld);
 
-        for(int Type = 0; Type < NUM_ENTTYPES; Type++)
+        for(int Type = 0; Type < CGameWorld::NUM_ENTTYPES; Type++)
         {
-                if(Type == ENTTYPE_CHARACTER)
+                if(Type == CGameWorld::ENTTYPE_CHARACTER)
                         continue;
                 std::vector<CEntity *> vRemove;
                 for(CEntity *pEnt = FutureWorld.FindLast(Type); pEnt; pEnt = pEnt->TypePrev())
