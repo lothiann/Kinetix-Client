@@ -23,10 +23,14 @@ static const float PF_FREEZE_REPEL_WEIGHT = 3.0f;
 static const int KINO_MAX_TICKS = 128; // room for a full primitive plan
 
 // State-Lattice A* constants
+// v1.40: bumped LATTICE_MAX_DEPTH to 20 and LATTICE_MAX_PRIMITIVES to 48 to
+// accommodate the new HOOK_HOLD / HOOK_RELEASE primitives and let the search
+// plan long enough to complete wall-climbs and ceiling-swings (verified via
+// Python model in /home/z/my-project/verify/).
 static const int LATTICE_MAX_NODES = 2000; // hard cap on A* node budget
-static const int LATTICE_MAX_DEPTH = 12; // max primitives in a plan
-static const int LATTICE_MAX_PRIMITIVES = 40; // 6 base + up to 32 hook angles
-static const int LATTICE_PRIM_MAX_TICKS = 12; // longest single primitive
+static const int LATTICE_MAX_DEPTH = 20; // max primitives in a plan (was 12)
+static const int LATTICE_MAX_PRIMITIVES = 48; // 6 base + up to 32 hook fire + 3 hold + 1 release
+static const int LATTICE_PRIM_MAX_TICKS = 12; // longest single primitive (HOOK_FIRE = 10)
 static const float LATTICE_FREEZE_PENALTY = 5.0f; // cost added per freeze tile crossed
 static const float LATTICE_H_SCALE = 2.0f; // heuristic multiplier (admissible: <3.2 ticks/tile)
 

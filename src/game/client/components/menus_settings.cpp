@@ -3904,7 +3904,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                 // Max Depth slider (max primitives in a plan)
                                 Panel.HSplitTop(LineSize, &Row, &Panel);
                                 Panel.HSplitTop(RowGap, nullptr, &Panel);
-                                Ui()->DoScrollbarOption(&BN.m_KinoTicks, &BN.m_KinoTicks, &Row, Localize("Max Depth"), 3, 12, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
+                                Ui()->DoScrollbarOption(&BN.m_KinoTicks, &BN.m_KinoTicks, &Row, Localize("Max Depth"), 3, 20, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
 
                                 // Hook Angles slider
                                 Panel.HSplitTop(LineSize, &Row, &Panel);

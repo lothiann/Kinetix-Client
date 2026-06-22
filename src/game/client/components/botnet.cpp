@@ -104,9 +104,9 @@ CBotNet::CBotNet()
 
         // Kinodynamic A* (State-Lattice) defaults
         m_KinodynamicEnabled = false;
-        m_KinoCandidates = 400; // A* node budget — enough for hook-swing maneuvers
-        m_KinoTicks = 8;        // max search depth (primitives) — covers full jump+hook sequences
-        m_KinoHookAngles = 8;   // hook-angle primitives
+        m_KinoCandidates = 800; // A* node budget — enough for hook-swing maneuvers
+        m_KinoTicks = 15;       // max search depth (primitives) — covers full jump+hook+hold sequences
+        m_KinoHookAngles = 8;   // hook-fire primitives (angles in [pi/6, 5pi/6])
         m_KinoCacheTicks = 128; // receding horizon window — 128 = KINO_MAX_TICKS = apply full plan
         // (was 10, which cut plans mid-maneuver and caused the bot to oscillate
         //  in hook-swing scenarios.  Drift check (48px) is the real invalidation.)
@@ -2920,7 +2920,7 @@ void CBotNet::ConKinoTicks(IConsole::IResult *pResult, void *pUserData)
 {
         CBotNet *p = (CBotNet *)pUserData;
         int v = pResult->GetInteger(0);
-        if(v >= 3 && v <= 12)
+        if(v >= 3 && v <= 20)
                 p->m_KinoTicks = v;
 }
 
@@ -2985,16 +2985,40 @@ struct SMotionPrimitive
 };
 
 // Build the motion-primitive table.
-// 6 base primitives (always present) + hookAngle primitives evenly spaced in
-// the upper hemisphere [0, pi] (from +x through straight up to -x).
+//
+// v1.40 redesign (verified via Python model in /home/z/my-project/verify/):
+//   - RUN is 8 ticks (not 4) so each primitive reliably crosses a tile
+//     boundary and the tile-based heuristic actually decreases.
+//   - HOOK_FIRE angles are restricted to [pi/6, 5pi/6] (30-150 deg) so
+//     hooks always aim UPWARD.  Combined with the y-axis sign fix in
+//     FindHookGrabPoint, this prevents the "hook grabs the floor ahead"
+//     exploit that made v1.39 fire useless hooks on flat ground.
+//   - HOOK_FIRE holds the hook for the FULL 10 ticks (not 8+2 release).
+//     The 2-tick release in v1.39 ALWAYS detached the hook mid-swing,
+//     making sustained swings impossible ("can't hold hook" bug).
+//   - New HOOK_HOLD_{LEFT,RIGHT,NEUTRAL} primitives continue an existing
+//     swing: precondition m_HookState == HOOK_GRABBED, keep m_Hook == 1,
+//     allow directional input so the bot can steer mid-swing.
+//   - New HOOK_RELEASE_3 primitive cleanly detaches an active hook.
+//
+// Primitive classification (used by ComputeKinodynamic for preconditions):
+//   - HOOK_FIRE:   hook_start_tick == 0 AND hook_hold_ticks == ticks
+//                  (name prefix "HOOK_FIRE" — fires a NEW hook)
+//   - HOOK_HOLD:   hook_start_tick == 0 AND hook_hold_ticks == ticks
+//                  AND direction != 0 or name starts with "HOOK_HOLD"
+//                  Actually we encode a flag via hook_hold_ticks == ticks
+//                  and distinguish by a sentinel: HOOK_HOLD uses
+//                  HookAngle = -1.0f, HOOK_RELEASE uses HookAngle = -2.0f.
+//                  This avoids string comparisons in the hot loop.
 static void BuildPrimitiveTable(int hookAngles, SMotionPrimitive *pPrims, int &outCount)
 {
         outCount = 0;
 
         // --- Base movement primitives ---
-        // RUN: short ground run to build / maintain horizontal speed
-        pPrims[outCount++] = {4, -1, -1, -1, 0, 0.0f, false}; // RUN_LEFT_4
-        pPrims[outCount++] = {4, +1, -1, -1, 0, 0.0f, false}; // RUN_RIGHT_4
+        // RUN: 8-tick ground run to build / maintain horizontal speed and
+        // reliably cross tile boundaries (8 ticks * ~10 px/tick = 80 px = 2.5 tiles)
+        pPrims[outCount++] = {8, -1, -1, -1, 0, 0.0f, false}; // RUN_LEFT_8
+        pPrims[outCount++] = {8, +1, -1, -1, 0, 0.0f, false}; // RUN_RIGHT_8
         // JUMP: jump + drift in a direction (requires ground)
         pPrims[outCount++] = {8, -1, 0, -1, 0, 0.0f, true}; // JUMP_LEFT_8
         pPrims[outCount++] = {8, +1, 0, -1, 0, 0.0f, true}; // JUMP_RIGHT_8
@@ -3002,27 +3026,74 @@ static void BuildPrimitiveTable(int hookAngles, SMotionPrimitive *pPrims, int &o
         // STAY: brief wait / brake (no movement input)
         pPrims[outCount++] = {3, 0, -1, -1, 0, 0.0f, false}; // STAY_3
 
-        // --- Hook-angle primitives ---
-        // Hook held for 8 ticks, released for 2 (so the primitive ends with
-        // m_Hook == 0, letting the hook state machine reset cleanly between
-        // primitives).  Aim at evenly spaced upward angles.
+        // --- HOOK_FIRE primitives ---
+        // Angles restricted to [pi/6, 5pi/6] (30-150 deg) — steep enough to
+        // always lift the bot, prevents floor-grab exploits.  Hook is held
+        // for the FULL 10 ticks (no 2-tick release) so the swing can persist
+        // across consecutive HOOK_FIRE / HOOK_HOLD primitives.
+        // HookAngle in [pi/6, 5pi/6] is a "fire" primitive.
         hookAngles = pf_clamp(hookAngles, 4, 32);
+        const float angleMin = (float)pi / 6.0f;       // 30 deg
+        const float angleMax = 5.0f * (float)pi / 6.0f; // 150 deg
         for(int i = 0; i < hookAngles && outCount < LATTICE_MAX_PRIMITIVES; i++)
         {
-                float angle = (float)pi * ((float)i + 0.5f) / (float)hookAngles;
-                pPrims[outCount++] = {10, 0, -1, 0, 8, angle, false}; // HOOK_ANGLE_i
+                float angle = angleMin + (angleMax - angleMin) * ((float)i + 0.5f) / (float)hookAngles;
+                pPrims[outCount++] = {10, 0, -1, 0, 10, angle, false}; // HOOK_FIRE_i (hold full 10)
         }
+
+        // --- HOOK_HOLD primitives ---
+        // Continue an existing swing.  Precondition: m_HookState == HOOK_GRABBED.
+        // Keep m_Hook == 1 for the full 6 ticks, allow directional input so
+        // the bot can steer toward where it wants to land.
+        // Sentinel: HookAngle = -1.0f marks HOOK_HOLD variants.
+        if(outCount < LATTICE_MAX_PRIMITIVES)
+                pPrims[outCount++] = {6, -1, -1, 0, 6, -1.0f, false}; // HOOK_HOLD_LEFT
+        if(outCount < LATTICE_MAX_PRIMITIVES)
+                pPrims[outCount++] = {6, +1, -1, 0, 6, -1.0f, false}; // HOOK_HOLD_RIGHT
+        if(outCount < LATTICE_MAX_PRIMITIVES)
+                pPrims[outCount++] = {6, 0, -1, 0, 6, -1.0f, false}; // HOOK_HOLD_NEUTRAL
+
+        // --- HOOK_RELEASE primitive ---
+        // Cleanly detach an active hook.  Precondition: m_HookState in
+        // {HOOK_FLYING, HOOK_GRABBED}.  Sets m_Hook == 0 for 3 ticks.
+        // Sentinel: HookAngle = -2.0f marks HOOK_RELEASE.
+        if(outCount < LATTICE_MAX_PRIMITIVES)
+                pPrims[outCount++] = {3, 0, -1, -1, 0, -2.0f, false}; // HOOK_RELEASE_3
+}
+
+// Classify a primitive by its sentinel HookAngle value.
+// (Avoids string comparisons in the A* hot loop.)
+static inline bool IsHookFirePrim(const SMotionPrimitive &prim)
+{
+        // Fire: angle in [pi/6, 5pi/6], hook held for full duration
+        return prim.HookStartTick >= 0 && prim.HookHoldTicks == prim.Ticks && prim.HookAngle > 0.0f;
+}
+static inline bool IsHookHoldPrim(const SMotionPrimitive &prim)
+{
+        return prim.HookAngle == -1.0f;
+}
+static inline bool IsHookReleasePrim(const SMotionPrimitive &prim)
+{
+        return prim.HookAngle == -2.0f;
 }
 
 // Build the per-tick input array for a single motion primitive.
-// IMPORTANT: every primitive ends with m_Jump == 0 and m_Hook == 0 so the
-// DDNet jump/hook state machines reset cleanly between primitives (jump is
-// level-triggered on m_Jumped, hook is a state machine on m_HookState — both
-// live inside CCharacterCore and are restored via SetCore).
 //
-// For hook primitives, pass a non-zero pAimRel to aim at a specific grab point
-// (relative to bot).  When pAimRel is null or its weight is 0, the primitive's
-// fixed HookAngle is used (legacy behaviour — kept only as a fallback).
+// v1.40: HOOK_FIRE and HOOK_HOLD now hold m_Hook == 1 for the FULL primitive
+// duration (no 2-tick release).  This is intentional — it lets the hook stay
+// attached across consecutive primitives so the bot can sustain a swing.
+// HOOK_RELEASE sets m_Hook == 0 to detach.  Base primitives (RUN/JUMP/STAY)
+// end with m_Jump == 0 and m_Hook == 0 as before.
+//
+// The full CCharacterCore state (including m_HookState, m_HookPos) is saved
+// and restored via SetCore between primitive expansions, so the hook state
+// machine carries over correctly between primitives in the A* search.
+//
+// For hook-fire primitives, pass a non-zero pAimRel to aim at a specific grab
+// point (relative to bot).  When pAimRel is null, the primitive's fixed
+// HookAngle is used (fallback).  For hook-hold primitives, pAimRel is the
+// current hook attachment point (visual only — the state machine controls
+// the pull once attached).
 static void BuildPrimitiveInputs(const SMotionPrimitive &prim, CNetObj_PlayerInput *pInputs, const vec2 *pAimRel = nullptr)
 {
         bool useAimRel = (pAimRel != nullptr);
@@ -3046,10 +3117,11 @@ static void BuildPrimitiveInputs(const SMotionPrimitive &prim, CNetObj_PlayerInp
                         }
                         else
                         {
-                                // Fallback: fixed-angle aim (legacy)
+                                // Fallback: fixed-angle aim (legacy).
+                                // Screen coords: y DOWN — negate sin so angle pi/2 = UP.
                                 float aimDist = 200.0f;
                                 pInputs[t].m_TargetX = (int)(cosf(prim.HookAngle) * aimDist);
-                                pInputs[t].m_TargetY = (int)(sinf(prim.HookAngle) * aimDist);
+                                pInputs[t].m_TargetY = (int)(-sinf(prim.HookAngle) * aimDist);
                         }
                 }
                 else
@@ -3119,7 +3191,13 @@ struct SLatticeNode
 // TILE_TELEINHOOK (teleport-hook — too complex to plan around reliably).
 static bool FindHookGrabPoint(CCollision *pColl, vec2 from, float angle, float maxDist, vec2 &outGrab)
 {
-        vec2 dir = vec2(cosf(angle), sinf(angle));
+        // Screen coordinates: y increases DOWNWARD.  Angle convention is
+        // 0 = +x (right), pi/2 = UP, pi = -x (left).  So we NEGATE sin to
+        // convert math-up to screen-up.  Without this negation, angles in
+        // [0, pi] aim DOWNWARD and the hook grabs the floor ahead — the
+        // root cause of the v1.39 "hook fires at nothing 100 tiles away"
+        // and "can't hold hook" bugs.
+        vec2 dir = vec2(cosf(angle), -sinf(angle));
         vec2 endPos = from + dir * maxDist;
         vec2 hitPos, hitBefore;
         int hit = pColl->IntersectLineTeleHook(from, endPos, &hitPos, &hitBefore, nullptr);
@@ -3129,7 +3207,13 @@ static bool FindHookGrabPoint(CCollision *pColl, vec2 from, float angle, float m
                 return false; // hook would retract, not grab
         if(hit == TILE_TELEINHOOK)
                 return false; // teleport-hook — skip for predictability
-        // Any other solid tile is hookable.
+        // Reject grab points at or below the bot's feet — these are floor
+        // grabs that just drag the bot horizontally (useless; running is
+        // always better).  Only accept grabs ABOVE the bot so the hook
+        // actually lifts / swings.
+        if(hitPos.y >= from.y - 4.0f)
+                return false;
+        // Any other solid tile above the bot is a valid hook target.
         outGrab = hitPos;
         return true;
 }
@@ -3269,38 +3353,56 @@ void CBotNet::ComputeKinodynamic(int Dummy, const vec2 &MyPos, int botTX, int bo
                 {
                         const SMotionPrimitive &prim = aPrims[primI];
 
-                        // Precondition
+                        // Precondition: ground-only primitives (jump)
                         if(prim.RequiresGround && !pBot->IsGrounded())
                                 continue;
+
+                        // Classify the primitive to apply the right preconditions.
+                        // v1.40: HOOK_FIRE / HOOK_HOLD / HOOK_RELEASE are distinguished
+                        // by sentinel HookAngle values (see BuildPrimitiveTable).
+                        const bool isHookFire = IsHookFirePrim(prim);
+                        const bool isHookHold = IsHookHoldPrim(prim);
+                        const bool isHookRelease = IsHookReleasePrim(prim);
 
                         // Snapshot the parent state so we can restore between primitives
                         CCharacterCore savedCore = pBot->GetCore();
                         vec2 savedPos = pBot->m_Pos;
 
-                        // For hook primitives: raycast from the bot's current
-                        // position to find a REAL hookable surface in the
-                        // primitive's aim direction.  Skip the primitive if
-                        // nothing hookable is in range — firing a hook into the
-                        // void wastes a tick and visually spams a long hook
-                        // line toward nothing.
-                        //
-                        // Also refuse to fire if the hook state machine isn't
-                        // idle (a previous primitive left it FLYING/GRABBED).
+                        // --- Hook primitive preconditions ---
+                        // HOOK_FIRE: only fire when the hook state machine is IDLE.
+                        //   Raycast to find a REAL hookable surface ABOVE the bot;
+                        //   skip if nothing hookable is in range.  This prevents
+                        //   firing into the void and the v1.39 floor-grab exploit.
+                        // HOOK_HOLD: only when m_HookState == HOOK_GRABBED (swing
+                        //   continuation).  Aim is irrelevant once attached, but
+                        //   we pass the current hook pos for visual consistency.
+                        // HOOK_RELEASE: only when a hook is active (FLYING/GRABBED).
                         vec2 aimRel(0.0f, 0.0f);
                         bool haveAim = false;
-                        const bool isHookPrim = (prim.HookStartTick >= 0 && prim.HookHoldTicks > 0);
-                        if(isHookPrim)
+                        if(isHookFire)
                         {
-                                // Hook not ready — skip.
                                 if(savedCore.m_HookState != HOOK_IDLE)
                                         continue;
-
                                 vec2 grabPos;
                                 if(!FindHookGrabPoint(pColl, savedPos, prim.HookAngle, hookLength, grabPos))
-                                        continue; // no hookable surface in range — skip
-
+                                        continue; // no hookable surface above bot in range
                                 aimRel = grabPos - savedPos;
                                 haveAim = true;
+                        }
+                        else if(isHookHold)
+                        {
+                                if(savedCore.m_HookState != HOOK_GRABBED)
+                                        continue;
+                                // Aim at current hook attachment point so the
+                                // cursor stays on the hook (visual only — the
+                                // state machine controls the pull once attached).
+                                aimRel = savedCore.m_HookPos - savedPos;
+                                haveAim = true;
+                        }
+                        else if(isHookRelease)
+                        {
+                                if(savedCore.m_HookState != HOOK_FLYING && savedCore.m_HookState != HOOK_GRABBED)
+                                        continue;
                         }
 
                         // Build the primitive's input array
@@ -3364,8 +3466,14 @@ void CBotNet::ComputeKinodynamic(int Dummy, const vec2 &MyPos, int botTX, int bo
                         bool newHooked = (childCore.m_HookState == HOOK_GRABBED);
                         uint64_t newKey = MakeStateKey(newTX, newTY, newVelDir, childOnGround, newHooked);
 
-                        // Cost = ticks + freeze penalty
+                        // Cost = ticks + freeze penalty + retract penalty.
+                        // v1.40: add a 3-tick penalty for ending a primitive in
+                        // HOOK_RETRACTED — this state means the hook was just
+                        // released and is retracting, so the bot has lost momentum
+                        // and cannot immediately re-hook.  Discourages wasted hooks.
                         float primCost = (float)prim.Ticks + (float)freezeCount * LATTICE_FREEZE_PENALTY;
+                        if(childCore.m_HookState == HOOK_RETRACTED || childCore.m_HookState == HOOK_RETRACT_START)
+                                primCost += 3.0f;
                         float newG = vNodes[curIdx].G + primCost;
 
                         // Skip if we already reached this state at a lower-or-equal cost
