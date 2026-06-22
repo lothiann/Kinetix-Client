@@ -19,9 +19,16 @@ static const float PF_FREEZE_COST = 50.0f;
 static const float PF_PLAYER_COST = 1e18f;
 static const float PF_FREEZE_REPEL_WEIGHT = 3.0f;
 
-// Kinodynamic A* constants
-static const int KINO_MAX_TICKS = 50;
-static const int KINO_MAX_CANDIDATES = 200;
+// Kinodynamic A* (State-Lattice) constants
+static const int KINO_MAX_TICKS = 128; // room for a full primitive plan
+
+// State-Lattice A* constants
+static const int LATTICE_MAX_NODES = 2000; // hard cap on A* node budget
+static const int LATTICE_MAX_DEPTH = 12; // max primitives in a plan
+static const int LATTICE_MAX_PRIMITIVES = 40; // 6 base + up to 32 hook angles
+static const int LATTICE_PRIM_MAX_TICKS = 12; // longest single primitive
+static const float LATTICE_FREEZE_PENALTY = 5.0f; // cost added per freeze tile crossed
+static const float LATTICE_H_SCALE = 2.0f; // heuristic multiplier (admissible: <3.2 ticks/tile)
 
 // =========================================================
 // Kinodynamic A* — cached input package per dummy
@@ -217,12 +224,12 @@ public:
         bool m_PfSnap;
         bool m_PfHookEnabled;
 
-        // Kinodynamic A* settings (shared)
+        // Kinodynamic A* (State-Lattice) settings (shared)
         bool m_KinodynamicEnabled;
-        int m_KinoCandidates;   // how many input packages to test (10-200)
-        int m_KinoTicks;        // how many ticks to simulate per package (5-50)
-        int m_KinoHookAngles;   // how many hook angles to test (4-32)
-        int m_KinoCacheTicks;   // how many ticks to apply cached package before recomputing (1-30)
+        int m_KinoCandidates;   // A* node budget — max nodes to expand (100-2000)
+        int m_KinoTicks;        // max search depth — primitives in a plan (3-12)
+        int m_KinoHookAngles;   // number of hook-angle primitives (4-32)
+        int m_KinoCacheTicks;   // receding horizon: ticks to apply before replanning (1-30)
         bool m_KinoShowPath;    // render kinodynamic predicted path
         bool m_KinoShowField;   // render pathfinder vector field
 

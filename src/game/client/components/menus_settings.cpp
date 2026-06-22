@@ -3896,15 +3896,15 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                         // Kinodynamic A* sliders (only visible when Kinodynamic is on)
                         if(BN.m_KinodynamicEnabled)
                         {
-                                // Candidates slider
+                                // Node Budget slider (A* max nodes to expand)
                                 Panel.HSplitTop(LineSize, &Row, &Panel);
                                 Panel.HSplitTop(RowGap, nullptr, &Panel);
-                                Ui()->DoScrollbarOption(&BN.m_KinoCandidates, &BN.m_KinoCandidates, &Row, Localize("Candidates"), 10, 200, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
+                                Ui()->DoScrollbarOption(&BN.m_KinoCandidates, &BN.m_KinoCandidates, &Row, Localize("Node Budget"), 100, 2000, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
 
-                                // Ticks slider
+                                // Max Depth slider (max primitives in a plan)
                                 Panel.HSplitTop(LineSize, &Row, &Panel);
                                 Panel.HSplitTop(RowGap, nullptr, &Panel);
-                                Ui()->DoScrollbarOption(&BN.m_KinoTicks, &BN.m_KinoTicks, &Row, Localize("Ticks"), 5, 50, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
+                                Ui()->DoScrollbarOption(&BN.m_KinoTicks, &BN.m_KinoTicks, &Row, Localize("Max Depth"), 3, 12, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
 
                                 // Hook Angles slider
                                 Panel.HSplitTop(LineSize, &Row, &Panel);

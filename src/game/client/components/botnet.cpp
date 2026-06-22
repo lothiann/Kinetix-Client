@@ -23,9 +23,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <cstdint>
 #include <fstream>
 #include <queue>
 #include <sstream>
+#include <unordered_map>
 
 // --- Local helpers (DDNet max/min/clamp may not be in scope) ---
 static inline int pf_max(int a, int b) { return a > b ? a : b; }
@@ -100,12 +102,12 @@ CBotNet::CBotNet()
         m_PfSnap = false;
         m_PfHookEnabled = false;
 
-        // Kinodynamic A* defaults
+        // Kinodynamic A* (State-Lattice) defaults
         m_KinodynamicEnabled = false;
-        m_KinoCandidates = 50;
-        m_KinoTicks = 15;
-        m_KinoHookAngles = 12;
-        m_KinoCacheTicks = 5;
+        m_KinoCandidates = 200; // A* node budget
+        m_KinoTicks = 6;        // max search depth (primitives)
+        m_KinoHookAngles = 8;   // hook-angle primitives
+        m_KinoCacheTicks = 10;  // receding horizon window
         m_KinoShowPath = true;
         m_KinoShowField = false;
 
@@ -177,8 +179,8 @@ void CBotNet::OnConsoleInit()
         Console()->Register("c_avoid_freeze", "i[on]", CFGFLAG_CLIENT, ConAvoidFreeze, this, "Avoid freeze tiles");
         Console()->Register("c_pf_hook", "i[on]", CFGFLAG_CLIENT, ConPfHook, this, "Pathfinder hook to walls");
         Console()->Register("c_kinodynamic", "i[on]", CFGFLAG_CLIENT, ConKinodynamic, this, "Enable Kinodynamic A* movement");
-        Console()->Register("c_kino_candidates", "i[count]", CFGFLAG_CLIENT, ConKinoCandidates, this, "Kinodynamic: number of candidate input packages (10-200)");
-        Console()->Register("c_kino_ticks", "i[ticks]", CFGFLAG_CLIENT, ConKinoTicks, this, "Kinodynamic: simulation depth in ticks (5-50)");
+        Console()->Register("c_kino_candidates", "i[count]", CFGFLAG_CLIENT, ConKinoCandidates, this, "Kinodynamic: A* node budget (100-2000)");
+        Console()->Register("c_kino_ticks", "i[depth]", CFGFLAG_CLIENT, ConKinoTicks, this, "Kinodynamic: max search depth in primitives (3-12)");
         Console()->Register("c_kino_hook_angles", "i[angles]", CFGFLAG_CLIENT, ConKinoHookAngles, this, "Kinodynamic: number of hook angles (4-32)");
         Console()->Register("c_kino_cache_ticks", "i[ticks]", CFGFLAG_CLIENT, ConKinoCacheTicks, this, "Kinodynamic: cache duration in ticks (1-30)");
         Console()->Register("c_kino_show_path", "i[on]", CFGFLAG_CLIENT, ConKinoShowPath, this, "Kinodynamic: show predicted path");
@@ -1697,9 +1699,14 @@ void CBotNet::ProcessDummy(int Dummy)
                                                                 kinoNeedRecompute = true;
                                                         else
                                                         {
-                                                                // Check if bot drifted too far from expected position
-                                                                float drift = distance(MyPos, kinoCache.BotPos);
-                                                                if(drift > 64.0f) // more than 2 tiles drift
+                                                                // Check if bot drifted from the *expected* position on the
+                                                                // planned path (not from the compute-time start — normal
+                                                                // movement is not drift).  Compare against vPath[CurrentTick].
+                                                                vec2 expectedPos = kinoCache.BotPos;
+                                                                if(kinoCache.CurrentTick >= 0 && kinoCache.CurrentTick < (int)kinoCache.vPath.size())
+                                                                        expectedPos = kinoCache.vPath[kinoCache.CurrentTick];
+                                                                float drift = distance(MyPos, expectedPos);
+                                                                if(drift > 48.0f) // 1.5 tiles off the planned trajectory
                                                                         kinoNeedRecompute = true;
                                                         }
 
@@ -2903,7 +2910,7 @@ void CBotNet::ConKinoCandidates(IConsole::IResult *pResult, void *pUserData)
 {
         CBotNet *p = (CBotNet *)pUserData;
         int v = pResult->GetInteger(0);
-        if(v >= 10 && v <= 200)
+        if(v >= 100 && v <= 2000)
                 p->m_KinoCandidates = v;
 }
 
@@ -2911,7 +2918,7 @@ void CBotNet::ConKinoTicks(IConsole::IResult *pResult, void *pUserData)
 {
         CBotNet *p = (CBotNet *)pUserData;
         int v = pResult->GetInteger(0);
-        if(v >= 5 && v <= 50)
+        if(v >= 3 && v <= 12)
                 p->m_KinoTicks = v;
 }
 
@@ -2944,88 +2951,94 @@ void CBotNet::ConKinoShowField(IConsole::IResult *pResult, void *pUserData)
 }
 
 // =========================================================
-// KINODYNAMIC A* — ALGORITHM
+// STATE-LATTICE A* — MOTION PRIMITIVES
+// =========================================================
+//
+// The planner searches a state lattice where each node is a discrete
+// (tile, velocity-bucket, grounded, hooked) state and each edge is a
+// motion primitive: a short fixed input sequence (run / jump / hook-swing).
+// A* uses the pathfinder distance field (m_pfDist) as the heuristic, so
+// search is guided toward the goal instead of blindly sampling.
+//
+// Why this fixes the "stuck nudging one pixel" problem:
+//   The old code scored only the final tile of a single long trajectory and
+//   picked the argmin.  A tiny nudge that crosses one tile boundary improved
+//   the score by 1, while any real maneuver (jump/hook) needed many ticks to
+//   pay off and almost never won.  A* compares f = g + h for *every* neighbor
+//   of *every* state, so a primitive that reaches a much closer tile always
+//   wins over a one-pixel nudge, and tricks are discovered instead of hoped for.
 // =========================================================
 
-// Halton sequence for quasi-random low-discrepancy sampling
-static float Halton(int index, int base)
+// A single motion primitive: a short fixed input sequence representing an
+// atomic maneuver (run, jump, hook-swing, wait).
+struct SMotionPrimitive
 {
-        float result = 0.0f;
-        float f = 1.0f / (float)base;
-        int i = index;
-        while(i > 0)
+        int Ticks; // duration in ticks
+        int Direction; // -1, 0, +1 (horizontal input)
+        int JumpTick; // tick index to press jump (-1 = never)
+        int HookStartTick; // tick index to start hook (-1 = never)
+        int HookHoldTicks; // how long to hold the hook
+        float HookAngle; // hook aim angle in radians (relative to bot)
+        bool RequiresGround; // precondition: bot must be on ground
+};
+
+// Build the motion-primitive table.
+// 6 base primitives (always present) + hookAngle primitives evenly spaced in
+// the upper hemisphere [0, pi] (from +x through straight up to -x).
+static void BuildPrimitiveTable(int hookAngles, SMotionPrimitive *pPrims, int &outCount)
+{
+        outCount = 0;
+
+        // --- Base movement primitives ---
+        // RUN: short ground run to build / maintain horizontal speed
+        pPrims[outCount++] = {4, -1, -1, -1, 0, 0.0f, false}; // RUN_LEFT_4
+        pPrims[outCount++] = {4, +1, -1, -1, 0, 0.0f, false}; // RUN_RIGHT_4
+        // JUMP: jump + drift in a direction (requires ground)
+        pPrims[outCount++] = {8, -1, 0, -1, 0, 0.0f, true}; // JUMP_LEFT_8
+        pPrims[outCount++] = {8, +1, 0, -1, 0, 0.0f, true}; // JUMP_RIGHT_8
+        pPrims[outCount++] = {8, 0, 0, -1, 0, 0.0f, true}; // JUMP_UP_8
+        // STAY: brief wait / brake (no movement input)
+        pPrims[outCount++] = {3, 0, -1, -1, 0, 0.0f, false}; // STAY_3
+
+        // --- Hook-angle primitives ---
+        // Hook held for 8 ticks, released for 2 (so the primitive ends with
+        // m_Hook == 0, letting the hook state machine reset cleanly between
+        // primitives).  Aim at evenly spaced upward angles.
+        hookAngles = pf_clamp(hookAngles, 4, 32);
+        for(int i = 0; i < hookAngles && outCount < LATTICE_MAX_PRIMITIVES; i++)
         {
-                result += f * (float)(i % base);
-                i /= base;
-                f /= (float)base;
+                float angle = (float)pi * ((float)i + 0.5f) / (float)hookAngles;
+                pPrims[outCount++] = {10, 0, -1, 0, 8, angle, false}; // HOOK_ANGLE_i
         }
-        return result;
 }
 
-// Generate a single candidate input package
-// Uses Halton sequence to uniformly cover the control parameter space:
-//   dim 0: direction (-1, 0, +1)
-//   dim 1: jump timing (tick 0..T-1 or never)
-//   dim 2: hook timing (tick 0..T-1 or never)
-//   dim 3: hook angle (0..2pi)
-static void GenerateCandidate(int index, int numTicks, int hookAngles,
-        int &outDirection, int &outJumpTick, int &outHookTick, float &outHookAngle)
+// Build the per-tick input array for a single motion primitive.
+// IMPORTANT: every primitive ends with m_Jump == 0 and m_Hook == 0 so the
+// DDNet jump/hook state machines reset cleanly between primitives (jump is
+// level-triggered on m_Jumped, hook is a state machine on m_HookState — both
+// live inside CCharacterCore and are restored via SetCore).
+static void BuildPrimitiveInputs(const SMotionPrimitive &prim, CNetObj_PlayerInput *pInputs)
 {
-        // Use different prime bases for each dimension (Halton)
-        float d0 = Halton(index + 1, 2); // direction
-        float d1 = Halton(index + 1, 3); // jump phase
-        float d2 = Halton(index + 1, 5); // hook phase
-        float d3 = Halton(index + 1, 7); // hook angle
-
-        // Direction: 3 buckets → -1, 0, +1
-        int dirBucket = (int)(d0 * 3.0f);
-        dirBucket = pf_clamp(dirBucket, 0, 2);
-        outDirection = dirBucket - 1; // -1, 0, +1
-
-        // Jump tick: if d1 < 0.3 → never jump, else map to [0, numTicks-1]
-        if(d1 < 0.3f)
-                outJumpTick = -1; // never
-        else
-                outJumpTick = (int)((d1 - 0.3f) / 0.7f * (float)numTicks);
-        outJumpTick = pf_clamp(outJumpTick, -1, numTicks - 1);
-
-        // Hook tick: if d2 < 0.5 → never hook, else map to [0, numTicks-1]
-        if(d2 < 0.5f)
-                outHookTick = -1; // never
-        else
-                outHookTick = (int)((d2 - 0.5f) / 0.5f * (float)numTicks);
-        outHookTick = pf_clamp(outHookTick, -1, numTicks - 1);
-
-        // Hook angle: evenly spaced angles
-        outHookAngle = 2.0f * (float)pi * d3;
-}
-
-// Build per-tick input array from candidate parameters
-static void BuildInputSequence(int numTicks, int direction, int jumpTick, int hookTick, float hookAngle,
-        CNetObj_PlayerInput *pInputs, const vec2 &botPos)
-{
-        for(int t = 0; t < numTicks; t++)
+        for(int t = 0; t < prim.Ticks; t++)
         {
-                pInputs[t].m_Direction = direction;
-                pInputs[t].m_Jump = (t == jumpTick) ? 1 : 0;
-                // Hook: press from hookTick for a limited duration, then release
-                // Holding hook forever causes the bot to stay attached
-                const int HOOK_HOLD_TICKS = 8; // ~160ms hook hold before release
-                pInputs[t].m_Hook = (hookTick >= 0 && t >= hookTick && t < hookTick + HOOK_HOLD_TICKS) ? 1 : 0;
+                pInputs[t].m_Direction = prim.Direction;
+                pInputs[t].m_Jump = (t == prim.JumpTick) ? 1 : 0;
+                bool hookActive = (prim.HookStartTick >= 0 && t >= prim.HookStartTick && t < prim.HookStartTick + prim.HookHoldTicks);
+                pInputs[t].m_Hook = hookActive ? 1 : 0;
 
-                // Aim: if hooking, aim at hook angle; otherwise aim in movement direction
-                if(hookTick >= 0 && t >= hookTick && t < hookTick + HOOK_HOLD_TICKS)
+                if(hookActive)
                 {
-                        float aimDist = 200.0f; // reasonable aim distance
-                        pInputs[t].m_TargetX = (int)(cosf(hookAngle) * aimDist);
-                        pInputs[t].m_TargetY = (int)(sinf(hookAngle) * aimDist);
+                        // Aim at the hook angle (relative to the bot)
+                        float aimDist = 200.0f;
+                        pInputs[t].m_TargetX = (int)(cosf(prim.HookAngle) * aimDist);
+                        pInputs[t].m_TargetY = (int)(sinf(prim.HookAngle) * aimDist);
                 }
                 else
                 {
                         // Aim in movement direction
                         float aimDist = 100.0f;
-                        pInputs[t].m_TargetX = (int)((float)direction * aimDist);
-                        pInputs[t].m_TargetY = (jumpTick >= 0 && t <= jumpTick) ? (int)(-aimDist) : 0;
+                        pInputs[t].m_TargetX = (int)((float)prim.Direction * aimDist);
+                        pInputs[t].m_TargetY = (prim.JumpTick >= 0 && t <= prim.JumpTick) ? (int)(-aimDist) : 0;
                 }
 
                 pInputs[t].m_Fire = 0;
@@ -3035,6 +3048,44 @@ static void BuildInputSequence(int numTicks, int direction, int jumpTick, int ho
                 pInputs[t].m_PrevWeapon = 0;
         }
 }
+
+// Discrete velocity bucket: -1 (left), 0 (stopped), +1 (right).
+static inline int VelDirBucket(float vx)
+{
+        const float threshold = 1.0f; // ~1 px/tick = nearly stopped
+        if(vx < -threshold)
+                return -1;
+        if(vx > threshold)
+                return +1;
+        return 0;
+}
+
+// Hash a discrete lattice state: (tx, ty, velDir, onGround, hooked).
+// 12 bits each for tx/ty (covers maps up to 4096 tiles), rest packed.
+static inline uint64_t MakeStateKey(int tx, int ty, int velDir, bool onGround, bool hooked)
+{
+        uint64_t k = 0;
+        k |= (uint64_t)(tx & 0xFFF);
+        k |= (uint64_t)(ty & 0xFFF) << 12;
+        k |= (uint64_t)(velDir + 1) << 24; // -1,0,+1 → 0,1,2
+        k |= (uint64_t)(onGround ? 1 : 0) << 26;
+        k |= (uint64_t)(hooked ? 1 : 0) << 27;
+        return k;
+}
+
+// A* search node.  Stores a full CCharacterCore snapshot so the bot can be
+// restored to this exact state when the node is expanded later.
+struct SLatticeNode
+{
+        CCharacterCore Core; // full physics state at node entry
+        float G; // cost so far (ticks + freeze penalty)
+        float H; // heuristic = m_pfDist at the node's tile
+        float F; // G + H * LATTICE_H_SCALE
+        int ParentIdx; // index in the node array (-1 = root)
+        int PrimIdx; // primitive used from parent (-1 = root)
+        uint64_t StateKey;
+        bool Closed;
+};
 
 void CBotNet::ComputeKinodynamic(int Dummy, const vec2 &MyPos, int botTX, int botTY, int targetTX, int targetTY, CBotNetDummy &State)
 {
@@ -3046,151 +3097,309 @@ void CBotNet::ComputeKinodynamic(int Dummy, const vec2 &MyPos, int botTX, int bo
 
         CGameClient *pGame = GameClient();
 
-        int numCandidates = pf_clamp(m_KinoCandidates, 10, KINO_MAX_CANDIDATES);
-        int numTicks = pf_clamp(m_KinoTicks, 5, KINO_MAX_TICKS);
+        int maxNodes = pf_clamp(m_KinoCandidates, 100, LATTICE_MAX_NODES);
+        int maxDepth = pf_clamp(m_KinoTicks, 3, LATTICE_MAX_DEPTH);
         int hookAngles = pf_clamp(m_KinoHookAngles, 4, 32);
 
-        // Score the start position using A* distance field
+        // Score the start position using the pathfinder distance field
         int startIdx = botTY * m_MapWidth + botTX;
         float startDist = m_pfDist[startIdx];
         if(startDist >= 1e17f)
-                return; // bot is in an unreachable tile
+                return; // bot is on an unreachable tile
 
         // Find the dummy character ID in the predicted world
         int PredictedCharId = (Dummy == g_Config.m_ClDummy) ? pGame->m_Snap.m_LocalClientId : Dummy;
-
-        // Verify the character exists in the predicted world
         if(!pGame->m_PredictedWorld.GetCharacterById(PredictedCharId))
                 return;
 
-        // === Generate candidates and simulate ===
-        float bestScore = 1e18f; // lower is better (we want to minimize m_pfDist at the endpoint)
-        int bestCandidate = -1;
-        int bestFreezeCount = 0; // track freeze tiles in best candidate
-        CNetObj_PlayerInput bestInputs[KINO_MAX_TICKS];
-        std::vector<vec2> bestPath;
+        // === Build the motion-primitive table ===
+        SMotionPrimitive aPrims[LATTICE_MAX_PRIMITIVES];
+        int numPrims = 0;
+        BuildPrimitiveTable(hookAngles, aPrims, numPrims);
 
-        for(int c = 0; c < numCandidates; c++)
+        // === Set up a clean planning world (bot + collision only) ===
+        // Removing all non-character entities makes the world effectively
+        // stateless: only the bot changes between simulations, so save/restore
+        // of the bot's CCharacterCore is sufficient for consistent A* expansion.
+        // (One CopyWorld instead of one-per-candidate like the old code.)
+        CGameWorld FutureWorld;
+        FutureWorld.CopyWorld(&pGame->m_PredictedWorld);
+
+        for(int Type = 0; Type < NUM_ENTTYPES; Type++)
         {
-                int dir, jumpTick, hookTick;
-                float hookAngle;
-                GenerateCandidate(c, numTicks, hookAngles, dir, jumpTick, hookTick, hookAngle);
+                if(Type == ENTTYPE_CHARACTER)
+                        continue;
+                std::vector<CEntity *> vRemove;
+                for(CEntity *pEnt = FutureWorld.FindLast(Type); pEnt; pEnt = pEnt->TypePrev())
+                        vRemove.push_back(pEnt);
+                for(CEntity *pEnt : vRemove)
+                        FutureWorld.RemoveEntity(pEnt);
+        }
+        for(int i = 0; i < MAX_CLIENTS; i++)
+        {
+                if(i == PredictedCharId)
+                        continue;
+                if(CCharacter *pChar = FutureWorld.GetCharacterById(i))
+                        FutureWorld.RemoveEntity(pChar);
+        }
 
-                // Build input sequence for this candidate
-                CNetObj_PlayerInput aInputs[KINO_MAX_TICKS];
-                BuildInputSequence(numTicks, dir, jumpTick, hookTick, hookAngle, aInputs, MyPos);
+        CCharacter *pBot = FutureWorld.GetCharacterById(PredictedCharId);
+        if(!pBot)
+                return;
 
-                // Create a fresh copy of the predicted world for each candidate
-                // This is the safest approach — avoids entity list pointer corruption
-                CGameWorld FutureWorld;
-                FutureWorld.CopyWorld(&pGame->m_PredictedWorld);
+        int StartTick = FutureWorld.GameTick();
 
-                // Remove other characters to speed up simulation
-                for(int i = 0; i < MAX_CLIENTS; i++)
+        // === A* search ===
+        std::vector<SLatticeNode> vNodes;
+        vNodes.reserve(maxNodes + numPrims + 16);
+        std::unordered_map<uint64_t, float> bestG;
+
+        // Root node
+        {
+                SLatticeNode root;
+                root.Core = pBot->GetCore();
+                root.G = 0.0f;
+                root.H = startDist;
+                root.F = root.H * LATTICE_H_SCALE;
+                root.ParentIdx = -1;
+                root.PrimIdx = -1;
+                int velDir = VelDirBucket(root.Core.m_Vel.x);
+                bool onGround = pBot->IsGrounded();
+                bool hooked = (root.Core.m_HookState == HOOK_GRABBED);
+                root.StateKey = MakeStateKey(botTX, botTY, velDir, onGround, hooked);
+                root.Closed = false;
+                vNodes.push_back(root);
+                bestG[root.StateKey] = 0.0f;
+        }
+
+        auto fnCmp = [&vNodes](int a, int b) { return vNodes[a].F > vNodes[b].F; };
+        std::priority_queue<int, std::vector<int>, decltype(fnCmp)> open(fnCmp);
+        open.push(0);
+
+        int goalNodeIdx = -1;
+
+        while(!open.empty() && (int)vNodes.size() < maxNodes)
+        {
+                int curIdx = open.top();
+                open.pop();
+                if(vNodes[curIdx].Closed)
+                        continue;
+                vNodes[curIdx].Closed = true;
+
+                // Goal test: reached (or is at) the target tile
+                if(vNodes[curIdx].H <= 0.5f)
                 {
-                        if(i == PredictedCharId)
+                        goalNodeIdx = curIdx;
+                        break;
+                }
+
+                // Depth limit: count ancestors
+                int depth = 0;
+                for(int p = vNodes[curIdx].ParentIdx; p >= 0; p = vNodes[p].ParentIdx)
+                        depth++;
+                if(depth >= maxDepth)
+                        continue;
+
+                // Restore the bot to this node's exact state
+                pBot->SetCore(vNodes[curIdx].Core);
+                pBot->m_Pos = vNodes[curIdx].Core.m_Pos;
+
+                // Expand: try every motion primitive
+                for(int primI = 0; primI < numPrims; primI++)
+                {
+                        const SMotionPrimitive &prim = aPrims[primI];
+
+                        // Precondition
+                        if(prim.RequiresGround && !pBot->IsGrounded())
                                 continue;
-                        if(CCharacter *pChar = FutureWorld.GetCharacterById(i))
-                                FutureWorld.RemoveEntity(pChar);
-                }
 
-                // Get the dummy's character in the future world
-                CCharacter *pFutureChar = FutureWorld.GetCharacterById(PredictedCharId);
-                if(!pFutureChar)
-                        continue;
+                        // Snapshot the parent state so we can restore between primitives
+                        CCharacterCore savedCore = pBot->GetCore();
+                        vec2 savedPos = pBot->m_Pos;
 
-                int StartTick = FutureWorld.GameTick();
+                        // Build the primitive's input array
+                        CNetObj_PlayerInput aPrimInputs[LATTICE_PRIM_MAX_TICKS];
+                        BuildPrimitiveInputs(prim, aPrimInputs);
 
-                // Simulate the candidate
-                std::vector<vec2> vPositions;
-                vPositions.reserve(numTicks + 1);
-                vPositions.push_back(pFutureChar->m_Pos);
-
-                bool characterDied = false;
-                for(int t = 0; t < numTicks; t++)
-                {
-                        int Tick = StartTick + t + 1;
-                        pFutureChar->OnDirectInput(&aInputs[t]);
-                        FutureWorld.m_GameTick = Tick;
-                        pFutureChar->OnPredictedInput(&aInputs[t]);
-                        FutureWorld.Tick();
-
-                        if(!FutureWorld.GetCharacterById(PredictedCharId))
+                        // Simulate the primitive
+                        bool died = false;
+                        int freezeCount = 0;
+                        for(int t = 0; t < prim.Ticks; t++)
                         {
-                                characterDied = true;
-                                break;
+                                int Tick = StartTick + t + 1;
+                                pBot->OnDirectInput(&aPrimInputs[t]);
+                                FutureWorld.m_GameTick = Tick;
+                                pBot->OnPredictedInput(&aPrimInputs[t]);
+                                FutureWorld.Tick();
+                                if(!FutureWorld.GetCharacterById(PredictedCharId))
+                                {
+                                        died = true;
+                                        break;
+                                }
+                                vec2 p = pBot->m_Pos;
+                                int ptx = pf_clamp((int)(p.x / 32.0f), 0, m_MapWidth - 1);
+                                int pty = pf_clamp((int)(p.y / 32.0f), 0, m_MapHeight - 1);
+                                if(IsTileFreeze(ptx, pty))
+                                        freezeCount++;
                         }
-                        vPositions.push_back(pFutureChar->m_Pos);
-                }
 
-                if(characterDied)
-                        continue;
+                        // Capture child state BEFORE restoring (IsGrounded / m_FreezeTime
+                        // reflect the post-simulation world)
+                        bool childEndedFrozen = (!died && pBot->m_FreezeTime > 0);
+                        CCharacterCore childCore;
+                        vec2 childPos(0, 0);
+                        bool childOnGround = false;
+                        if(!died)
+                        {
+                                childCore = pBot->GetCore();
+                                childPos = pBot->m_Pos;
+                                childOnGround = pBot->IsGrounded();
+                        }
 
-                // Score: use the A* distance field at the final position
-                vec2 finalPos = pFutureChar->m_Pos;
-                int finalTX = (int)(finalPos.x / 32.0f);
-                int finalTY = (int)(finalPos.y / 32.0f);
-                finalTX = pf_clamp(finalTX, 0, m_MapWidth - 1);
-                finalTY = pf_clamp(finalTY, 0, m_MapHeight - 1);
-                int finalIdx = finalTY * m_MapWidth + finalTX;
+                        // Restore the bot to the parent state for the next primitive
+                        pBot->SetCore(savedCore);
+                        pBot->m_Pos = savedPos;
 
-                float score = m_pfDist[finalIdx];
+                        if(died)
+                                continue;
+                        // Ending frozen = bot cannot move further from this state
+                        if(childEndedFrozen)
+                                continue;
 
-                // Penalize freeze tiles along the entire path
-                // Use a moderate penalty so that moving toward the target still wins over standing still
-                // PF_FREEZE_COST=50 per tile was too aggressive — a 10-tile freeze path = 500 penalty
-                // which made "stand still" (penalty=0) always win
-                const float KINO_FREEZE_PENALTY = 5.0f; // moderate: 10 tiles = 50, still allows progress
-                int freezeTileCount = 0;
-                for(size_t p = 0; p < vPositions.size(); p++)
-                {
-                        int ptx = (int)(vPositions[p].x / 32.0f);
-                        int pty = (int)(vPositions[p].y / 32.0f);
-                        ptx = pf_clamp(ptx, 0, m_MapWidth - 1);
-                        pty = pf_clamp(pty, 0, m_MapHeight - 1);
-                        if(IsTileFreeze(ptx, pty))
-                                freezeTileCount++;
-                }
-                score += (float)freezeTileCount * KINO_FREEZE_PENALTY;
+                        // Discrete child state
+                        int newTX = pf_clamp((int)(childPos.x / 32.0f), 0, m_MapWidth - 1);
+                        int newTY = pf_clamp((int)(childPos.y / 32.0f), 0, m_MapHeight - 1);
+                        int newIdx = newTY * m_MapWidth + newTX;
+                        float newH = m_pfDist[newIdx];
+                        if(newH >= 1e17f)
+                                continue; // landed on an unreachable tile
 
-                // Track best candidate AND its freeze count
-                // If the best candidate goes through heavy freeze, we'll fall back to normal pathfinder
+                        int newVelDir = VelDirBucket(childCore.m_Vel.x);
+                        bool newHooked = (childCore.m_HookState == HOOK_GRABBED);
+                        uint64_t newKey = MakeStateKey(newTX, newTY, newVelDir, childOnGround, newHooked);
 
-                if(score < bestScore)
-                {
-                        bestScore = score;
-                        bestCandidate = c;
-                        bestFreezeCount = freezeTileCount;
-                        memcpy(bestInputs, aInputs, sizeof(CNetObj_PlayerInput) * numTicks);
-                        bestPath = vPositions;
+                        // Cost = ticks + freeze penalty
+                        float primCost = (float)prim.Ticks + (float)freezeCount * LATTICE_FREEZE_PENALTY;
+                        float newG = vNodes[curIdx].G + primCost;
+
+                        // Skip if we already reached this state at a lower-or-equal cost
+                        auto it = bestG.find(newKey);
+                        if(it != bestG.end() && it->second <= newG)
+                                continue;
+                        bestG[newKey] = newG;
+
+                        float newF = newG + newH * LATTICE_H_SCALE;
+
+                        // Create the child node
+                        SLatticeNode child;
+                        child.Core = childCore;
+                        child.G = newG;
+                        child.H = newH;
+                        child.F = newF;
+                        child.ParentIdx = curIdx;
+                        child.PrimIdx = primI;
+                        child.StateKey = newKey;
+                        child.Closed = false;
+                        vNodes.push_back(child);
+                        open.push((int)vNodes.size() - 1);
                 }
         }
 
-        // Store the best package in the cache
-        // But if the best candidate goes through heavy freeze (>30% of ticks in freeze tiles),
-        // don't use it — fall back to normal pathfinder which has proper freeze avoidance
-        if(bestCandidate >= 0)
+        // === Pick the result node ===
+        // If the goal was reached, use it.  Otherwise pick the node with the
+        // lowest H (closest to goal) as a best-effort partial plan.
+        int resultNodeIdx;
+        if(goalNodeIdx >= 0)
         {
-                float freezeRatio = (float)bestFreezeCount / (float)(numTicks + 1);
-                if(freezeRatio > 0.3f)
-                {
-                        // Too much freeze on the predicted path — invalidate cache
-                        // so the caller falls back to normal pathfinder movement
-                        State.m_KinoCache.Reset();
-                        return;
-                }
-
-                CKinodynamicCache &cache = State.m_KinoCache;
-                cache.Reset();
-                memcpy(cache.aInputs, bestInputs, sizeof(CNetObj_PlayerInput) * numTicks);
-                cache.NumTicks = numTicks;
-                cache.CurrentTick = 0;
-                cache.ComputeTick = pGame->Client()->GameTick(g_Config.m_ClDummy);
-                cache.TargetTX = targetTX;
-                cache.TargetTY = targetTY;
-                cache.BotPos = MyPos;
-                cache.vPath = bestPath;
+                resultNodeIdx = goalNodeIdx;
         }
+        else
+        {
+                float minH = vNodes[0].H;
+                resultNodeIdx = 0;
+                for(int i = 1; i < (int)vNodes.size(); i++)
+                {
+                        if(vNodes[i].H < minH)
+                        {
+                                minH = vNodes[i].H;
+                                resultNodeIdx = i;
+                        }
+                }
+        }
+
+        // No node is closer than the root → no primitive made progress.
+        // Bail out and let the normal pathfinder handle movement.
+        if(resultNodeIdx == 0)
+        {
+                State.m_KinoCache.Reset();
+                return;
+        }
+
+        // === Reconstruct the primitive path (root → result) ===
+        std::vector<int> vPrimPath;
+        for(int idx = resultNodeIdx; idx > 0; idx = vNodes[idx].ParentIdx)
+                vPrimPath.push_back(vNodes[idx].PrimIdx);
+        std::reverse(vPrimPath.begin(), vPrimPath.end());
+
+        if(vPrimPath.empty())
+        {
+                State.m_KinoCache.Reset();
+                return;
+        }
+
+        // === Flatten the primitive sequence into a single input array ===
+        CNetObj_PlayerInput aPlanInputs[KINO_MAX_TICKS];
+        int planTicks = 0;
+        for(int primIdx : vPrimPath)
+        {
+                CNetObj_PlayerInput aPrimInputs[LATTICE_PRIM_MAX_TICKS];
+                BuildPrimitiveInputs(aPrims[primIdx], aPrimInputs);
+                for(int t = 0; t < aPrims[primIdx].Ticks; t++)
+                {
+                        if(planTicks >= KINO_MAX_TICKS)
+                                break;
+                        aPlanInputs[planTicks++] = aPrimInputs[t];
+                }
+                if(planTicks >= KINO_MAX_TICKS)
+                        break;
+        }
+
+        if(planTicks == 0)
+        {
+                State.m_KinoCache.Reset();
+                return;
+        }
+
+        // === Re-simulate the full plan from the root to collect dense vPath
+        // for rendering (and to validate the concatenated plan). ===
+        pBot->SetCore(vNodes[0].Core);
+        pBot->m_Pos = vNodes[0].Core.m_Pos;
+        std::vector<vec2> vPath;
+        vPath.reserve(planTicks + 1);
+        vPath.push_back(pBot->m_Pos);
+        for(int t = 0; t < planTicks; t++)
+        {
+                int Tick = StartTick + t + 1;
+                pBot->OnDirectInput(&aPlanInputs[t]);
+                FutureWorld.m_GameTick = Tick;
+                pBot->OnPredictedInput(&aPlanInputs[t]);
+                FutureWorld.Tick();
+                if(!FutureWorld.GetCharacterById(PredictedCharId))
+                        break;
+                vPath.push_back(pBot->m_Pos);
+        }
+
+        // === Store the plan in the cache ===
+        CKinodynamicCache &cache = State.m_KinoCache;
+        cache.Reset();
+        memcpy(cache.aInputs, aPlanInputs, sizeof(CNetObj_PlayerInput) * planTicks);
+        cache.NumTicks = planTicks;
+        cache.CurrentTick = 0;
+        cache.ComputeTick = pGame->Client()->GameTick(g_Config.m_ClDummy);
+        cache.TargetTX = targetTX;
+        cache.TargetTY = targetTY;
+        cache.BotPos = MyPos;
+        cache.vPath = vPath;
 }
 
 void CBotNet::ApplyKinodynamicCache(int Dummy, CNetObj_PlayerInput *pInput, CBotNetDummy &State)
