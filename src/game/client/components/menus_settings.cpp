@@ -3829,7 +3829,7 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                         // Dynamic height: base rows + kinodynamic-dependent rows
                         int numRows = 5; // pathfinder+avoidfreeze, simulate+sps, fixsnap+kino, rays+dist, go
                         if(BN.m_KinodynamicEnabled)
-                                numRows += 5; // Candidates, Ticks, Hook Angles, Cache Ticks, ShowPath+ShowField
+                                numRows += 6; // Candidates, Ticks, Hook Angles, Cache Ticks, ShowPath+ShowField, Aggressive
                         const float SectionH = PanelPad + 25.0f + 5.0f + numRows*LineSize + (numRows-1)*RowGap + PanelPad;
                         MainView.HSplitTop(SectionH, &PanelBg, &MainView);
                         PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
@@ -3924,6 +3924,16 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                         BN.m_KinoShowPath ^= 1;
                                 if(DoButton_CheckBox(&BN.m_KinoShowField, Localize("Show Field"), BN.m_KinoShowField, &Right))
                                         BN.m_KinoShowField ^= 1;
+
+                                // Aggressive (force-apply best partial plan even when no primitive improved)
+                                Panel.HSplitTop(LineSize, &Row, &Panel);
+                                Panel.HSplitTop(RowGap, nullptr, &Panel);
+                                if(DoButton_CheckBox(&BN.m_KinoAggressive, Localize("Aggressive"), BN.m_KinoAggressive, &Row))
+                                {
+                                        BN.m_KinoAggressive ^= 1;
+                                        for(int i = 0; i < MAX_DUMMIES; i++)
+                                                BN.m_aDummies[i].m_KinoCache.Reset();
+                                }
                         }
 
                         // Rays + Dist

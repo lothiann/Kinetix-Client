@@ -112,6 +112,7 @@ CBotNet::CBotNet()
         //  in hook-swing scenarios.  Drift check (48px) is the real invalidation.)
         m_KinoShowPath = true;
         m_KinoShowField = false;
+        m_KinoAggressive = false;
 
         m_MapWidth = 0;
         m_MapHeight = 0;
@@ -187,6 +188,7 @@ void CBotNet::OnConsoleInit()
         Console()->Register("c_kino_cache_ticks", "i[ticks]", CFGFLAG_CLIENT, ConKinoCacheTicks, this, "Kinodynamic: cache duration in ticks (1-128, 128=full plan)");
         Console()->Register("c_kino_show_path", "i[on]", CFGFLAG_CLIENT, ConKinoShowPath, this, "Kinodynamic: show predicted path");
         Console()->Register("c_kino_show_field", "i[on]", CFGFLAG_CLIENT, ConKinoShowField, this, "Kinodynamic: show vector field");
+        Console()->Register("c_kino_aggressive", "i[on]", CFGFLAG_CLIENT, ConKinoAggressive, this, "Kinodynamic: force-apply best partial plan even when no primitive improved on start");
         Console()->Register("c_send", "s[dummyids] r[command]", CFGFLAG_CLIENT, ConSendDummy, this, "Execute command on dummies (-1=all, 0,1,2=specific)");
 }
 
@@ -2952,6 +2954,12 @@ void CBotNet::ConKinoShowField(IConsole::IResult *pResult, void *pUserData)
         p->m_KinoShowField = pResult->GetInteger(0) != 0;
 }
 
+void CBotNet::ConKinoAggressive(IConsole::IResult *pResult, void *pUserData)
+{
+        CBotNet *p = (CBotNet *)pUserData;
+        p->m_KinoAggressive = pResult->GetInteger(0) != 0;
+}
+
 // =========================================================
 // STATE-LATTICE A* — MOTION PRIMITIVES
 // =========================================================
@@ -3517,24 +3525,56 @@ void CBotNet::ComputeKinodynamic(int Dummy, const vec2 &MyPos, int botTX, int bo
         }
         else
         {
-                float minH = vNodes[0].H;
-                resultNodeIdx = 0;
+                // Find the non-root node with the lowest H (closest to goal
+                // by the pathfinder distance-field gradient).  This is the
+                // "best partial plan" — the input sequence that ended on the
+                // tile whose distance-to-goal is smallest.
+                float rootH = vNodes[0].H;
+                float bestH = 1e17f;
+                int bestIdx = -1;
                 for(int i = 1; i < (int)vNodes.size(); i++)
                 {
-                        if(vNodes[i].H < minH)
+                        if(vNodes[i].H < bestH)
                         {
-                                minH = vNodes[i].H;
-                                resultNodeIdx = i;
+                                bestH = vNodes[i].H;
+                                bestIdx = i;
                         }
                 }
-        }
 
-        // No node is closer than the root → no primitive made progress.
-        // Bail out and let the normal pathfinder handle movement.
-        if(resultNodeIdx == 0)
-        {
-                State.m_KinoCache.Reset();
-                return;
+                if(bestIdx < 0)
+                {
+                        // No children were ever expanded — nothing to apply.
+                        State.m_KinoCache.Reset();
+                        return;
+                }
+
+                if(bestH < rootH)
+                {
+                        // Normal partial plan: at least one primitive moved
+                        // the bot closer to the goal.
+                        resultNodeIdx = bestIdx;
+                }
+                else if(m_KinoAggressive)
+                {
+                        // Aggressive mode: no primitive improved on the start,
+                        // but the user wants us to force-apply the best partial
+                        // plan anyway.  This keeps the bot on the kinodynamic
+                        // planner (which knows how to fire hooks and chain
+                        // maneuvers) instead of bailing out to the legacy flow
+                        // pathfinder, whose only response to "goal is up" is
+                        // to spam jump — which does nothing in mid-air and
+                        // never fires the hook.  The bot may temporarily move
+                        // away from the goal, but the next recompute starts
+                        // from the new state and may find a real path.
+                        resultNodeIdx = bestIdx;
+                }
+                else
+                {
+                        // Normal mode and no primitive made progress — bail
+                        // out and let the normal pathfinder handle movement.
+                        State.m_KinoCache.Reset();
+                        return;
+                }
         }
 
         // === Reconstruct the primitive path (root → result) ===

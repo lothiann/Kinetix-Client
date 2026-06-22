@@ -236,6 +236,7 @@ public:
         int m_KinoCacheTicks;   // receding horizon: ticks to apply before replanning (1-30)
         bool m_KinoShowPath;    // render kinodynamic predicted path
         bool m_KinoShowField;   // render pathfinder vector field
+        bool m_KinoAggressive;  // force-apply best partial plan even when no primitive improved on the start (never bail out to legacy flow pathfinder)
 
         // Per-dummy runtime state
         CBotNetDummy m_aDummies[MAX_DUMMIES];
@@ -341,6 +342,7 @@ public:
         static void ConKinoCacheTicks(IConsole::IResult *pResult, void *pUserData);
         static void ConKinoShowPath(IConsole::IResult *pResult, void *pUserData);
         static void ConKinoShowField(IConsole::IResult *pResult, void *pUserData);
+        static void ConKinoAggressive(IConsole::IResult *pResult, void *pUserData);
         static void ConSendDummy(IConsole::IResult *pResult, void *pUserData);
 
         // Placeholder processing for c_send and UI Send Command
