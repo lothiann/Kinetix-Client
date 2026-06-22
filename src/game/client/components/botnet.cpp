@@ -3027,17 +3027,20 @@ static void BuildPrimitiveTable(int hookAngles, SMotionPrimitive *pPrims, int &o
         pPrims[outCount++] = {3, 0, -1, -1, 0, 0.0f, false}; // STAY_3
 
         // --- HOOK_FIRE primitives ---
-        // Angles restricted to [pi/6, 5pi/6] (30-150 deg) — steep enough to
-        // always lift the bot, prevents floor-grab exploits.  Hook is held
-        // for the FULL 10 ticks (no 2-tick release) so the swing can persist
-        // across consecutive HOOK_FIRE / HOOK_HOLD primitives.
-        // HookAngle in [pi/6, 5pi/6] is a "fire" primitive.
+        // v1.41: angles span the FULL upper hemisphere [0, pi] (with the
+        // y-axis sign fix in FindHookGrabPoint, these all point UP or
+        // HORIZONTAL — never DOWN).  This includes near-horizontal angles
+        // (~0 and ~pi) which are ESSENTIAL for sideways hooking off walls
+        // at the same height as the bot — without them the bot can't hook
+        // sideways when falling, which was the v1.40 "doesn't hook when it
+        // could" bug.
+        // Hook is held for the FULL 10 ticks (no 2-tick release) so the
+        // swing can persist across consecutive HOOK_FIRE / HOOK_HOLD
+        // primitives.  HookAngle > 0.0f is the "fire" sentinel.
         hookAngles = pf_clamp(hookAngles, 4, 32);
-        const float angleMin = (float)pi / 6.0f;       // 30 deg
-        const float angleMax = 5.0f * (float)pi / 6.0f; // 150 deg
         for(int i = 0; i < hookAngles && outCount < LATTICE_MAX_PRIMITIVES; i++)
         {
-                float angle = angleMin + (angleMax - angleMin) * ((float)i + 0.5f) / (float)hookAngles;
+                float angle = (float)pi * ((float)i + 0.5f) / (float)hookAngles;
                 pPrims[outCount++] = {10, 0, -1, 0, 10, angle, false}; // HOOK_FIRE_i (hold full 10)
         }
 
@@ -3207,13 +3210,13 @@ static bool FindHookGrabPoint(CCollision *pColl, vec2 from, float angle, float m
                 return false; // hook would retract, not grab
         if(hit == TILE_TELEINHOOK)
                 return false; // teleport-hook — skip for predictability
-        // Reject grab points at or below the bot's feet — these are floor
-        // grabs that just drag the bot horizontally (useless; running is
-        // always better).  Only accept grabs ABOVE the bot so the hook
-        // actually lifts / swings.
-        if(hitPos.y >= from.y - 4.0f)
-                return false;
-        // Any other solid tile above the bot is a valid hook target.
+        // v1.41: NO 'above bot' filter — it rejected legitimate sideways
+        // grabs on walls at the same height as the bot, which made the bot
+        // unable to hook sideways when falling (the "doesn't hook when it
+        // could" bug).  With the y-axis sign fix above, angles in [0, pi]
+        // all point UP or HORIZONTAL — never DOWN — so floor grabs are
+        // impossible from a grounded bot (the ray stays at bot-center
+        // height, above the floor).
         outGrab = hitPos;
         return true;
 }
