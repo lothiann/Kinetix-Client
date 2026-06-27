@@ -1451,7 +1451,7 @@ void CMenus::RenderSettings(CUIRect MainView)
                 Localize("Sound"),
                 Localize("DDNet"),
                 Localize("Assets"),
-                Localize("ZMajor")};
+                Localize("Kinetix")};
         static CButtonContainer s_aTabButtons[SETTINGS_LENGTH];
 
         for(int i = 0; i < SETTINGS_LENGTH; i++)
@@ -1515,10 +1515,10 @@ void CMenus::RenderSettings(CUIRect MainView)
                 GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_ASSETS);
                 RenderSettingsCustom(MainView);
         }
-        else if(g_Config.m_UiSettingsPage == SETTINGS_DMCLIENTS)
+        else if(g_Config.m_UiSettingsPage == SETTINGS_KINETIX)
         {
                 GameClient()->m_MenuBackground.ChangePosition(CMenuBackground::POS_SETTINGS_RESERVED0);
-                RenderSettingsZMajor(MainView);
+                RenderSettingsKinetix(MainView);
         }
         else
         {
@@ -3085,34 +3085,34 @@ void CMenus::CPopupMapPickerContext::MapListPopulate()
         m_Selection = -1;
 }
 
-void CMenus::RenderSettingsZMajor(CUIRect MainView)
+void CMenus::RenderSettingsKinetix(CUIRect MainView)
 {
         enum
         {
-                DMCLIENTS_TAB_DUMMIES = 0,
-                DMCLIENTS_TAB_FUNCTIONS = 1,
-                DMCLIENTS_TAB_ADVANCED = 2,
-                DMCLIENTS_TAB_SETTINGS = 3,
-                DMCLIENTS_TAB_PATHFINDER = 4,
-                NUMBER_OF_DMCLIENTS_TABS = 5,
+                KINETIX_TAB_DUMMIES = 0,
+                KINETIX_TAB_FUNCTIONS = 1,
+                KINETIX_TAB_ADVANCED = 2,
+                KINETIX_TAB_SETTINGS = 3,
+                KINETIX_TAB_PATHFINDER = 4,
+                NUMBER_OF_KINETIX_TABS = 5,
         };
-        static int s_CurTab = DMCLIENTS_TAB_DUMMIES;
+        static int s_CurTab = KINETIX_TAB_DUMMIES;
 
         CUIRect TabBar, Button;
         MainView.HSplitTop(20.0f, &TabBar, &MainView);
-        const float TabWidth = TabBar.w / (float)NUMBER_OF_DMCLIENTS_TABS;
-        static CButtonContainer s_aPageTabs[NUMBER_OF_DMCLIENTS_TABS] = {};
-        const char *apTabNames[NUMBER_OF_DMCLIENTS_TABS] = {
+        const float TabWidth = TabBar.w / (float)NUMBER_OF_KINETIX_TABS;
+        static CButtonContainer s_aPageTabs[NUMBER_OF_KINETIX_TABS] = {};
+        const char *apTabNames[NUMBER_OF_KINETIX_TABS] = {
                 Localize("Dummies"),
                 Localize("Functions"),
                 Localize("Advanced"),
                 Localize("Settings"),
                 Localize("Pathfinder")};
 
-        for(int Tab = 0; Tab < NUMBER_OF_DMCLIENTS_TABS; ++Tab)
+        for(int Tab = 0; Tab < NUMBER_OF_KINETIX_TABS; ++Tab)
         {
                 TabBar.VSplitLeft(TabWidth, &Button, &TabBar);
-                const int Corners = Tab == 0 ? IGraphics::CORNER_L : (Tab == NUMBER_OF_DMCLIENTS_TABS - 1 ? IGraphics::CORNER_R : IGraphics::CORNER_NONE);
+                const int Corners = Tab == 0 ? IGraphics::CORNER_L : (Tab == NUMBER_OF_KINETIX_TABS - 1 ? IGraphics::CORNER_R : IGraphics::CORNER_NONE);
                 if(DoButton_MenuTab(&s_aPageTabs[Tab], apTabNames[Tab], s_CurTab == Tab, &Button, Corners, nullptr, nullptr, nullptr, nullptr, 4.0f))
                 {
                         s_CurTab = Tab;
@@ -3121,23 +3121,23 @@ void CMenus::RenderSettingsZMajor(CUIRect MainView)
 
         MainView.HSplitTop(10.0f, nullptr, &MainView);
 
-        if(s_CurTab == DMCLIENTS_TAB_DUMMIES)
+        if(s_CurTab == KINETIX_TAB_DUMMIES)
         {
                 RenderSettingsDummies(MainView);
         }
-        else if(s_CurTab == DMCLIENTS_TAB_FUNCTIONS)
+        else if(s_CurTab == KINETIX_TAB_FUNCTIONS)
         {
                 RenderSettingsFunctions(MainView);
         }
-        else if(s_CurTab == DMCLIENTS_TAB_ADVANCED)
+        else if(s_CurTab == KINETIX_TAB_ADVANCED)
         {
                 RenderSettingsAdvanced(MainView);
         }
-        else if(s_CurTab == DMCLIENTS_TAB_SETTINGS)
+        else if(s_CurTab == KINETIX_TAB_SETTINGS)
         {
                 RenderSettingsBotSettings(MainView);
         }
-        else if(s_CurTab == DMCLIENTS_TAB_PATHFINDER)
+        else if(s_CurTab == KINETIX_TAB_PATHFINDER)
         {
                 RenderSettingsPathfinder(MainView);
         }
@@ -5348,7 +5348,7 @@ void CMenus::RenderSettingsBotSettings(CUIRect MainView)
 }
 
 // =============================================================================
-// ZMajor → Pathfinder tab — chunk-based mini TAS maker
+// Kinetix → Pathfinder tab — chunk-based mini TAS maker
 // =============================================================================
 void CMenus::RenderSettingsPathfinder(CUIRect MainView)
 {

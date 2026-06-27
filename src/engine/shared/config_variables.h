@@ -280,7 +280,7 @@ MACRO_CONFIG_INT(ClTrajectoryLineSize, cl_trajectory_line_size, 1, 0, 20, CFGFLA
 MACRO_CONFIG_COL(ClTrajectoryColor, cl_trajectory_color, 65471, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Trajectory line color")
 MACRO_CONFIG_INT(ClTrajectoryAlpha, cl_trajectory_alpha, 80, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Trajectory line opacity (0-100)")
 
-// Pathfinder tab (ZMajor→Pathfinder) — chunk-based mini TAS maker.
+// Pathfinder tab (Kinetix→Pathfinder) — chunk-based mini TAS maker.
 // State machine: pathfinding (idle) -> stop (running) -> finish (done, path shown until user clicks).
 MACRO_CONFIG_INT(ClPfAlgorithm, cl_pf_algorithm, 0, 0, 14, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder algorithm: 0=KinoA* 1=GridA* 2=Dijkstra 3=Greedy 4=BFS 5=DFS 6=RRT 7=RRT* 8=PRM 9=MCTS 10=GA 11=CMA-ES 12=SA 13=HillClimb 14=RandomWalk")
 MACRO_CONFIG_INT(ClPfChunkSize, cl_pf_chunk_size, 20, 5, 50, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: ticks per input chunk (5-50)")

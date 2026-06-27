@@ -686,7 +686,7 @@ public:
                 SETTINGS_SOUND,
                 SETTINGS_DDNET,
                 SETTINGS_ASSETS,
-                SETTINGS_DMCLIENTS,
+                SETTINGS_KINETIX,
 
                 SETTINGS_LENGTH,
         };
@@ -847,7 +847,7 @@ private:
         void RenderSettingsDDNet(CUIRect MainView);
         void RenderSettingsAppearance(CUIRect MainView);
         void RenderSettingsDummies(CUIRect MainView);
-        void RenderSettingsZMajor(CUIRect MainView);
+        void RenderSettingsKinetix(CUIRect MainView);
         void RenderSettingsFunctions(CUIRect MainView);
         void RenderSettingsAdvanced(CUIRect MainView);
         void RenderSettingsBotSettings(CUIRect MainView);

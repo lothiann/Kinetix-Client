@@ -8,7 +8,7 @@ namespace sol { class state; }
 
 // =========================================================
 // CCodeExec — Lua scripting engine via sol2
-// Provides Code Execution functionality in ZMajor
+// Provides Code Execution functionality in Kinetix
 // =========================================================
 class CCodeExec : public CComponent
 {

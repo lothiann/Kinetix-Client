@@ -35,7 +35,7 @@ static const float LATTICE_FREEZE_PENALTY = 5.0f; // cost added per freeze tile 
 static const float LATTICE_H_SCALE = 2.0f; // heuristic multiplier (admissible: <3.2 ticks/tile)
 
 // =========================================================
-// Pathfinder tab (ZMajor→Pathfinder) — chunk-based mini TAS maker
+// Pathfinder tab (Kinetix→Pathfinder) — chunk-based mini TAS maker
 // =========================================================
 // State machine:  IDLE (green pathfinding btn) -> RUNNING (red stop btn) -> FINISHED (orange finish btn) -> IDLE
 // While RUNNING, UpdatePathfinder() runs one chunk per OnUpdate: generates
@@ -257,7 +257,7 @@ public:
         bool m_KinoShowField;   // render pathfinder vector field
         bool m_KinoAggressive;  // force-apply best partial plan even when no primitive improved on the start (never bail out to legacy flow pathfinder)
 
-        // Pathfinder tab (ZMajor→Pathfinder) — chunk-based mini TAS maker.
+        // Pathfinder tab (Kinetix→Pathfinder) — chunk-based mini TAS maker.
         // State machine driven by m_PfState; trajectory in m_PfVPath.
         // m_PfStartPos = active-player position when RUNNING started (for re-anchor).
         // m_PfChunkCount = chunks generated so far (safety cap = ClPfMaxChunks).
@@ -331,7 +331,7 @@ public:
         void RenderPackage(int Dummy);
         void RenderVectorField();
 
-        // Pathfinder tab (ZMajor→Pathfinder) — chunk-based mini TAS maker
+        // Pathfinder tab (Kinetix→Pathfinder) — chunk-based mini TAS maker
         void UpdatePathfinder();            // called from OnUpdate; runs one chunk if RUNNING
         void RenderPathfinderPath();        // called from OnRender; draws m_PfVPath like RenderPackage
         void PfResetRun();                  // clear vPath + sim state (start fresh from active player)
@@ -394,7 +394,7 @@ public:
         static void ConKinoAggressive(IConsole::IResult *pResult, void *pUserData);
         static void ConSendDummy(IConsole::IResult *pResult, void *pUserData);
 
-        // Pathfinder tab (ZMajor→Pathfinder) console commands
+        // Pathfinder tab (Kinetix→Pathfinder) console commands
         static void ConPfLive(IConsole::IResult *pResult, void *pUserData);     // c_pf_live 0|1|2  (0=idle, 1=running, 2=finished)
         static void ConPfAlgorithm(IConsole::IResult *pResult, void *pUserData);
         static void ConPfChunkSize(IConsole::IResult *pResult, void *pUserData);

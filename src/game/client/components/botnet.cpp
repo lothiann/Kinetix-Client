@@ -114,7 +114,7 @@ CBotNet::CBotNet()
         m_KinoShowField = false;
         m_KinoAggressive = false;
 
-        // Pathfinder tab (ZMajor→Pathfinder) — chunk-based mini TAS maker.
+        // Pathfinder tab (Kinetix→Pathfinder) — chunk-based mini TAS maker.
         m_PfState = PF_STATE_IDLE;
         m_PfChunkCount = 0;
         m_PfStartPos = vec2(0, 0);
@@ -204,7 +204,7 @@ void CBotNet::OnConsoleInit()
         Console()->Register("c_kino_aggressive", "i[on]", CFGFLAG_CLIENT, ConKinoAggressive, this, "Kinodynamic: force-apply best partial plan even when no primitive improved on start");
         Console()->Register("c_send", "s[dummyids] r[command]", CFGFLAG_CLIENT, ConSendDummy, this, "Execute command on dummies (-1=all, 0,1,2=specific)");
 
-        // Pathfinder tab (ZMajor→Pathfinder) — chunk-based mini TAS maker
+        // Pathfinder tab (Kinetix→Pathfinder) — chunk-based mini TAS maker
         Console()->Register("c_pf_live", "i[state]", CFGFLAG_CLIENT, ConPfLive, this, "Pathfinder tab: 0=idle, 1=running, 2=finished");
         Console()->Register("c_pf_algorithm", "i[algo]", CFGFLAG_CLIENT, ConPfAlgorithm, this, "Pathfinder tab: algorithm index 0-14");
         Console()->Register("c_pf_chunk_size", "i[ticks]", CFGFLAG_CLIENT, ConPfChunkSize, this, "Pathfinder tab: ticks per chunk (5-50)");
@@ -2993,7 +2993,7 @@ void CBotNet::ConKinoAggressive(IConsole::IResult *pResult, void *pUserData)
 }
 
 // =========================================================
-// PATHFINDER TAB (ZMajor→Pathfinder) — chunk-based mini TAS maker
+// PATHFINDER TAB (Kinetix→Pathfinder) — chunk-based mini TAS maker
 // =========================================================
 //
 // State machine:  IDLE --[user clicks "pathfinding"]--> RUNNING
@@ -3469,7 +3469,7 @@ void CBotNet::UpdatePathfinder()
 // Render m_PfVPath (copy of RenderPackage with m_PfVPath substituted).
 void CBotNet::RenderPathfinderPath()
 {
-        if(m_PfVPath.size() < 2)
+        if(m_PfVPath.empty())
                 return;
 
         Graphics()->TextureClear();
@@ -3477,6 +3477,23 @@ void CBotNet::RenderPathfinderPath()
         ColorRGBA BaseColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClTrajectoryColor, true));
         float ConfigAlpha = g_Config.m_ClTrajectoryAlpha / 100.0f;
         int LineSize = g_Config.m_ClTrajectoryLineSize;
+
+        // If only the start point exists (no chunk generated yet, or all chunks
+        // failed), render a small marker so the user sees the pathfinder is
+        // active but stuck — instead of an invisible empty path.
+        if(m_PfVPath.size() == 1)
+        {
+                Graphics()->QuadsBegin();
+                Graphics()->SetColor(BaseColor.r, BaseColor.g, BaseColor.b, ConfigAlpha);
+                vec2 p = m_PfVPath[0];
+                float s = 8.0f;
+                IGraphics::CFreeformItem Quad(
+                        p.x - s, p.y - s, p.x + s, p.y - s,
+                        p.x - s, p.y + s, p.x + s, p.y + s);
+                Graphics()->QuadsDrawFreeform(&Quad, 1);
+                Graphics()->QuadsEnd();
+                return;
+        }
 
         if(LineSize > 0)
         {
@@ -3962,14 +3979,11 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
                 }
         }
 
-        if(!anyValid && anyFrozenValid)
-        {
-                // No freeze-free candidate — use the best frozen one as fallback.
-                // The path WILL sink here, but at least it's visible (the user can
-                // see the bot got stuck in freeze and tune settings to avoid it).
-                best = bestFrozen;
-                anyValid = true;
-        }
+        // NO frozen fallback: if all candidates end frozen, return false (path
+        // stops here).  Better to halt with a visible partial path than to sink
+        // into freeze permanently (the old fallback caused the "path stuck in
+        // freeze" bug).  The user can tune Hook Angles / Chunk Size to find a
+        // freeze-free route.
 
         if(!anyValid)
                 return false;
