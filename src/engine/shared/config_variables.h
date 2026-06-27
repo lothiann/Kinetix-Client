@@ -280,6 +280,27 @@ MACRO_CONFIG_INT(ClTrajectoryLineSize, cl_trajectory_line_size, 1, 0, 20, CFGFLA
 MACRO_CONFIG_COL(ClTrajectoryColor, cl_trajectory_color, 65471, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Trajectory line color")
 MACRO_CONFIG_INT(ClTrajectoryAlpha, cl_trajectory_alpha, 80, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Trajectory line opacity (0-100)")
 
+// Pathfinder tab (ZMajor→Pathfinder) — chunk-based mini TAS maker.
+// State machine: pathfinding (idle) -> stop (running) -> finish (done, path shown until user clicks).
+MACRO_CONFIG_INT(ClPfAlgorithm, cl_pf_algorithm, 0, 0, 14, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder algorithm: 0=KinoA* 1=GridA* 2=Dijkstra 3=Greedy 4=BFS 5=DFS 6=RRT 7=RRT* 8=PRM 9=MCTS 10=GA 11=CMA-ES 12=SA 13=HillClimb 14=RandomWalk")
+MACRO_CONFIG_INT(ClPfChunkSize, cl_pf_chunk_size, 20, 5, 50, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: ticks per input chunk (5-50)")
+MACRO_CONFIG_INT(ClPfCandidates, cl_pf_candidates, 200, 50, 2000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: max search nodes per chunk")
+MACRO_CONFIG_INT(ClPfHookAngles, cl_pf_hook_angles, 9, 4, 32, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: hook fan-raycast rays (4-32)")
+MACRO_CONFIG_INT(ClPfHorizon, cl_pf_horizon, 6, 1, 50, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: ticks to apply per chunk before re-planning (1-chunk_size)")
+MACRO_CONFIG_INT(ClPfMaxChunks, cl_pf_max_chunks, 200, 10, 2000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: max chunks before giving up (safety cap)")
+MACRO_CONFIG_INT(ClPfPerf, cl_pf_perf, 100, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: performance budget per tick in % (1-100; lower = slower but smoother, spreads chunk generation across many ticks)")
+// Score method — combine any of these (checkboxes; final score = weighted sum of enabled)
+MACRO_CONFIG_INT(ClPfScoreDist, cl_pf_score_dist, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Score: distance reduction (how much closer the chunk moved us to goal)")
+MACRO_CONFIG_INT(ClPfScoreTime, cl_pf_score_time, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Score: fewer ticks (prefer shorter chunks that reach the same progress)")
+MACRO_CONFIG_INT(ClPfScoreFlow, cl_pf_score_flow, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Score: flow-field alignment (how well the trajectory follows the BFS flow field)")
+// Fine method — penalty weights (checkboxes; each enabled penalty is added to the score)
+MACRO_CONFIG_INT(ClPfFineFreeze, cl_pf_fine_freeze, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Fine: freeze penalty (per freeze tile touched)")
+MACRO_CONFIG_INT(ClPfFineRetract, cl_pf_fine_retract, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Fine: hook retract penalty (wasted hook that retracted)")
+MACRO_CONFIG_INT(ClPfFineDeath, cl_pf_fine_death, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Fine: death penalty (chunk that kills the tee)")
+MACRO_CONFIG_INT(ClPfFineWall, cl_pf_fine_wall, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Fine: wall-hit penalty (per collision during chunk)")
+MACRO_CONFIG_INT(ClPfFineAir, cl_pf_fine_air, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Fine: air-time penalty (per tick airborne)")
+MACRO_CONFIG_INT(ClPfFineHook, cl_pf_fine_hook, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Fine: hook-fire penalty (per hook fire — discourage hook spam)")
+
 // IRC (emote-based communication)
 MACRO_CONFIG_INT(ClIrcEnabled, cl_irc_enabled, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Enable IRC emote communication and decoding")
 MACRO_CONFIG_INT(ClIrcRevealJoin, cl_irc_reveal_join, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Send handshake on join to reveal yourself as IRC user")

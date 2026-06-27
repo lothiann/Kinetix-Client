@@ -114,6 +114,18 @@ CBotNet::CBotNet()
         m_KinoShowField = false;
         m_KinoAggressive = false;
 
+        // Pathfinder tab (ZMajor→Pathfinder) — chunk-based mini TAS maker.
+        m_PfState = PF_STATE_IDLE;
+        m_PfChunkCount = 0;
+        m_PfStartPos = vec2(0, 0);
+        m_PfCurPos = vec2(0, 0);
+        m_PfCurVel = vec2(0, 0);
+        m_PfCurHookState = 0;       // HOOK_IDLE
+        m_PfCurFreezeTime = 0;
+        m_PfCurJumped = 0;
+        m_PfTickCounter = 0;
+        m_PfFlowField = nullptr;
+
         m_MapWidth = 0;
         m_MapHeight = 0;
         m_pMapGrid = nullptr;
@@ -133,6 +145,7 @@ CBotNet::~CBotNet()
         if(m_pfDist) delete[] m_pfDist;
         if(m_pfVisited) delete[] m_pfVisited;
         if(m_PfPlayerPenalty) delete[] m_PfPlayerPenalty;
+        if(m_PfFlowField) delete[] m_PfFlowField;
 }
 
 // =========================================================
@@ -190,6 +203,14 @@ void CBotNet::OnConsoleInit()
         Console()->Register("c_kino_show_field", "i[on]", CFGFLAG_CLIENT, ConKinoShowField, this, "Kinodynamic: show vector field");
         Console()->Register("c_kino_aggressive", "i[on]", CFGFLAG_CLIENT, ConKinoAggressive, this, "Kinodynamic: force-apply best partial plan even when no primitive improved on start");
         Console()->Register("c_send", "s[dummyids] r[command]", CFGFLAG_CLIENT, ConSendDummy, this, "Execute command on dummies (-1=all, 0,1,2=specific)");
+
+        // Pathfinder tab (ZMajor→Pathfinder) — chunk-based mini TAS maker
+        Console()->Register("c_pf_live", "i[state]", CFGFLAG_CLIENT, ConPfLive, this, "Pathfinder tab: 0=idle, 1=running, 2=finished");
+        Console()->Register("c_pf_algorithm", "i[algo]", CFGFLAG_CLIENT, ConPfAlgorithm, this, "Pathfinder tab: algorithm index 0-14");
+        Console()->Register("c_pf_chunk_size", "i[ticks]", CFGFLAG_CLIENT, ConPfChunkSize, this, "Pathfinder tab: ticks per chunk (5-50)");
+        Console()->Register("c_pf_candidates", "i[n]", CFGFLAG_CLIENT, ConPfCandidates, this, "Pathfinder tab: max search nodes (50-2000)");
+        Console()->Register("c_pf_hook_angles", "i[angles]", CFGFLAG_CLIENT, ConPfHookAngles, this, "Pathfinder tab: hook fan-raycast rays (4-32)");
+        Console()->Register("c_pf_horizon", "i[ticks]", CFGFLAG_CLIENT, ConPfHorizon, this, "Pathfinder tab: ticks applied per chunk (1-50)");
 }
 
 // =========================================================
@@ -1010,6 +1031,11 @@ void CBotNet::OnUpdate()
 {
         if(Client()->State() != IClient::STATE_ONLINE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
                 return;
+
+        // Pathfinder tab: run one chunk per update if RUNNING.  Placed before the
+        // dummy loop so it never interferes with the active dummy's inputs (the
+        // tab only simulates + renders; it does NOT write inputs to any dummy).
+        UpdatePathfinder();
 
         CGameClient *pGame = GameClient();
         if(!pGame->m_Snap.m_pLocalInfo)
@@ -2177,6 +2203,12 @@ void CBotNet::OnReset()
 
 void CBotNet::OnRender()
 {
+        // Pathfinder tab: render the accumulated trajectory whenever the state
+        // machine has produced a path (RUNNING or FINISHED).  This is INDEPENDENT
+        // of m_KinodynamicEnabled so the tab works even when kinodynamic A* is off.
+        if(m_PfState != PF_STATE_IDLE)
+                RenderPathfinderPath();
+
         if(!m_KinodynamicEnabled)
                 return;
 
@@ -2961,6 +2993,533 @@ void CBotNet::ConKinoAggressive(IConsole::IResult *pResult, void *pUserData)
 }
 
 // =========================================================
+// PATHFINDER TAB (ZMajor→Pathfinder) — chunk-based mini TAS maker
+// =========================================================
+//
+// State machine:  IDLE --[user clicks "pathfinding"]--> RUNNING
+//                      --[chunk reaches finish / died / max-chunks]--> FINISHED
+//                      --[user clicks "finish"]--> IDLE (path disappears)
+//                 RUNNING --[user clicks "stop"]--> IDLE (cancel)
+//
+// Per OnUpdate (RUNNING): one chunk = generate candidates (v1.42 motion
+// primitives: 6 BASE + HOOK_FIRE × hookAngles + 3 HOOK_HOLD + HOOK_RELEASE),
+// simulate each in a cloned world, score by enabled Score+Fine methods,
+// pick the best, append trajectory to m_PfVPath, advance sim state.
+//
+// RenderPathfinderPath draws m_PfVPath using the shared m_ClTrajectoryColor/
+// Alpha/LineSize settings (same as Advanced→Trajectory).
+//
+// SIMULATION-ONLY: does NOT write inputs to any dummy.
+
+// --- console command handlers ---
+void CBotNet::ConPfLive(IConsole::IResult *pResult, void *pUserData)
+{
+        CBotNet *p = (CBotNet *)pUserData;
+        int s = pResult->GetInteger(0);
+        if(s < 0 || s > 2)
+                return;
+        if(s == PF_STATE_RUNNING && p->m_PfState != PF_STATE_RUNNING)
+                p->PfResetRun();
+        p->m_PfState = s;
+        if(s == PF_STATE_IDLE)
+                p->m_PfVPath.clear();
+}
+
+void CBotNet::ConPfAlgorithm(IConsole::IResult *pResult, void *pUserData)
+{
+        CBotNet *p = (CBotNet *)pUserData;
+        int v = pResult->GetInteger(0);
+        if(v >= 0 && v < PF_TAB_ALGORITHM_COUNT)
+                g_Config.m_ClPfAlgorithm = v;
+}
+
+void CBotNet::ConPfChunkSize(IConsole::IResult *pResult, void *pUserData)
+{
+        CBotNet *p = (CBotNet *)pUserData;
+        int v = pResult->GetInteger(0);
+        if(v >= 5 && v <= PF_TAB_MAX_CHUNK_TICKS)
+                g_Config.m_ClPfChunkSize = v;
+}
+
+void CBotNet::ConPfCandidates(IConsole::IResult *pResult, void *pUserData)
+{
+        CBotNet *p = (CBotNet *)pUserData;
+        int v = pResult->GetInteger(0);
+        if(v >= 50 && v <= 2000)
+                g_Config.m_ClPfCandidates = v;
+}
+
+void CBotNet::ConPfHookAngles(IConsole::IResult *pResult, void *pUserData)
+{
+        CBotNet *p = (CBotNet *)pUserData;
+        int v = pResult->GetInteger(0);
+        if(v >= 4 && v <= 32)
+                g_Config.m_ClPfHookAngles = v;
+}
+
+void CBotNet::ConPfHorizon(IConsole::IResult *pResult, void *pUserData)
+{
+        CBotNet *p = (CBotNet *)pUserData;
+        int v = pResult->GetInteger(0);
+        if(v >= 1 && v <= PF_TAB_MAX_CHUNK_TICKS)
+                g_Config.m_ClPfHorizon = v;
+}
+
+// Reset run: anchor to active player's predicted core, build flow field.
+void CBotNet::PfResetRun()
+{
+        m_PfVPath.clear();
+        m_PfChunkCount = 0;
+        m_PfTickCounter = 0;
+
+        CGameClient *pGame = GameClient();
+        if(!pGame || !pGame->m_Snap.m_pLocalInfo)
+        {
+                dbg_msg("pathfinder", "PfResetRun: no game or no local info");
+                return;
+        }
+
+        // Make sure the map grid is loaded BEFORE building the flow field
+        // (PfComputeFlowField needs m_pMapGrid / m_pFrontGrid).
+        if(!m_MapGridLoaded)
+                LoadMapGrid();
+        if(!m_MapGridLoaded)
+        {
+                dbg_msg("pathfinder", "PfResetRun: map grid failed to load");
+                return;
+        }
+
+        int LocalID = pGame->m_Snap.m_LocalClientId;
+        if(LocalID < 0)
+        {
+                dbg_msg("pathfinder", "PfResetRun: no local client id");
+                return;
+        }
+        CCharacter *pChar = pGame->m_PredictedWorld.GetCharacterById(LocalID);
+        if(!pChar)
+        {
+                dbg_msg("pathfinder", "PfResetRun: no predicted character");
+                return;
+        }
+
+        const CCharacterCore &Core = pChar->GetCore();
+        m_PfStartPos = Core.m_Pos;
+        m_PfCurPos = Core.m_Pos;
+        m_PfCurVel = Core.m_Vel;
+        m_PfCurHookState = Core.m_HookState;
+        m_PfCurFreezeTime = pChar->m_FreezeTime;
+        m_PfCurJumped = Core.m_Jumped;
+
+        m_PfVPath.push_back(Core.m_Pos);
+
+        // Force flow-field rebuild (clear cached finish tiles so PfComputeFlowField
+        // re-scans the map).
+        if(m_PfFlowField)
+        {
+                delete[] m_PfFlowField;
+                m_PfFlowField = nullptr;
+        }
+        m_PfFinishTiles.clear();
+        PfComputeFlowField();
+
+        dbg_msg("pathfinder", "PfResetRun: start=(%.0f,%.0f) finish_tiles=%d flowfield=%s",
+                Core.m_Pos.x, Core.m_Pos.y, (int)m_PfFinishTiles.size(),
+                m_PfFlowField ? "ok" : "null");
+}
+
+// Multi-source BFS: distance field to the NEAREST finish tile.
+void CBotNet::PfComputeFlowField()
+{
+        if(!m_MapGridLoaded || m_MapWidth <= 0 || m_MapHeight <= 0)
+                return;
+
+        int Size = m_MapWidth * m_MapHeight;
+        if(!m_PfFlowField || (int)m_PfFinishTiles.empty())
+        {
+                if(m_PfFlowField)
+                        delete[] m_PfFlowField;
+                m_PfFlowField = new float[Size];
+                m_PfFinishTiles.clear();
+                for(int ty = 0; ty < m_MapHeight; ty++)
+                {
+                        for(int tx = 0; tx < m_MapWidth; tx++)
+                        {
+                                int idx = ty * m_MapWidth + tx;
+                                if(m_pMapGrid[idx] == TILE_FINISH || m_pFrontGrid[idx] == TILE_FINISH)
+                                        m_PfFinishTiles.push_back(vec2(tx * 32.0f + 16.0f, ty * 32.0f + 16.0f));
+                        }
+                }
+        }
+
+        for(int i = 0; i < Size; i++)
+                m_PfFlowField[i] = 1e18f;
+
+        if(m_PfFinishTiles.empty())
+                return;
+
+        const float SQRT2 = 1.4142135623730951f;
+        std::priority_queue<PfNode, std::vector<PfNode>, std::greater<PfNode>> open;
+        for(const vec2 &fp : m_PfFinishTiles)
+        {
+                int tx = (int)(fp.x / 32.0f);
+                int ty = (int)(fp.y / 32.0f);
+                if(!IsTileWalkable(tx, ty))
+                        continue;
+                m_PfFlowField[ty * m_MapWidth + tx] = 0.0f;
+                open.push({0.0f, 0.0f, ty, tx});
+        }
+
+        int dr[] = {-1, 1, 0, 0, -1, -1, 1, 1};
+        int dc[] = {0, 0, -1, 1, -1, 1, -1, 1};
+
+        while(!open.empty())
+        {
+                PfNode cur = open.top();
+                open.pop();
+                int cIdx = cur.r * m_MapWidth + cur.c;
+                if(cur.g > m_PfFlowField[cIdx])
+                        continue;
+
+                for(int d = 0; d < 8; d++)
+                {
+                        int nr = cur.r + dr[d];
+                        int nc = cur.c + dc[d];
+                        if(nc < 0 || nr < 0 || nc >= m_MapWidth || nr >= m_MapHeight)
+                                continue;
+                        float tileCost = GetTileCost(nc, nr);
+                        if(tileCost < 0)
+                                continue;
+                        if(abs(dr[d]) + abs(dc[d]) == 2)
+                        {
+                                if(!IsTileWalkable(cur.c, cur.r + dr[d]) || !IsTileWalkable(cur.c + dc[d], cur.r))
+                                        continue;
+                        }
+                        float moveCost = (abs(dr[d]) + abs(dc[d]) == 2) ? SQRT2 * tileCost : tileCost;
+                        float newG = cur.g + moveCost;
+                        int nIdx = nr * m_MapWidth + nc;
+                        if(newG < m_PfFlowField[nIdx])
+                        {
+                                m_PfFlowField[nIdx] = newG;
+                                open.push({newG, newG, nr, nc});
+                        }
+                }
+        }
+}
+
+// Score a candidate chunk.  Higher = better.
+float CBotNet::PfScoreChunk(const std::vector<vec2> &traj, const std::vector<CNetObj_PlayerInput> &inputs,
+                            const vec2 &startPos, const vec2 &endPos, bool reachedFinish, bool died,
+                            int freezeTicks, int hookFires, int wallHits, int airTicks) const
+{
+        float score = 0.0f;
+        const float INF = 1e17f; // unreachable threshold (m_PfFlowField uses 1e18)
+
+        if(g_Config.m_ClPfScoreDist)
+        {
+                if(m_PfFlowField)
+                {
+                        int sx = pf_clamp((int)(startPos.x / 32.0f), 0, m_MapWidth - 1);
+                        int sy = pf_clamp((int)(startPos.y / 32.0f), 0, m_MapHeight - 1);
+                        int ex = pf_clamp((int)(endPos.x / 32.0f), 0, m_MapWidth - 1);
+                        int ey = pf_clamp((int)(endPos.y / 32.0f), 0, m_MapHeight - 1);
+                        float dStart = m_PfFlowField[sy * m_MapWidth + sx];
+                        float dEnd = m_PfFlowField[ey * m_MapWidth + ex];
+                        // Only count progress if BOTH endpoints are reachable.
+                        if(dStart < INF && dEnd < INF)
+                                score += (dStart - dEnd) * 10.0f;
+                        else if(dEnd < INF && dStart >= INF)
+                                score += 50.0f; // escaped an unreachable tile
+                        else if(dEnd >= INF && dStart < INF)
+                                score -= 50.0f; // moved INTO an unreachable tile
+                }
+                if(reachedFinish)
+                        score += 100000.0f;
+        }
+
+        if(g_Config.m_ClPfScoreTime)
+        {
+                int ticksUsed = (int)inputs.size();
+                score += (PF_TAB_MAX_CHUNK_TICKS - ticksUsed) * 1.0f;
+                if(reachedFinish)
+                        score += (PF_TAB_MAX_CHUNK_TICKS - ticksUsed) * 10.0f;
+        }
+
+        if(g_Config.m_ClPfScoreFlow && m_PfFlowField)
+        {
+                float align = 0.0f;
+                int count = 0;
+                for(size_t i = 1; i < traj.size(); i++)
+                {
+                        vec2 p0 = traj[i - 1];
+                        vec2 p1 = traj[i];
+                        int tx0 = pf_clamp((int)(p0.x / 32.0f), 0, m_MapWidth - 1);
+                        int ty0 = pf_clamp((int)(p0.y / 32.0f), 0, m_MapHeight - 1);
+                        int tx1 = pf_clamp((int)(p1.x / 32.0f), 0, m_MapWidth - 1);
+                        int ty1 = pf_clamp((int)(p1.y / 32.0f), 0, m_MapHeight - 1);
+                        float d0 = m_PfFlowField[ty0 * m_MapWidth + tx0];
+                        float d1 = m_PfFlowField[ty1 * m_MapWidth + tx1];
+                        // Skip steps involving unreachable tiles (would inject 1e18).
+                        if(d0 < INF && d1 < INF)
+                        {
+                                align += (d0 - d1);
+                                count++;
+                        }
+                }
+                if(count > 0)
+                        score += (align / count) * 10.0f;
+        }
+
+        if(g_Config.m_ClPfFineFreeze)
+                score -= freezeTicks * 50.0f;
+        if(g_Config.m_ClPfFineRetract)
+                score -= hookFires * 5.0f;
+        if(g_Config.m_ClPfFineDeath && died)
+                score -= 10000.0f;
+        if(g_Config.m_ClPfFineWall)
+                score -= wallHits * 2.0f;
+        if(g_Config.m_ClPfFineAir)
+                score -= airTicks * 0.5f;
+        if(g_Config.m_ClPfFineHook)
+                score -= hookFires * 1.0f;
+
+        return score;
+}
+
+// Helper struct for chunk simulation results.
+struct PfChunkResult
+{
+        std::vector<CNetObj_PlayerInput> inputs;
+        std::vector<vec2> traj;
+        bool reachedFinish = false;
+        bool died = false;
+        int freezeTicks = 0;
+        int endFreezeTime = 0; // bot's m_FreezeTime at end of chunk (0 = not frozen)
+        int hookFires = 0;
+        int wallHits = 0;
+        int airTicks = 0;
+};
+
+// Spawn the sim bot at the given state in a cloned world.
+static CCharacter *PfSpawnSimBot(CGameWorld *pWorld, int PredictedCharId, const vec2 &pos,
+                                 const vec2 &vel, int hookState, int freezeTime, int jumped)
+{
+        CCharacter *pBot = pWorld->GetCharacterById(PredictedCharId);
+        if(!pBot)
+                return nullptr;
+        CCharacterCore Core = pBot->GetCore();
+        Core.m_Pos = pos;
+        Core.m_Vel = vel;
+        Core.m_HookState = hookState;
+        Core.m_Jumped = jumped;
+        pBot->SetCore(Core);
+        pBot->m_Pos = pos;
+        pBot->m_FreezeTime = freezeTime;
+        return pBot;
+}
+
+// Simulate one candidate input sequence, collect trajectory + stats.
+static void PfSimulateChunk(CGameWorld *pWorld, int PredictedCharId, CCharacter *pBot,
+                            const std::vector<CNetObj_PlayerInput> &inputs, int StartTick,
+                            PfChunkResult &out)
+{
+        out.inputs = inputs;
+        out.traj.clear();
+        out.traj.push_back(pBot->m_Pos);
+        out.reachedFinish = false;
+        out.died = false;
+        out.freezeTicks = 0;
+        out.endFreezeTime = 0;
+        out.hookFires = 0;
+        out.wallHits = 0;
+        out.airTicks = 0;
+
+        bool prevHook = (pBot->GetCore().m_HookState != 0);
+        vec2 prevPos = pBot->m_Pos;
+
+        for(size_t t = 0; t < inputs.size(); t++)
+        {
+                int Tick = StartTick + (int)t + 1;
+                pBot->OnDirectInput(&inputs[t]);
+                pWorld->m_GameTick = Tick;
+                pBot->OnPredictedInput(&inputs[t]);
+                pWorld->Tick();
+                if(!pWorld->GetCharacterById(PredictedCharId))
+                {
+                        out.died = true;
+                        break;
+                }
+                out.traj.push_back(pBot->m_Pos);
+
+                if(pBot->m_FreezeTime > 0)
+                        out.freezeTicks++;
+                if(!pWorld->Collision()->IsOnGround(pBot->m_Pos, CCharacterCore::PhysicalSize()))
+                        out.airTicks++;
+                int hs = pBot->GetCore().m_HookState;
+                if(inputs[t].m_Hook && !prevHook)
+                        out.hookFires++;
+                prevHook = (hs != 0);
+                if(inputs[t].m_Direction != 0 && fabsf(pBot->GetCore().m_Vel.x) < 0.001f &&
+                   fabsf(prevPos.x - pBot->m_Pos.x) < 0.1f)
+                        out.wallHits++;
+                prevPos = pBot->m_Pos;
+
+                const CCharacterCore &c = pBot->GetCore();
+                float r = CCharacterCore::PhysicalSize() / 3.0f;
+                const vec2 pts[5] = {
+                        c.m_Pos,
+                        vec2(c.m_Pos.x + r, c.m_Pos.y - r),
+                        vec2(c.m_Pos.x + r, c.m_Pos.y + r),
+                        vec2(c.m_Pos.x - r, c.m_Pos.y - r),
+                        vec2(c.m_Pos.x - r, c.m_Pos.y + r)};
+                for(int k = 0; k < 5; k++)
+                {
+                        int tile = pWorld->Collision()->GetCollisionAt(pts[k].x, pts[k].y);
+                        if(tile == TILE_FINISH)
+                        {
+                                out.reachedFinish = true;
+                                break;
+                        }
+                }
+                if(out.reachedFinish)
+                        break;
+        }
+
+        // Capture final freeze time (0 = not frozen at end of chunk).
+        out.endFreezeTime = pBot->m_FreezeTime;
+}
+
+// PfGenerateChunk has been MOVED to after FindHookGrabPoint (it uses the v1.42
+// motion-primitive API: SMotionPrimitive, BuildPrimitiveTable, IsHookFirePrim,
+// IsHookHoldPrim, IsHookReleasePrim, FindHookGrabPoint, BuildPrimitiveInputs —
+// all defined in the STATE-LATTICE A* section below).
+
+// Per-update chunk step.
+void CBotNet::UpdatePathfinder()
+{
+        if(m_PfState != PF_STATE_RUNNING)
+                return;
+        if(!m_MapGridLoaded)
+                LoadMapGrid();
+        if(!m_MapGridLoaded)
+        {
+                m_PfState = PF_STATE_FINISHED;
+                return;
+        }
+
+        if(m_PfChunkCount >= g_Config.m_ClPfMaxChunks)
+        {
+                m_PfState = PF_STATE_FINISHED;
+                return;
+        }
+
+        if(m_PfFlowField == nullptr || m_PfFinishTiles.empty())
+                PfComputeFlowField();
+        if(m_PfFinishTiles.empty())
+        {
+                m_PfState = PF_STATE_FINISHED;
+                return;
+        }
+
+        // Performance throttle: spread chunk generation across ticks.
+        // perf=100% -> generate every tick; perf=1% -> generate every 100 ticks.
+        // This makes the pathfinder take seconds/minutes at low perf instead of
+        // completing in a single tick (one OnUpdate = one chunk = too fast).
+        m_PfTickCounter++;
+        int perf = pf_clamp(g_Config.m_ClPfPerf, 1, 100);
+        int tickInterval = 100 / perf; // 1..100
+        if(tickInterval < 1)
+                tickInterval = 1;
+        if(m_PfTickCounter < tickInterval)
+                return; // not yet time to generate; camera follow handled in CCamera::OnRender
+        m_PfTickCounter = 0;
+
+        // (Camera follow is handled in CCamera::OnRender — it lerps m_Center
+        // toward m_PfVPath.back() every frame, so we don't need to touch it here.)
+
+        std::vector<CNetObj_PlayerInput> inputs;
+        std::vector<vec2> traj;
+        bool reached, died;
+        int freezeTicks, hookFires, wallHits, airTicks;
+
+        if(!PfGenerateChunk(inputs, traj, reached, died, freezeTicks, hookFires, wallHits, airTicks))
+        {
+                m_PfState = PF_STATE_FINISHED;
+                return;
+        }
+
+        for(size_t i = 1; i < traj.size(); i++)
+                m_PfVPath.push_back(traj[i]);
+
+        m_PfChunkCount++;
+
+        if(reached || died)
+        {
+                m_PfState = PF_STATE_FINISHED;
+                return;
+        }
+        // Stall detection.
+        if(traj.size() >= 2)
+        {
+                vec2 d = traj.back() - traj.front();
+                if(d.x * d.x + d.y * d.y < 4.0f && m_PfChunkCount > 5)
+                        m_PfState = PF_STATE_FINISHED;
+        }
+}
+
+// Render m_PfVPath (copy of RenderPackage with m_PfVPath substituted).
+void CBotNet::RenderPathfinderPath()
+{
+        if(m_PfVPath.size() < 2)
+                return;
+
+        Graphics()->TextureClear();
+
+        ColorRGBA BaseColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClTrajectoryColor, true));
+        float ConfigAlpha = g_Config.m_ClTrajectoryAlpha / 100.0f;
+        int LineSize = g_Config.m_ClTrajectoryLineSize;
+
+        if(LineSize > 0)
+        {
+                std::vector<IGraphics::CFreeformItem> vQuads;
+                vQuads.reserve(m_PfVPath.size() - 1);
+                float HalfWidth = 0.5f + (float)(LineSize - 1) * 0.25f;
+
+                for(size_t i = 1; i < m_PfVPath.size(); i++)
+                {
+                        vec2 p0 = m_PfVPath[i - 1];
+                        vec2 p1 = m_PfVPath[i];
+                        vec2 Dir = normalize(p1 - p0);
+                        vec2 Perp = vec2(Dir.y, -Dir.x) * HalfWidth;
+                        vQuads.emplace_back(
+                                p0.x - Perp.x, p0.y - Perp.y,
+                                p0.x + Perp.x, p0.y + Perp.y,
+                                p1.x - Perp.x, p1.y - Perp.y,
+                                p1.x + Perp.x, p1.y + Perp.y);
+                }
+
+                Graphics()->QuadsBegin();
+                for(size_t i = 0; i < vQuads.size(); i++)
+                {
+                        // Solid white, no alpha gradient (user requested fully opaque).
+                        Graphics()->SetColor(BaseColor.r, BaseColor.g, BaseColor.b, ConfigAlpha);
+                        Graphics()->QuadsDrawFreeform(&vQuads[i], 1);
+                }
+                Graphics()->QuadsEnd();
+        }
+        else
+        {
+                Graphics()->LinesBegin();
+                for(size_t i = 1; i < m_PfVPath.size(); i++)
+                {
+                        Graphics()->SetColor(BaseColor.r, BaseColor.g, BaseColor.b, ConfigAlpha);
+                        IGraphics::CLineItem Line(m_PfVPath[i - 1], m_PfVPath[i]);
+                        Graphics()->LinesDraw(&Line, 1);
+                }
+                Graphics()->LinesEnd();
+        }
+}
+
+// =========================================================
 // STATE-LATTICE A* — MOTION PRIMITIVES
 // =========================================================
 //
@@ -3226,6 +3785,222 @@ static bool FindHookGrabPoint(CCollision *pColl, vec2 from, float angle, float m
         // impossible from a grounded bot (the ray stays at bot-center
         // height, above the floor).
         outGrab = hitPos;
+        return true;
+}
+
+// =========================================================
+// PATHFINDER TAB — PfGenerateChunk (moved here: uses v1.42 kino API above)
+// =========================================================
+// Generate one chunk using v1.42 motion primitives (SMotionPrimitive /
+// BuildPrimitiveTable / IsHookFirePrim / IsHookHoldPrim / IsHookReleasePrim /
+// FindHookGrabPoint / BuildPrimitiveInputs).
+bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::vector<vec2> &outTraj,
+                              bool &outReachedFinish, bool &outDied, int &outFreezeTicks,
+                              int &outHookFires, int &outWallHits, int &outAirTicks)
+{
+        CGameClient *pGame = GameClient();
+        if(!pGame)
+                return false;
+
+        int LocalID = pGame->m_Snap.m_LocalClientId;
+        if(LocalID < 0)
+                return false;
+        if(!pGame->m_PredictedWorld.GetCharacterById(LocalID))
+                return false;
+
+        int ChunkSize = g_Config.m_ClPfChunkSize;
+        int HookAngles = pf_clamp(g_Config.m_ClPfHookAngles, 4, 32);
+
+        // Clean planning world (bot + collision only).
+        CGameWorld FutureWorld;
+        FutureWorld.CopyWorld(&pGame->m_PredictedWorld);
+        for(int Type = 0; Type < CGameWorld::NUM_ENTTYPES; Type++)
+        {
+                if(Type == CGameWorld::ENTTYPE_CHARACTER)
+                        continue;
+                std::vector<CEntity *> vRemove;
+                for(CEntity *pEnt = FutureWorld.FindLast(Type); pEnt; pEnt = pEnt->TypePrev())
+                        vRemove.push_back(pEnt);
+                for(CEntity *pEnt : vRemove)
+                        FutureWorld.RemoveEntity(pEnt);
+        }
+        for(int i = 0; i < MAX_CLIENTS; i++)
+        {
+                if(i == LocalID)
+                        continue;
+                if(CCharacter *pChar = FutureWorld.GetCharacterById(i))
+                        FutureWorld.RemoveEntity(pChar);
+        }
+
+        CCharacter *pBot = PfSpawnSimBot(&FutureWorld, LocalID, m_PfCurPos, m_PfCurVel,
+                                         m_PfCurHookState, m_PfCurFreezeTime, m_PfCurJumped);
+        if(!pBot)
+                return false;
+
+        int StartTick = FutureWorld.GameTick();
+        CCollision *pColl = FutureWorld.Collision();
+        if(!pColl)
+                return false;
+        float hookLength = pBot->GetCore().m_Tuning.m_HookLength;
+        if(!(hookLength > 1.0f) || !(hookLength < 10000.0f))
+                hookLength = 900.0f;
+
+        // v1.42 motion-primitive table.
+        SMotionPrimitive aPrims[LATTICE_MAX_PRIMITIVES];
+        int numPrims = 0;
+        BuildPrimitiveTable(HookAngles, aPrims, numPrims);
+
+        bool onGround = pBot->IsGrounded();
+
+        PfChunkResult best;
+        best.inputs.clear();
+        float bestScore = -1e18f;
+        bool anyValid = false;
+
+        // Fallback if ALL candidates end frozen (so path doesn't vanish).
+        PfChunkResult bestFrozen;
+        bestFrozen.inputs.clear();
+        float bestFrozenScore = -1e18f;
+        bool anyFrozenValid = false;
+
+        for(int primI = 0; primI < numPrims; primI++)
+        {
+                const SMotionPrimitive &prim = aPrims[primI];
+
+                if(prim.RequiresGround && !onGround)
+                        continue;
+
+                const bool isHookFire = IsHookFirePrim(prim);
+                const bool isHookHold = IsHookHoldPrim(prim);
+                const bool isHookRelease = IsHookReleasePrim(prim);
+
+                CCharacterCore savedCore = pBot->GetCore();
+                vec2 savedPos = pBot->m_Pos;
+
+                // Hook primitive preconditions (v1.42 style).
+                vec2 aimRel(0.0f, 0.0f);
+                bool haveAim = false;
+                if(isHookFire)
+                {
+                        if(savedCore.m_HookState != HOOK_IDLE)
+                                continue;
+                        vec2 grabPos;
+                        if(!FindHookGrabPoint(pColl, savedPos, prim.HookAngle, hookLength, grabPos))
+                                continue;
+                        aimRel = grabPos - savedPos;
+                        haveAim = true;
+                }
+                else if(isHookHold)
+                {
+                        if(savedCore.m_HookState != HOOK_GRABBED)
+                                continue;
+                        aimRel = savedCore.m_HookPos - savedPos;
+                        haveAim = true;
+                }
+                else if(isHookRelease)
+                {
+                        if(savedCore.m_HookState != HOOK_FLYING && savedCore.m_HookState != HOOK_GRABBED)
+                                continue;
+                }
+
+                CNetObj_PlayerInput aInputs[PF_TAB_MAX_CHUNK_TICKS];
+                BuildPrimitiveInputs(prim, aInputs, haveAim ? &aimRel : nullptr);
+
+                std::vector<CNetObj_PlayerInput> inSeq;
+                int nTicks = pf_min(prim.Ticks, ChunkSize);
+                for(int t = 0; t < nTicks; t++)
+                        inSeq.push_back(aInputs[t]);
+
+                PfChunkResult res;
+                PfSimulateChunk(&FutureWorld, LocalID, pBot, inSeq, StartTick, res);
+
+                // Restore for next candidate.
+                pBot->SetCore(savedCore);
+                pBot->m_Pos = savedPos;
+
+                // endPos = the chunk's final simulated position (from res.traj),
+                // NOT pBot->m_Pos (which was just restored to savedPos).
+                vec2 endPos = res.traj.empty() ? savedPos : res.traj.back();
+
+                // PRUNE chunks that end FROZEN (unless they reached the finish).
+                // Otherwise the next chunk starts frozen and the path "sinks" into
+                // freeze permanently (m_PfCurFreezeTime carries over).  We accept
+                // freeze-mid-chunk (freezeTicks penalty still applies via Fine) but
+                // require the bot to be UNFROZEN at chunk end so the next chunk can
+                // move freely.  Reached-finish is exempt (we're done).
+                //
+                // If the ONLY candidates end frozen, we keep a fallback (bestFrozen)
+                // so the path doesn't just vanish — better to show a stalled path
+                // than no path at all (the user can see the bot is stuck).
+                bool isFrozenEnd = (!res.reachedFinish && res.endFreezeTime > 0);
+                if(isFrozenEnd)
+                {
+                        float s = PfScoreChunk(res.traj, res.inputs, savedPos, endPos,
+                                               res.reachedFinish, res.died, res.freezeTicks,
+                                               res.hookFires, res.wallHits, res.airTicks);
+                        if(res.died)
+                                s -= 1000.0f;
+                        if(!anyFrozenValid || s > bestFrozenScore)
+                        {
+                                bestFrozenScore = s;
+                                bestFrozen = res;
+                                anyFrozenValid = true;
+                        }
+                        continue;
+                }
+
+                float s = PfScoreChunk(res.traj, res.inputs, savedPos, endPos,
+                                       res.reachedFinish, res.died, res.freezeTicks,
+                                       res.hookFires, res.wallHits, res.airTicks);
+                if(res.died)
+                        s -= 1000.0f;
+                if(s > bestScore || !anyValid)
+                {
+                        bestScore = s;
+                        best = res;
+                        anyValid = true;
+                }
+        }
+
+        if(!anyValid && anyFrozenValid)
+        {
+                // No freeze-free candidate — use the best frozen one as fallback.
+                // The path WILL sink here, but at least it's visible (the user can
+                // see the bot got stuck in freeze and tune settings to avoid it).
+                best = bestFrozen;
+                anyValid = true;
+        }
+
+        if(!anyValid)
+                return false;
+
+        outInputs = best.inputs;
+        outTraj = best.traj;
+        outReachedFinish = best.reachedFinish;
+        outDied = best.died;
+        outFreezeTicks = best.freezeTicks;
+        outHookFires = best.hookFires;
+        outWallHits = best.wallHits;
+        outAirTicks = best.airTicks;
+
+        // Re-simulate the winner (without restoring) to capture final core state.
+        CCharacterCore savedCore = pBot->GetCore();
+        vec2 savedPos = pBot->m_Pos;
+        int savedFreeze = pBot->m_FreezeTime;
+        PfChunkResult finalRes;
+        PfSimulateChunk(&FutureWorld, LocalID, pBot, best.inputs, StartTick, finalRes);
+        if(!finalRes.died)
+        {
+                m_PfCurPos = pBot->m_Pos;
+                m_PfCurVel = pBot->GetCore().m_Vel;
+                m_PfCurHookState = pBot->GetCore().m_HookState;
+                m_PfCurFreezeTime = pBot->m_FreezeTime;
+                m_PfCurJumped = pBot->GetCore().m_Jumped;
+        }
+        pBot->SetCore(savedCore);
+        pBot->m_Pos = savedPos;
+        pBot->m_FreezeTime = savedFreeze;
+
         return true;
 }
 

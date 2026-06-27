@@ -357,6 +357,18 @@ void CCamera::OnRender()
                         m_Center = GameClient()->m_LocalCharacterPos + m_aDyncamCurrentCameraOffset[g_Config.m_ClDummy];
         }
 
+        // Pathfinder tab: when RUNNING/FINISHED, smoothly override the camera
+        // center to follow the trajectory's leading edge (last progress point).
+        // This mirrors Multi-View's behavior but for the pathfinder simulation.
+        // Done here (after m_Center is finalized) so it isn't overwritten.
+        if(GameClient()->m_BotNet.m_PfState != PF_STATE_IDLE && !GameClient()->m_BotNet.m_PfVPath.empty())
+        {
+                vec2 PfTarget = GameClient()->m_BotNet.m_PfVPath.back();
+                // Smooth interpolation toward the target (avoid hard jump).
+                float Lerp = 0.15f;
+                m_Center = m_Center + (PfTarget - m_Center) * Lerp;
+        }
+
         if(m_ForceFreeview && m_CamType == CAMTYPE_SPEC)
         {
                 GameClient()->m_Controls.m_aMouseInputType[g_Config.m_ClDummy] = CControls::EMouseInputType::AUTOMATED;

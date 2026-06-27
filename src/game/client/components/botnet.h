@@ -35,6 +35,25 @@ static const float LATTICE_FREEZE_PENALTY = 5.0f; // cost added per freeze tile 
 static const float LATTICE_H_SCALE = 2.0f; // heuristic multiplier (admissible: <3.2 ticks/tile)
 
 // =========================================================
+// Pathfinder tab (ZMajor→Pathfinder) — chunk-based mini TAS maker
+// =========================================================
+// State machine:  IDLE (green pathfinding btn) -> RUNNING (red stop btn) -> FINISHED (orange finish btn) -> IDLE
+// While RUNNING, UpdatePathfinder() runs one chunk per OnUpdate: generates
+// `ClPfCandidates` input-sequences of `ClPfChunkSize` ticks, scores each by the
+// enabled Score+Fine methods, picks the best, appends its trajectory to
+// m_PfVPath, and checks for finish.  On finish (or max-chunks), -> FINISHED.
+// The trajectory is rendered every frame via RenderPathfinderPath(), reusing
+// the shared m_ClTrajectoryColor/Alpha/LineSize settings (same as Advanced→Trajectory).
+enum EPfState
+{
+        PF_STATE_IDLE = 0,
+        PF_STATE_RUNNING = 1,
+        PF_STATE_FINISHED = 2,
+};
+static const int PF_TAB_MAX_CHUNK_TICKS = 50; // matches ClPfChunkSize upper bound
+static const int PF_TAB_ALGORITHM_COUNT = 15;
+
+// =========================================================
 // Kinodynamic A* — cached input package per dummy
 // =========================================================
 struct CKinodynamicCache
@@ -238,6 +257,24 @@ public:
         bool m_KinoShowField;   // render pathfinder vector field
         bool m_KinoAggressive;  // force-apply best partial plan even when no primitive improved on the start (never bail out to legacy flow pathfinder)
 
+        // Pathfinder tab (ZMajor→Pathfinder) — chunk-based mini TAS maker.
+        // State machine driven by m_PfState; trajectory in m_PfVPath.
+        // m_PfStartPos = active-player position when RUNNING started (for re-anchor).
+        // m_PfChunkCount = chunks generated so far (safety cap = ClPfMaxChunks).
+        // m_PfFlowField = multi-source BFS distance field to ALL finish tiles.
+        int m_PfState;                  // EPfState
+        int m_PfChunkCount;             // chunks generated this run
+        vec2 m_PfStartPos;              // active-player pos at run start
+        vec2 m_PfCurPos;                // current sim position (end of last chunk)
+        vec2 m_PfCurVel;                // current sim velocity
+        int m_PfCurHookState;           // current sim hook state
+        int m_PfCurFreezeTime;          // current sim freeze time
+        int m_PfCurJumped;              // current sim jump flags
+        int m_PfTickCounter;            // throttle: counts ticks until next chunk (perf% spread)
+        std::vector<vec2> m_PfVPath;    // accumulated trajectory (start..current)
+        std::vector<vec2> m_PfFinishTiles; // cached finish tile centers (multi-source BFS sources)
+        float *m_PfFlowField;           // BFS distance field to nearest finish
+
         // Per-dummy runtime state
         CBotNetDummy m_aDummies[MAX_DUMMIES];
 
@@ -294,6 +331,18 @@ public:
         void RenderPackage(int Dummy);
         void RenderVectorField();
 
+        // Pathfinder tab (ZMajor→Pathfinder) — chunk-based mini TAS maker
+        void UpdatePathfinder();            // called from OnUpdate; runs one chunk if RUNNING
+        void RenderPathfinderPath();        // called from OnRender; draws m_PfVPath like RenderPackage
+        void PfResetRun();                  // clear vPath + sim state (start fresh from active player)
+        void PfComputeFlowField();          // multi-source BFS to all finish tiles -> m_PfFlowField
+        float PfScoreChunk(const std::vector<vec2> &traj, const std::vector<CNetObj_PlayerInput> &inputs,
+                           const vec2 &startPos, const vec2 &endPos, bool reachedFinish, bool died,
+                           int freezeTicks, int hookFires, int wallHits, int airTicks) const;
+        bool PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::vector<vec2> &outTraj,
+                             bool &outReachedFinish, bool &outDied, int &outFreezeTicks,
+                             int &outHookFires, int &outWallHits, int &outAirTicks);
+
         // --- Console commands ---
         static void ConRandomAim(IConsole::IResult *pResult, void *pUserData);
         static void ConCopyMoves(IConsole::IResult *pResult, void *pUserData);
@@ -344,6 +393,14 @@ public:
         static void ConKinoShowField(IConsole::IResult *pResult, void *pUserData);
         static void ConKinoAggressive(IConsole::IResult *pResult, void *pUserData);
         static void ConSendDummy(IConsole::IResult *pResult, void *pUserData);
+
+        // Pathfinder tab (ZMajor→Pathfinder) console commands
+        static void ConPfLive(IConsole::IResult *pResult, void *pUserData);     // c_pf_live 0|1|2  (0=idle, 1=running, 2=finished)
+        static void ConPfAlgorithm(IConsole::IResult *pResult, void *pUserData);
+        static void ConPfChunkSize(IConsole::IResult *pResult, void *pUserData);
+        static void ConPfCandidates(IConsole::IResult *pResult, void *pUserData);
+        static void ConPfHookAngles(IConsole::IResult *pResult, void *pUserData);
+        static void ConPfHorizon(IConsole::IResult *pResult, void *pUserData);
 
         // Placeholder processing for c_send and UI Send Command
         static std::string ReplacePlaceholders(const std::string &Cmd, int DummyIndex, CGameClient *pGame);

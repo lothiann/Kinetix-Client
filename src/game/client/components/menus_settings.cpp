@@ -3093,7 +3093,8 @@ void CMenus::RenderSettingsZMajor(CUIRect MainView)
                 DMCLIENTS_TAB_FUNCTIONS = 1,
                 DMCLIENTS_TAB_ADVANCED = 2,
                 DMCLIENTS_TAB_SETTINGS = 3,
-                NUMBER_OF_DMCLIENTS_TABS = 4,
+                DMCLIENTS_TAB_PATHFINDER = 4,
+                NUMBER_OF_DMCLIENTS_TABS = 5,
         };
         static int s_CurTab = DMCLIENTS_TAB_DUMMIES;
 
@@ -3105,7 +3106,8 @@ void CMenus::RenderSettingsZMajor(CUIRect MainView)
                 Localize("Dummies"),
                 Localize("Functions"),
                 Localize("Advanced"),
-                Localize("Settings")};
+                Localize("Settings"),
+                Localize("Pathfinder")};
 
         for(int Tab = 0; Tab < NUMBER_OF_DMCLIENTS_TABS; ++Tab)
         {
@@ -3134,6 +3136,10 @@ void CMenus::RenderSettingsZMajor(CUIRect MainView)
         else if(s_CurTab == DMCLIENTS_TAB_SETTINGS)
         {
                 RenderSettingsBotSettings(MainView);
+        }
+        else if(s_CurTab == DMCLIENTS_TAB_PATHFINDER)
+        {
+                RenderSettingsPathfinder(MainView);
         }
 }
 
@@ -5339,6 +5345,208 @@ void CMenus::RenderSettingsBotSettings(CUIRect MainView)
         s_BotSettingsScrollRegion.AddRect(Row);
 
         s_BotSettingsScrollRegion.End();
+}
+
+// =============================================================================
+// ZMajor → Pathfinder tab — chunk-based mini TAS maker
+// =============================================================================
+void CMenus::RenderSettingsPathfinder(CUIRect MainView)
+{
+        static CScrollRegion s_PathfinderScrollRegion;
+        CScrollRegionParams ScrollParams;
+        ScrollParams.m_ScrollUnit = 120.0f;
+        ScrollParams.m_Flags = CScrollRegionParams::FLAG_CONTENT_STATIC_WIDTH;
+        s_PathfinderScrollRegion.Begin(&MainView, &ScrollParams);
+
+        CUIRect Row, Label, Left, Right;
+        CBotNet &BN = GameClient()->m_BotNet;
+
+        const float PanelPad = 8.0f;
+        const float PanelGap = 5.0f;
+        const float LineSize = 20.0f;
+        const float RowGap = 2.0f;
+        const float ColGap = 10.0f;
+        const ColorRGBA PanelBgColor = ColorRGBA(0.0f, 0.0f, 0.0f, 0.15f);
+        CUIRect PanelBg, Panel;
+
+        MainView.HSplitTop(5.0f, nullptr, &MainView);
+
+        // === Pathfinder Panel ===
+        {
+                const int numRows = 16;
+                const float SectionH = PanelPad + 25.0f + 5.0f + numRows * LineSize + (numRows - 1) * RowGap + 4 * 5.0f + 26.0f + PanelPad;
+                MainView.HSplitTop(SectionH, &PanelBg, &MainView);
+                PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
+                s_PathfinderScrollRegion.AddRect(PanelBg);
+                PanelBg.Margin(PanelPad, &Panel);
+
+                Panel.HSplitTop(25.0f, &Label, &Panel);
+                Ui()->DoLabel(&Label, Localize("Pathfinder"), 16.0f, TEXTALIGN_ML);
+                Panel.HSplitTop(5.0f, nullptr, &Panel);
+
+                // --- Algorithm dropdown ---
+                Panel.HSplitTop(LineSize, &Row, &Panel);
+                Panel.HSplitTop(RowGap, nullptr, &Panel);
+                {
+                        CUIRect Lab, DropDown;
+                        Row.VSplitLeft(110.0f, &Lab, &DropDown);
+                        Ui()->DoLabel(&Lab, Localize("Algorithm"), 12.0f, TEXTALIGN_ML);
+                        const char *apAlgoNames[PF_TAB_ALGORITHM_COUNT] = {
+                                Localize("Kinodynamic A*"),
+                                Localize("Grid A*"),
+                                Localize("Dijkstra"),
+                                Localize("Greedy Best-First"),
+                                Localize("BFS Lattice"),
+                                Localize("DFS Lattice"),
+                                Localize("RRT"),
+                                Localize("RRT*"),
+                                Localize("PRM"),
+                                Localize("MCTS"),
+                                Localize("GA"),
+                                Localize("CMA-ES"),
+                                Localize("SA"),
+                                Localize("HillClimb"),
+                                Localize("RandomWalk")};
+                        static CUi::SDropDownState s_AlgoDropDownState;
+                        static CScrollRegion s_AlgoDropDownScrollRegion;
+                        s_AlgoDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_AlgoDropDownScrollRegion;
+                        const int NewAlgo = Ui()->DoDropDown(&DropDown, g_Config.m_ClPfAlgorithm, apAlgoNames, PF_TAB_ALGORITHM_COUNT, s_AlgoDropDownState);
+                        if(NewAlgo != g_Config.m_ClPfAlgorithm)
+                                g_Config.m_ClPfAlgorithm = NewAlgo;
+                }
+
+                // --- Chunk size slider ---
+                Panel.HSplitTop(LineSize, &Row, &Panel);
+                Panel.HSplitTop(RowGap, nullptr, &Panel);
+                Ui()->DoScrollbarOption(&g_Config.m_ClPfChunkSize, &g_Config.m_ClPfChunkSize, &Row,
+                        Localize("Chunk Size"), 5, PF_TAB_MAX_CHUNK_TICKS, &CUi::ms_LinearScrollbarScale,
+                        CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
+
+                // --- Candidates slider ---
+                Panel.HSplitTop(LineSize, &Row, &Panel);
+                Panel.HSplitTop(RowGap, nullptr, &Panel);
+                Ui()->DoScrollbarOption(&g_Config.m_ClPfCandidates, &g_Config.m_ClPfCandidates, &Row,
+                        Localize("Node Budget"), 50, 2000, &CUi::ms_LinearScrollbarScale,
+                        CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
+
+                // --- Hook angles slider ---
+                Panel.HSplitTop(LineSize, &Row, &Panel);
+                Panel.HSplitTop(RowGap, nullptr, &Panel);
+                Ui()->DoScrollbarOption(&g_Config.m_ClPfHookAngles, &g_Config.m_ClPfHookAngles, &Row,
+                        Localize("Hook Angles"), 4, 32, &CUi::ms_LinearScrollbarScale,
+                        CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
+
+                // --- Horizon slider ---
+                Panel.HSplitTop(LineSize, &Row, &Panel);
+                Panel.HSplitTop(RowGap, nullptr, &Panel);
+                Ui()->DoScrollbarOption(&g_Config.m_ClPfHorizon, &g_Config.m_ClPfHorizon, &Row,
+                        Localize("Horizon"), 1, PF_TAB_MAX_CHUNK_TICKS, &CUi::ms_LinearScrollbarScale,
+                        CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
+
+                // --- Performance slider (1-100%: spread chunk generation across ticks) ---
+                Panel.HSplitTop(LineSize, &Row, &Panel);
+                Panel.HSplitTop(RowGap, nullptr, &Panel);
+                Ui()->DoScrollbarOption(&g_Config.m_ClPfPerf, &g_Config.m_ClPfPerf, &Row,
+                        Localize("Performance"), 1, 100, &CUi::ms_LinearScrollbarScale,
+                        CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
+
+                Panel.HSplitTop(5.0f, nullptr, &Panel);
+
+                // --- Score method ---
+                Panel.HSplitTop(15.0f, &Label, &Panel);
+                Ui()->DoLabel(&Label, Localize("Score method"), 13.0f, TEXTALIGN_ML);
+
+                Panel.HSplitTop(LineSize, &Row, &Panel);
+                Panel.HSplitTop(RowGap, nullptr, &Panel);
+                Row.VSplitMid(&Left, &Right, ColGap);
+                if(DoButton_CheckBox(&g_Config.m_ClPfScoreDist, Localize("Distance reduction"), g_Config.m_ClPfScoreDist, &Left))
+                        g_Config.m_ClPfScoreDist ^= 1;
+                if(DoButton_CheckBox(&g_Config.m_ClPfScoreTime, Localize("Fewer ticks"), g_Config.m_ClPfScoreTime, &Right))
+                        g_Config.m_ClPfScoreTime ^= 1;
+
+                Panel.HSplitTop(LineSize, &Row, &Panel);
+                Panel.HSplitTop(RowGap, nullptr, &Panel);
+                if(DoButton_CheckBox(&g_Config.m_ClPfScoreFlow, Localize("Flow-field alignment"), g_Config.m_ClPfScoreFlow, &Row))
+                        g_Config.m_ClPfScoreFlow ^= 1;
+
+                Panel.HSplitTop(5.0f, nullptr, &Panel);
+
+                // --- Fine method ---
+                Panel.HSplitTop(15.0f, &Label, &Panel);
+                Ui()->DoLabel(&Label, Localize("Fine method (penalties)"), 13.0f, TEXTALIGN_ML);
+
+                Panel.HSplitTop(LineSize, &Row, &Panel);
+                Panel.HSplitTop(RowGap, nullptr, &Panel);
+                Row.VSplitMid(&Left, &Right, ColGap);
+                if(DoButton_CheckBox(&g_Config.m_ClPfFineFreeze, Localize("Freeze penalty"), g_Config.m_ClPfFineFreeze, &Left))
+                        g_Config.m_ClPfFineFreeze ^= 1;
+                if(DoButton_CheckBox(&g_Config.m_ClPfFineRetract, Localize("Hook retract"), g_Config.m_ClPfFineRetract, &Right))
+                        g_Config.m_ClPfFineRetract ^= 1;
+
+                Panel.HSplitTop(LineSize, &Row, &Panel);
+                Panel.HSplitTop(RowGap, nullptr, &Panel);
+                Row.VSplitMid(&Left, &Right, ColGap);
+                if(DoButton_CheckBox(&g_Config.m_ClPfFineDeath, Localize("Death penalty"), g_Config.m_ClPfFineDeath, &Left))
+                        g_Config.m_ClPfFineDeath ^= 1;
+                if(DoButton_CheckBox(&g_Config.m_ClPfFineWall, Localize("Wall hit"), g_Config.m_ClPfFineWall, &Right))
+                        g_Config.m_ClPfFineWall ^= 1;
+
+                Panel.HSplitTop(LineSize, &Row, &Panel);
+                Panel.HSplitTop(RowGap, nullptr, &Panel);
+                Row.VSplitMid(&Left, &Right, ColGap);
+                if(DoButton_CheckBox(&g_Config.m_ClPfFineAir, Localize("Air time"), g_Config.m_ClPfFineAir, &Left))
+                        g_Config.m_ClPfFineAir ^= 1;
+                if(DoButton_CheckBox(&g_Config.m_ClPfFineHook, Localize("Hook fire"), g_Config.m_ClPfFineHook, &Right))
+                        g_Config.m_ClPfFineHook ^= 1;
+
+                Panel.HSplitTop(5.0f, nullptr, &Panel);
+
+                // --- 3-state action button: pathfinding / stop / finish ---
+                Panel.HSplitTop(26.0f, &Row, &Panel);
+                static CButtonContainer s_PfBtn;
+                const char *pBtnLabel;
+                ColorRGBA BtnColor;
+                int State = BN.m_PfState;
+                if(State == PF_STATE_IDLE)
+                {
+                        pBtnLabel = Localize("pathfinding");
+                        BtnColor = ColorRGBA(0.20f, 0.65f, 0.25f, 0.85f);
+                }
+                else if(State == PF_STATE_RUNNING)
+                {
+                        pBtnLabel = Localize("stop");
+                        BtnColor = ColorRGBA(0.80f, 0.20f, 0.20f, 0.85f);
+                }
+                else
+                {
+                        pBtnLabel = Localize("finish");
+                        BtnColor = ColorRGBA(0.90f, 0.60f, 0.15f, 0.85f);
+                }
+                Row.Draw(BtnColor, IGraphics::CORNER_ALL, 4.0f);
+                if(DoButton_Menu(&s_PfBtn, pBtnLabel, 0, &Row))
+                {
+                        if(State == PF_STATE_IDLE)
+                        {
+                                BN.m_PfState = PF_STATE_RUNNING;
+                                BN.PfResetRun();
+                        }
+                        else if(State == PF_STATE_RUNNING)
+                        {
+                                BN.m_PfState = PF_STATE_IDLE;
+                                BN.m_PfVPath.clear();
+                        }
+                        else
+                        {
+                                BN.m_PfState = PF_STATE_IDLE;
+                                BN.m_PfVPath.clear();
+                        }
+                }
+        }
+
+        MainView.HSplitTop(PanelGap, nullptr, &MainView);
+        MainView.HSplitTop(20.0f, &Row, &MainView);
+        s_PathfinderScrollRegion.AddRect(Row);
+        s_PathfinderScrollRegion.End();
 }
 
 int CMenus::CPopupMapPickerContext::MapListFetchCallback(const CFsFileInfo *pInfo, int IsDir, int StorageType, void *pUser)
