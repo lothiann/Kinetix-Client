@@ -1323,14 +1323,14 @@ void CBotNet::ProcessDummy(int Dummy)
                         }
                         if(curJump != State.m_LastRecordedJump)
                         {
-                                if(curJump)
+                                if(curJump != 0)
                                         State.m_MacroRecordBuffer.push_back("input jump 1");
                                 else
                                         State.m_MacroRecordBuffer.push_back("input jump 0");
                         }
                         if(curHook != State.m_LastRecordedHook)
                         {
-                                if(curHook)
+                                if(curHook != 0)
                                         State.m_MacroRecordBuffer.push_back("input hook 1");
                                 else
                                         State.m_MacroRecordBuffer.push_back("input hook 0");
@@ -2146,7 +2146,7 @@ void CBotNet::ProcessDummy(int Dummy)
                 {
                         GameClient()->m_BotControl.ActionOverrideAim((rand() % 2001) - 1000, (rand() % 2001) - 1000, Dummy);
                         int TS = Client()->GameTickSpeed();
-                        State.m_NextRandomAimTick = CurTick + (int64_t)(TS ? TS : 50) * m_RandomAimInterval / 1000;
+                        State.m_NextRandomAimTick = CurTick + (int64_t)(TS != 0 ? TS : 50) * m_RandomAimInterval / 1000;
                 }
         }
 
@@ -2282,7 +2282,7 @@ void CBotNet::ConMacroPlay(IConsole::IResult *pResult, void *pUserData)
         CBotNet *p = (CBotNet *)pUserData;
         int on = pResult->GetInteger(0);
         dbg_msg("botnet_macro", "ConMacroPlay called: %d", on);
-        if(on)
+        if(on != 0)
         {
                 for(int D = 0; D < MAX_DUMMIES; D++)
                 {
@@ -2311,7 +2311,7 @@ void CBotNet::ConMacroRecord(IConsole::IResult *pResult, void *pUserData)
         int on = pResult->GetInteger(0);
         dbg_msg("botnet_macro", "ConMacroRecord called with on=%d", on);
 
-        if(on)
+        if(on != 0)
         {
                 dbg_msg("botnet_macro", "Starting macro recording...");
                 int64_t startTick = p->Client() ? p->Client()->GameTick(0) : 0;
