@@ -3472,6 +3472,16 @@ void CBotNet::RenderPathfinderPath()
         if(m_PfVPath.empty())
                 return;
 
+        // CBotNet is registered in m_vpAll BEFORE m_MapLayersBackground, so the
+        // world projection (normally set up by CMapRenderer via MapScreenToInterface)
+        // is NOT yet active when OnRender is called.  Without this, m_PfVPath
+        // coordinates (world space) would be drawn against the UI/default screen
+        // and end up off-screen / invisible.  Set the world projection explicitly
+        // here so the trajectory renders in the same space as the map.
+        CGameClient *pGame = GameClient();
+        if(pGame)
+                Graphics()->MapScreenToInterface(pGame->m_Camera.m_Center.x, pGame->m_Camera.m_Center.y, pGame->m_Camera.m_Zoom);
+
         Graphics()->TextureClear();
 
         ColorRGBA BaseColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClTrajectoryColor, true));

@@ -168,7 +168,6 @@ void CGameClient::OnConsoleInit()
                                               &m_Binds,
                                               &m_Binds.m_SpecialBinds,
                                               &m_BotControl,
-                                              &m_BotNet,
                                               &m_IRC,
                                               &m_Controls,
                                               &m_Camera,
@@ -186,6 +185,7 @@ void CGameClient::OnConsoleInit()
                                               &m_Items,
                                               &m_Ghost,
                                               &m_Players,
+                                              &m_BotNet, // moved here so world-space renders (Pathfinder, Show Path) draw ON TOP of the map
                                               &m_MapLayersForeground,
                                               &m_Particles.m_RenderExplosions,
                                               &m_NamePlates,
