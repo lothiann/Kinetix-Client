@@ -3780,8 +3780,19 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
                 tuning = pChar->GetCore().m_Tuning;
 
         // Build the anchor core from current sim state
+        // Create a minimal CWorldCore so hook teleporters work in Tick().
+        // Without m_pWorld, GoingThroughTele branch is skipped and the hook
+        // can't traverse teleporter tiles.
+        static CWorldCore s_PfWorld;
+        static bool s_PfWorldInit = false;
+        if(!s_PfWorldInit)
+        {
+                s_PfWorld.m_pPrng = nullptr; // deterministic: RandomOr0 returns 0 (first teleout)
+                s_PfWorldInit = true;
+        }
+
         CCharacterCore anchor;
-        anchor.Init(nullptr, pColl, nullptr);
+        anchor.Init(&s_PfWorld, pColl, nullptr);
         anchor.Reset();
         anchor.m_Pos = m_PfCurPos;
         anchor.m_Vel = m_PfCurVel;
@@ -3806,8 +3817,9 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
         anchor.m_Super = false;
         anchor.m_DeepFrozen = false;
         anchor.m_LiveFrozen = false;
-        anchor.m_FreezeEnd = 0;
-        anchor.m_IsInFreeze = false;
+        anchor.m_FreezeStart = 0;
+        anchor.m_FreezeEnd = m_PfCurFreezeTime > 0 ? 1 : 0; // non-zero = frozen
+        anchor.m_IsInFreeze = (m_PfCurFreezeTime > 0);
 
         float hookLength = tuning.m_HookLength;
         if(!(hookLength > 1.0f) || !(hookLength < 10000.0f))
@@ -3837,7 +3849,7 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
                         vec2 endPos = m_PfCurPos + dir * hookLength;
                         vec2 hitPos;
                         int hit = pColl->IntersectLineTeleHook(m_PfCurPos, endPos, &hitPos, nullptr);
-                        if(hit == TILE_SOLID || (hit > 0 && hit != TILE_NOHOOK && hit != TILE_DEATH))
+                        if(hit == TILE_SOLID || hit == TILE_TELEINHOOK || (hit > 0 && hit != TILE_NOHOOK && hit != TILE_DEATH))
                         {
                                 aHookRays[i].hasTarget = true;
                                 aHookRays[i].targetPos = hitPos;
