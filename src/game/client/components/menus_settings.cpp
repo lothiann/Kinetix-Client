@@ -5448,7 +5448,7 @@ void CMenus::RenderSettingsPathfinder(CUIRect MainView)
 
         // === Container 2: Score Method ===
         {
-                const int numRows = 3; // dist+time row, flow row
+                const int numRows = 2; // dist+time row, flow row
                 const float SectionH = PanelPad + 25.0f + 5.0f + numRows * LineSize + (numRows - 1) * RowGap + PanelPad;
                 MainView.HSplitTop(SectionH, &PanelBg, &MainView);
                 PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);

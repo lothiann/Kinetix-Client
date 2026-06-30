@@ -3872,6 +3872,7 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
                 // End state
                 vec2 endPos, endVel, endHookPos, endHookDir;
                 int endHookState, endHookTick, endJumped;
+                int endFreezeTime; // remaining freeze ticks at end of chunk
         };
         CandidateResult topCandidates[PF_BACKTRACK_CANDIDATES];
         for(int i = 0; i < PF_BACKTRACK_CANDIDATES; i++)
@@ -3923,11 +3924,27 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
                                                 bool reachedFinish = false;
                                                 bool died = false;
                                                 int freezeTicks = 0;
+                                                int simFreezeTime = m_PfCurFreezeTime; // local freeze countdown
 
                                                 for(int tick = 0; tick < ChunkSize; tick++)
                                                 {
                                                         CNetObj_PlayerInput tickInput = input;
                                                         tickInput.m_Jump = (tick == jumpTick) ? 1 : 0;
+
+                                                        // Handle freeze: when frozen, zero out movement input
+                                                        if(simFreezeTime > 0)
+                                                        {
+                                                                tickInput.m_Direction = 0;
+                                                                tickInput.m_Jump = 0;
+                                                                tickInput.m_Hook = 0;
+                                                                simFreezeTime--;
+                                                                freezeTicks++;
+                                                                if(simFreezeTime == 0)
+                                                                {
+                                                                        core.m_IsInFreeze = false;
+                                                                        core.m_FreezeEnd = 0;
+                                                                }
+                                                        }
 
                                                         core.m_Input = tickInput;
                                                         core.Tick(true, false);
@@ -3958,11 +3975,30 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
                                                                 break;
                                                         }
 
-                                                        // Check freeze (for penalty)
-                                                        if(tile == TILE_FREEZE || ftile == TILE_FREEZE ||
-                                                           tile == TILE_DFREEZE || ftile == TILE_DFREEZE)
+                                                        // Enter freeze: stepping on freeze tile while not already frozen
+                                                        if(simFreezeTime <= 0 && !core.m_DeepFrozen)
                                                         {
-                                                                freezeTicks++;
+                                                                if(tile == TILE_FREEZE || ftile == TILE_FREEZE)
+                                                                {
+                                                                        simFreezeTime = 3 * SERVER_TICK_SPEED; // sv_freeze_delay default = 3s
+                                                                        core.m_IsInFreeze = true;
+                                                                        core.m_FreezeEnd = 1; // non-zero = frozen
+                                                                }
+                                                                else if(tile == TILE_DFREEZE || ftile == TILE_DFREEZE)
+                                                                {
+                                                                        simFreezeTime = 3 * SERVER_TICK_SPEED;
+                                                                        core.m_DeepFrozen = true;
+                                                                        core.m_IsInFreeze = true;
+                                                                        core.m_FreezeEnd = -1; // deep frozen
+                                                                }
+                                                        }
+
+                                                        // Unfreeze tile
+                                                        if((tile == TILE_UNFREEZE || ftile == TILE_UNFREEZE) && !core.m_DeepFrozen && simFreezeTime > 0)
+                                                        {
+                                                                simFreezeTime = 0;
+                                                                core.m_IsInFreeze = false;
+                                                                core.m_FreezeEnd = 0;
                                                         }
                                                 }
 
@@ -3972,21 +4008,6 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
                                                 // Skip candidates that died
                                                 if(died && !reachedFinish)
                                                         continue;
-
-                                                // Prune candidates ending on freeze tile (unless they reached finish)
-                                                if(!reachedFinish)
-                                                {
-                                                        int etx = (int)(endPos.x / 32.0f);
-                                                        int ety = (int)(endPos.y / 32.0f);
-                                                        if(etx >= 0 && ety >= 0 && etx < m_MapWidth && ety < m_MapHeight)
-                                                        {
-                                                                int etile = pColl->GetTile(etx, ety);
-                                                                int eftile = pColl->GetFrontTile(etx, ety);
-                                                                if(etile == TILE_FREEZE || eftile == TILE_FREEZE ||
-                                                                   etile == TILE_DFREEZE || eftile == TILE_DFREEZE)
-                                                                        continue; // skip frozen-end candidates
-                                                        }
-                                                }
 
                                                 // Try to insert into top-3
                                                 for(int k = 0; k < PF_BACKTRACK_CANDIDATES; k++)
@@ -4010,6 +4031,7 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
                                                                 topCandidates[k].endHookState = core.m_HookState;
                                                                 topCandidates[k].endHookTick = core.m_HookTick;
                                                                 topCandidates[k].endJumped = core.m_Jumped;
+                                                                topCandidates[k].endFreezeTime = simFreezeTime;
                                                                 break;
                                                         }
                                                 }
@@ -4039,11 +4061,27 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
                                         bool reachedFinish = false;
                                         bool died = false;
                                         int freezeTicks = 0;
+                                        int simFreezeTime = m_PfCurFreezeTime;
 
                                         for(int tick = 0; tick < ChunkSize; tick++)
                                         {
                                                 CNetObj_PlayerInput tickInput = input;
                                                 tickInput.m_Jump = (tick == jumpTick) ? 1 : 0;
+
+                                                // Handle freeze: when frozen, zero out movement input
+                                                if(simFreezeTime > 0)
+                                                {
+                                                        tickInput.m_Direction = 0;
+                                                        tickInput.m_Jump = 0;
+                                                        tickInput.m_Hook = 0;
+                                                        simFreezeTime--;
+                                                        freezeTicks++;
+                                                        if(simFreezeTime == 0)
+                                                        {
+                                                                core.m_IsInFreeze = false;
+                                                                core.m_FreezeEnd = 0;
+                                                        }
+                                                }
 
                                                 // Update aim to track hook position (it may move)
                                                 vec2 aimRelTick = core.m_HookPos - core.m_Pos;
@@ -4079,11 +4117,30 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
                                                         break;
                                                 }
 
-                                                // Check freeze (for penalty)
-                                                if(tile == TILE_FREEZE || ftile == TILE_FREEZE ||
-                                                   tile == TILE_DFREEZE || ftile == TILE_DFREEZE)
+                                                // Enter freeze
+                                                if(simFreezeTime <= 0 && !core.m_DeepFrozen)
                                                 {
-                                                        freezeTicks++;
+                                                        if(tile == TILE_FREEZE || ftile == TILE_FREEZE)
+                                                        {
+                                                                simFreezeTime = 3 * SERVER_TICK_SPEED;
+                                                                core.m_IsInFreeze = true;
+                                                                core.m_FreezeEnd = 1;
+                                                        }
+                                                        else if(tile == TILE_DFREEZE || ftile == TILE_DFREEZE)
+                                                        {
+                                                                simFreezeTime = 3 * SERVER_TICK_SPEED;
+                                                                core.m_DeepFrozen = true;
+                                                                core.m_IsInFreeze = true;
+                                                                core.m_FreezeEnd = -1;
+                                                        }
+                                                }
+
+                                                // Unfreeze tile
+                                                if((tile == TILE_UNFREEZE || ftile == TILE_UNFREEZE) && !core.m_DeepFrozen && simFreezeTime > 0)
+                                                {
+                                                        simFreezeTime = 0;
+                                                        core.m_IsInFreeze = false;
+                                                        core.m_FreezeEnd = 0;
                                                 }
                                         }
 
@@ -4093,21 +4150,6 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
                                         // Skip candidates that died
                                         if(died && !reachedFinish)
                                                 goto skip_hold_candidate;
-
-                                        // Prune candidates ending on freeze tile (unless they reached finish)
-                                        if(!reachedFinish)
-                                        {
-                                                int etx = (int)(endPos.x / 32.0f);
-                                                int ety = (int)(endPos.y / 32.0f);
-                                                if(etx >= 0 && ety >= 0 && etx < m_MapWidth && ety < m_MapHeight)
-                                                {
-                                                        int etile = pColl->GetTile(etx, ety);
-                                                        int eftile = pColl->GetFrontTile(etx, ety);
-                                                        if(etile == TILE_FREEZE || eftile == TILE_FREEZE ||
-                                                           etile == TILE_DFREEZE || eftile == TILE_DFREEZE)
-                                                                goto skip_hold_candidate;
-                                                }
-                                        }
 
                                         // Try to insert into top-3
                                         for(int k = 0; k < PF_BACKTRACK_CANDIDATES; k++)
@@ -4131,6 +4173,7 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
                                                         topCandidates[k].endHookState = core.m_HookState;
                                                         topCandidates[k].endHookTick = core.m_HookTick;
                                                         topCandidates[k].endJumped = core.m_Jumped;
+                                                        topCandidates[k].endFreezeTime = simFreezeTime;
                                                         break;
                                                 }
                                         }
@@ -4159,11 +4202,27 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
                                         bool reachedFinish = false;
                                         bool died = false;
                                         int freezeTicks = 0;
+                                        int simFreezeTime = m_PfCurFreezeTime;
 
                                         for(int tick = 0; tick < ChunkSize; tick++)
                                         {
                                                 CNetObj_PlayerInput tickInput = input;
                                                 tickInput.m_Jump = (tick == jumpTick) ? 1 : 0;
+
+                                                // Handle freeze: when frozen, zero out movement input
+                                                if(simFreezeTime > 0)
+                                                {
+                                                        tickInput.m_Direction = 0;
+                                                        tickInput.m_Jump = 0;
+                                                        tickInput.m_Hook = 0;
+                                                        simFreezeTime--;
+                                                        freezeTicks++;
+                                                        if(simFreezeTime == 0)
+                                                        {
+                                                                core.m_IsInFreeze = false;
+                                                                core.m_FreezeEnd = 0;
+                                                        }
+                                                }
 
                                                 core.m_Input = tickInput;
                                                 core.Tick(true, false);
@@ -4194,11 +4253,30 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
                                                         break;
                                                 }
 
-                                                // Check freeze (for penalty)
-                                                if(tile == TILE_FREEZE || ftile == TILE_FREEZE ||
-                                                   tile == TILE_DFREEZE || ftile == TILE_DFREEZE)
+                                                // Enter freeze
+                                                if(simFreezeTime <= 0 && !core.m_DeepFrozen)
                                                 {
-                                                        freezeTicks++;
+                                                        if(tile == TILE_FREEZE || ftile == TILE_FREEZE)
+                                                        {
+                                                                simFreezeTime = 3 * SERVER_TICK_SPEED;
+                                                                core.m_IsInFreeze = true;
+                                                                core.m_FreezeEnd = 1;
+                                                        }
+                                                        else if(tile == TILE_DFREEZE || ftile == TILE_DFREEZE)
+                                                        {
+                                                                simFreezeTime = 3 * SERVER_TICK_SPEED;
+                                                                core.m_DeepFrozen = true;
+                                                                core.m_IsInFreeze = true;
+                                                                core.m_FreezeEnd = -1;
+                                                        }
+                                                }
+
+                                                // Unfreeze tile
+                                                if((tile == TILE_UNFREEZE || ftile == TILE_UNFREEZE) && !core.m_DeepFrozen && simFreezeTime > 0)
+                                                {
+                                                        simFreezeTime = 0;
+                                                        core.m_IsInFreeze = false;
+                                                        core.m_FreezeEnd = 0;
                                                 }
                                         }
 
@@ -4208,21 +4286,6 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
                                         // Skip candidates that died
                                         if(died && !reachedFinish)
                                                 continue;
-
-                                        // Prune candidates ending on freeze tile (unless they reached finish)
-                                        if(!reachedFinish)
-                                        {
-                                                int etx = (int)(endPos.x / 32.0f);
-                                                int ety = (int)(endPos.y / 32.0f);
-                                                if(etx >= 0 && ety >= 0 && etx < m_MapWidth && ety < m_MapHeight)
-                                                {
-                                                        int etile = pColl->GetTile(etx, ety);
-                                                        int eftile = pColl->GetFrontTile(etx, ety);
-                                                        if(etile == TILE_FREEZE || eftile == TILE_FREEZE ||
-                                                           etile == TILE_DFREEZE || eftile == TILE_DFREEZE)
-                                                                continue; // skip frozen-end candidates
-                                                }
-                                        }
 
                                         // Try to insert into top-3
                                         for(int k = 0; k < PF_BACKTRACK_CANDIDATES; k++)
@@ -4246,6 +4309,7 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
                                                         topCandidates[k].endHookState = core.m_HookState;
                                                         topCandidates[k].endHookTick = core.m_HookTick;
                                                         topCandidates[k].endJumped = core.m_Jumped;
+                                                        topCandidates[k].endFreezeTime = simFreezeTime;
                                                         break;
                                                 }
                                         }
@@ -4309,6 +4373,7 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
         m_PfCurHookState = best.endHookState;
         m_PfCurHookTick = best.endHookTick;
         m_PfCurJumped = best.endJumped;
+        m_PfCurFreezeTime = best.endFreezeTime;
 
         return true;
 }
