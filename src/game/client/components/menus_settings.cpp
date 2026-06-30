@@ -5371,10 +5371,10 @@ void CMenus::RenderSettingsPathfinder(CUIRect MainView)
 
         MainView.HSplitTop(5.0f, nullptr, &MainView);
 
-        // === Pathfinder Panel ===
+        // === Parameters Panel ===
         {
-                const int numRows = 16;
-                const float SectionH = PanelPad + 25.0f + 5.0f + numRows * LineSize + (numRows - 1) * RowGap + 4 * 5.0f + 26.0f + PanelPad;
+                const int numRows = 5; // Chunk Size, Hook Angles, Max Chunks, Performance + 1 header
+                const float SectionH = PanelPad + 25.0f + 5.0f + numRows * LineSize + (numRows - 1) * RowGap + PanelPad;
                 MainView.HSplitTop(SectionH, &PanelBg, &MainView);
                 PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
                 s_PathfinderScrollRegion.AddRect(PanelBg);
@@ -5384,122 +5384,69 @@ void CMenus::RenderSettingsPathfinder(CUIRect MainView)
                 Ui()->DoLabel(&Label, Localize("Pathfinder"), 16.0f, TEXTALIGN_ML);
                 Panel.HSplitTop(5.0f, nullptr, &Panel);
 
-                // --- Algorithm dropdown ---
-                Panel.HSplitTop(LineSize, &Row, &Panel);
-                Panel.HSplitTop(RowGap, nullptr, &Panel);
-                {
-                        CUIRect Lab, DropDown;
-                        Row.VSplitLeft(110.0f, &Lab, &DropDown);
-                        Ui()->DoLabel(&Lab, Localize("Algorithm"), 12.0f, TEXTALIGN_ML);
-                        const char *apAlgoNames[PF_TAB_ALGORITHM_COUNT] = {
-                                Localize("Kinodynamic A*"),
-                                Localize("Grid A*"),
-                                Localize("Dijkstra"),
-                                Localize("Greedy Best-First"),
-                                Localize("BFS Lattice"),
-                                Localize("DFS Lattice"),
-                                Localize("RRT"),
-                                Localize("RRT*"),
-                                Localize("PRM"),
-                                Localize("MCTS"),
-                                Localize("GA"),
-                                Localize("CMA-ES"),
-                                Localize("SA"),
-                                Localize("HillClimb"),
-                                Localize("RandomWalk")};
-                        static CUi::SDropDownState s_AlgoDropDownState;
-                        static CScrollRegion s_AlgoDropDownScrollRegion;
-                        s_AlgoDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_AlgoDropDownScrollRegion;
-                        const int NewAlgo = Ui()->DoDropDown(&DropDown, g_Config.m_ClPfAlgorithm, apAlgoNames, PF_TAB_ALGORITHM_COUNT, s_AlgoDropDownState);
-                        if(NewAlgo != g_Config.m_ClPfAlgorithm)
-                                g_Config.m_ClPfAlgorithm = NewAlgo;
-                }
-
-                // --- Chunk size slider ---
+                // --- Chunk Size slider ---
                 Panel.HSplitTop(LineSize, &Row, &Panel);
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
                 Ui()->DoScrollbarOption(&g_Config.m_ClPfChunkSize, &g_Config.m_ClPfChunkSize, &Row,
                         Localize("Chunk Size"), 5, PF_TAB_MAX_CHUNK_TICKS, &CUi::ms_LinearScrollbarScale,
                         CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
 
-                // --- Candidates slider ---
-                Panel.HSplitTop(LineSize, &Row, &Panel);
-                Panel.HSplitTop(RowGap, nullptr, &Panel);
-                Ui()->DoScrollbarOption(&g_Config.m_ClPfCandidates, &g_Config.m_ClPfCandidates, &Row,
-                        Localize("Node Budget"), 50, 2000, &CUi::ms_LinearScrollbarScale,
-                        CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
-
-                // --- Hook angles slider ---
+                // --- Hook Angles slider ---
                 Panel.HSplitTop(LineSize, &Row, &Panel);
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
                 Ui()->DoScrollbarOption(&g_Config.m_ClPfHookAngles, &g_Config.m_ClPfHookAngles, &Row,
                         Localize("Hook Angles"), 4, 32, &CUi::ms_LinearScrollbarScale,
                         CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
 
-                // --- Horizon slider ---
+                // --- Max Chunks slider ---
                 Panel.HSplitTop(LineSize, &Row, &Panel);
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
-                Ui()->DoScrollbarOption(&g_Config.m_ClPfHorizon, &g_Config.m_ClPfHorizon, &Row,
-                        Localize("Horizon"), 1, PF_TAB_MAX_CHUNK_TICKS, &CUi::ms_LinearScrollbarScale,
+                Ui()->DoScrollbarOption(&g_Config.m_ClPfMaxChunks, &g_Config.m_ClPfMaxChunks, &Row,
+                        Localize("Max Chunks"), 10, 2000, &CUi::ms_LinearScrollbarScale,
                         CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
 
-                // --- Performance slider (1-100%: spread chunk generation across ticks) ---
+                // --- Performance slider (1-100%) ---
                 Panel.HSplitTop(LineSize, &Row, &Panel);
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
                 Ui()->DoScrollbarOption(&g_Config.m_ClPfPerf, &g_Config.m_ClPfPerf, &Row,
                         Localize("Performance"), 1, 100, &CUi::ms_LinearScrollbarScale,
                         CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
+        }
 
+        MainView.HSplitTop(PanelGap, nullptr, &MainView);
+
+        // === Penalties Panel ===
+        {
+                const int numRows = 2;
+                const float SectionH = PanelPad + 25.0f + 5.0f + numRows * LineSize + (numRows - 1) * RowGap + PanelPad;
+                MainView.HSplitTop(SectionH, &PanelBg, &MainView);
+                PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
+                s_PathfinderScrollRegion.AddRect(PanelBg);
+                PanelBg.Margin(PanelPad, &Panel);
+
+                Panel.HSplitTop(25.0f, &Label, &Panel);
+                Ui()->DoLabel(&Label, Localize("Penalties"), 16.0f, TEXTALIGN_ML);
                 Panel.HSplitTop(5.0f, nullptr, &Panel);
 
-                // --- Score method ---
-                Panel.HSplitTop(15.0f, &Label, &Panel);
-                Ui()->DoLabel(&Label, Localize("Score method"), 13.0f, TEXTALIGN_ML);
-
-                Panel.HSplitTop(LineSize, &Row, &Panel);
-                Panel.HSplitTop(RowGap, nullptr, &Panel);
-                Row.VSplitMid(&Left, &Right, ColGap);
-                if(DoButton_CheckBox(&g_Config.m_ClPfScoreDist, Localize("Distance reduction"), g_Config.m_ClPfScoreDist, &Left))
-                        g_Config.m_ClPfScoreDist ^= 1;
-                if(DoButton_CheckBox(&g_Config.m_ClPfScoreTime, Localize("Fewer ticks"), g_Config.m_ClPfScoreTime, &Right))
-                        g_Config.m_ClPfScoreTime ^= 1;
-
-                Panel.HSplitTop(LineSize, &Row, &Panel);
-                Panel.HSplitTop(RowGap, nullptr, &Panel);
-                if(DoButton_CheckBox(&g_Config.m_ClPfScoreFlow, Localize("Flow-field alignment"), g_Config.m_ClPfScoreFlow, &Row))
-                        g_Config.m_ClPfScoreFlow ^= 1;
-
-                Panel.HSplitTop(5.0f, nullptr, &Panel);
-
-                // --- Fine method ---
-                Panel.HSplitTop(15.0f, &Label, &Panel);
-                Ui()->DoLabel(&Label, Localize("Fine method (penalties)"), 13.0f, TEXTALIGN_ML);
-
+                // --- Freeze / Death penalties ---
                 Panel.HSplitTop(LineSize, &Row, &Panel);
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
                 Row.VSplitMid(&Left, &Right, ColGap);
                 if(DoButton_CheckBox(&g_Config.m_ClPfFineFreeze, Localize("Freeze penalty"), g_Config.m_ClPfFineFreeze, &Left))
                         g_Config.m_ClPfFineFreeze ^= 1;
-                if(DoButton_CheckBox(&g_Config.m_ClPfFineRetract, Localize("Hook retract"), g_Config.m_ClPfFineRetract, &Right))
-                        g_Config.m_ClPfFineRetract ^= 1;
-
-                Panel.HSplitTop(LineSize, &Row, &Panel);
-                Panel.HSplitTop(RowGap, nullptr, &Panel);
-                Row.VSplitMid(&Left, &Right, ColGap);
-                if(DoButton_CheckBox(&g_Config.m_ClPfFineDeath, Localize("Death penalty"), g_Config.m_ClPfFineDeath, &Left))
+                if(DoButton_CheckBox(&g_Config.m_ClPfFineDeath, Localize("Death penalty"), g_Config.m_ClPfFineDeath, &Right))
                         g_Config.m_ClPfFineDeath ^= 1;
-                if(DoButton_CheckBox(&g_Config.m_ClPfFineWall, Localize("Wall hit"), g_Config.m_ClPfFineWall, &Right))
-                        g_Config.m_ClPfFineWall ^= 1;
+        }
 
-                Panel.HSplitTop(LineSize, &Row, &Panel);
-                Panel.HSplitTop(RowGap, nullptr, &Panel);
-                Row.VSplitMid(&Left, &Right, ColGap);
-                if(DoButton_CheckBox(&g_Config.m_ClPfFineAir, Localize("Air time"), g_Config.m_ClPfFineAir, &Left))
-                        g_Config.m_ClPfFineAir ^= 1;
-                if(DoButton_CheckBox(&g_Config.m_ClPfFineHook, Localize("Hook fire"), g_Config.m_ClPfFineHook, &Right))
-                        g_Config.m_ClPfFineHook ^= 1;
+        MainView.HSplitTop(PanelGap, nullptr, &MainView);
 
-                Panel.HSplitTop(5.0f, nullptr, &Panel);
+        // === Action Panel ===
+        {
+                const float SectionH = PanelPad + 26.0f + PanelPad;
+                MainView.HSplitTop(SectionH, &PanelBg, &MainView);
+                PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
+                s_PathfinderScrollRegion.AddRect(PanelBg);
+                PanelBg.Margin(PanelPad, &Panel);
 
                 // --- 3-state action button: pathfinding / stop / finish ---
                 Panel.HSplitTop(26.0f, &Row, &Panel);
@@ -5532,8 +5479,7 @@ void CMenus::RenderSettingsPathfinder(CUIRect MainView)
                         }
                         else if(State == PF_STATE_RUNNING)
                         {
-                                BN.m_PfState = PF_STATE_IDLE;
-                                BN.m_PfVPath.clear();
+                                BN.m_PfState = PF_STATE_FINISHED;
                         }
                         else
                         {

@@ -52,6 +52,53 @@ enum EPfState
 };
 static const int PF_TAB_MAX_CHUNK_TICKS = 50; // matches ClPfChunkSize upper bound
 static const int PF_TAB_ALGORITHM_COUNT = 15;
+static const int PF_BACKTRACK_DEPTH = 5;
+static const int PF_BACKTRACK_CANDIDATES = 3;
+
+// =========================================================
+// Pathfinder backtracking buffer
+// =========================================================
+struct PfBacktrackEntry
+{
+        vec2 pos;
+        vec2 vel;
+        vec2 hookPos;
+        vec2 hookDir;
+        int hookState;
+        int hookTick;
+        int jumped;
+        float totalFreezeTicks;
+        int vPathSize; // m_PfVPath.size() before this chunk was applied
+        struct Candidate
+        {
+                std::vector<CNetObj_PlayerInput> inputs;
+                std::vector<vec2> traj;
+                float score;
+                // End state for direct application (avoids re-simulation)
+                vec2 endPos, endVel, endHookPos, endHookDir;
+                int endHookState, endHookTick, endJumped;
+                int freezeTicks;
+        };
+        Candidate candidates[PF_BACKTRACK_CANDIDATES];
+        int numCandidates;
+        int usedCandidateIdx;
+
+        PfBacktrackEntry() { Reset(); }
+        void Reset()
+        {
+                pos = vec2(0, 0);
+                vel = vec2(0, 0);
+                hookPos = vec2(0, 0);
+                hookDir = vec2(0, 0);
+                hookState = 0;
+                hookTick = 0;
+                jumped = 0;
+                totalFreezeTicks = 0.0f;
+                vPathSize = 0;
+                numCandidates = 0;
+                usedCandidateIdx = -1;
+        }
+};
 
 // =========================================================
 // Kinodynamic A* — cached input package per dummy
@@ -268,12 +315,18 @@ public:
         vec2 m_PfCurPos;                // current sim position (end of last chunk)
         vec2 m_PfCurVel;                // current sim velocity
         int m_PfCurHookState;           // current sim hook state
+        vec2 m_PfCurHookPos;            // current sim hook position
+        vec2 m_PfCurHookDir;            // current sim hook direction
+        int m_PfCurHookTick;            // current sim hook tick counter
         int m_PfCurFreezeTime;          // current sim freeze time
         int m_PfCurJumped;              // current sim jump flags
         int m_PfTickCounter;            // throttle: counts ticks until next chunk (perf% spread)
         std::vector<vec2> m_PfVPath;    // accumulated trajectory (start..current)
         std::vector<vec2> m_PfFinishTiles; // cached finish tile centers (multi-source BFS sources)
         float *m_PfFlowField;           // BFS distance field to nearest finish
+        int m_PfTotalFreezeTicks;       // running total for dynamic freeze penalty
+        PfBacktrackEntry m_PfBacktrack[PF_BACKTRACK_DEPTH];
+        int m_PfBacktrackIdx;           // stack index (next write position, capped at PF_BACKTRACK_DEPTH)
 
         // Per-dummy runtime state
         CBotNetDummy m_aDummies[MAX_DUMMIES];
@@ -336,12 +389,11 @@ public:
         void RenderPathfinderPath();        // called from OnRender; draws m_PfVPath like RenderPackage
         void PfResetRun();                  // clear vPath + sim state (start fresh from active player)
         void PfComputeFlowField();          // multi-source BFS to all finish tiles -> m_PfFlowField
-        float PfScoreChunk(const std::vector<vec2> &traj, const std::vector<CNetObj_PlayerInput> &inputs,
-                           const vec2 &startPos, const vec2 &endPos, bool reachedFinish, bool died,
-                           int freezeTicks, int hookFires, int wallHits, int airTicks) const;
+        float PfScoreChunk(const vec2 &startPos, const vec2 &endPos, bool reachedFinish, bool died,
+                           int freezeTicks) const;
         bool PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::vector<vec2> &outTraj,
-                             bool &outReachedFinish, bool &outDied, int &outFreezeTicks,
-                             int &outHookFires, int &outWallHits, int &outAirTicks);
+                             bool &outReachedFinish, bool &outDied, int &outFreezeTicks);
+        bool PfBacktrack();              // try alternative candidates from backtrack buffer
 
         // --- Console commands ---
         static void ConRandomAim(IConsole::IResult *pResult, void *pUserData);
