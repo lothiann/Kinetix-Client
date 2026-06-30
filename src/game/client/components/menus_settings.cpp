@@ -5371,18 +5371,17 @@ void CMenus::RenderSettingsPathfinder(CUIRect MainView)
 
         MainView.HSplitTop(5.0f, nullptr, &MainView);
 
-        // === Pathfinder Panel ===
+        // === Container 1: Parameters ===
         {
-                // Layout: header(25+5) + algo(20+2) + chunk(20+2) + hook(20+2) + horizon(20+2) + perf(20+2) + gap(5) + score_header(15) + score_row1(20+2) + score_row2(20+2) + gap(5) + fine_header(15) + fine_row1(20+2) + fine_row2(20+2) + fine_row3(20+2) + gap(5) + button(26) + padding
-                const int numRows = 16;
-                const float SectionH = PanelPad + 25.0f + 5.0f + numRows * LineSize + (numRows - 1) * RowGap + 4 * 5.0f + 26.0f + PanelPad;
+                const int numRows = 5; // algo + chunk + hook angles + max chunks + perf
+                const float SectionH = PanelPad + 25.0f + 5.0f + numRows * LineSize + (numRows - 1) * RowGap + PanelPad;
                 MainView.HSplitTop(SectionH, &PanelBg, &MainView);
                 PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
                 s_PathfinderScrollRegion.AddRect(PanelBg);
                 PanelBg.Margin(PanelPad, &Panel);
 
                 Panel.HSplitTop(25.0f, &Label, &Panel);
-                Ui()->DoLabel(&Label, Localize("Pathfinder"), 16.0f, TEXTALIGN_ML);
+                Ui()->DoLabel(&Label, Localize("Parameters"), 16.0f, TEXTALIGN_ML);
                 Panel.HSplitTop(5.0f, nullptr, &Panel);
 
                 // --- Algorithm dropdown ---
@@ -5443,12 +5442,22 @@ void CMenus::RenderSettingsPathfinder(CUIRect MainView)
                 Ui()->DoScrollbarOption(&g_Config.m_ClPfPerf, &g_Config.m_ClPfPerf, &Row,
                         Localize("Performance"), 1, 100, &CUi::ms_LinearScrollbarScale,
                         CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
+        }
 
+        MainView.HSplitTop(PanelGap, nullptr, &MainView);
+
+        // === Container 2: Score Method ===
+        {
+                const int numRows = 3; // dist+time row, flow row
+                const float SectionH = PanelPad + 25.0f + 5.0f + numRows * LineSize + (numRows - 1) * RowGap + PanelPad;
+                MainView.HSplitTop(SectionH, &PanelBg, &MainView);
+                PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
+                s_PathfinderScrollRegion.AddRect(PanelBg);
+                PanelBg.Margin(PanelPad, &Panel);
+
+                Panel.HSplitTop(25.0f, &Label, &Panel);
+                Ui()->DoLabel(&Label, Localize("Score Method"), 16.0f, TEXTALIGN_ML);
                 Panel.HSplitTop(5.0f, nullptr, &Panel);
-
-                // --- Score method ---
-                Panel.HSplitTop(15.0f, &Label, &Panel);
-                Ui()->DoLabel(&Label, Localize("Score method"), 13.0f, TEXTALIGN_ML);
 
                 Panel.HSplitTop(LineSize, &Row, &Panel);
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
@@ -5462,12 +5471,22 @@ void CMenus::RenderSettingsPathfinder(CUIRect MainView)
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
                 if(DoButton_CheckBox(&g_Config.m_ClPfScoreFlow, Localize("Flow-field alignment"), g_Config.m_ClPfScoreFlow, &Row))
                         g_Config.m_ClPfScoreFlow ^= 1;
+        }
 
+        MainView.HSplitTop(PanelGap, nullptr, &MainView);
+
+        // === Container 3: Penalties ===
+        {
+                const int numRows = 3;
+                const float SectionH = PanelPad + 25.0f + 5.0f + numRows * LineSize + (numRows - 1) * RowGap + PanelPad;
+                MainView.HSplitTop(SectionH, &PanelBg, &MainView);
+                PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
+                s_PathfinderScrollRegion.AddRect(PanelBg);
+                PanelBg.Margin(PanelPad, &Panel);
+
+                Panel.HSplitTop(25.0f, &Label, &Panel);
+                Ui()->DoLabel(&Label, Localize("Penalties"), 16.0f, TEXTALIGN_ML);
                 Panel.HSplitTop(5.0f, nullptr, &Panel);
-
-                // --- Fine method (penalties) ---
-                Panel.HSplitTop(15.0f, &Label, &Panel);
-                Ui()->DoLabel(&Label, Localize("Fine method (penalties)"), 13.0f, TEXTALIGN_ML);
 
                 Panel.HSplitTop(LineSize, &Row, &Panel);
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
@@ -5492,8 +5511,17 @@ void CMenus::RenderSettingsPathfinder(CUIRect MainView)
                         g_Config.m_ClPfFineAir ^= 1;
                 if(DoButton_CheckBox(&g_Config.m_ClPfFineHook, Localize("Hook fire"), g_Config.m_ClPfFineHook, &Right))
                         g_Config.m_ClPfFineHook ^= 1;
+        }
 
-                Panel.HSplitTop(5.0f, nullptr, &Panel);
+        MainView.HSplitTop(PanelGap, nullptr, &MainView);
+
+        // === Container 4: Action ===
+        {
+                const float SectionH = PanelPad + 26.0f + PanelPad;
+                MainView.HSplitTop(SectionH, &PanelBg, &MainView);
+                PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
+                s_PathfinderScrollRegion.AddRect(PanelBg);
+                PanelBg.Margin(PanelPad, &Panel);
 
                 // --- 3-state action button: pathfinding / stop / finish ---
                 Panel.HSplitTop(26.0f, &Row, &Panel);
