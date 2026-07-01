@@ -70,6 +70,7 @@ struct PfBacktrackEntry
         int freezeTime; // m_PfCurFreezeTime at this backtrack point
         float totalFreezeTicks;
         int vPathSize; // m_PfVPath.size() before this chunk was applied
+        int chunkCount; // m_PfChunkCount at this backtrack point (for Max Chunks limit on active trajectory)
         struct Candidate
         {
                 std::vector<CNetObj_PlayerInput> inputs;
@@ -98,6 +99,7 @@ struct PfBacktrackEntry
                 freezeTime = 0;
                 totalFreezeTicks = 0.0f;
                 vPathSize = 0;
+                chunkCount = 0;
                 numCandidates = 0;
                 usedCandidateIdx = -1;
         }

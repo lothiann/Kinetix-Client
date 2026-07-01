@@ -3370,8 +3370,11 @@ bool CBotNet::PfBacktrack()
                 m_PfCurFreezeTime = entry.freezeTime;
                 m_PfTotalFreezeTicks = entry.totalFreezeTicks;
 
-                // Truncate trajectory
+                // Truncate trajectory and restore chunk count to the active
+                // trajectory length (Max Chunks limits active chunks, not total
+                // attempts — otherwise backtracking burns the budget on retries).
                 m_PfVPath.resize(entry.vPathSize);
+                m_PfChunkCount = entry.chunkCount;
 
                 // Apply the alternative candidate
                 PfBacktrackEntry::Candidate &cand = entry.candidates[nextIdx];
@@ -4204,6 +4207,7 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
                 entry.freezeTime = m_PfCurFreezeTime;
                 entry.totalFreezeTicks = m_PfTotalFreezeTicks;
                 entry.vPathSize = (int)m_PfVPath.size();
+                entry.chunkCount = m_PfChunkCount;
                 entry.numCandidates = 0;
                 entry.usedCandidateIdx = 0;
 
