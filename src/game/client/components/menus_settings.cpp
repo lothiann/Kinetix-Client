@@ -5373,7 +5373,7 @@ void CMenus::RenderSettingsPathfinder(CUIRect MainView)
 
         // === Container 1: Parameters ===
         {
-                const int numRows = 5; // algo + chunk + hook angles + max chunks + perf
+                const int numRows = 6; // algo + chunk + hook angles + max chunks + candidates + perf
                 const float SectionH = PanelPad + 25.0f + 5.0f + numRows * LineSize + (numRows - 1) * RowGap + PanelPad;
                 MainView.HSplitTop(SectionH, &PanelBg, &MainView);
                 PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
@@ -5434,6 +5434,13 @@ void CMenus::RenderSettingsPathfinder(CUIRect MainView)
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
                 Ui()->DoScrollbarOption(&g_Config.m_ClPfMaxChunks, &g_Config.m_ClPfMaxChunks, &Row,
                         Localize("Max Chunks"), 10, 2000, &CUi::ms_LinearScrollbarScale,
+                        CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
+
+                // --- Candidates slider (top-N for backtracking) ---
+                Panel.HSplitTop(LineSize, &Row, &Panel);
+                Panel.HSplitTop(RowGap, nullptr, &Panel);
+                Ui()->DoScrollbarOption(&g_Config.m_ClPfBacktrackCandidates, &g_Config.m_ClPfBacktrackCandidates, &Row,
+                        Localize("Candidates"), 100, 1400, &CUi::ms_LinearScrollbarScale,
                         CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
 
                 // --- Performance slider ---

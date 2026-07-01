@@ -3356,7 +3356,7 @@ bool CBotNet::PfBacktrack()
 
                 // Try next candidate (usedCandidateIdx + 1)
                 int nextIdx = entry.usedCandidateIdx + 1;
-                if(nextIdx >= entry.numCandidates)
+                if(nextIdx >= entry.numCandidates || nextIdx >= (int)entry.candidates.size())
                         continue; // no more candidates at this level, pop further
 
                 // Restore anchor state
@@ -3874,7 +3874,8 @@ static void PfSimulateChunk(CGameWorld *pWorld, int PredictedCharId, CCharacter 
 //   hook        in {0, 1}
 //   hookAngle   in [-5pi/6, +5pi/6] evenly spaced   (ONLY when hook=1 and HOOK_IDLE)
 //
-// Top-3 candidates are kept for the backtracking buffer (PF_BACKTRACK_CANDIDATES).
+// Top-N candidates (N = ClPfBacktrackCandidates, default 100) are kept for the
+// backtracking buffer.
 //
 // Per candidate: save pBot state (core + pos + m_FreezeTime), simulate via
 // PfSimulateChunk, restore.  This is the v1.48 (5c28aac) fix — without restoring
@@ -3971,8 +3972,11 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
                 vec2 endPos, endVel, endHookPos, endHookDir;
                 int endHookState, endHookTick, endJumped;
         };
-        CandidateResult topCandidates[PF_BACKTRACK_CANDIDATES];
-        for(int i = 0; i < PF_BACKTRACK_CANDIDATES; i++)
+        // Top-N candidates (N = ClPfBacktrackCandidates, dynamic). Using a vector
+        // keeps memory bounded — only N slots per chunk, freed on reset.
+        const int N = pf_clamp(g_Config.m_ClPfBacktrackCandidates, 100, 1400);
+        std::vector<CandidateResult> topCandidates(N);
+        for(int i = 0; i < N; i++)
                 topCandidates[i].score = -1e18f;
 
         // Parameter sweep: direction x jumpTick x hook x hookAngle
@@ -4037,11 +4041,11 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
 
                                                 float score = PfScoreChunk(m_PfCurPos, res.endPos, res.reachedFinish, res.died, res.freezeTicks);
 
-                                                for(int k = 0; k < PF_BACKTRACK_CANDIDATES; k++)
+                                                for(int k = 0; k < N; k++)
                                                 {
                                                         if(score > topCandidates[k].score)
                                                         {
-                                                                for(int m = PF_BACKTRACK_CANDIDATES - 1; m > k; m--)
+                                                                for(int m = N - 1; m > k; m--)
                                                                         topCandidates[m] = topCandidates[m - 1];
                                                                 topCandidates[k].inputs = res.inputs;
                                                                 topCandidates[k].traj = res.traj;
@@ -4101,11 +4105,11 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
 
                                         float score = PfScoreChunk(m_PfCurPos, res.endPos, res.reachedFinish, res.died, res.freezeTicks);
 
-                                        for(int k = 0; k < PF_BACKTRACK_CANDIDATES; k++)
+                                        for(int k = 0; k < N; k++)
                                         {
                                                 if(score > topCandidates[k].score)
                                                 {
-                                                        for(int m = PF_BACKTRACK_CANDIDATES - 1; m > k; m--)
+                                                        for(int m = N - 1; m > k; m--)
                                                                 topCandidates[m] = topCandidates[m - 1];
                                                         topCandidates[k].inputs = res.inputs;
                                                         topCandidates[k].traj = res.traj;
@@ -4162,11 +4166,11 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
 
                                         float score = PfScoreChunk(m_PfCurPos, res.endPos, res.reachedFinish, res.died, res.freezeTicks);
 
-                                        for(int k = 0; k < PF_BACKTRACK_CANDIDATES; k++)
+                                        for(int k = 0; k < N; k++)
                                         {
                                                 if(score > topCandidates[k].score)
                                                 {
-                                                        for(int m = PF_BACKTRACK_CANDIDATES - 1; m > k; m--)
+                                                        for(int m = N - 1; m > k; m--)
                                                                 topCandidates[m] = topCandidates[m - 1];
                                                         topCandidates[k].inputs = res.inputs;
                                                         topCandidates[k].traj = res.traj;
@@ -4211,22 +4215,29 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
                 entry.numCandidates = 0;
                 entry.usedCandidateIdx = 0;
 
-                for(int k = 0; k < PF_BACKTRACK_CANDIDATES; k++)
+                // Reserve exact capacity for this entry's candidates (avoids
+                // reallocation as we push_back). Vector is cleared on Reset()
+                // so no leak across runs.
+                entry.candidates.clear();
+                entry.candidates.reserve(N);
+                for(int k = 0; k < N; k++)
                 {
                         if(topCandidates[k].score <= -1e17f)
                                 break;
-                        entry.candidates[k].inputs = topCandidates[k].inputs;
-                        entry.candidates[k].traj = topCandidates[k].traj;
-                        entry.candidates[k].score = topCandidates[k].score;
-                        entry.candidates[k].endPos = topCandidates[k].endPos;
-                        entry.candidates[k].endVel = topCandidates[k].endVel;
-                        entry.candidates[k].endHookPos = topCandidates[k].endHookPos;
-                        entry.candidates[k].endHookDir = topCandidates[k].endHookDir;
-                        entry.candidates[k].endHookState = topCandidates[k].endHookState;
-                        entry.candidates[k].endHookTick = topCandidates[k].endHookTick;
-                        entry.candidates[k].endJumped = topCandidates[k].endJumped;
-                        entry.candidates[k].endFreezeTime = topCandidates[k].endFreezeTime;
-                        entry.candidates[k].freezeTicks = topCandidates[k].freezeTicks;
+                        PfBacktrackEntry::Candidate c;
+                        c.inputs = topCandidates[k].inputs;
+                        c.traj = topCandidates[k].traj;
+                        c.score = topCandidates[k].score;
+                        c.endPos = topCandidates[k].endPos;
+                        c.endVel = topCandidates[k].endVel;
+                        c.endHookPos = topCandidates[k].endHookPos;
+                        c.endHookDir = topCandidates[k].endHookDir;
+                        c.endHookState = topCandidates[k].endHookState;
+                        c.endHookTick = topCandidates[k].endHookTick;
+                        c.endJumped = topCandidates[k].endJumped;
+                        c.endFreezeTime = topCandidates[k].endFreezeTime;
+                        c.freezeTicks = topCandidates[k].freezeTicks;
+                        entry.candidates.push_back(std::move(c));
                         entry.numCandidates++;
                 }
                 m_PfBacktrackIdx++;

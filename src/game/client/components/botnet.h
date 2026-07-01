@@ -53,7 +53,7 @@ enum EPfState
 static const int PF_TAB_MAX_CHUNK_TICKS = 50; // matches ClPfChunkSize upper bound
 static const int PF_TAB_ALGORITHM_COUNT = 15;
 static const int PF_BACKTRACK_DEPTH = 5;
-static const int PF_BACKTRACK_CANDIDATES = 3;
+// PF_BACKTRACK_CANDIDATES removed — now dynamic via ClPfBacktrackCandidates (100-1400)
 
 // =========================================================
 // Pathfinder backtracking buffer
@@ -82,7 +82,7 @@ struct PfBacktrackEntry
                 int endFreezeTime; // bot's m_FreezeTime at end of chunk (0 = not frozen)
                 int freezeTicks;
         };
-        Candidate candidates[PF_BACKTRACK_CANDIDATES];
+        std::vector<Candidate> candidates; // top-N candidates (size = ClPfBacktrackCandidates, dynamic)
         int numCandidates;
         int usedCandidateIdx;
 
@@ -100,6 +100,8 @@ struct PfBacktrackEntry
                 totalFreezeTicks = 0.0f;
                 vPathSize = 0;
                 chunkCount = 0;
+                candidates.clear();
+                candidates.shrink_to_fit(); // free heap memory after a backtrack run
                 numCandidates = 0;
                 usedCandidateIdx = -1;
         }
