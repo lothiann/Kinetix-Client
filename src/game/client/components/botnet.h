@@ -67,6 +67,7 @@ struct PfBacktrackEntry
         int hookState;
         int hookTick;
         int jumped;
+        int freezeTime; // m_PfCurFreezeTime at this backtrack point
         float totalFreezeTicks;
         int vPathSize; // m_PfVPath.size() before this chunk was applied
         struct Candidate
@@ -77,6 +78,7 @@ struct PfBacktrackEntry
                 // End state for direct application (avoids re-simulation)
                 vec2 endPos, endVel, endHookPos, endHookDir;
                 int endHookState, endHookTick, endJumped;
+                int endFreezeTime; // bot's m_FreezeTime at end of chunk (0 = not frozen)
                 int freezeTicks;
         };
         Candidate candidates[PF_BACKTRACK_CANDIDATES];
@@ -93,6 +95,7 @@ struct PfBacktrackEntry
                 hookState = 0;
                 hookTick = 0;
                 jumped = 0;
+                freezeTime = 0;
                 totalFreezeTicks = 0.0f;
                 vPathSize = 0;
                 numCandidates = 0;

@@ -5461,11 +5461,8 @@ void CMenus::RenderSettingsPathfinder(CUIRect MainView)
 
                 Panel.HSplitTop(LineSize, &Row, &Panel);
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
-                Row.VSplitMid(&Left, &Right, ColGap);
-                if(DoButton_CheckBox(&g_Config.m_ClPfScoreDist, Localize("Distance reduction"), g_Config.m_ClPfScoreDist, &Left))
+                if(DoButton_CheckBox(&g_Config.m_ClPfScoreDist, Localize("Distance reduction"), g_Config.m_ClPfScoreDist, &Row))
                         g_Config.m_ClPfScoreDist ^= 1;
-                if(DoButton_CheckBox(&g_Config.m_ClPfScoreTime, Localize("Fewer ticks"), g_Config.m_ClPfScoreTime, &Right))
-                        g_Config.m_ClPfScoreTime ^= 1;
 
                 Panel.HSplitTop(LineSize, &Row, &Panel);
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
