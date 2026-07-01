@@ -3818,6 +3818,7 @@ int CBotNet::PfAStarStep()
                 child.PrimIdx = 99;
                 child.PrimTicks = ft;
                 child.TickOffset = cur.TickOffset + ft;
+                child.Traj = res.traj;
                 m_PfANodes.push_back(child);
                 PfAStarHeapPush(m_PfAOpen, m_PfANodes, (int)m_PfANodes.size() - 1);
                 return 0;
@@ -3940,6 +3941,7 @@ int CBotNet::PfAStarStep()
                 child.PrimIdx = primI;
                 child.PrimTicks = pTicks;
                 child.TickOffset = cur.TickOffset + pTicks;
+                child.Traj = res.traj;
                 m_PfANodes.push_back(child);
                 PfAStarHeapPush(m_PfAOpen, m_PfANodes, (int)m_PfANodes.size() - 1);
         }
@@ -3998,49 +4000,20 @@ void CBotNet::PfAStarResimulatePath(int targetIdx)
         if(targetIdx < 0 || targetIdx >= (int)m_PfANodes.size())
                 return;
 
+        // Walk parents from target to root
         std::vector<int> vPathIdx;
         for(int idx = targetIdx; idx >= 0; idx = m_PfANodes[idx].ParentIdx)
                 vPathIdx.push_back(idx);
         std::reverse(vPathIdx.begin(), vPathIdx.end());
 
-        float aHookX[8], aHookY[8];
-        for(int i = 0; i < 8; i++)
-        {
-                float a = -pi + i * (pi / 4.0f);
-                aHookX[i] = cosf(a);
-                aHookY[i] = sinf(a);
-        }
-
-        CGameClient *pGame = GameClient();
-        int LocalID = pGame->m_Snap.m_LocalClientId;
-
+        // Build m_PfVPath from cached Traj in each node (no re-simulation — fast)
         m_PfVPath.clear();
         m_PfVPath.push_back(m_PfANodes[vPathIdx[0]].Pos);
-
         for(size_t i = 1; i < vPathIdx.size(); i++)
         {
-                AStarNode &parent = m_PfANodes[vPathIdx[i - 1]];
                 AStarNode &node = m_PfANodes[vPathIdx[i]];
-
-                std::vector<CNetObj_PlayerInput> inSeq;
-                PfAStarBuildInputs(node.PrimIdx, node.PrimTicks, aHookX, aHookY, inSeq);
-
-                CGameWorld FutureWorld;
-                PfAStarSetupWorld(&FutureWorld, pGame, LocalID);
-                int RootStartTick = FutureWorld.GameTick();
-                FutureWorld.m_GameTick = RootStartTick + parent.TickOffset;
-                CCharacter *pBot = PfSpawnSimBot(&FutureWorld, LocalID, parent.Pos, parent.Core.m_Vel,
-                                                  parent.Core.m_HookState, parent.Core.m_HookPos,
-                                                  parent.Core.m_HookDir, parent.Core.m_HookTick,
-                                                  parent.FreezeTime, parent.Core.m_Jumped);
-                if(!pBot)
-                        break;
-
-                PfChunkResult res;
-                PfSimulateChunk(&FutureWorld, LocalID, pBot, inSeq, RootStartTick + parent.TickOffset, res);
-
-                for(size_t k = 1; k < res.traj.size(); k++)
-                        m_PfVPath.push_back(res.traj[k]);
+                for(size_t k = 1; k < node.Traj.size(); k++)
+                        m_PfVPath.push_back(node.Traj[k]);
         }
 }
 
