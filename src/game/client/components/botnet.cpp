@@ -3622,11 +3622,9 @@ float CBotNet::PfAStarHeuristic(const vec2 &pos, const vec2 &endPos)
         return (fabsf(pos.x - endPos.x) + fabsf(pos.y - endPos.y)) / 10.0f;
 }
 
-static CGameWorld *PfAStarSetupWorld(CGameClient *pGame, int LocalID)
+// Setup clean FutureWorld (local variable passed by caller — same as v1.55 PfGenerateChunk)
+static void PfAStarSetupWorld(CGameWorld *pWorld, CGameClient *pGame, int LocalID)
 {
-        static CGameWorld *pWorld = nullptr;
-        if(!pWorld)
-                pWorld = new CGameWorld();
         pWorld->CopyWorld(&pGame->m_PredictedWorld);
         for(int Type = 0; Type < CGameWorld::NUM_ENTTYPES; Type++)
         {
@@ -3645,7 +3643,6 @@ static CGameWorld *PfAStarSetupWorld(CGameClient *pGame, int LocalID)
                 if(CCharacter *pChar = pWorld->GetCharacterById(i))
                         pWorld->RemoveEntity(pChar);
         }
-        return pWorld;
 }
 
 bool CBotNet::PfAStarInit()
@@ -3760,14 +3757,15 @@ int CBotNet::PfAStarStep()
                 return -1;
         int LocalID = pGame->m_Snap.m_LocalClientId;
 
-        CGameWorld *pFW = PfAStarSetupWorld(pGame, LocalID);
-        CCollision *pColl = pFW->Collision();
+        CGameWorld FutureWorld;
+        PfAStarSetupWorld(&FutureWorld, pGame, LocalID);
+        CCollision *pColl = FutureWorld.Collision();
         if(!pColl)
                 return 0;
 
-        int RootStartTick = pFW->GameTick();
-        pFW->m_GameTick = RootStartTick + cur.TickOffset;
-        CCharacter *pBot = PfSpawnSimBot(pFW, LocalID, cur.Pos, cur.Core.m_Vel,
+        int RootStartTick = FutureWorld.GameTick();
+        FutureWorld.m_GameTick = RootStartTick + cur.TickOffset;
+        CCharacter *pBot = PfSpawnSimBot(&FutureWorld, LocalID, cur.Pos, cur.Core.m_Vel,
                                           cur.Core.m_HookState, cur.Core.m_HookPos,
                                           cur.Core.m_HookDir, cur.Core.m_HookTick,
                                           cur.FreezeTime, cur.Core.m_Jumped);
@@ -3786,7 +3784,7 @@ int CBotNet::PfAStarStep()
                         emptyInputs[t].m_TargetY = -1;
                 }
                 PfChunkResult res;
-                PfSimulateChunk(pFW, LocalID, pBot, emptyInputs, RootStartTick + cur.TickOffset, res);
+                PfSimulateChunk(&FutureWorld, LocalID, pBot, emptyInputs, RootStartTick + cur.TickOffset, res);
                 if(res.died && !res.reachedFinish)
                         return 0;
 
@@ -3896,10 +3894,10 @@ int CBotNet::PfAStarStep()
                         inSeq.push_back(inp);
                 }
 
-                if(!pFW->GetCharacterById(LocalID))
-                        pFW = PfAStarSetupWorld(pGame, LocalID);
-                pFW->m_GameTick = RootStartTick + cur.TickOffset;
-                pBot = PfSpawnSimBot(pFW, LocalID, cur.Pos, cur.Core.m_Vel,
+                if(!FutureWorld.GetCharacterById(LocalID))
+                        PfAStarSetupWorld(&FutureWorld, pGame, LocalID);
+                FutureWorld.m_GameTick = RootStartTick + cur.TickOffset;
+                pBot = PfSpawnSimBot(&FutureWorld, LocalID, cur.Pos, cur.Core.m_Vel,
                                      cur.Core.m_HookState, cur.Core.m_HookPos,
                                      cur.Core.m_HookDir, cur.Core.m_HookTick,
                                      cur.FreezeTime, cur.Core.m_Jumped);
@@ -3907,7 +3905,7 @@ int CBotNet::PfAStarStep()
                         continue;
 
                 PfChunkResult res;
-                PfSimulateChunk(pFW, LocalID, pBot, inSeq, RootStartTick + cur.TickOffset, res);
+                PfSimulateChunk(&FutureWorld, LocalID, pBot, inSeq, RootStartTick + cur.TickOffset, res);
 
                 if(res.died && !res.reachedFinish)
                         continue;
@@ -4026,10 +4024,11 @@ void CBotNet::PfAStarResimulatePath(int targetIdx)
                 std::vector<CNetObj_PlayerInput> inSeq;
                 PfAStarBuildInputs(node.PrimIdx, node.PrimTicks, aHookX, aHookY, inSeq);
 
-                CGameWorld *pFW = PfAStarSetupWorld(pGame, LocalID);
-                int RootStartTick = pFW->GameTick();
-                pFW->m_GameTick = RootStartTick + parent.TickOffset;
-                CCharacter *pBot = PfSpawnSimBot(pFW, LocalID, parent.Pos, parent.Core.m_Vel,
+                CGameWorld FutureWorld;
+                PfAStarSetupWorld(&FutureWorld, pGame, LocalID);
+                int RootStartTick = FutureWorld.GameTick();
+                FutureWorld.m_GameTick = RootStartTick + parent.TickOffset;
+                CCharacter *pBot = PfSpawnSimBot(&FutureWorld, LocalID, parent.Pos, parent.Core.m_Vel,
                                                   parent.Core.m_HookState, parent.Core.m_HookPos,
                                                   parent.Core.m_HookDir, parent.Core.m_HookTick,
                                                   parent.FreezeTime, parent.Core.m_Jumped);
@@ -4037,7 +4036,7 @@ void CBotNet::PfAStarResimulatePath(int targetIdx)
                         break;
 
                 PfChunkResult res;
-                PfSimulateChunk(pFW, LocalID, pBot, inSeq, RootStartTick + parent.TickOffset, res);
+                PfSimulateChunk(&FutureWorld, LocalID, pBot, inSeq, RootStartTick + parent.TickOffset, res);
 
                 for(size_t k = 1; k < res.traj.size(); k++)
                         m_PfVPath.push_back(res.traj[k]);
