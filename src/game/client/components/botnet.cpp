@@ -3334,7 +3334,9 @@ void CBotNet::UpdatePathfinder()
         }
 
         // Stall detection: this chunk moved < 2px
-        if(traj.size() >= 2)
+        // Skip if this was a freeze-skip chunk (bot legitimately stands still
+        // while frozen — not a real stall).
+        if(traj.size() >= 2 && freezeTicks == 0)
         {
                 vec2 chunkDelta = traj.back() - traj.front();
                 if(chunkDelta.x * chunkDelta.x + chunkDelta.y * chunkDelta.y < 4.0f && m_PfChunkCount > 5)
@@ -3931,6 +3933,48 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
         CCollision *pColl = FutureWorld.Collision();
         if(!pColl)
                 return false;
+
+        // ── Freeze-skip (v1.55): if the bot is frozen, fast-forward through
+        // all freeze ticks as ONE chunk with empty input. This avoids wasting
+        // multiple chunks (and Max Chunks budget) on freeze stall. The frozen
+        // bot still experiences gravity/friction (real DDNet behavior via
+        // CCharacter), so it falls/slides correctly during the skip.
+        // Discovered via Python benchmark: maps with freeze (e.g. map 9 with
+        // 3 freeze walls = 450 ticks) are unsolvable without this macro-step.
+        if(pBot->m_FreezeTime > 0)
+        {
+                int freezeTicks = pBot->m_FreezeTime;
+                std::vector<CNetObj_PlayerInput> emptyInputs;
+                emptyInputs.reserve(freezeTicks);
+                for(int t = 0; t < freezeTicks; t++)
+                {
+                        CNetObj_PlayerInput inp;
+                        mem_zero(&inp, sizeof(inp));
+                        inp.m_TargetY = -1; // aim up (avoid (0,0) target)
+                        emptyInputs.push_back(inp);
+                }
+                PfChunkResult res;
+                PfSimulateChunk(&FutureWorld, LocalID, pBot, emptyInputs, StartTick, res);
+                if(res.died && !res.reachedFinish)
+                        return false;
+                // Return this as the chunk
+                outInputs = res.inputs;
+                outTraj = res.traj;
+                outReachedFinish = res.reachedFinish;
+                outDied = res.died;
+                outFreezeTicks = res.freezeTicks;
+                // Update sim state from end of freeze
+                m_PfCurPos = res.endPos;
+                m_PfCurVel = res.endVel;
+                m_PfCurHookPos = res.endHookPos;
+                m_PfCurHookDir = res.endHookDir;
+                m_PfCurHookState = res.endHookState;
+                m_PfCurHookTick = res.endHookTick;
+                m_PfCurJumped = res.endJumped;
+                m_PfCurFreezeTime = res.endFreezeTime;
+                return true;
+        }
+
         float hookLength = pBot->GetCore().m_Tuning.m_HookLength;
         if(!(hookLength > 1.0f) || !(hookLength < 10000.0f))
                 hookLength = 900.0f;
