@@ -655,10 +655,9 @@ public:
 	// scrollbars
 	enum
 	{
-		SCROLLBAR_OPTION_INFINITE = 1 << 0,
-		SCROLLBAR_OPTION_NOCLAMPVALUE = 1 << 1,
-		SCROLLBAR_OPTION_MULTILINE = 1 << 2,
-		SCROLLBAR_OPTION_DELAYUPDATE = 1 << 3,
+		SCROLLBAR_OPTION_NOCLAMPVALUE = 1 << 0,
+		SCROLLBAR_OPTION_MULTILINE = 1 << 1,
+		SCROLLBAR_OPTION_DELAYUPDATE = 1 << 2,
 	};
 	float DoScrollbarV(const void *pId, const CUIRect *pRect, float Current);
 	float DoScrollbarH(const void *pId, const CUIRect *pRect, float Current, const ColorRGBA *pColorInner = nullptr);

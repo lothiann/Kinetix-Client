@@ -228,30 +228,43 @@ void CBotNet::LoadMapGrid()
         m_MapGridLoaded = false;
 
         if(Client()->State() != IClient::STATE_ONLINE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
+        {
+                dbg_msg("botnet_pf", "LoadMapGrid: client not online (state=%d)", Client()->State());
                 return;
+        }
 
         CGameClient *pGame = GameClient();
 
         CCollision *pCol = pGame->Collision();
         if(!pCol)
+        {
+                dbg_msg("botnet_pf", "LoadMapGrid: no collision");
                 return;
+        }
 
         CLayers *pLayers = pGame->Layers();
         if(!pLayers)
+        {
+                dbg_msg("botnet_pf", "LoadMapGrid: no layers");
                 return;
+        }
 
         const CMapItemLayerTilemap *pGameLayer = pLayers->GameLayer();
         if(!pGameLayer)
+        {
+                dbg_msg("botnet_pf", "LoadMapGrid: no game layer");
                 return;
+        }
 
         int Width = pGameLayer->m_Width;
         int Height = pGameLayer->m_Height;
         if(Width <= 0 || Height <= 0 || Width > PF_MAX_MAP_SIZE || Height > PF_MAX_MAP_SIZE)
+        {
+                dbg_msg("botnet_pf", "LoadMapGrid: bad dimensions %dx%d", Width, Height);
                 return;
+        }
 
         IMap *pMap = pGame->Map();
-        if(!pMap)
-                return;
 
         if(m_pMapGrid)
                 delete[] m_pMapGrid;
@@ -277,7 +290,10 @@ void CBotNet::LoadMapGrid()
         mem_zero(m_pMapGrid, Size);
         mem_zero(m_pFrontGrid, Size);
 
-        CTile *pTiles = (CTile *)pMap->GetData(pGameLayer->m_Data);
+        // Try to load raw tile data from the map; fall back to collision-based
+        // detection (degraded: only SOLID/DEATH/NOHOOK, no FREEZE/FINISH) if the
+        // map data isn't available yet (e.g. during solo modifier load timing).
+        CTile *pTiles = pMap ? (CTile *)pMap->GetData(pGameLayer->m_Data) : nullptr;
         if(pTiles)
         {
                 for(int i = 0; i < Size; i++)
@@ -285,6 +301,7 @@ void CBotNet::LoadMapGrid()
         }
         else
         {
+                dbg_msg("botnet_pf", "LoadMapGrid: map data unavailable, using collision fallback (no freeze/finish tiles)");
                 for(int y = 0; y < Height; y++)
                 {
                         for(int x = 0; x < Width; x++)
@@ -301,15 +318,18 @@ void CBotNet::LoadMapGrid()
                 }
         }
 
-        const CMapItemLayerTilemap *pFrontLayer = pLayers->FrontLayer();
-        if(pFrontLayer)
+        if(pMap)
         {
-                CTile *pFrontTiles = (CTile *)pMap->GetData(pFrontLayer->m_Front);
-                if(pFrontTiles)
+                const CMapItemLayerTilemap *pFrontLayer = pLayers->FrontLayer();
+                if(pFrontLayer)
                 {
-                        int frontSize = pf_min(Width * Height, pFrontLayer->m_Width * pFrontLayer->m_Height);
-                        for(int i = 0; i < frontSize; i++)
-                                m_pFrontGrid[i] = pFrontTiles[i].m_Index;
+                        CTile *pFrontTiles = (CTile *)pMap->GetData(pFrontLayer->m_Front);
+                        if(pFrontTiles)
+                        {
+                                int frontSize = pf_min(Width * Height, pFrontLayer->m_Width * pFrontLayer->m_Height);
+                                for(int i = 0; i < frontSize; i++)
+                                        m_pFrontGrid[i] = pFrontTiles[i].m_Index;
+                        }
                 }
         }
 

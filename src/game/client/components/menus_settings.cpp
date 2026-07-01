@@ -127,7 +127,7 @@ void CMenus::RenderSettingsGeneral(CUIRect MainView)
                 Left.HSplitTop(20.0f, &Button, &Left);
                 str_copy(aBuf, " ");
                 str_append(aBuf, Localize("Hz", "Hertz"));
-                Ui()->DoScrollbarOption(&g_Config.m_ClRefreshRate, &g_Config.m_ClRefreshRate, &Button, Localize("Update Rate"), 10, 1000, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_NOCLAMPVALUE | CUi::SCROLLBAR_OPTION_DELAYUPDATE, aBuf);
+                Ui()->DoScrollbarOption(&g_Config.m_ClRefreshRate, &g_Config.m_ClRefreshRate, &Button, Localize("Update Rate"), 10, 1000, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_NOCLAMPVALUE | CUi::SCROLLBAR_OPTION_DELAYUPDATE, aBuf);
                 Left.HSplitTop(5.0f, nullptr, &Left);
                 Left.HSplitTop(20.0f, &Button, &Left);
                 static int s_LowerRefreshRate;
@@ -191,7 +191,7 @@ void CMenus::RenderSettingsGeneral(CUIRect MainView)
 
                         Right.HSplitTop(2 * 20.0f, &Button, &Right);
                         if(g_Config.m_ClAutoDemoRecord)
-                                Ui()->DoScrollbarOption(&g_Config.m_ClAutoDemoMax, &g_Config.m_ClAutoDemoMax, &Button, Localize("Max demos"), 1, 1000, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_MULTILINE);
+                                Ui()->DoScrollbarOption(&g_Config.m_ClAutoDemoMax, &g_Config.m_ClAutoDemoMax, &Button, Localize("Max demos"), 1, 1000, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_MULTILINE);
 
                         Right.HSplitTop(10.0f, nullptr, &Right);
                         Right.HSplitTop(20.0f, &Button, &Right);
@@ -200,7 +200,7 @@ void CMenus::RenderSettingsGeneral(CUIRect MainView)
 
                         Right.HSplitTop(2 * 20.0f, &Button, &Right);
                         if(g_Config.m_ClAutoScreenshot)
-                                Ui()->DoScrollbarOption(&g_Config.m_ClAutoScreenshotMax, &g_Config.m_ClAutoScreenshotMax, &Button, Localize("Max Screenshots"), 1, 1000, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_MULTILINE);
+                                Ui()->DoScrollbarOption(&g_Config.m_ClAutoScreenshotMax, &g_Config.m_ClAutoScreenshotMax, &Button, Localize("Max Screenshots"), 1, 1000, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_MULTILINE);
                 }
 
                 // auto statboard screenshot
@@ -214,7 +214,7 @@ void CMenus::RenderSettingsGeneral(CUIRect MainView)
 
                         Right.HSplitTop(2 * 20.0f, &Button, &Right);
                         if(g_Config.m_ClAutoStatboardScreenshot)
-                                Ui()->DoScrollbarOption(&g_Config.m_ClAutoStatboardScreenshotMax, &g_Config.m_ClAutoStatboardScreenshotMax, &Button, Localize("Max Screenshots"), 1, 1000, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_MULTILINE);
+                                Ui()->DoScrollbarOption(&g_Config.m_ClAutoStatboardScreenshotMax, &g_Config.m_ClAutoStatboardScreenshotMax, &Button, Localize("Max Screenshots"), 1, 1000, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_MULTILINE);
                 }
 
                 // auto statboard csv
@@ -228,7 +228,7 @@ void CMenus::RenderSettingsGeneral(CUIRect MainView)
 
                         Right.HSplitTop(2 * 20.0f, &Button, &Right);
                         if(g_Config.m_ClAutoCSV)
-                                Ui()->DoScrollbarOption(&g_Config.m_ClAutoCSVMax, &g_Config.m_ClAutoCSVMax, &Button, Localize("Max CSVs"), 1, 1000, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_MULTILINE);
+                                Ui()->DoScrollbarOption(&g_Config.m_ClAutoCSVMax, &g_Config.m_ClAutoCSVMax, &Button, Localize("Max CSVs"), 1, 1000, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_MULTILINE);
                 }
         }
 }
@@ -1052,7 +1052,7 @@ void CMenus::RenderSettingsGraphics(CUIRect MainView)
         MainView.HSplitTop(20.0f, &Button, &MainView);
         str_copy(aBuf, " ");
         str_append(aBuf, Localize("Hz", "Hertz"));
-        Ui()->DoScrollbarOption(&g_Config.m_GfxRefreshRate, &g_Config.m_GfxRefreshRate, &Button, Localize("Refresh Rate"), 10, 1000, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_NOCLAMPVALUE | CUi::SCROLLBAR_OPTION_DELAYUPDATE, aBuf);
+        Ui()->DoScrollbarOption(&g_Config.m_GfxRefreshRate, &g_Config.m_GfxRefreshRate, &Button, Localize("Refresh Rate"), 10, 1000, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_NOCLAMPVALUE | CUi::SCROLLBAR_OPTION_DELAYUPDATE, aBuf);
 
         MainView.HSplitTop(2.0f, nullptr, &MainView);
         static CButtonContainer s_UiColorResetId;
@@ -3905,22 +3905,22 @@ void CMenus::RenderSettingsFunctions(CUIRect MainView)
                                 // Node Budget slider (A* max nodes to expand)
                                 Panel.HSplitTop(LineSize, &Row, &Panel);
                                 Panel.HSplitTop(RowGap, nullptr, &Panel);
-                                Ui()->DoScrollbarOption(&BN.m_KinoCandidates, &BN.m_KinoCandidates, &Row, Localize("Node Budget"), 100, 2000, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
+                                Ui()->DoScrollbarOption(&BN.m_KinoCandidates, &BN.m_KinoCandidates, &Row, Localize("Node Budget"), 100, 2000, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
 
                                 // Max Depth slider (max primitives in a plan)
                                 Panel.HSplitTop(LineSize, &Row, &Panel);
                                 Panel.HSplitTop(RowGap, nullptr, &Panel);
-                                Ui()->DoScrollbarOption(&BN.m_KinoTicks, &BN.m_KinoTicks, &Row, Localize("Max Depth"), 3, 20, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
+                                Ui()->DoScrollbarOption(&BN.m_KinoTicks, &BN.m_KinoTicks, &Row, Localize("Max Depth"), 3, 20, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
 
                                 // Hook Angles slider
                                 Panel.HSplitTop(LineSize, &Row, &Panel);
                                 Panel.HSplitTop(RowGap, nullptr, &Panel);
-                                Ui()->DoScrollbarOption(&BN.m_KinoHookAngles, &BN.m_KinoHookAngles, &Row, Localize("Hook Angles"), 4, 32, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
+                                Ui()->DoScrollbarOption(&BN.m_KinoHookAngles, &BN.m_KinoHookAngles, &Row, Localize("Hook Angles"), 4, 32, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
 
                                 // Cache Ticks slider
                                 Panel.HSplitTop(LineSize, &Row, &Panel);
                                 Panel.HSplitTop(RowGap, nullptr, &Panel);
-                                Ui()->DoScrollbarOption(&BN.m_KinoCacheTicks, &BN.m_KinoCacheTicks, &Row, Localize("Cache Ticks"), 1, 128, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
+                                Ui()->DoScrollbarOption(&BN.m_KinoCacheTicks, &BN.m_KinoCacheTicks, &Row, Localize("Cache Ticks"), 1, 128, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
 
                                 // Show Path + Show Field
                                 Panel.HSplitTop(LineSize, &Row, &Panel);
@@ -5420,35 +5420,35 @@ void CMenus::RenderSettingsPathfinder(CUIRect MainView)
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
                 Ui()->DoScrollbarOption(&g_Config.m_ClPfChunkSize, &g_Config.m_ClPfChunkSize, &Row,
                         Localize("Chunk Size"), 5, PF_TAB_MAX_CHUNK_TICKS, &CUi::ms_LinearScrollbarScale,
-                        CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
+                        CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
 
                 // --- Hook angles slider ---
                 Panel.HSplitTop(LineSize, &Row, &Panel);
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
                 Ui()->DoScrollbarOption(&g_Config.m_ClPfHookAngles, &g_Config.m_ClPfHookAngles, &Row,
                         Localize("Hook Angles"), 4, 32, &CUi::ms_LinearScrollbarScale,
-                        CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
+                        CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
 
                 // --- Max chunks slider ---
                 Panel.HSplitTop(LineSize, &Row, &Panel);
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
                 Ui()->DoScrollbarOption(&g_Config.m_ClPfMaxChunks, &g_Config.m_ClPfMaxChunks, &Row,
                         Localize("Max Chunks"), 10, 2000, &CUi::ms_LinearScrollbarScale,
-                        CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
+                        CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
 
                 // --- Performance slider ---
                 Panel.HSplitTop(LineSize, &Row, &Panel);
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
                 Ui()->DoScrollbarOption(&g_Config.m_ClPfPerf, &g_Config.m_ClPfPerf, &Row,
                         Localize("Performance"), 1, 100, &CUi::ms_LinearScrollbarScale,
-                        CUi::SCROLLBAR_OPTION_INFINITE | CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
+                        CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
         }
 
         MainView.HSplitTop(PanelGap, nullptr, &MainView);
 
         // === Container 2: Score Method ===
         {
-                const int numRows = 2; // dist+time row, flow row
+                const int numRows = 1; // dist | flow side by side
                 const float SectionH = PanelPad + 25.0f + 5.0f + numRows * LineSize + (numRows - 1) * RowGap + PanelPad;
                 MainView.HSplitTop(SectionH, &PanelBg, &MainView);
                 PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
@@ -5461,12 +5461,10 @@ void CMenus::RenderSettingsPathfinder(CUIRect MainView)
 
                 Panel.HSplitTop(LineSize, &Row, &Panel);
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
-                if(DoButton_CheckBox(&g_Config.m_ClPfScoreDist, Localize("Distance reduction"), g_Config.m_ClPfScoreDist, &Row))
+                Row.VSplitMid(&Left, &Right, ColGap);
+                if(DoButton_CheckBox(&g_Config.m_ClPfScoreDist, Localize("Distance reduction"), g_Config.m_ClPfScoreDist, &Left))
                         g_Config.m_ClPfScoreDist ^= 1;
-
-                Panel.HSplitTop(LineSize, &Row, &Panel);
-                Panel.HSplitTop(RowGap, nullptr, &Panel);
-                if(DoButton_CheckBox(&g_Config.m_ClPfScoreFlow, Localize("Flow-field alignment"), g_Config.m_ClPfScoreFlow, &Row))
+                if(DoButton_CheckBox(&g_Config.m_ClPfScoreFlow, Localize("Flow-field alignment"), g_Config.m_ClPfScoreFlow, &Right))
                         g_Config.m_ClPfScoreFlow ^= 1;
         }
 

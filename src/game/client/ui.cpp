@@ -1503,25 +1503,15 @@ float CUi::DoScrollbarH(const void *pId, const CUIRect *pRect, float Current, co
 
 bool CUi::DoScrollbarOption(const void *pId, int *pOption, const CUIRect *pRect, const char *pStr, int Min, int Max, const IScrollbarScale *pScale, unsigned Flags, const char *pSuffix)
 {
-	const bool Infinite = Flags & CUi::SCROLLBAR_OPTION_INFINITE;
 	const bool NoClampValue = Flags & CUi::SCROLLBAR_OPTION_NOCLAMPVALUE;
 	const bool MultiLine = Flags & CUi::SCROLLBAR_OPTION_MULTILINE;
 	const bool DelayUpdate = Flags & CUi::SCROLLBAR_OPTION_DELAYUPDATE;
 
 	int PrevValue = (DelayUpdate && m_pLastActiveScrollbar == pId && CheckActiveItem(pId)) ? m_ScrollbarValue : *pOption;
 	int Value = PrevValue;
-	if(Infinite)
-	{
-		Max += 1;
-		if(Value == 0)
-			Value = Max;
-	}
 
 	char aBuf[256];
-	if(!Infinite || Value != Max)
-		str_format(aBuf, sizeof(aBuf), "%s: %i%s", pStr, Value, pSuffix);
-	else
-		str_format(aBuf, sizeof(aBuf), "%s: ∞", pStr);
+	str_format(aBuf, sizeof(aBuf), "%s: %i%s", pStr, Value, pSuffix);
 
 	if(NoClampValue)
 	{
@@ -1542,11 +1532,6 @@ bool CUi::DoScrollbarOption(const void *pId, int *pOption, const CUIRect *pRect,
 	if(NoClampValue && ((Value == Min && PrevValue < Min) || (Value == Max && PrevValue > Max)))
 	{
 		Value = PrevValue; // use previous out of range value instead if the scrollbar is at the edge
-	}
-	else if(Infinite)
-	{
-		if(Value == Max)
-			Value = 0;
 	}
 
 	if(DelayUpdate && m_pLastActiveScrollbar == pId && CheckActiveItem(pId))
