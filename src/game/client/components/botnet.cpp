@@ -3421,6 +3421,7 @@ static CCharacter *PfSpawnSimBot(CGameWorld *pWorld, int PredictedCharId, const 
         Core.m_HookDir = hookDir;
         Core.m_HookTick = hookTick;
         Core.m_Jumped = jumped;
+        Core.m_FreezeStart = 0; // reset anti-flicker so Freeze() always works in sim
         pBot->SetCore(Core);
         pBot->m_Pos = pos;
         pBot->m_FreezeTime = freezeTime;
