@@ -29,6 +29,7 @@
 #include <queue>
 #include <sstream>
 #include <unordered_map>
+#include <utility> // std::move
 
 // --- Local helpers (DDNet max/min/clamp may not be in scope) ---
 static inline int pf_max(int a, int b) { return a > b ? a : b; }
