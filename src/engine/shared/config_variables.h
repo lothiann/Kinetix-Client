@@ -289,6 +289,8 @@ MACRO_CONFIG_INT(ClPfHookAngles, cl_pf_hook_angles, 9, 4, 32, CFGFLAG_CLIENT | C
 MACRO_CONFIG_INT(ClPfHorizon, cl_pf_horizon, 6, 1, 50, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: ticks to apply per chunk before re-planning (1-chunk_size)")
 MACRO_CONFIG_INT(ClPfMaxChunks, cl_pf_max_chunks, 200, 10, 2000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: max chunks before giving up (safety cap)")
 MACRO_CONFIG_INT(ClPfBacktrackCandidates, cl_pf_backtrack_candidates, 100, 100, 1400, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: top-N candidates kept per chunk for backtracking (100-1400)")
+MACRO_CONFIG_INT(ClPfAStarWeight, cl_pf_astar_weight, 3, 1, 20, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: A* heuristic weight (1=optimal, higher=faster but suboptimal)")
+MACRO_CONFIG_INT(ClPfAStarNodeBudget, cl_pf_astar_node_budget, 100000, 1000, 1000000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: A* max nodes before giving up (1000-1000000)")
 MACRO_CONFIG_INT(ClPfPerf, cl_pf_perf, 100, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: performance budget per tick in % (1-100; lower = slower but smoother, spreads chunk generation across many ticks)")
 // Score method — combine any of these (checkboxes; final score = weighted sum of enabled)
 MACRO_CONFIG_INT(ClPfScoreDist, cl_pf_score_dist, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Score: distance reduction (how much closer the chunk moved us to goal)")

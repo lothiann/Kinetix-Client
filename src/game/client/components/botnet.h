@@ -8,9 +8,12 @@
 #include <engine/shared/config.h>
 
 #include <game/client/component.h>
+#include <game/gamecore.h>
 #include <generated/protocol.h>
 
+#include <cstdint>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 // Pathfinder constants
@@ -335,6 +338,29 @@ public:
         PfBacktrackEntry m_PfBacktrack[PF_BACKTRACK_DEPTH];
         int m_PfBacktrackIdx;           // stack index (next write position, capped at PF_BACKTRACK_DEPTH)
 
+        // ── State-Lattice A* (v1.56) ──
+        struct AStarNode
+        {
+                CCharacterCore Core;
+                vec2 Pos;
+                int FreezeTime;
+                bool Grounded;
+                float G, H, F;
+                int ParentIdx;   // -1 = root
+                int PrimIdx;     // -1 = root, 0..15 = primitives, 99 = FREEZE_SKIP
+                int PrimTicks;
+                int TickOffset;
+        };
+        std::vector<AStarNode> m_PfANodes;
+        std::vector<int> m_PfAOpen;
+        std::unordered_map<uint64_t, float> m_PfABestG;
+        int m_PfAGoalIdx;
+        bool m_PfAStarted;
+        bool m_PfAPathReady;
+        int m_PfAExpandCount;
+        std::vector<CNetObj_PlayerInput> m_PfFullInputs;
+        size_t m_PfFullInputsIdx;
+
         // Per-dummy runtime state
         CBotNetDummy m_aDummies[MAX_DUMMIES];
 
@@ -401,6 +427,14 @@ public:
         bool PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::vector<vec2> &outTraj,
                              bool &outReachedFinish, bool &outDied, int &outFreezeTicks);
         bool PfBacktrack();              // try alternative candidates from backtrack buffer
+
+        // --- State-Lattice A* (v1.56) ---
+        bool PfAStarInit();
+        int PfAStarStep();               // 0=cont, 1=goal, -1=failed
+        void PfAStarReconstruct();
+        void PfAStarUpdatePreview();
+        void PfAStarResimulatePath(int targetIdx);  // re-simulate path root→target, fill m_PfVPath
+        float PfAStarHeuristic(const vec2 &pos, const vec2 &endPos);
 
         // --- Console commands ---
         static void ConRandomAim(IConsole::IResult *pResult, void *pUserData);
