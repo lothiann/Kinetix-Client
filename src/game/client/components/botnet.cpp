@@ -4571,36 +4571,20 @@ void CBotNet::RenderPathfinderPath()
         }
 
         // === Main path render (with optional speed gradient) ===
-        // Speed gradient: linear RGB interpolation across 5 control points
-        // mapped to the speed range [0, 128] px/tick:
-        //   0   px/tick → #FF0000 (red)
-        //   32  px/tick → #FFFF00 (yellow)
-        //   64  px/tick → #00FF00 (green)
-        //   96  px/tick → #00FFFF (cyan)
-        //   128 px/tick → #0000FF (blue)
+        // Speed gradient: full rainbow via HSL hue sweep.
+        // Speed range [0, 128] px/tick mapped to hue [0°, 300°]:
+        //   0   px/tick → red    (hue 0)
+        //   ~21 px/tick → yellow (hue 60)
+        //   ~43 px/tick → green  (hue 120)
+        //   ~64 px/tick → cyan   (hue 180)
+        //   ~85 px/tick → blue   (hue 240)
+        //   128 px/tick → purple (hue 300)
+        // S=1, L=0.5 → pure rainbow colors, smooth interpolation across the whole range.
         auto fnSpeedColor = [](float speed) -> ColorRGBA {
                 const float MAX_SPEED = 128.0f;
                 float t = pf_clamp(speed / MAX_SPEED, 0.0f, 1.0f);
-                // 5 control points in RGB.
-                const ColorRGBA aStops[5] = {
-                        ColorRGBA(1.0f, 0.0f, 0.0f, 1.0f), // 0.00 red
-                        ColorRGBA(1.0f, 1.0f, 0.0f, 1.0f), // 0.25 yellow
-                        ColorRGBA(0.0f, 1.0f, 0.0f, 1.0f), // 0.50 green
-                        ColorRGBA(0.0f, 1.0f, 1.0f, 1.0f), // 0.75 cyan
-                        ColorRGBA(0.0f, 0.0f, 1.0f, 1.0f), // 1.00 blue
-                };
-                float f = t * 4.0f; // 0..4
-                int idx = (int)f;
-                if(idx < 0) idx = 0;
-                if(idx > 3) idx = 3;
-                float frac = f - (float)idx;
-                const ColorRGBA &c0 = aStops[idx];
-                const ColorRGBA &c1 = aStops[idx + 1];
-                return ColorRGBA(
-                        c0.r + (c1.r - c0.r) * frac,
-                        c0.g + (c1.g - c0.g) * frac,
-                        c0.b + (c1.b - c0.b) * frac,
-                        1.0f);
+                float hue = t * 300.0f; // 0..300 degrees
+                return color_cast<ColorRGBA>(ColorHSLA(hue / 360.0f, 1.0f, 0.5f, true));
         };
 
         if(LineSize > 0)
