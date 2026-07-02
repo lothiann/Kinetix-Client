@@ -3506,6 +3506,8 @@ static void PfSimulateChunk(CGameWorld *pWorld, int PredictedCharId, CCharacter 
         out.freezeTicks = 0;
         out.endFreezeTime = 0;
 
+        int prevHookState = pBot->GetCore().m_HookState; // state at start of chunk (before tick 0)
+
         for(size_t t = 0; t < inputs.size(); t++)
         {
                 int Tick = StartTick + (int)t + 1;
@@ -3520,15 +3522,15 @@ static void PfSimulateChunk(CGameWorld *pWorld, int PredictedCharId, CCharacter 
                 }
                 out.traj.push_back(pBot->m_Pos);
 
-                // Record hook segment for this tick if hook is active (FLYING or GRABBED,
-                // per DDNet HOOK_* enum in gamecore.h). Captures ALL hook activity inside
-                // the chunk, not just the final state — fixes show-hooks for Advanced search
-                // where hook fires on different ticks.
+                // Record hook segment ONLY at the moment of grab — i.e. when hook state
+                // transitions INTO HOOK_GRABBED (prev tick was not GRABBED, this tick is).
+                // This gives exactly ONE segment per hook attach, not one per hold tick.
                 const CCharacterCore &core = pBot->GetCore();
-                if(core.m_HookState == HOOK_FLYING || core.m_HookState == HOOK_GRABBED)
+                if(core.m_HookState == HOOK_GRABBED && prevHookState != HOOK_GRABBED)
                 {
                         out.hookSegs.push_back({pBot->m_Pos, core.m_HookPos});
                 }
+                prevHookState = core.m_HookState;
 
                 if(pBot->m_FreezeTime > 0)
                         out.freezeTicks++;
