@@ -3824,126 +3824,228 @@ int CBotNet::PfAStarStep()
                 return 0;
         }
 
-        // Expand 16 primitives
-        float aHookX[8], aHookY[8];
-        for(int i = 0; i < 8; i++)
+        // === Parameter sweep (same as v1.55 PfGenerateChunk) ===
+        // direction × jumpTick × hook × hookAngle
+        int ChunkSize = pf_clamp(g_Config.m_ClPfChunkSize, 5, PF_TAB_MAX_CHUNK_TICKS);
+        int HookAngles = pf_clamp(g_Config.m_ClPfHookAngles, 4, 32);
+        static const int aDirs[] = {-1, 0, 1};
+
+        // Precompute hook raycast (same as v1.55)
+        struct HookRayResult { float angle; bool hasTarget; };
+        HookRayResult aHookRays[32];
+        if(cur.Core.m_HookState == HOOK_IDLE)
         {
-                float a = -pi + i * (pi / 4.0f);
-                aHookX[i] = cosf(a);
-                aHookY[i] = sinf(a);
+                for(int i = 0; i < HookAngles; i++)
+                {
+                        float t = (float)i / (float)(HookAngles - 1 < 1 ? 1 : HookAngles - 1);
+                        float angle = (-5.0f / 6.0f) * pi + t * (10.0f / 6.0f) * pi;
+                        aHookRays[i].angle = angle;
+                        vec2 endPos = cur.Pos + vec2(cosf(angle), sinf(angle)) * hookLength;
+                        vec2 hitPos;
+                        int hit = pColl->IntersectLineTeleHook(cur.Pos, endPos, &hitPos, nullptr);
+                        if(hit == TILE_SOLID || hit == TILE_TELEINHOOK || (hit > 0 && hit != TILE_NOHOOK && hit != TILE_DEATH))
+                                aHookRays[i].hasTarget = true;
+                        else
+                                aHookRays[i].hasTarget = false;
+                }
         }
 
-        for(int primI = 0; primI < 16; primI++)
+        bool hookIdle = (cur.Core.m_HookState == HOOK_IDLE);
+        bool hookActive = (cur.Core.m_HookState == HOOK_FLYING || cur.Core.m_HookState == HOOK_GRABBED);
+
+        for(int dirIdx = 0; dirIdx < 3; dirIdx++)
         {
-                int pTicks = 0, pDir = 0, pJumpTick = -1;
-                bool pHookFire = false, pHookHold = false, pHookRelease = false;
-                bool pRequiresGround = false;
-                int pHookAngleIdx = 0;
-
-                switch(primI)
+                int dir = aDirs[dirIdx];
+                for(int jumpTick = -1; jumpTick < ChunkSize; jumpTick++)
                 {
-                        case 0: pTicks = 5; pDir = -1; break;
-                        case 1: pTicks = 5; pDir = +1; break;
-                        case 2: pTicks = 8; pDir = -1; pJumpTick = 0; pRequiresGround = true; break;
-                        case 3: pTicks = 8; pDir = +1; pJumpTick = 0; pRequiresGround = true; break;
-                        case 4: pTicks = 8; pDir = 0; pJumpTick = 0; pRequiresGround = true; break;
-                        case 5: case 6: case 7: case 8:
-                        case 9: case 10: case 11: case 12:
-                                pTicks = 10; pHookFire = true; pHookAngleIdx = primI - 5; break;
-                        case 13: pTicks = 5; pHookHold = true; break;
-                        case 14: pTicks = 3; pHookRelease = true; break;
-                        case 15: pTicks = 3; break;
-                        default: continue;
-                }
-
-                if(pRequiresGround && !cur.Grounded)
-                        continue;
-                if(pHookFire && cur.Core.m_HookState != HOOK_IDLE)
-                        continue;
-                if(pHookFire)
-                {
-                        vec2 dir(aHookX[pHookAngleIdx], aHookY[pHookAngleIdx]);
-                        vec2 endRay = cur.Pos + dir * hookLength;
-                        vec2 hitPos;
-                        int hit = pColl->IntersectLineTeleHook(cur.Pos, endRay, &hitPos, nullptr);
-                        if(hit == 0 || hit == TILE_NOHOOK)
-                                continue;
-                }
-                if(pHookHold && cur.Core.m_HookState != HOOK_GRABBED)
-                        continue;
-                if(pHookRelease && cur.Core.m_HookState != HOOK_GRABBED && cur.Core.m_HookState != HOOK_FLYING)
-                        continue;
-
-                std::vector<CNetObj_PlayerInput> inSeq;
-                inSeq.reserve(pTicks);
-                for(int t = 0; t < pTicks; t++)
-                {
-                        CNetObj_PlayerInput inp;
-                        mem_zero(&inp, sizeof(inp));
-                        inp.m_Direction = pDir;
-                        inp.m_Jump = (t == pJumpTick) ? 1 : 0;
-                        inp.m_Hook = (pHookFire || pHookHold) ? 1 : 0;
-                        if(pHookFire)
+                        for(int hookOn = 0; hookOn <= 1; hookOn++)
                         {
-                                inp.m_TargetX = (int)(aHookX[pHookAngleIdx] * 256.0f);
-                                inp.m_TargetY = (int)(aHookY[pHookAngleIdx] * 256.0f);
+                                if(hookOn == 1 && !hookIdle && !hookActive)
+                                        continue;
+
+                                if(hookOn == 1 && hookIdle)
+                                {
+                                        // Fire new hook: sweep over hook angles (with raycast filter)
+                                        for(int angleIdx = 0; angleIdx < HookAngles; angleIdx++)
+                                        {
+                                                if(!aHookRays[angleIdx].hasTarget)
+                                                        continue;
+                                                float hookAngle = aHookRays[angleIdx].angle;
+
+                                                // Build inputs (same as v1.55)
+                                                std::vector<CNetObj_PlayerInput> inSeq;
+                                                inSeq.reserve(ChunkSize);
+                                                vec2 aimRel = vec2(cosf(hookAngle), sinf(hookAngle)) * 256.0f;
+                                                for(int t = 0; t < ChunkSize; t++)
+                                                {
+                                                        CNetObj_PlayerInput inp;
+                                                        mem_zero(&inp, sizeof(inp));
+                                                        inp.m_Direction = dir;
+                                                        inp.m_Jump = (t == jumpTick) ? 1 : 0;
+                                                        inp.m_Hook = 1;
+                                                        inp.m_TargetX = (int)aimRel.x;
+                                                        inp.m_TargetY = (int)aimRel.y;
+                                                        inSeq.push_back(inp);
+                                                }
+
+                                                // Re-spawn bot
+                                                if(!FutureWorld.GetCharacterById(LocalID))
+                                                        PfAStarSetupWorld(&FutureWorld, pGame, LocalID);
+                                                FutureWorld.m_GameTick = RootStartTick + cur.TickOffset;
+                                                pBot = PfSpawnSimBot(&FutureWorld, LocalID, cur.Pos, cur.Core.m_Vel,
+                                                     cur.Core.m_HookState, cur.Core.m_HookPos,
+                                                     cur.Core.m_HookDir, cur.Core.m_HookTick,
+                                                     cur.FreezeTime, cur.Core.m_Jumped);
+                                                if(!pBot)
+                                                        continue;
+
+                                                PfChunkResult res;
+                                                PfSimulateChunk(&FutureWorld, LocalID, pBot, inSeq, RootStartTick + cur.TickOffset, res);
+                                                if(res.died && !res.reachedFinish)
+                                                        continue;
+
+                                                CCharacterCore endCore = cur.Core;
+                                                endCore.m_Pos = res.endPos; endCore.m_Vel = res.endVel;
+                                                endCore.m_HookState = res.endHookState; endCore.m_HookPos = res.endHookPos;
+                                                endCore.m_HookDir = res.endHookDir; endCore.m_HookTick = res.endHookTick;
+                                                endCore.m_Jumped = res.endJumped;
+                                                bool endGrounded = pColl->IsOnGround(res.endPos, CCharacterCore::PhysicalSize());
+
+                                                uint64_t newKey = PfAStarKey(endCore, res.endFreezeTime, endGrounded);
+                                                float newG = cur.G + (float)ChunkSize;
+                                                auto it = m_PfABestG.find(newKey);
+                                                if(it != m_PfABestG.end() && it->second <= newG)
+                                                        continue;
+                                                m_PfABestG[newKey] = newG;
+
+                                                AStarNode child;
+                                                child.Core = endCore; child.Pos = res.endPos;
+                                                child.FreezeTime = res.endFreezeTime; child.Grounded = endGrounded;
+                                                child.G = newG; child.H = PfAStarHeuristic(child.Pos, endPos);
+                                                child.F = child.G + (float)W * child.H;
+                                                child.ParentIdx = curIdx; child.PrimIdx = 0; child.PrimTicks = ChunkSize;
+                                                child.TickOffset = cur.TickOffset + ChunkSize;
+                                                child.Traj = res.traj; child.Inputs = inSeq;
+                                                m_PfANodes.push_back(child);
+                                                PfAStarHeapPush(m_PfAOpen, m_PfANodes, (int)m_PfANodes.size() - 1);
+                                        }
+                                }
+                                else if(hookOn == 1 && hookActive)
+                                {
+                                        // Hold existing hook (no angle sweep needed)
+                                        std::vector<CNetObj_PlayerInput> inSeq;
+                                        inSeq.reserve(ChunkSize);
+                                        for(int t = 0; t < ChunkSize; t++)
+                                        {
+                                                CNetObj_PlayerInput inp;
+                                                mem_zero(&inp, sizeof(inp));
+                                                inp.m_Direction = dir;
+                                                inp.m_Jump = (t == jumpTick) ? 1 : 0;
+                                                inp.m_Hook = 1;
+                                                vec2 aimRel = cur.Core.m_HookPos - cur.Pos;
+                                                inp.m_TargetX = (int)aimRel.x;
+                                                inp.m_TargetY = (int)aimRel.y;
+                                                inSeq.push_back(inp);
+                                        }
+
+                                        if(!FutureWorld.GetCharacterById(LocalID))
+                                                PfAStarSetupWorld(&FutureWorld, pGame, LocalID);
+                                        FutureWorld.m_GameTick = RootStartTick + cur.TickOffset;
+                                        pBot = PfSpawnSimBot(&FutureWorld, LocalID, cur.Pos, cur.Core.m_Vel,
+                                             cur.Core.m_HookState, cur.Core.m_HookPos,
+                                             cur.Core.m_HookDir, cur.Core.m_HookTick,
+                                             cur.FreezeTime, cur.Core.m_Jumped);
+                                        if(!pBot)
+                                                continue;
+
+                                        PfChunkResult res;
+                                        PfSimulateChunk(&FutureWorld, LocalID, pBot, inSeq, RootStartTick + cur.TickOffset, res);
+                                        if(res.died && !res.reachedFinish)
+                                                continue;
+
+                                        CCharacterCore endCore = cur.Core;
+                                        endCore.m_Pos = res.endPos; endCore.m_Vel = res.endVel;
+                                        endCore.m_HookState = res.endHookState; endCore.m_HookPos = res.endHookPos;
+                                        endCore.m_HookDir = res.endHookDir; endCore.m_HookTick = res.endHookTick;
+                                        endCore.m_Jumped = res.endJumped;
+                                        bool endGrounded = pColl->IsOnGround(res.endPos, CCharacterCore::PhysicalSize());
+
+                                        uint64_t newKey = PfAStarKey(endCore, res.endFreezeTime, endGrounded);
+                                        float newG = cur.G + (float)ChunkSize;
+                                        auto it = m_PfABestG.find(newKey);
+                                        if(it != m_PfABestG.end() && it->second <= newG)
+                                                continue;
+                                        m_PfABestG[newKey] = newG;
+
+                                        AStarNode child;
+                                        child.Core = endCore; child.Pos = res.endPos;
+                                        child.FreezeTime = res.endFreezeTime; child.Grounded = endGrounded;
+                                        child.G = newG; child.H = PfAStarHeuristic(child.Pos, endPos);
+                                        child.F = child.G + (float)W * child.H;
+                                        child.ParentIdx = curIdx; child.PrimIdx = 0; child.PrimTicks = ChunkSize;
+                                        child.TickOffset = cur.TickOffset + ChunkSize;
+                                        child.Traj = res.traj; child.Inputs = inSeq;
+                                        m_PfANodes.push_back(child);
+                                        PfAStarHeapPush(m_PfAOpen, m_PfANodes, (int)m_PfANodes.size() - 1);
+                                }
+                                else // hookOn == 0: no hook
+                                {
+                                        std::vector<CNetObj_PlayerInput> inSeq;
+                                        inSeq.reserve(ChunkSize);
+                                        for(int t = 0; t < ChunkSize; t++)
+                                        {
+                                                CNetObj_PlayerInput inp;
+                                                mem_zero(&inp, sizeof(inp));
+                                                inp.m_Direction = dir;
+                                                inp.m_Jump = (t == jumpTick) ? 1 : 0;
+                                                inp.m_Hook = 0;
+                                                inp.m_TargetX = dir * 256;
+                                                inp.m_TargetY = -256;
+                                                inSeq.push_back(inp);
+                                        }
+
+                                        if(!FutureWorld.GetCharacterById(LocalID))
+                                                PfAStarSetupWorld(&FutureWorld, pGame, LocalID);
+                                        FutureWorld.m_GameTick = RootStartTick + cur.TickOffset;
+                                        pBot = PfSpawnSimBot(&FutureWorld, LocalID, cur.Pos, cur.Core.m_Vel,
+                                             cur.Core.m_HookState, cur.Core.m_HookPos,
+                                             cur.Core.m_HookDir, cur.Core.m_HookTick,
+                                             cur.FreezeTime, cur.Core.m_Jumped);
+                                        if(!pBot)
+                                                continue;
+
+                                        PfChunkResult res;
+                                        PfSimulateChunk(&FutureWorld, LocalID, pBot, inSeq, RootStartTick + cur.TickOffset, res);
+                                        if(res.died && !res.reachedFinish)
+                                                continue;
+
+                                        CCharacterCore endCore = cur.Core;
+                                        endCore.m_Pos = res.endPos; endCore.m_Vel = res.endVel;
+                                        endCore.m_HookState = res.endHookState; endCore.m_HookPos = res.endHookPos;
+                                        endCore.m_HookDir = res.endHookDir; endCore.m_HookTick = res.endHookTick;
+                                        endCore.m_Jumped = res.endJumped;
+                                        bool endGrounded = pColl->IsOnGround(res.endPos, CCharacterCore::PhysicalSize());
+
+                                        uint64_t newKey = PfAStarKey(endCore, res.endFreezeTime, endGrounded);
+                                        float newG = cur.G + (float)ChunkSize;
+                                        auto it = m_PfABestG.find(newKey);
+                                        if(it != m_PfABestG.end() && it->second <= newG)
+                                                continue;
+                                        m_PfABestG[newKey] = newG;
+
+                                        AStarNode child;
+                                        child.Core = endCore; child.Pos = res.endPos;
+                                        child.FreezeTime = res.endFreezeTime; child.Grounded = endGrounded;
+                                        child.G = newG; child.H = PfAStarHeuristic(child.Pos, endPos);
+                                        child.F = child.G + (float)W * child.H;
+                                        child.ParentIdx = curIdx; child.PrimIdx = 0; child.PrimTicks = ChunkSize;
+                                        child.TickOffset = cur.TickOffset + ChunkSize;
+                                        child.Traj = res.traj; child.Inputs = inSeq;
+                                        m_PfANodes.push_back(child);
+                                        PfAStarHeapPush(m_PfAOpen, m_PfANodes, (int)m_PfANodes.size() - 1);
+                                }
                         }
-                        else
-                        {
-                                inp.m_TargetX = pDir * 256;
-                                inp.m_TargetY = -256;
-                        }
-                        inSeq.push_back(inp);
                 }
-
-                if(!FutureWorld.GetCharacterById(LocalID))
-                        PfAStarSetupWorld(&FutureWorld, pGame, LocalID);
-                FutureWorld.m_GameTick = RootStartTick + cur.TickOffset;
-                pBot = PfSpawnSimBot(&FutureWorld, LocalID, cur.Pos, cur.Core.m_Vel,
-                                     cur.Core.m_HookState, cur.Core.m_HookPos,
-                                     cur.Core.m_HookDir, cur.Core.m_HookTick,
-                                     cur.FreezeTime, cur.Core.m_Jumped);
-                if(!pBot)
-                        continue;
-
-                PfChunkResult res;
-                PfSimulateChunk(&FutureWorld, LocalID, pBot, inSeq, RootStartTick + cur.TickOffset, res);
-
-                if(res.died && !res.reachedFinish)
-                        continue;
-
-                CCharacterCore endCore = cur.Core;
-                endCore.m_Pos = res.endPos;
-                endCore.m_Vel = res.endVel;
-                endCore.m_HookState = res.endHookState;
-                endCore.m_HookPos = res.endHookPos;
-                endCore.m_HookDir = res.endHookDir;
-                endCore.m_HookTick = res.endHookTick;
-                endCore.m_Jumped = res.endJumped;
-                bool endGrounded = pColl->IsOnGround(res.endPos, CCharacterCore::PhysicalSize());
-
-                uint64_t newKey = PfAStarKey(endCore, res.endFreezeTime, endGrounded);
-                float newG = cur.G + (float)pTicks;
-                auto it = m_PfABestG.find(newKey);
-                if(it != m_PfABestG.end() && it->second <= newG)
-                        continue;
-                m_PfABestG[newKey] = newG;
-
-                AStarNode child;
-                child.Core = endCore;
-                child.Pos = res.endPos;
-                child.FreezeTime = res.endFreezeTime;
-                child.Grounded = endGrounded;
-                child.G = newG;
-                child.H = PfAStarHeuristic(child.Pos, endPos);
-                child.F = child.G + (float)W * child.H;
-                child.ParentIdx = curIdx;
-                child.PrimIdx = primI;
-                child.PrimTicks = pTicks;
-                child.TickOffset = cur.TickOffset + pTicks;
-                child.Traj = res.traj;
-                m_PfANodes.push_back(child);
-                PfAStarHeapPush(m_PfAOpen, m_PfANodes, (int)m_PfANodes.size() - 1);
         }
 
         return 0;
@@ -4052,22 +4154,12 @@ void CBotNet::PfAStarReconstruct()
                 vPathIdx.push_back(idx);
         std::reverse(vPathIdx.begin(), vPathIdx.end());
 
-        float aHookX[8], aHookY[8];
-        for(int i = 0; i < 8; i++)
-        {
-                float a = -pi + i * (pi / 4.0f);
-                aHookX[i] = cosf(a);
-                aHookY[i] = sinf(a);
-        }
-
         m_PfFullInputs.clear();
         for(size_t i = 1; i < vPathIdx.size(); i++)
         {
                 AStarNode &node = m_PfANodes[vPathIdx[i]];
-                std::vector<CNetObj_PlayerInput> inSeq;
-                PfAStarBuildInputs(node.PrimIdx, node.PrimTicks, aHookX, aHookY, inSeq);
-                for(size_t k = 0; k < inSeq.size(); k++)
-                        m_PfFullInputs.push_back(inSeq[k]);
+                for(size_t k = 0; k < node.Inputs.size(); k++)
+                        m_PfFullInputs.push_back(node.Inputs[k]);
         }
 
         m_PfFullInputsIdx = 0;

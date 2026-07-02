@@ -351,6 +351,7 @@ public:
                 int PrimTicks;
                 int TickOffset;
                 std::vector<vec2> Traj; // cached per-tick trajectory from parent.Pos to this.Pos
+                std::vector<CNetObj_PlayerInput> Inputs; // cached inputs for this primitive
         };
         std::vector<AStarNode> m_PfANodes;
         std::vector<int> m_PfAOpen;
