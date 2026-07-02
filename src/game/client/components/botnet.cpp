@@ -3448,6 +3448,10 @@ struct PfChunkResult
 {
         std::vector<CNetObj_PlayerInput> inputs;
         std::vector<vec2> traj;
+        // Per-tick hook segments: tee pos → hook attach/fly pos at each tick where
+        // hook is active (FLYING or GRABBED). Captures MULTIPLE hook fire/hold cycles
+        // inside one chunk (Advanced search can fire hook on different ticks).
+        std::vector<PfHookSeg> hookSegs;
         bool reachedFinish = false;
         bool died = false;
         int freezeTicks = 0;
@@ -3496,6 +3500,7 @@ static void PfSimulateChunk(CGameWorld *pWorld, int PredictedCharId, CCharacter 
         out.inputs = inputs;
         out.traj.clear();
         out.traj.push_back(pBot->m_Pos);
+        out.hookSegs.clear();
         out.reachedFinish = false;
         out.died = false;
         out.freezeTicks = 0;
@@ -3514,6 +3519,16 @@ static void PfSimulateChunk(CGameWorld *pWorld, int PredictedCharId, CCharacter 
                         break;
                 }
                 out.traj.push_back(pBot->m_Pos);
+
+                // Record hook segment for this tick if hook is active (FLYING or GRABBED,
+                // per DDNet HOOK_* enum in gamecore.h). Captures ALL hook activity inside
+                // the chunk, not just the final state — fixes show-hooks for Advanced search
+                // where hook fires on different ticks.
+                const CCharacterCore &core = pBot->GetCore();
+                if(core.m_HookState == HOOK_FLYING || core.m_HookState == HOOK_GRABBED)
+                {
+                        out.hookSegs.push_back({pBot->m_Pos, core.m_HookPos});
+                }
 
                 if(pBot->m_FreezeTime > 0)
                         out.freezeTicks++;
@@ -3885,6 +3900,7 @@ int CBotNet::PfAStarStep()
                 child.PrimTicks = ft;
                 child.TickOffset = cur.TickOffset + ft;
                 child.Traj = res.traj;
+                        child.HookSegs = res.hookSegs;
                 m_PfANodes.push_back(child);
                 PfAStarHeapPush(m_PfAOpen, m_PfANodes, (int)m_PfANodes.size() - 1);
                 return 0;
@@ -3967,7 +3983,7 @@ int CBotNet::PfAStarStep()
                         child.F = child.G + (float)W * child.H;
                         child.ParentIdx = curIdx; child.PrimIdx = 0; child.PrimTicks = ChunkSize;
                         child.TickOffset = cur.TickOffset + ChunkSize;
-                        child.Traj = res.traj; child.Inputs = inSeq;
+                        child.Traj = res.traj; child.HookSegs = res.hookSegs; child.Inputs = inSeq;
                         m_PfANodes.push_back(child);
                         PfAStarHeapPush(m_PfAOpen, m_PfANodes, (int)m_PfANodes.size() - 1);
                 };
@@ -4106,7 +4122,7 @@ int CBotNet::PfAStarStep()
                                                 child.F = child.G + (float)W * child.H;
                                                 child.ParentIdx = curIdx; child.PrimIdx = 0; child.PrimTicks = ChunkSize;
                                                 child.TickOffset = cur.TickOffset + ChunkSize;
-                                                child.Traj = res.traj; child.Inputs = inSeq;
+                                                child.Traj = res.traj; child.HookSegs = res.hookSegs; child.Inputs = inSeq;
                                                 m_PfANodes.push_back(child);
                                                 PfAStarHeapPush(m_PfAOpen, m_PfANodes, (int)m_PfANodes.size() - 1);
                                         }
@@ -4167,7 +4183,7 @@ int CBotNet::PfAStarStep()
                                         child.F = child.G + (float)W * child.H;
                                         child.ParentIdx = curIdx; child.PrimIdx = 0; child.PrimTicks = ChunkSize;
                                         child.TickOffset = cur.TickOffset + ChunkSize;
-                                        child.Traj = res.traj; child.Inputs = inSeq;
+                                        child.Traj = res.traj; child.HookSegs = res.hookSegs; child.Inputs = inSeq;
                                         m_PfANodes.push_back(child);
                                         PfAStarHeapPush(m_PfAOpen, m_PfANodes, (int)m_PfANodes.size() - 1);
                                 }
@@ -4225,7 +4241,7 @@ int CBotNet::PfAStarStep()
                                         child.F = child.G + (float)W * child.H;
                                         child.ParentIdx = curIdx; child.PrimIdx = 0; child.PrimTicks = ChunkSize;
                                         child.TickOffset = cur.TickOffset + ChunkSize;
-                                        child.Traj = res.traj; child.Inputs = inSeq;
+                                        child.Traj = res.traj; child.HookSegs = res.hookSegs; child.Inputs = inSeq;
                                         m_PfANodes.push_back(child);
                                         PfAStarHeapPush(m_PfAOpen, m_PfANodes, (int)m_PfANodes.size() - 1);
                                 }
@@ -4512,6 +4528,10 @@ void CBotNet::RenderPathfinderPath()
         }
 
         // === Show hooks (blue lines, using trajectory settings for width) ===
+        // Draws ALL hook fire/hold segments along the best path, captured per-tick
+        // in PfSimulateChunk (node.HookSegs). This shows multiple hook cycles inside
+        // a single chunk (e.g. Advanced search per-tick hook fire), not just the
+        // final HOOK_GRABBED state.
         if(g_Config.m_ClPfShowHooks && m_PfANodes.size() > 0)
         {
                 // Find best path (same as preview)
@@ -4534,17 +4554,22 @@ void CBotNet::RenderPathfinderPath()
                         for(int idx = bestIdx; idx >= 0; idx = m_PfANodes[idx].ParentIdx)
                         {
                                 AStarNode &node = m_PfANodes[idx];
-                                if(node.Core.m_HookState != 5) // HOOK_GRABBED
-                                        continue;
-                                vec2 p0 = node.Pos;
-                                vec2 p1 = node.Core.m_HookPos;
-                                vec2 Dir = normalize(p1 - p0);
-                                vec2 Perp = vec2(Dir.y, -Dir.x) * HalfWidth;
-                                vQuads.emplace_back(
-                                        p0.x - Perp.x, p0.y - Perp.y,
-                                        p0.x + Perp.x, p0.y + Perp.y,
-                                        p1.x - Perp.x, p1.y - Perp.y,
-                                        p1.x + Perp.x, p1.y + Perp.y);
+                                for(const auto &seg : node.HookSegs)
+                                {
+                                        vec2 p0 = seg.teePos;
+                                        vec2 p1 = seg.hookPos;
+                                        vec2 d = p1 - p0;
+                                        float len = length(d);
+                                        if(len < 0.001f)
+                                                continue;
+                                        vec2 Dir = d / len;
+                                        vec2 Perp = vec2(Dir.y, -Dir.x) * HalfWidth;
+                                        vQuads.emplace_back(
+                                                p0.x - Perp.x, p0.y - Perp.y,
+                                                p0.x + Perp.x, p0.y + Perp.y,
+                                                p1.x - Perp.x, p1.y - Perp.y,
+                                                p1.x + Perp.x, p1.y + Perp.y);
+                                }
                         }
                         Graphics()->QuadsBegin();
                         for(size_t i = 0; i < vQuads.size(); i++)
@@ -4561,10 +4586,11 @@ void CBotNet::RenderPathfinderPath()
                         for(int idx = bestIdx; idx >= 0; idx = m_PfANodes[idx].ParentIdx)
                         {
                                 AStarNode &node = m_PfANodes[idx];
-                                if(node.Core.m_HookState != 5)
-                                        continue;
-                                IGraphics::CLineItem Line(node.Pos, node.Core.m_HookPos);
-                                Graphics()->LinesDraw(&Line, 1);
+                                for(const auto &seg : node.HookSegs)
+                                {
+                                        IGraphics::CLineItem Line(seg.teePos, seg.hookPos);
+                                        Graphics()->LinesDraw(&Line, 1);
+                                }
                         }
                         Graphics()->LinesEnd();
                 }

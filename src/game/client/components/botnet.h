@@ -58,6 +58,15 @@ static const int PF_TAB_ALGORITHM_COUNT = 15;
 static const int PF_BACKTRACK_DEPTH = 5;
 // PF_BACKTRACK_CANDIDATES removed — now dynamic via ClPfBacktrackCandidates (100-1400)
 
+// Per-tick hook segment: tee position + hook attach/fly position at one tick.
+// Used by PfSimulateChunk (PfChunkResult) and AStarNode to capture ALL hook
+// fire/hold cycles inside a chunk, not just the final state.
+struct PfHookSeg
+{
+        vec2 teePos;
+        vec2 hookPos;
+};
+
 // =========================================================
 // Pathfinder backtracking buffer
 // =========================================================
@@ -352,6 +361,9 @@ public:
                 int TickOffset;
                 std::vector<vec2> Traj; // cached per-tick trajectory from parent.Pos to this.Pos
                 std::vector<CNetObj_PlayerInput> Inputs; // cached inputs for this primitive
+                // Per-tick hook segments inside this primitive's chunk (tee pos → hook pos).
+                // Captures all hook fire/hold cycles, not just final state.
+                std::vector<PfHookSeg> HookSegs;
         };
         std::vector<AStarNode> m_PfANodes;
         std::vector<int> m_PfAOpen;
