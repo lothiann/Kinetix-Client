@@ -3456,6 +3456,7 @@ struct PfChunkResult
         vec2 endHookPos, endHookDir;
         int endHookTick = 0;
         int endJumped = 0;
+        int endJumpedTotal = 0;
         vec2 endPos, endVel;
 };
 
@@ -3553,6 +3554,7 @@ static void PfSimulateChunk(CGameWorld *pWorld, int PredictedCharId, CCharacter 
         out.endHookDir = pBot->GetCore().m_HookDir;
         out.endHookTick = pBot->GetCore().m_HookTick;
         out.endJumped = pBot->GetCore().m_Jumped;
+        out.endJumpedTotal = pBot->GetCore().m_JumpedTotal;
 }
 
 // Try an alternative candidate from the backtrack buffer.
@@ -3860,6 +3862,7 @@ int CBotNet::PfAStarStep()
                 endCore.m_HookDir = res.endHookDir;
                 endCore.m_HookTick = res.endHookTick;
                 endCore.m_Jumped = res.endJumped;
+                endCore.m_JumpedTotal = res.endJumpedTotal;
                 bool endGrounded = pColl->IsOnGround(res.endPos, CCharacterCore::PhysicalSize());
 
                 uint64_t newKey = PfAStarKey(endCore, res.endFreezeTime, endGrounded);
@@ -3973,6 +3976,7 @@ int CBotNet::PfAStarStep()
                                                 endCore.m_HookState = res.endHookState; endCore.m_HookPos = res.endHookPos;
                                                 endCore.m_HookDir = res.endHookDir; endCore.m_HookTick = res.endHookTick;
                                                 endCore.m_Jumped = res.endJumped;
+                endCore.m_JumpedTotal = res.endJumpedTotal;
                                                 bool endGrounded = pColl->IsOnGround(res.endPos, CCharacterCore::PhysicalSize());
 
                                                 uint64_t newKey = PfAStarKey(endCore, res.endFreezeTime, endGrounded);
@@ -4033,6 +4037,7 @@ int CBotNet::PfAStarStep()
                                         endCore.m_HookState = res.endHookState; endCore.m_HookPos = res.endHookPos;
                                         endCore.m_HookDir = res.endHookDir; endCore.m_HookTick = res.endHookTick;
                                         endCore.m_Jumped = res.endJumped;
+                endCore.m_JumpedTotal = res.endJumpedTotal;
                                         bool endGrounded = pColl->IsOnGround(res.endPos, CCharacterCore::PhysicalSize());
 
                                         uint64_t newKey = PfAStarKey(endCore, res.endFreezeTime, endGrounded);
@@ -4090,6 +4095,7 @@ int CBotNet::PfAStarStep()
                                         endCore.m_HookState = res.endHookState; endCore.m_HookPos = res.endHookPos;
                                         endCore.m_HookDir = res.endHookDir; endCore.m_HookTick = res.endHookTick;
                                         endCore.m_Jumped = res.endJumped;
+                endCore.m_JumpedTotal = res.endJumpedTotal;
                                         bool endGrounded = pColl->IsOnGround(res.endPos, CCharacterCore::PhysicalSize());
 
                                         uint64_t newKey = PfAStarKey(endCore, res.endFreezeTime, endGrounded);
