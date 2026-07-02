@@ -4217,6 +4217,102 @@ void CBotNet::RenderPathfinderPath()
                 return;
         }
 
+        // === Show flow field ===
+        if(g_Config.m_ClPfShowField && m_PfFlowField && m_MapWidth > 0 && m_MapHeight > 0)
+        {
+                // Render flow field as colored tiles: green=close to finish, red=far
+                Graphics()->QuadsBegin();
+                int tx0 = pf_clamp((int)(pGame->m_Camera.m_Center.x / 32.0f) - 30, 0, m_MapWidth - 1);
+                int ty0 = pf_clamp((int)(pGame->m_Camera.m_Center.y / 32.0f) - 20, 0, m_MapHeight - 1);
+                int tx1 = pf_clamp(tx0 + 60, 0, m_MapWidth - 1);
+                int ty1 = pf_clamp(ty0 + 40, 0, m_MapHeight - 1);
+                float maxDist = 1.0f;
+                for(int ty = ty0; ty <= ty1; ty++)
+                        for(int tx = tx0; tx <= tx1; tx++)
+                                maxDist = pf_maxf(maxDist, m_PfFlowField[ty * m_MapWidth + tx]);
+                for(int ty = ty0; ty <= ty1; ty++)
+                {
+                        for(int tx = tx0; tx <= tx1; tx++)
+                        {
+                                float fd = m_PfFlowField[ty * m_MapWidth + tx];
+                                if(fd >= 1e17f)
+                                        continue;
+                                float t = fd / maxDist; // 0=close, 1=far
+                                float r = t;        // red = far
+                                float g = 1.0f - t; // green = close
+                                float b = 0.0f;
+                                Graphics()->SetColor(r, g, b, 0.15f);
+                                float px = tx * 32.0f;
+                                float py = ty * 32.0f;
+                                IGraphics::CFreeformItem Quad(px, py, px + 32, py, px, py + 32, px + 32, py + 32);
+                                Graphics()->QuadsDrawFreeform(&Quad, 1);
+                        }
+                }
+                Graphics()->QuadsEnd();
+        }
+
+        // === Show other branches (semi-transparent lines for non-path nodes) ===
+        if(g_Config.m_ClPfShowBranches && m_PfANodes.size() > 1)
+        {
+                Graphics()->LinesBegin();
+                Graphics()->SetColor(0.5f, 0.5f, 0.5f, 0.15f);
+                for(size_t i = 1; i < m_PfANodes.size(); i++)
+                {
+                        AStarNode &node = m_PfANodes[i];
+                        if(node.ParentIdx < 0)
+                                continue;
+                        AStarNode &parent = m_PfANodes[node.ParentIdx];
+                        if(node.Traj.size() >= 2)
+                        {
+                                for(size_t k = 1; k < node.Traj.size(); k++)
+                                {
+                                        IGraphics::CLineItem Line(node.Traj[k - 1], node.Traj[k]);
+                                        Graphics()->LinesDraw(&Line, 1);
+                                }
+                        }
+                        else
+                        {
+                                IGraphics::CLineItem Line(parent.Pos, node.Pos);
+                                Graphics()->LinesDraw(&Line, 1);
+                        }
+                }
+                Graphics()->LinesEnd();
+        }
+
+        // === Show hooks (blue lines from bot pos to hookPos) ===
+        if(g_Config.m_ClPfShowHooks && m_PfANodes.size() > 0)
+        {
+                Graphics()->LinesBegin();
+                Graphics()->SetColor(0.2f, 0.4f, 1.0f, 0.5f);
+                // Walk path nodes (same as preview path)
+                int bestIdx = -1;
+                float bestH = 1e18f;
+                for(int idx : m_PfAOpen)
+                {
+                        if(idx < 0 || idx >= (int)m_PfANodes.size())
+                                continue;
+                        if(m_PfANodes[idx].H < bestH)
+                        {
+                                bestH = m_PfANodes[idx].H;
+                                bestIdx = idx;
+                        }
+                }
+                if(bestIdx >= 0)
+                {
+                        for(int idx = bestIdx; idx >= 0; idx = m_PfANodes[idx].ParentIdx)
+                        {
+                                AStarNode &node = m_PfANodes[idx];
+                                if(node.Core.m_HookState == 5) // HOOK_GRABBED
+                                {
+                                        IGraphics::CLineItem Line(node.Pos, node.Core.m_HookPos);
+                                        Graphics()->LinesDraw(&Line, 1);
+                                }
+                        }
+                }
+                Graphics()->LinesEnd();
+        }
+
+        // === Main path render (with optional speed gradient) ===
         if(LineSize > 0)
         {
                 std::vector<IGraphics::CFreeformItem> vQuads;
@@ -4239,8 +4335,37 @@ void CBotNet::RenderPathfinderPath()
                 Graphics()->QuadsBegin();
                 for(size_t i = 0; i < vQuads.size(); i++)
                 {
-                        // Solid white, no alpha gradient (user requested fully opaque).
-                        Graphics()->SetColor(BaseColor.r, BaseColor.g, BaseColor.b, ConfigAlpha);
+                        float r, g, b;
+                        if(g_Config.m_ClPfShowSpeed)
+                        {
+                                // Speed gradient: red=slow, green=medium, blue=fast
+                                vec2 p0 = m_PfVPath[i];
+                                vec2 p1 = m_PfVPath[i + 1];
+                                float speed = distance(p0, p1); // pixels per tick
+                                // Map speed 0..15 to rainbow (red→green→blue)
+                                float t = pf_clamp(speed / 15.0f, 0.0f, 1.0f);
+                                if(t < 0.5f)
+                                {
+                                        // red → green
+                                        r = 1.0f - t * 2.0f;
+                                        g = t * 2.0f;
+                                        b = 0.0f;
+                                }
+                                else
+                                {
+                                        // green → blue
+                                        r = 0.0f;
+                                        g = 1.0f - (t - 0.5f) * 2.0f;
+                                        b = (t - 0.5f) * 2.0f;
+                                }
+                        }
+                        else
+                        {
+                                r = BaseColor.r;
+                                g = BaseColor.g;
+                                b = BaseColor.b;
+                        }
+                        Graphics()->SetColor(r, g, b, ConfigAlpha);
                         Graphics()->QuadsDrawFreeform(&vQuads[i], 1);
                 }
                 Graphics()->QuadsEnd();
@@ -4250,7 +4375,19 @@ void CBotNet::RenderPathfinderPath()
                 Graphics()->LinesBegin();
                 for(size_t i = 1; i < m_PfVPath.size(); i++)
                 {
-                        Graphics()->SetColor(BaseColor.r, BaseColor.g, BaseColor.b, ConfigAlpha);
+                        float r, g, b;
+                        if(g_Config.m_ClPfShowSpeed)
+                        {
+                                float speed = distance(m_PfVPath[i - 1], m_PfVPath[i]);
+                                float t = pf_clamp(speed / 15.0f, 0.0f, 1.0f);
+                                if(t < 0.5f) { r = 1.0f - t * 2.0f; g = t * 2.0f; b = 0.0f; }
+                                else { r = 0.0f; g = 1.0f - (t - 0.5f) * 2.0f; b = (t - 0.5f) * 2.0f; }
+                        }
+                        else
+                        {
+                                r = BaseColor.r; g = BaseColor.g; b = BaseColor.b;
+                        }
+                        Graphics()->SetColor(r, g, b, ConfigAlpha);
                         IGraphics::CLineItem Line(m_PfVPath[i - 1], m_PfVPath[i]);
                         Graphics()->LinesDraw(&Line, 1);
                 }

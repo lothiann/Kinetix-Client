@@ -5517,7 +5517,39 @@ void CMenus::RenderSettingsPathfinder(CUIRect MainView)
 
         MainView.HSplitTop(PanelGap, nullptr, &MainView);
 
-        // === Container 4: Action ===
+        // === Container 4: Visuals ===
+        {
+                const int numRows = 2;
+                const float SectionH = PanelPad + 25.0f + 5.0f + numRows * LineSize + (numRows - 1) * RowGap + PanelPad;
+                MainView.HSplitTop(SectionH, &PanelBg, &MainView);
+                PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
+                s_PathfinderScrollRegion.AddRect(PanelBg);
+                PanelBg.Margin(PanelPad, &Panel);
+
+                Panel.HSplitTop(25.0f, &Label, &Panel);
+                Ui()->DoLabel(&Label, Localize("Visuals"), 16.0f, TEXTALIGN_ML);
+                Panel.HSplitTop(5.0f, nullptr, &Panel);
+
+                Panel.HSplitTop(LineSize, &Row, &Panel);
+                Panel.HSplitTop(RowGap, nullptr, &Panel);
+                Row.VSplitMid(&Left, &Right, ColGap);
+                if(DoButton_CheckBox(&g_Config.m_ClPfShowField, Localize("Show field"), g_Config.m_ClPfShowField, &Left))
+                        g_Config.m_ClPfShowField ^= 1;
+                if(DoButton_CheckBox(&g_Config.m_ClPfShowHooks, Localize("Show hooks"), g_Config.m_ClPfShowHooks, &Right))
+                        g_Config.m_ClPfShowHooks ^= 1;
+
+                Panel.HSplitTop(LineSize, &Row, &Panel);
+                Panel.HSplitTop(RowGap, nullptr, &Panel);
+                Row.VSplitMid(&Left, &Right, ColGap);
+                if(DoButton_CheckBox(&g_Config.m_ClPfShowBranches, Localize("Show other branches"), g_Config.m_ClPfShowBranches, &Left))
+                        g_Config.m_ClPfShowBranches ^= 1;
+                if(DoButton_CheckBox(&g_Config.m_ClPfShowSpeed, Localize("Show speed gradient"), g_Config.m_ClPfShowSpeed, &Right))
+                        g_Config.m_ClPfShowSpeed ^= 1;
+        }
+
+        MainView.HSplitTop(PanelGap, nullptr, &MainView);
+
+        // === Container 5: Action ===
         {
                 const float SectionH = PanelPad + 26.0f + PanelPad;
                 MainView.HSplitTop(SectionH, &PanelBg, &MainView);

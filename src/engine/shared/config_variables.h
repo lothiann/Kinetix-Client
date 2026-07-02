@@ -304,6 +304,12 @@ MACRO_CONFIG_INT(ClPfFineWall, cl_pf_fine_wall, 0, 0, 1, CFGFLAG_CLIENT | CFGFLA
 MACRO_CONFIG_INT(ClPfFineAir, cl_pf_fine_air, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Fine: air-time penalty (per tick airborne)")
 MACRO_CONFIG_INT(ClPfFineHook, cl_pf_fine_hook, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Fine: hook-fire penalty (per hook fire — discourage hook spam)")
 
+// Visuals (Pathfinder tab)
+MACRO_CONFIG_INT(ClPfShowField, cl_pf_show_field, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: show flow field")
+MACRO_CONFIG_INT(ClPfShowHooks, cl_pf_show_hooks, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: show hook lines (blue)")
+MACRO_CONFIG_INT(ClPfShowBranches, cl_pf_show_branches, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: show other branches (semi-transparent)")
+MACRO_CONFIG_INT(ClPfShowSpeed, cl_pf_show_speed, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: show speed gradient (red=slow, blue=fast)")
+
 // IRC (emote-based communication)
 MACRO_CONFIG_INT(ClIrcEnabled, cl_irc_enabled, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Enable IRC emote communication and decoding")
 MACRO_CONFIG_INT(ClIrcRevealJoin, cl_irc_reveal_join, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Send handshake on join to reveal yourself as IRC user")
