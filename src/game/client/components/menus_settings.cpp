@@ -5436,12 +5436,17 @@ void CMenus::RenderSettingsPathfinder(CUIRect MainView)
                         Localize("Max Chunks"), 10, 2000, &CUi::ms_LinearScrollbarScale,
                         CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
 
-                // --- Candidates slider (top-N for backtracking) ---
+                // --- Candidates slider (dynamic max = 3 * (ChunkSize+1) * (1+HookAngles)) ---
                 Panel.HSplitTop(LineSize, &Row, &Panel);
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
-                Ui()->DoScrollbarOption(&g_Config.m_ClPfBacktrackCandidates, &g_Config.m_ClPfBacktrackCandidates, &Row,
-                        Localize("Candidates"), 100, 1400, &CUi::ms_LinearScrollbarScale,
-                        CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
+                {
+                        int chunkSize = std::clamp(g_Config.m_ClPfChunkSize, 5, 50);
+                        int hookAngles = std::clamp(g_Config.m_ClPfHookAngles, 4, 32);
+                        int maxCandidates = 3 * (chunkSize + 1) * (1 + hookAngles);
+                        Ui()->DoScrollbarOption(&g_Config.m_ClPfBacktrackCandidates, &g_Config.m_ClPfBacktrackCandidates, &Row,
+                                Localize("Candidates"), 1, maxCandidates, &CUi::ms_LinearScrollbarScale,
+                                CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
+                }
 
                 // --- Performance slider ---
                 Panel.HSplitTop(LineSize, &Row, &Panel);

@@ -3829,6 +3829,12 @@ int CBotNet::PfAStarStep()
                                           cur.FreezeTime, cur.Core.m_Jumped);
         if(!pBot)
                 return 0;
+        // Restore m_JumpedTotal (PfSpawnSimBot copies from predicted world, not from node)
+        {
+                CCharacterCore c = pBot->GetCore();
+                c.m_JumpedTotal = cur.Core.m_JumpedTotal;
+                pBot->SetCore(c);
+        }
 
         // FREEZE_SKIP
         if(pBot->m_FreezeTime > 0)
@@ -3955,6 +3961,7 @@ int CBotNet::PfAStarStep()
                                                      cur.FreezeTime, cur.Core.m_Jumped);
                                                 if(!pBot)
                                                         continue;
+                                                { CCharacterCore c = pBot->GetCore(); c.m_JumpedTotal = cur.Core.m_JumpedTotal; pBot->SetCore(c); }
 
                                                 PfChunkResult res;
                                                 PfSimulateChunk(&FutureWorld, LocalID, pBot, inSeq, RootStartTick + cur.TickOffset, res);
@@ -4014,6 +4021,7 @@ int CBotNet::PfAStarStep()
                                              cur.FreezeTime, cur.Core.m_Jumped);
                                         if(!pBot)
                                                 continue;
+                                        { CCharacterCore c = pBot->GetCore(); c.m_JumpedTotal = cur.Core.m_JumpedTotal; pBot->SetCore(c); }
 
                                         PfChunkResult res;
                                         PfSimulateChunk(&FutureWorld, LocalID, pBot, inSeq, RootStartTick + cur.TickOffset, res);
@@ -4070,6 +4078,7 @@ int CBotNet::PfAStarStep()
                                              cur.FreezeTime, cur.Core.m_Jumped);
                                         if(!pBot)
                                                 continue;
+                                        { CCharacterCore c = pBot->GetCore(); c.m_JumpedTotal = cur.Core.m_JumpedTotal; pBot->SetCore(c); }
 
                                         PfChunkResult res;
                                         PfSimulateChunk(&FutureWorld, LocalID, pBot, inSeq, RootStartTick + cur.TickOffset, res);
