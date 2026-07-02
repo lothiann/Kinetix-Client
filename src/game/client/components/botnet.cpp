@@ -4287,12 +4287,6 @@ void CBotNet::RenderPathfinderPath()
                 {
                         for(int tx = tx0; tx <= tx1; tx++)
                         {
-                                // Skip freeze tiles — arrows only on non-freeze tiles
-                                int tileIdx = ty * m_MapWidth + tx;
-                                if(m_pMapGrid[tileIdx] == TILE_FREEZE || m_pMapGrid[tileIdx] == TILE_DFREEZE ||
-                                   m_pFrontGrid[tileIdx] == TILE_FREEZE || m_pFrontGrid[tileIdx] == TILE_DFREEZE)
-                                        continue;
-
                                 float fd = m_PfFlowField[ty * m_MapWidth + tx];
                                 if(fd >= 1e17f || fd == 0.0f)
                                         continue; // unreachable or already at finish
@@ -4315,16 +4309,17 @@ void CBotNet::RenderPathfinderPath()
                                         continue;
                                 vec2 dir = vec2(gx / glen, gy / glen);
 
-                                // Arrow: from tile center in gradient direction
+                                // Arrow centered on tile: from center-dir*6 to center+dir*6
                                 float cx = tx * 32.0f + 16.0f;
                                 float cy = ty * 32.0f + 16.0f;
-                                float len = 12.0f;
-                                vec2 end = vec2(cx, cy) + dir * len;
+                                float half = 6.0f;
+                                vec2 start = vec2(cx, cy) - dir * half;
+                                vec2 end = vec2(cx, cy) + dir * half;
                                 vec2 perp = vec2(-dir.y, dir.x) * 4.0f;
                                 vec2 arrowBack = end - dir * 5.0f;
 
                                 // Main line
-                                IGraphics::CLineItem Main(cx, cy, end.x, end.y);
+                                IGraphics::CLineItem Main(start.x, start.y, end.x, end.y);
                                 Graphics()->LinesDraw(&Main, 1);
                                 // Arrowhead: two small lines
                                 IGraphics::CLineItem A1(end.x, end.y, arrowBack.x + perp.x, arrowBack.y + perp.y);
