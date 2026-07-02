@@ -5440,11 +5440,11 @@ void CMenus::RenderSettingsPathfinder(CUIRect MainView)
                 Panel.HSplitTop(LineSize, &Row, &Panel);
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
                 {
-                        int chunkSize = std::clamp(g_Config.m_ClPfChunkSize, 5, 50);
-                        int hookAngles = std::clamp(g_Config.m_ClPfHookAngles, 4, 32);
+                        int chunkSize = std::clamp(g_Config.m_ClPfChunkSize, CConfig::PF_CHUNK_SIZE_MIN, CConfig::PF_CHUNK_SIZE_MAX);
+                        int hookAngles = std::clamp(g_Config.m_ClPfHookAngles, CConfig::PF_HOOK_ANGLES_MIN, CConfig::PF_HOOK_ANGLES_MAX);
                         int maxCandidates = 3 * (chunkSize + 1) * (1 + hookAngles);
                         Ui()->DoScrollbarOption(&g_Config.m_ClPfBacktrackCandidates, &g_Config.m_ClPfBacktrackCandidates, &Row,
-                                Localize("Candidates"), 1, maxCandidates, &CUi::ms_LinearScrollbarScale,
+                                Localize("Candidates"), CConfig::PF_CANDIDATES_MIN, maxCandidates, &CUi::ms_LinearScrollbarScale,
                                 CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
                 }
 

@@ -280,6 +280,19 @@ MACRO_CONFIG_INT(ClTrajectoryLineSize, cl_trajectory_line_size, 1, 0, 20, CFGFLA
 MACRO_CONFIG_COL(ClTrajectoryColor, cl_trajectory_color, 65471, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Trajectory line color")
 MACRO_CONFIG_INT(ClTrajectoryAlpha, cl_trajectory_alpha, 80, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Trajectory line opacity (0-100)")
 
+// Pathfinder parameter bounds — single source of truth for config limits + dynamic formulas.
+// Keep PF_CHUNK_SIZE_MAX / PF_HOOK_ANGLES_MAX in sync with the literals in the
+// ClPfChunkSize (5-50) and ClPfHookAngles (4-32) macros below.
+static constexpr int PF_CHUNK_SIZE_MIN = 5;
+static constexpr int PF_CHUNK_SIZE_MAX = 50;
+static constexpr int PF_HOOK_ANGLES_MIN = 4;
+static constexpr int PF_HOOK_ANGLES_MAX = 32;
+// Max backtrack candidates per chunk = 3 * (ChunkSize+1) * (1+HookAngles).
+// Parameter sweep: 3 directions × (ChunkSize+1) jumpTicks × (1 no-hook + HookAngles hook-fire).
+// At max params: 3 * 51 * 33 = 5049.
+static constexpr int PF_CANDIDATES_MIN = 1;
+static constexpr int PF_CANDIDATES_MAX = 3 * (PF_CHUNK_SIZE_MAX + 1) * (1 + PF_HOOK_ANGLES_MAX);
+
 // Pathfinder tab (Kinetix→Pathfinder) — chunk-based mini TAS maker.
 // State machine: pathfinding (idle) -> stop (running) -> finish (done, path shown until user clicks).
 MACRO_CONFIG_INT(ClPfAlgorithm, cl_pf_algorithm, 0, 0, 14, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder algorithm: 0=KinoA* 1=GridA* 2=Dijkstra 3=Greedy 4=BFS 5=DFS 6=RRT 7=RRT* 8=PRM 9=MCTS 10=GA 11=CMA-ES 12=SA 13=HillClimb 14=RandomWalk")
@@ -288,7 +301,7 @@ MACRO_CONFIG_INT(ClPfCandidates, cl_pf_candidates, 200, 50, 2000, CFGFLAG_CLIENT
 MACRO_CONFIG_INT(ClPfHookAngles, cl_pf_hook_angles, 9, 4, 32, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: hook fan-raycast rays (4-32)")
 MACRO_CONFIG_INT(ClPfHorizon, cl_pf_horizon, 6, 1, 50, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: ticks to apply per chunk before re-planning (1-chunk_size)")
 MACRO_CONFIG_INT(ClPfMaxChunks, cl_pf_max_chunks, 200, 10, 2000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: max chunks before giving up (safety cap)")
-MACRO_CONFIG_INT(ClPfBacktrackCandidates, cl_pf_backtrack_candidates, 100, 100, 1400, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: top-N candidates kept per chunk for backtracking (100-1400)")
+MACRO_CONFIG_INT(ClPfBacktrackCandidates, cl_pf_backtrack_candidates, 100, PF_CANDIDATES_MIN, PF_CANDIDATES_MAX, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: top-N candidates kept per chunk for backtracking")
 MACRO_CONFIG_INT(ClPfAStarWeight, cl_pf_astar_weight, 3, 1, 20, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: A* heuristic weight (1=optimal, higher=faster but suboptimal)")
 MACRO_CONFIG_INT(ClPfAStarNodeBudget, cl_pf_astar_node_budget, 100000, 1000, 1000000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: A* max nodes before giving up (1000-1000000)")
 MACRO_CONFIG_INT(ClPfPerf, cl_pf_perf, 100, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: performance budget per tick in % (1-100; lower = slower but smoother, spreads chunk generation across many ticks)")

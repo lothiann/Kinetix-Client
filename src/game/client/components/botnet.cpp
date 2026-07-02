@@ -4948,7 +4948,9 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
         };
         // Top-N candidates (N = ClPfBacktrackCandidates, dynamic). Using a vector
         // keeps memory bounded — only N slots per chunk, freed on reset.
-        const int N = pf_clamp(g_Config.m_ClPfBacktrackCandidates, 100, 1400);
+        // Max for current params = 3 * (ChunkSize+1) * (1+HookAngles) (see PF_CANDIDATES_MAX).
+        const int dynMax = 3 * (ChunkSize + 1) * (1 + HookAngles);
+        const int N = pf_clamp(g_Config.m_ClPfBacktrackCandidates, CConfig::PF_CANDIDATES_MIN, dynMax);
         std::vector<CandidateResult> topCandidates(N);
         for(int i = 0; i < N; i++)
                 topCandidates[i].score = -1e18f;
