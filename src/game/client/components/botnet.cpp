@@ -3230,6 +3230,8 @@ void CBotNet::PfComputeFlowField()
                                 if(!IsTileWalkable(cur.c, cur.r + dr[d]) || !IsTileWalkable(cur.c + dc[d], cur.r))
                                         continue;
                         }
+                        // Freeze tiles get high cost so BFS prefers non-freeze paths,
+                        // but freeze is still passable if no alternative exists.
                         float moveCost = (abs(dr[d]) + abs(dc[d]) == 2) ? SQRT2 * tileCost : tileCost;
                         float newG = cur.g + moveCost;
                         int nIdx = nr * m_MapWidth + nc;
