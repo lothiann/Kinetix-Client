@@ -4571,8 +4571,38 @@ void CBotNet::RenderPathfinderPath()
         }
 
         // === Main path render (with optional speed gradient) ===
-        // Speed gradient: smooth HSL, per-vertex interpolation via SetColor4
-        // hue 0°(red,slow) → 120°(green,med) → 240°(blue,fast)
+        // Speed gradient: linear RGB interpolation across 5 control points
+        // mapped to the speed range [0, 128] px/tick:
+        //   0   px/tick → #FF0000 (red)
+        //   32  px/tick → #FFFF00 (yellow)
+        //   64  px/tick → #00FF00 (green)
+        //   96  px/tick → #00FFFF (cyan)
+        //   128 px/tick → #0000FF (blue)
+        auto fnSpeedColor = [](float speed) -> ColorRGBA {
+                const float MAX_SPEED = 128.0f;
+                float t = pf_clamp(speed / MAX_SPEED, 0.0f, 1.0f);
+                // 5 control points in RGB.
+                const ColorRGBA aStops[5] = {
+                        ColorRGBA(1.0f, 0.0f, 0.0f, 1.0f), // 0.00 red
+                        ColorRGBA(1.0f, 1.0f, 0.0f, 1.0f), // 0.25 yellow
+                        ColorRGBA(0.0f, 1.0f, 0.0f, 1.0f), // 0.50 green
+                        ColorRGBA(0.0f, 1.0f, 1.0f, 1.0f), // 0.75 cyan
+                        ColorRGBA(0.0f, 0.0f, 1.0f, 1.0f), // 1.00 blue
+                };
+                float f = t * 4.0f; // 0..4
+                int idx = (int)f;
+                if(idx < 0) idx = 0;
+                if(idx > 3) idx = 3;
+                float frac = f - (float)idx;
+                const ColorRGBA &c0 = aStops[idx];
+                const ColorRGBA &c1 = aStops[idx + 1];
+                return ColorRGBA(
+                        c0.r + (c1.r - c0.r) * frac,
+                        c0.g + (c1.g - c0.g) * frac,
+                        c0.b + (c1.b - c0.b) * frac,
+                        1.0f);
+        };
+
         if(LineSize > 0)
         {
                 float HalfWidth = 0.5f + (float)(LineSize - 1) * 0.25f;
@@ -4591,13 +4621,11 @@ void CBotNet::RenderPathfinderPath()
 
                         if(g_Config.m_ClPfShowSpeed)
                         {
-                                // Speed at start and end of this segment
+                                // Speed at start and end of this segment.
                                 float speed0 = (i > 1) ? distance(m_PfVPath[i - 2], m_PfVPath[i - 1]) : distance(p0, p1);
                                 float speed1 = distance(p0, p1);
-                                float t0 = pf_clamp(speed0 / 15.0f, 0.0f, 1.0f);
-                                float t1 = pf_clamp(speed1 / 15.0f, 0.0f, 1.0f);
-                                ColorRGBA c0 = color_cast<ColorRGBA>(ColorHSLA(t0 * 240.0f / 360.0f, 1.0f, 0.5f, true));
-                                ColorRGBA c1 = color_cast<ColorRGBA>(ColorHSLA(t1 * 240.0f / 360.0f, 1.0f, 0.5f, true));
+                                ColorRGBA c0 = fnSpeedColor(speed0);
+                                ColorRGBA c1 = fnSpeedColor(speed1);
                                 // Per-vertex: start vertices get c0, end vertices get c1
                                 Graphics()->SetColor4(
                                         ColorRGBA(c0.r, c0.g, c0.b, ConfigAlpha), // TL (start)
@@ -4621,8 +4649,7 @@ void CBotNet::RenderPathfinderPath()
                         if(g_Config.m_ClPfShowSpeed)
                         {
                                 float speed = distance(m_PfVPath[i - 1], m_PfVPath[i]);
-                                float t = pf_clamp(speed / 15.0f, 0.0f, 1.0f);
-                                ColorRGBA c = color_cast<ColorRGBA>(ColorHSLA(t * 240.0f / 360.0f, 1.0f, 0.5f, true));
+                                ColorRGBA c = fnSpeedColor(speed);
                                 Graphics()->SetColor(c.r, c.g, c.b, ConfigAlpha);
                         }
                         else
