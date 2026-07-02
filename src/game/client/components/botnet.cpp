@@ -4217,38 +4217,66 @@ void CBotNet::RenderPathfinderPath()
                 return;
         }
 
-        // === Show flow field ===
+        // === Show flow field (vector arrows pointing toward finish) ===
         if(g_Config.m_ClPfShowField && m_PfFlowField && m_MapWidth > 0 && m_MapHeight > 0)
         {
-                // Render flow field as colored quads (tiles): green=close, red=far
                 int tx0 = pf_clamp((int)(pGame->m_Camera.m_Center.x / 32.0f) - 30, 0, m_MapWidth - 1);
                 int ty0 = pf_clamp((int)(pGame->m_Camera.m_Center.y / 32.0f) - 20, 0, m_MapHeight - 1);
                 int tx1 = pf_clamp(tx0 + 60, 0, m_MapWidth - 1);
                 int ty1 = pf_clamp(ty0 + 40, 0, m_MapHeight - 1);
-                float maxDist = 1.0f;
-                for(int ty = ty0; ty <= ty1; ty++)
-                        for(int tx = tx0; tx <= tx1; tx++)
-                                maxDist = pf_maxf(maxDist, m_PfFlowField[ty * m_MapWidth + tx]);
-                Graphics()->QuadsBegin();
+                Graphics()->LinesBegin();
+                Graphics()->SetColor(BaseColor.r, BaseColor.g, BaseColor.b, ConfigAlpha * 0.3f);
                 for(int ty = ty0; ty <= ty1; ty++)
                 {
                         for(int tx = tx0; tx <= tx1; tx++)
                         {
                                 float fd = m_PfFlowField[ty * m_MapWidth + tx];
-                                if(fd >= 1e17f)
+                                if(fd >= 1e17f || fd == 0.0f)
+                                        continue; // unreachable or already at finish
+
+                                // Find neighbor with lowest flow_dist = direction to finish
+                                float bestDist = fd;
+                                int dx = 0, dy = 0;
+                                for(int ny = -1; ny <= 1; ny++)
+                                {
+                                        for(int nx = -1; nx <= 1; nx++)
+                                        {
+                                                if(nx == 0 && ny == 0)
+                                                        continue;
+                                                int ntx = tx + nx, nty = ty + ny;
+                                                if(ntx < 0 || nty < 0 || ntx >= m_MapWidth || nty >= m_MapHeight)
+                                                        continue;
+                                                float nd = m_PfFlowField[nty * m_MapWidth + ntx];
+                                                if(nd < bestDist)
+                                                {
+                                                        bestDist = nd;
+                                                        dx = nx; dy = ny;
+                                                }
+                                        }
+                                }
+                                if(dx == 0 && dy == 0)
                                         continue;
-                                float t = fd / maxDist; // 0=close, 1=far
-                                // Hue: 120° (green, close) → 0° (red, far)
-                                float hue = (1.0f - t) * 120.0f;
-                                ColorRGBA c = color_cast<ColorRGBA>(ColorHSLA(hue / 360.0f, 1.0f, 0.5f, true));
-                                Graphics()->SetColor(c.r, c.g, c.b, ConfigAlpha * 0.3f);
-                                float px = tx * 32.0f;
-                                float py = ty * 32.0f;
-                                IGraphics::CFreeformItem Quad(px, py, px + 32.0f, py, px, py + 32.0f, px + 32.0f, py + 32.0f);
-                                Graphics()->QuadsDrawFreeform(&Quad, 1);
+
+                                // Arrow: from tile center toward best neighbor
+                                float cx = tx * 32.0f + 16.0f;
+                                float cy = ty * 32.0f + 16.0f;
+                                float len = 12.0f;
+                                vec2 dir = normalize(vec2((float)dx, (float)dy));
+                                vec2 end = vec2(cx, cy) + dir * len;
+                                vec2 perp = vec2(-dir.y, dir.x) * 4.0f;
+                                vec2 arrowBack = end - dir * 5.0f;
+
+                                // Main line
+                                IGraphics::CLineItem Main(cx, cy, end.x, end.y);
+                                Graphics()->LinesDraw(&Main, 1);
+                                // Arrowhead: two small lines
+                                IGraphics::CLineItem A1(end.x, end.y, arrowBack.x + perp.x, arrowBack.y + perp.y);
+                                Graphics()->LinesDraw(&A1, 1);
+                                IGraphics::CLineItem A2(end.x, end.y, arrowBack.x - perp.x, arrowBack.y - perp.y);
+                                Graphics()->LinesDraw(&A2, 1);
                         }
                 }
-                Graphics()->QuadsEnd();
+                Graphics()->LinesEnd();
         }
 
         // === Show other branches (semi-transparent, using trajectory settings) ===
@@ -4363,47 +4391,45 @@ void CBotNet::RenderPathfinderPath()
         }
 
         // === Main path render (with optional speed gradient) ===
-        // Speed gradient: smooth HSL interpolation hue 0°(red,slow) → 120°(green,med) → 240°(blue,fast)
+        // Speed gradient: smooth HSL, per-vertex interpolation via SetColor4
+        // hue 0°(red,slow) → 120°(green,med) → 240°(blue,fast)
         if(LineSize > 0)
         {
-                std::vector<IGraphics::CFreeformItem> vQuads;
-                vQuads.reserve(m_PfVPath.size() - 1);
                 float HalfWidth = 0.5f + (float)(LineSize - 1) * 0.25f;
-
+                Graphics()->QuadsBegin();
                 for(size_t i = 1; i < m_PfVPath.size(); i++)
                 {
                         vec2 p0 = m_PfVPath[i - 1];
                         vec2 p1 = m_PfVPath[i];
                         vec2 Dir = normalize(p1 - p0);
                         vec2 Perp = vec2(Dir.y, -Dir.x) * HalfWidth;
-                        vQuads.emplace_back(
+                        IGraphics::CFreeformItem Quad(
                                 p0.x - Perp.x, p0.y - Perp.y,
                                 p0.x + Perp.x, p0.y + Perp.y,
                                 p1.x - Perp.x, p1.y - Perp.y,
                                 p1.x + Perp.x, p1.y + Perp.y);
-                }
 
-                Graphics()->QuadsBegin();
-                for(size_t i = 0; i < vQuads.size(); i++)
-                {
-                        float r, g, b;
                         if(g_Config.m_ClPfShowSpeed)
                         {
-                                vec2 p0 = m_PfVPath[i];
-                                vec2 p1 = m_PfVPath[i + 1];
-                                float speed = distance(p0, p1);
-                                // Smooth HSL: hue 0°(red) → 240°(blue), t = speed/15
-                                float t = pf_clamp(speed / 15.0f, 0.0f, 1.0f);
-                                float hue = t * 240.0f; // 0=red, 120=green, 240=blue
-                                ColorRGBA c = color_cast<ColorRGBA>(ColorHSLA(hue / 360.0f, 1.0f, 0.5f, true));
-                                r = c.r; g = c.g; b = c.b;
+                                // Speed at start and end of this segment
+                                float speed0 = (i > 1) ? distance(m_PfVPath[i - 2], m_PfVPath[i - 1]) : distance(p0, p1);
+                                float speed1 = distance(p0, p1);
+                                float t0 = pf_clamp(speed0 / 15.0f, 0.0f, 1.0f);
+                                float t1 = pf_clamp(speed1 / 15.0f, 0.0f, 1.0f);
+                                ColorRGBA c0 = color_cast<ColorRGBA>(ColorHSLA(t0 * 240.0f / 360.0f, 1.0f, 0.5f, true));
+                                ColorRGBA c1 = color_cast<ColorRGBA>(ColorHSLA(t1 * 240.0f / 360.0f, 1.0f, 0.5f, true));
+                                // Per-vertex: start vertices get c0, end vertices get c1
+                                Graphics()->SetColor4(
+                                        ColorRGBA(c0.r, c0.g, c0.b, ConfigAlpha), // TL (start)
+                                        ColorRGBA(c0.r, c0.g, c0.b, ConfigAlpha), // TR (start)
+                                        ColorRGBA(c1.r, c1.g, c1.b, ConfigAlpha), // BL (end)
+                                        ColorRGBA(c1.r, c1.g, c1.b, ConfigAlpha)); // BR (end)
                         }
                         else
                         {
-                                r = BaseColor.r; g = BaseColor.g; b = BaseColor.b;
+                                Graphics()->SetColor(BaseColor.r, BaseColor.g, BaseColor.b, ConfigAlpha);
                         }
-                        Graphics()->SetColor(r, g, b, ConfigAlpha);
-                        Graphics()->QuadsDrawFreeform(&vQuads[i], 1);
+                        Graphics()->QuadsDrawFreeform(&Quad, 1);
                 }
                 Graphics()->QuadsEnd();
         }
@@ -4412,20 +4438,17 @@ void CBotNet::RenderPathfinderPath()
                 Graphics()->LinesBegin();
                 for(size_t i = 1; i < m_PfVPath.size(); i++)
                 {
-                        float r, g, b;
                         if(g_Config.m_ClPfShowSpeed)
                         {
                                 float speed = distance(m_PfVPath[i - 1], m_PfVPath[i]);
                                 float t = pf_clamp(speed / 15.0f, 0.0f, 1.0f);
-                                float hue = t * 240.0f;
-                                ColorRGBA c = color_cast<ColorRGBA>(ColorHSLA(hue / 360.0f, 1.0f, 0.5f, true));
-                                r = c.r; g = c.g; b = c.b;
+                                ColorRGBA c = color_cast<ColorRGBA>(ColorHSLA(t * 240.0f / 360.0f, 1.0f, 0.5f, true));
+                                Graphics()->SetColor(c.r, c.g, c.b, ConfigAlpha);
                         }
                         else
                         {
-                                r = BaseColor.r; g = BaseColor.g; b = BaseColor.b;
+                                Graphics()->SetColor(BaseColor.r, BaseColor.g, BaseColor.b, ConfigAlpha);
                         }
-                        Graphics()->SetColor(r, g, b, ConfigAlpha);
                         IGraphics::CLineItem Line(m_PfVPath[i - 1], m_PfVPath[i]);
                         Graphics()->LinesDraw(&Line, 1);
                 }
