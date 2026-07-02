@@ -3222,23 +3222,78 @@ void CBotNet::PfComputeFlowField()
                         int nc = cur.c + dc[d];
                         if(nc < 0 || nr < 0 || nc >= m_MapWidth || nr >= m_MapHeight)
                                 continue;
-                        float tileCost = GetTileCost(nc, nr);
-                        if(tileCost < 0)
+                        if(!IsTileWalkable(nc, nr))
+                                continue;
+                        // Skip freeze tiles — if path exists without freeze, freeze stays 1e18
+                        int nIdx0 = nr * m_MapWidth + nc;
+                        if(m_pMapGrid[nIdx0] == TILE_FREEZE || m_pMapGrid[nIdx0] == TILE_DFREEZE ||
+                           m_pFrontGrid[nIdx0] == TILE_FREEZE || m_pFrontGrid[nIdx0] == TILE_DFREEZE)
                                 continue;
                         if(abs(dr[d]) + abs(dc[d]) == 2)
                         {
                                 if(!IsTileWalkable(cur.c, cur.r + dr[d]) || !IsTileWalkable(cur.c + dc[d], cur.r))
                                         continue;
                         }
-                        // Freeze tiles get high cost so BFS prefers non-freeze paths,
-                        // but freeze is still passable if no alternative exists.
-                        float moveCost = (abs(dr[d]) + abs(dc[d]) == 2) ? SQRT2 * tileCost : tileCost;
+                        float moveCost = (abs(dr[d]) + abs(dc[d]) == 2) ? SQRT2 : 1.0f;
                         float newG = cur.g + moveCost;
                         int nIdx = nr * m_MapWidth + nc;
                         if(newG < m_PfFlowField[nIdx])
                         {
                                 m_PfFlowField[nIdx] = newG;
                                 open.push({newG, newG, nr, nc});
+                        }
+                }
+        }
+
+        // Phase 2: if some tiles are still 1e18 (unreachable without freeze),
+        // run second BFS allowing freeze tiles with high cost
+        bool needPhase2 = false;
+        // Check if start area is reachable (any tile with value < 1e17)
+        // Actually check: are there freeze tiles adjacent to reachable tiles?
+        std::priority_queue<PfNode, std::vector<PfNode>, std::greater<PfNode>> open2;
+        for(int ty = 0; ty < m_MapHeight; ty++)
+        {
+                for(int tx = 0; tx < m_MapWidth; tx++)
+                {
+                        int idx = ty * m_MapWidth + tx;
+                        if(m_PfFlowField[idx] >= 1e17f)
+                                continue;
+                        // Push reachable tiles as seeds for phase 2
+                        open2.push({m_PfFlowField[idx], m_PfFlowField[idx], ty, tx});
+                }
+        }
+        if(!open2.empty())
+        {
+                while(!open2.empty())
+                {
+                        PfNode cur = open2.top();
+                        open2.pop();
+                        int cIdx = cur.r * m_MapWidth + cur.c;
+                        if(cur.g > m_PfFlowField[cIdx])
+                                continue;
+
+                        for(int d = 0; d < 8; d++)
+                        {
+                                int nr = cur.r + dr[d];
+                                int nc = cur.c + dc[d];
+                                if(nc < 0 || nr < 0 || nc >= m_MapWidth || nr >= m_MapHeight)
+                                        continue;
+                                float tileCost = GetTileCost(nc, nr);
+                                if(tileCost < 0)
+                                        continue;
+                                if(abs(dr[d]) + abs(dc[d]) == 2)
+                                {
+                                        if(!IsTileWalkable(cur.c, cur.r + dr[d]) || !IsTileWalkable(cur.c + dc[d], cur.r))
+                                                continue;
+                                }
+                                float moveCost = (abs(dr[d]) + abs(dc[d]) == 2) ? SQRT2 * tileCost : tileCost;
+                                float newG = cur.g + moveCost;
+                                int nIdx = nr * m_MapWidth + nc;
+                                if(newG < m_PfFlowField[nIdx])
+                                {
+                                        m_PfFlowField[nIdx] = newG;
+                                        open2.push({newG, newG, nr, nc});
+                                }
                         }
                 }
         }
@@ -4232,6 +4287,12 @@ void CBotNet::RenderPathfinderPath()
                 {
                         for(int tx = tx0; tx <= tx1; tx++)
                         {
+                                // Skip freeze tiles — arrows only on non-freeze tiles
+                                int tileIdx = ty * m_MapWidth + tx;
+                                if(m_pMapGrid[tileIdx] == TILE_FREEZE || m_pMapGrid[tileIdx] == TILE_DFREEZE ||
+                                   m_pFrontGrid[tileIdx] == TILE_FREEZE || m_pFrontGrid[tileIdx] == TILE_DFREEZE)
+                                        continue;
+
                                 float fd = m_PfFlowField[ty * m_MapWidth + tx];
                                 if(fd >= 1e17f || fd == 0.0f)
                                         continue; // unreachable or already at finish
