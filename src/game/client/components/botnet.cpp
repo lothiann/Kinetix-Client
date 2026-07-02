@@ -4234,34 +4234,28 @@ void CBotNet::RenderPathfinderPath()
                                 if(fd >= 1e17f || fd == 0.0f)
                                         continue; // unreachable or already at finish
 
-                                // Find neighbor with lowest flow_dist = direction to finish
-                                float bestDist = fd;
-                                int dx = 0, dy = 0;
-                                for(int ny = -1; ny <= 1; ny++)
-                                {
-                                        for(int nx = -1; nx <= 1; nx++)
-                                        {
-                                                if(nx == 0 && ny == 0)
-                                                        continue;
-                                                int ntx = tx + nx, nty = ty + ny;
-                                                if(ntx < 0 || nty < 0 || ntx >= m_MapWidth || nty >= m_MapHeight)
-                                                        continue;
-                                                float nd = m_PfFlowField[nty * m_MapWidth + ntx];
-                                                if(nd < bestDist)
-                                                {
-                                                        bestDist = nd;
-                                                        dx = nx; dy = ny;
-                                                }
-                                        }
-                                }
-                                if(dx == 0 && dy == 0)
-                                        continue;
+                                // Gradient-based direction (360°, not 8-directional)
+                                float fdx_m = (tx > 0) ? m_PfFlowField[ty * m_MapWidth + (tx - 1)] : fd;
+                                float fdx_p = (tx < m_MapWidth - 1) ? m_PfFlowField[ty * m_MapWidth + (tx + 1)] : fd;
+                                float fdy_m = (ty > 0) ? m_PfFlowField[(ty - 1) * m_MapWidth + tx] : fd;
+                                float fdy_p = (ty < m_MapHeight - 1) ? m_PfFlowField[(ty + 1) * m_MapWidth + tx] : fd;
+                                // Treat unreachable as very far (so gradient points away from walls)
+                                if(fdx_m >= 1e17f) fdx_m = fd + 1.0f;
+                                if(fdx_p >= 1e17f) fdx_p = fd + 1.0f;
+                                if(fdy_m >= 1e17f) fdy_m = fd + 1.0f;
+                                if(fdy_p >= 1e17f) fdy_p = fd + 1.0f;
 
-                                // Arrow: from tile center toward best neighbor
+                                float gx = fdx_m - fdx_p; // negative = finish is to the left
+                                float gy = fdy_m - fdy_p; // negative = finish is above
+                                float glen = sqrtf(gx * gx + gy * gy);
+                                if(glen < 0.001f)
+                                        continue;
+                                vec2 dir = vec2(gx / glen, gy / glen);
+
+                                // Arrow: from tile center in gradient direction
                                 float cx = tx * 32.0f + 16.0f;
                                 float cy = ty * 32.0f + 16.0f;
                                 float len = 12.0f;
-                                vec2 dir = normalize(vec2((float)dx, (float)dy));
                                 vec2 end = vec2(cx, cy) + dir * len;
                                 vec2 perp = vec2(-dir.y, dir.x) * 4.0f;
                                 vec2 arrowBack = end - dir * 5.0f;
