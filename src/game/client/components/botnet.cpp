@@ -4572,16 +4572,18 @@ void CBotNet::RenderPathfinderPath()
 
         // === Main path render (with optional speed gradient) ===
         // Speed gradient: full rainbow via HSL hue sweep.
-        // Speed range [0, 128] px/tick mapped to hue [0°, 300°]:
-        //   0   px/tick → red    (hue 0)
-        //   ~21 px/tick → yellow (hue 60)
-        //   ~43 px/tick → green  (hue 120)
-        //   ~64 px/tick → cyan   (hue 180)
-        //   ~85 px/tick → blue   (hue 240)
-        //   128 px/tick → purple (hue 300)
+        // Speed range [0, 30] px/tick mapped to hue [0°, 300°]:
+        //   0    px/tick → red    (hue 0)
+        //   5    px/tick → orange (hue 50)
+        //   10   px/tick → yellow (hue 100)
+        //   15   px/tick → green  (hue 150)
+        //   20   px/tick → cyan   (hue 200)
+        //   25   px/tick → blue   (hue 250)
+        //   30+  px/tick → purple (hue 300)
+        // 30 px/tick covers typical DDNet speeds (run ~10, jump ~12, fall ~17, hook-swing 20-30).
         // S=1, L=0.5 → pure rainbow colors, smooth interpolation across the whole range.
         auto fnSpeedColor = [](float speed) -> ColorRGBA {
-                const float MAX_SPEED = 128.0f;
+                const float MAX_SPEED = 30.0f;
                 float t = pf_clamp(speed / MAX_SPEED, 0.0f, 1.0f);
                 float hue = t * 300.0f; // 0..300 degrees
                 return color_cast<ColorRGBA>(ColorHSLA(hue / 360.0f, 1.0f, 0.5f, true));
