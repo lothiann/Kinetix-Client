@@ -3919,6 +3919,119 @@ int CBotNet::PfAStarStep()
         bool hookIdle = (cur.Core.m_HookState == HOOK_IDLE);
         bool hookActive = (cur.Core.m_HookState == HOOK_FLYING || cur.Core.m_HookState == HOOK_GRABBED);
 
+        // === Advanced search (v1.56.14): per-tick input combinations ===
+        // Each tick in the chunk gets its OWN input (dir/jump/angle/hook), not one
+        // input for the whole chunk. A flat counter over (dir,jump,angle,hook)
+        // advances across ticks AND across candidates without restart, so every
+        // tick of every candidate gets a unique combination.
+        // One candidate = ChunkSize consecutive picks from the counter.
+        if(g_Config.m_ClPfAdvancedSearch)
+        {
+                // Push helper: simulate one inSeq, push bestG + A* open heap.
+                auto fnPushAdvanced = [&](std::vector<CNetObj_PlayerInput> &inSeq) {
+                        if(!FutureWorld.GetCharacterById(LocalID))
+                                PfAStarSetupWorld(&FutureWorld, pGame, LocalID);
+                        FutureWorld.m_GameTick = RootStartTick + cur.TickOffset;
+                        pBot = PfSpawnSimBot(&FutureWorld, LocalID, cur.Pos, cur.Core.m_Vel,
+                             cur.Core.m_HookState, cur.Core.m_HookPos,
+                             cur.Core.m_HookDir, cur.Core.m_HookTick,
+                             cur.FreezeTime, cur.Core.m_Jumped);
+                        if(!pBot)
+                                return;
+                        { CCharacterCore c = pBot->GetCore(); c.m_JumpedTotal = cur.Core.m_JumpedTotal; pBot->SetCore(c); }
+
+                        PfChunkResult res;
+                        PfSimulateChunk(&FutureWorld, LocalID, pBot, inSeq, RootStartTick + cur.TickOffset, res);
+                        if(res.died && !res.reachedFinish)
+                                return;
+
+                        CCharacterCore endCore = cur.Core;
+                        endCore.m_Pos = res.endPos; endCore.m_Vel = res.endVel;
+                        endCore.m_HookState = res.endHookState; endCore.m_HookPos = res.endHookPos;
+                        endCore.m_HookDir = res.endHookDir; endCore.m_HookTick = res.endHookTick;
+                        endCore.m_Jumped = res.endJumped;
+                        endCore.m_JumpedTotal = res.endJumpedTotal;
+                        bool endGrounded = pColl->IsOnGround(res.endPos, CCharacterCore::PhysicalSize());
+
+                        uint64_t newKey = PfAStarKey(endCore, res.endFreezeTime, endGrounded);
+                        float newG = cur.G + (float)ChunkSize;
+                        auto it = m_PfABestG.find(newKey);
+                        if(it != m_PfABestG.end() && it->second <= newG)
+                                return;
+                        m_PfABestG[newKey] = newG;
+
+                        AStarNode child;
+                        child.Core = endCore; child.Pos = res.endPos;
+                        child.FreezeTime = res.endFreezeTime; child.Grounded = endGrounded;
+                        child.G = newG; child.H = PfAStarHeuristic(child.Pos, endPos);
+                        child.F = child.G + (float)W * child.H;
+                        child.ParentIdx = curIdx; child.PrimIdx = 0; child.PrimTicks = ChunkSize;
+                        child.TickOffset = cur.TickOffset + ChunkSize;
+                        child.Traj = res.traj; child.Inputs = inSeq;
+                        m_PfANodes.push_back(child);
+                        PfAStarHeapPush(m_PfAOpen, m_PfANodes, (int)m_PfANodes.size() - 1);
+                };
+
+                auto fnAimFor = [&](int angleIdx) -> vec2 {
+                        float a = aHookRays[angleIdx].angle;
+                        return vec2(cosf(a), sinf(a)) * 256.0f;
+                };
+                auto fnAimHooked = [&]() -> vec2 { return cur.Core.m_HookPos - cur.Pos; };
+
+                const int nDir = 3;
+                const int nJump = 2;
+                const int nAngle = HookAngles;
+                const int nHook = 2;
+                const long totalCombos = (long)nDir * nJump * nAngle * nHook; // = 12 * HookAngles
+                // Number of candidates: bounded by ClPfBacktrackCandidates, by available
+                // combos (ceil(totalCombos / ChunkSize)), and by A* node budget.
+                const int maxNodes = pf_clamp(g_Config.m_ClPfAStarNodeBudget, 1000, 1000000);
+                const int dynAdvMax = (int)((totalCombos + ChunkSize - 1) / ChunkSize); // ceil(combos/CS)
+                int numCandidates = pf_clamp(g_Config.m_ClPfBacktrackCandidates, CConfig::PF_CANDIDATES_MIN, dynAdvMax);
+                if(numCandidates > maxNodes) numCandidates = maxNodes;
+                if(numCandidates < 1) numCandidates = 1;
+
+                for(int cand = 0; cand < numCandidates; cand++)
+                {
+                        std::vector<CNetObj_PlayerInput> inSeq;
+                        inSeq.reserve(ChunkSize);
+                        // ChunkSize consecutive picks from counter, continuing across candidates.
+                        for(int t = 0; t < ChunkSize; t++)
+                        {
+                                long idx = ((long)cand * ChunkSize + t) % totalCombos;
+                                int hookVal = (int)(idx % nHook); idx /= nHook;
+                                int angleIdx = (int)(idx % nAngle); idx /= nAngle;
+                                int jumpVal = (int)(idx % nJump); idx /= nJump;
+                                int dirVal = (int)(idx % nDir);
+
+                                // Skip impossible hook fires (no hook target / not idle nor active).
+                                if(hookVal == 1 && !hookIdle && !hookActive)
+                                        hookVal = 0; // fall back to no-hook for this tick
+                                if(hookVal == 1 && hookIdle && !aHookRays[angleIdx].hasTarget)
+                                        hookVal = 0; // ray missed — no hook for this tick
+
+                                CNetObj_PlayerInput inp;
+                                mem_zero(&inp, sizeof(inp));
+                                inp.m_Direction = aDirs[dirVal];
+                                inp.m_Jump = jumpVal;
+                                inp.m_Hook = hookVal;
+                                vec2 aim;
+                                if(hookVal == 1 && hookActive)
+                                        aim = fnAimHooked();
+                                else if(hookVal == 1 && hookIdle)
+                                        aim = fnAimFor(angleIdx);
+                                else
+                                        aim = vec2((float)aDirs[dirVal] * 256.0f, -256.0f);
+                                inp.m_TargetX = (int)aim.x;
+                                inp.m_TargetY = (int)aim.y;
+                                inSeq.push_back(inp);
+                        }
+                        fnPushAdvanced(inSeq);
+                }
+
+                return 0;
+        }
+
         for(int dirIdx = 0; dirIdx < 3; dirIdx++)
         {
                 int dir = aDirs[dirIdx];
@@ -4955,6 +5068,108 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
         for(int i = 0; i < N; i++)
                 topCandidates[i].score = -1e18f;
 
+        // === Advanced search (v1.56.14): per-tick input combinations ===
+        // Same flat-counter mechanism as in PfAStarStep — each tick of every
+        // candidate gets a unique (dir,jump,angle,hook) combination, the counter
+        // keeps advancing across ticks and candidates without restart.
+        if(g_Config.m_ClPfAdvancedSearch)
+        {
+                bool hookIdleAdv = (pBot->GetCore().m_HookState == HOOK_IDLE);
+                bool hookActiveAdv = (pBot->GetCore().m_HookState == HOOK_FLYING || pBot->GetCore().m_HookState == HOOK_GRABBED);
+
+                auto fnAimForAdv = [&](int angleIdx) -> vec2 {
+                        float a = aHookRays[angleIdx].angle;
+                        return vec2(cosf(a), sinf(a)) * 256.0f;
+                };
+                auto fnAimHookedAdv = [&]() -> vec2 { return pBot->GetCore().m_HookPos - pBot->m_Pos; };
+
+                const int nDir = 3;
+                const int nJump = 2;
+                const int nAngle = HookAngles;
+                const int nHook = 2;
+                const long totalCombos = (long)nDir * nJump * nAngle * nHook; // = 12 * HookAngles
+                const int dynAdvMax = (int)((totalCombos + ChunkSize - 1) / ChunkSize);
+                int numCandidates = pf_clamp(g_Config.m_ClPfBacktrackCandidates, CConfig::PF_CANDIDATES_MIN, dynAdvMax);
+                if(numCandidates < 1) numCandidates = 1;
+
+                for(int cand = 0; cand < numCandidates; cand++)
+                {
+                        std::vector<CNetObj_PlayerInput> inSeq;
+                        inSeq.reserve(ChunkSize);
+                        for(int t = 0; t < ChunkSize; t++)
+                        {
+                                long idx = ((long)cand * ChunkSize + t) % totalCombos;
+                                int hookVal = (int)(idx % nHook); idx /= nHook;
+                                int angleIdx = (int)(idx % nAngle); idx /= nAngle;
+                                int jumpVal = (int)(idx % nJump); idx /= nJump;
+                                int dirVal = (int)(idx % nDir);
+
+                                if(hookVal == 1 && !hookIdleAdv && !hookActiveAdv)
+                                        hookVal = 0;
+                                if(hookVal == 1 && hookIdleAdv && !aHookRays[angleIdx].hasTarget)
+                                        hookVal = 0;
+
+                                CNetObj_PlayerInput inp;
+                                mem_zero(&inp, sizeof(inp));
+                                inp.m_Direction = aDirs[dirVal];
+                                inp.m_Jump = jumpVal;
+                                inp.m_Hook = hookVal;
+                                vec2 aim;
+                                if(hookVal == 1 && hookActiveAdv)
+                                        aim = fnAimHookedAdv();
+                                else if(hookVal == 1 && hookIdleAdv)
+                                        aim = fnAimForAdv(angleIdx);
+                                else
+                                        aim = vec2((float)aDirs[dirVal] * 256.0f, -256.0f);
+                                inp.m_TargetX = (int)aim.x;
+                                inp.m_TargetY = (int)aim.y;
+                                inSeq.push_back(inp);
+                        }
+
+                        // Save bot state, simulate, restore (same pattern as main sweep).
+                        CCharacterCore savedCore = pBot->GetCore();
+                        vec2 savedPos = pBot->m_Pos;
+                        int savedFreeze = pBot->m_FreezeTime;
+
+                        PfChunkResult res;
+                        PfSimulateChunk(&FutureWorld, LocalID, pBot, inSeq, StartTick, res);
+
+                        pBot->SetCore(savedCore);
+                        pBot->m_Pos = savedPos;
+                        pBot->m_FreezeTime = savedFreeze;
+
+                        if(res.died && !res.reachedFinish)
+                                continue;
+
+                        float score = PfScoreChunk(m_PfCurPos, res.endPos, res.reachedFinish, res.died, res.freezeTicks);
+
+                        for(int k = 0; k < N; k++)
+                        {
+                                if(score > topCandidates[k].score)
+                                {
+                                        for(int m = N - 1; m > k; m--)
+                                                topCandidates[m] = topCandidates[m - 1];
+                                        topCandidates[k].inputs = res.inputs;
+                                        topCandidates[k].traj = res.traj;
+                                        topCandidates[k].score = score;
+                                        topCandidates[k].reachedFinish = res.reachedFinish;
+                                        topCandidates[k].died = res.died;
+                                        topCandidates[k].freezeTicks = res.freezeTicks;
+                                        topCandidates[k].endPos = res.endPos;
+                                        topCandidates[k].endVel = res.endVel;
+                                        topCandidates[k].endHookPos = res.endHookPos;
+                                        topCandidates[k].endHookDir = res.endHookDir;
+                                        topCandidates[k].endHookState = res.endHookState;
+                                        topCandidates[k].endHookTick = res.endHookTick;
+                                        topCandidates[k].endJumped = res.endJumped;
+                                        topCandidates[k].endFreezeTime = res.endFreezeTime;
+                                        break;
+                                }
+                        }
+                }
+                // Fall through to the existing topCandidates consumer code below.
+        }
+        else
         // Parameter sweep: direction x jumpTick x hook x hookAngle
         for(int dirIdx = 0; dirIdx < 3; dirIdx++)
         {

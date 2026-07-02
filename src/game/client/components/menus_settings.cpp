@@ -5373,7 +5373,7 @@ void CMenus::RenderSettingsPathfinder(CUIRect MainView)
 
         // === Container 1: Parameters ===
         {
-                const int numRows = 6; // algo + chunk + hook angles + max chunks + candidates + perf
+                const int numRows = 7; // algo + chunk + hook angles + max chunks + candidates + perf + advanced
                 const float SectionH = PanelPad + 25.0f + 5.0f + numRows * LineSize + (numRows - 1) * RowGap + PanelPad;
                 MainView.HSplitTop(SectionH, &PanelBg, &MainView);
                 PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
@@ -5442,7 +5442,18 @@ void CMenus::RenderSettingsPathfinder(CUIRect MainView)
                 {
                         int chunkSize = std::clamp(g_Config.m_ClPfChunkSize, CConfig::PF_CHUNK_SIZE_MIN, CConfig::PF_CHUNK_SIZE_MAX);
                         int hookAngles = std::clamp(g_Config.m_ClPfHookAngles, CConfig::PF_HOOK_ANGLES_MIN, CConfig::PF_HOOK_ANGLES_MAX);
-                        int maxCandidates = 3 * (chunkSize + 1) * (1 + hookAngles);
+                        // Advanced search: max candidates = ceil(totalCombos / ChunkSize)
+                        // where totalCombos = 3 * 2 * hookAngles * 2 = 12 * hookAngles.
+                        int maxCandidates;
+                        if(g_Config.m_ClPfAdvancedSearch)
+                        {
+                                long totalCombos = (long)3 * 2 * hookAngles * 2;
+                                maxCandidates = (int)((totalCombos + chunkSize - 1) / chunkSize);
+                        }
+                        else
+                        {
+                                maxCandidates = 3 * (chunkSize + 1) * (1 + hookAngles);
+                        }
                         Ui()->DoScrollbarOption(&g_Config.m_ClPfBacktrackCandidates, &g_Config.m_ClPfBacktrackCandidates, &Row,
                                 Localize("Candidates"), CConfig::PF_CANDIDATES_MIN, maxCandidates, &CUi::ms_LinearScrollbarScale,
                                 CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
@@ -5454,6 +5465,13 @@ void CMenus::RenderSettingsPathfinder(CUIRect MainView)
                 Ui()->DoScrollbarOption(&g_Config.m_ClPfPerf, &g_Config.m_ClPfPerf, &Row,
                         Localize("Performance"), 1, 100, &CUi::ms_LinearScrollbarScale,
                         CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
+
+                // --- Advanced search checkbox ---
+                Panel.HSplitTop(LineSize, &Row, &Panel);
+                Panel.HSplitTop(RowGap, nullptr, &Panel);
+                static int s_AdvancedSearch = g_Config.m_ClPfAdvancedSearch;
+                if(DoButton_CheckBox(&s_AdvancedSearch, Localize("Advanced search"), g_Config.m_ClPfAdvancedSearch, &Row))
+                        g_Config.m_ClPfAdvancedSearch ^= 1;
         }
 
         MainView.HSplitTop(PanelGap, nullptr, &MainView);
