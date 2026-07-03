@@ -4605,7 +4605,7 @@ void CBotNet::RenderPathfinderPath()
         // S=1, L=0.5 → pure rainbow colors, smooth interpolation across the whole range.
         auto fnSpeedColor = [](float speed) -> ColorRGBA {
                 const float MAX_SPEED = 30.0f;
-                float t = pf_clamp(speed / MAX_SPEED, 0.0f, 1.0f);
+                float t = std::clamp(speed / MAX_SPEED, 0.0f, 1.0f);
                 float hue = t * 300.0f; // 0..300 degrees
                 return color_cast<ColorRGBA>(ColorHSLA(hue / 360.0f, 1.0f, 0.5f, true));
         };
