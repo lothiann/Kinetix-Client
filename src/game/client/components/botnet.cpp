@@ -4435,11 +4435,6 @@ void CBotNet::RenderPathfinderPath()
                                 float fdx_p = (tx < m_MapWidth - 1) ? m_PfFlowField[ty * m_MapWidth + (tx + 1)] : fd;
                                 float fdy_m = (ty > 0) ? m_PfFlowField[(ty - 1) * m_MapWidth + tx] : fd;
                                 float fdy_p = (ty < m_MapHeight - 1) ? m_PfFlowField[(ty + 1) * m_MapWidth + tx] : fd;
-                                // Treat unreachable as very far (so gradient points away from walls)
-                                if(fdx_m >= 1e17f) fdx_m = fd + 1.0f;
-                                if(fdx_p >= 1e17f) fdx_p = fd + 1.0f;
-                                if(fdy_m >= 1e17f) fdy_m = fd + 1.0f;
-                                if(fdy_p >= 1e17f) fdy_p = fd + 1.0f;
 
                                 float gx = fdx_m - fdx_p; // negative = finish is to the left
                                 float gy = fdy_m - fdy_p; // negative = finish is above
