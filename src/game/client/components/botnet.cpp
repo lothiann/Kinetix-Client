@@ -225,7 +225,7 @@ void CBotNet::OnConsoleInit()
         // Pathfinder tab (Kinetix→Pathfinder) — chunk-based mini TAS maker
         Console()->Register("c_pf_live", "i[state]", CFGFLAG_CLIENT, ConPfLive, this, "Pathfinder tab: 0=idle, 1=running, 2=finished");
         Console()->Register("c_pf_algorithm", "i[algo]", CFGFLAG_CLIENT, ConPfAlgorithm, this, "Pathfinder tab: algorithm index 0-14");
-        Console()->Register("c_pf_chunk_size", "i[ticks]", CFGFLAG_CLIENT, ConPfChunkSize, this, "Pathfinder tab: ticks per chunk (5-50)");
+        Console()->Register("c_pf_chunk_size", "i[ticks]", CFGFLAG_CLIENT, ConPfChunkSize, this, "Pathfinder tab: ticks per chunk (1-50)");
         Console()->Register("c_pf_candidates", "i[n]", CFGFLAG_CLIENT, ConPfCandidates, this, "Pathfinder tab: max search nodes (50-2000)");
         Console()->Register("c_pf_hook_angles", "i[angles]", CFGFLAG_CLIENT, ConPfHookAngles, this, "Pathfinder tab: hook fan-raycast rays (4-32)");
         Console()->Register("c_pf_horizon", "i[ticks]", CFGFLAG_CLIENT, ConPfHorizon, this, "Pathfinder tab: ticks applied per chunk (1-50)");
@@ -3055,7 +3055,7 @@ void CBotNet::ConPfChunkSize(IConsole::IResult *pResult, void *pUserData)
 {
         CBotNet *p = (CBotNet *)pUserData;
         int v = pResult->GetInteger(0);
-        if(v >= 5 && v <= PF_TAB_MAX_CHUNK_TICKS)
+        if(v >= CConfig::PF_CHUNK_SIZE_MIN && v <= PF_TAB_MAX_CHUNK_TICKS)
                 g_Config.m_ClPfChunkSize = v;
 }
 
@@ -3381,7 +3381,7 @@ void CBotNet::UpdatePathfinder()
                         m_PfState = PF_STATE_FINISHED;
                         return;
                 }
-                int ChunkSize = pf_clamp(g_Config.m_ClPfChunkSize, 5, PF_TAB_MAX_CHUNK_TICKS);
+                int ChunkSize = pf_clamp(g_Config.m_ClPfChunkSize, CConfig::PF_CHUNK_SIZE_MIN, PF_TAB_MAX_CHUNK_TICKS);
                 size_t endIdx = m_PfFullInputsIdx + (size_t)ChunkSize;
                 if(endIdx > m_PfFullInputs.size())
                         endIdx = m_PfFullInputs.size();
@@ -3903,7 +3903,7 @@ int CBotNet::PfAStarStep()
 
         // === Parameter sweep (same as v1.55 PfGenerateChunk) ===
         // direction × jumpTick × hook × hookAngle
-        int ChunkSize = pf_clamp(g_Config.m_ClPfChunkSize, 5, PF_TAB_MAX_CHUNK_TICKS);
+        int ChunkSize = pf_clamp(g_Config.m_ClPfChunkSize, CConfig::PF_CHUNK_SIZE_MIN, PF_TAB_MAX_CHUNK_TICKS);
         int HookAngles = pf_clamp(g_Config.m_ClPfHookAngles, 4, 32);
         static const int aDirs[] = {-1, 0, 1};
 
@@ -4974,7 +4974,7 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
         if(!pGame->m_PredictedWorld.GetCharacterById(LocalID))
                 return false;
 
-        int ChunkSize = pf_clamp(g_Config.m_ClPfChunkSize, 5, PF_TAB_MAX_CHUNK_TICKS);
+        int ChunkSize = pf_clamp(g_Config.m_ClPfChunkSize, CConfig::PF_CHUNK_SIZE_MIN, PF_TAB_MAX_CHUNK_TICKS);
         int HookAngles = pf_clamp(g_Config.m_ClPfHookAngles, 4, 32);
 
         // Clean planning world (bot + collision only).  Other entities are

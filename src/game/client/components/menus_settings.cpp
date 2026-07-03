@@ -5419,7 +5419,7 @@ void CMenus::RenderSettingsPathfinder(CUIRect MainView)
                 Panel.HSplitTop(LineSize, &Row, &Panel);
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
                 Ui()->DoScrollbarOption(&g_Config.m_ClPfChunkSize, &g_Config.m_ClPfChunkSize, &Row,
-                        Localize("Chunk Size"), 5, PF_TAB_MAX_CHUNK_TICKS, &CUi::ms_LinearScrollbarScale,
+                        Localize("Chunk Size"), CConfig::PF_CHUNK_SIZE_MIN, PF_TAB_MAX_CHUNK_TICKS, &CUi::ms_LinearScrollbarScale,
                         CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
 
                 // --- Hook angles slider ---

@@ -282,8 +282,8 @@ MACRO_CONFIG_INT(ClTrajectoryAlpha, cl_trajectory_alpha, 80, 0, 100, CFGFLAG_CLI
 
 // Pathfinder parameter bounds — single source of truth for config limits + dynamic formulas.
 // Keep PF_CHUNK_SIZE_MAX / PF_HOOK_ANGLES_MAX in sync with the literals in the
-// ClPfChunkSize (5-50) and ClPfHookAngles (4-32) macros below.
-static constexpr int PF_CHUNK_SIZE_MIN = 5;
+// ClPfHookAngles (4-32) macro below.
+static constexpr int PF_CHUNK_SIZE_MIN = 1;
 static constexpr int PF_CHUNK_SIZE_MAX = 50;
 static constexpr int PF_HOOK_ANGLES_MIN = 4;
 static constexpr int PF_HOOK_ANGLES_MAX = 32;
@@ -296,7 +296,7 @@ static constexpr int PF_CANDIDATES_MAX = 3 * (PF_CHUNK_SIZE_MAX + 1) * (1 + PF_H
 // Pathfinder tab (Kinetix→Pathfinder) — chunk-based mini TAS maker.
 // State machine: pathfinding (idle) -> stop (running) -> finish (done, path shown until user clicks).
 MACRO_CONFIG_INT(ClPfAlgorithm, cl_pf_algorithm, 0, 0, 14, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder algorithm: 0=KinoA* 1=GridA* 2=Dijkstra 3=Greedy 4=BFS 5=DFS 6=RRT 7=RRT* 8=PRM 9=MCTS 10=GA 11=CMA-ES 12=SA 13=HillClimb 14=RandomWalk")
-MACRO_CONFIG_INT(ClPfChunkSize, cl_pf_chunk_size, 20, 5, 50, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: ticks per input chunk (5-50)")
+MACRO_CONFIG_INT(ClPfChunkSize, cl_pf_chunk_size, 20, PF_CHUNK_SIZE_MIN, PF_CHUNK_SIZE_MAX, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: ticks per input chunk (1-50)")
 MACRO_CONFIG_INT(ClPfCandidates, cl_pf_candidates, 200, 50, 2000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: max search nodes per chunk")
 MACRO_CONFIG_INT(ClPfHookAngles, cl_pf_hook_angles, 9, 4, 32, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: hook fan-raycast rays (4-32)")
 MACRO_CONFIG_INT(ClPfHorizon, cl_pf_horizon, 6, 1, 50, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: ticks to apply per chunk before re-planning (1-chunk_size)")
