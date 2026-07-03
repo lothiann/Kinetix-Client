@@ -3224,11 +3224,9 @@ void CBotNet::PfComputeFlowField()
                                 continue;
                         if(!IsTileWalkable(nc, nr))
                                 continue;
-                        // Skip freeze tiles — if path exists without freeze, freeze stays 1e18
-                        int nIdx0 = nr * m_MapWidth + nc;
-                        if(m_pMapGrid[nIdx0] == TILE_FREEZE || m_pMapGrid[nIdx0] == TILE_DFREEZE ||
-                           m_pFrontGrid[nIdx0] == TILE_FREEZE || m_pFrontGrid[nIdx0] == TILE_DFREEZE)
-                                continue;
+                        // Freeze tiles are passable in Phase 1 — they get real distance
+                        // to finish, so the gradient on neighboring tiles points TOWARD
+                        // finish (through freeze), not away from freeze.
                         if(abs(dr[d]) + abs(dc[d]) == 2)
                         {
                                 if(!IsTileWalkable(cur.c, cur.r + dr[d]) || !IsTileWalkable(cur.c + dc[d], cur.r))
