@@ -3325,8 +3325,9 @@ float CBotNet::PfScoreChunk(const vec2 &startPos, const vec2 &endPos, bool reach
         float score = 0.0f;
         const float INF = 1e17f; // unreachable threshold (m_PfFlowField uses 1e18)
 
-        // Flow field progress
-        if(m_PfFlowField)
+        // Score method: flow-field alignment (how much closer the chunk moved us
+        // toward finish in the BFS distance field). Gated by ClPfScoreFlow.
+        if(g_Config.m_ClPfScoreFlow && m_PfFlowField)
         {
                 int sx = pf_clamp((int)(startPos.x / 32.0f), 0, m_MapWidth - 1);
                 int sy = pf_clamp((int)(startPos.y / 32.0f), 0, m_MapHeight - 1);
@@ -3340,6 +3341,23 @@ float CBotNet::PfScoreChunk(const vec2 &startPos, const vec2 &endPos, bool reach
                         score += 50.0f; // escaped an unreachable tile
                 else if(dEnd >= INF && dStart < INF)
                         score -= 50.0f; // moved INTO an unreachable tile
+        }
+
+        // Score method: distance reduction (euclidean closer to finish).
+        // Gated by ClPfScoreDist. Positive when chunk moved us closer.
+        if(g_Config.m_ClPfScoreDist && !m_PfFinishTiles.empty())
+        {
+                // Distance from startPos to nearest finish, vs endPos to nearest finish.
+                float dStartMin = 1e18f;
+                float dEndMin = 1e18f;
+                for(const vec2 &fp : m_PfFinishTiles)
+                {
+                        float ds = distance(startPos, fp);
+                        float de = distance(endPos, fp);
+                        if(ds < dStartMin) dStartMin = ds;
+                        if(de < dEndMin) dEndMin = de;
+                }
+                score += (dStartMin - dEndMin) * 1.0f; // px reduction
         }
 
         // Finish bonus

@@ -307,7 +307,6 @@ MACRO_CONFIG_INT(ClPfPerf, cl_pf_perf, 100, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAV
 MACRO_CONFIG_INT(ClPfAdvancedSearch, cl_pf_advanced_search, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: advanced search — per-tick input combinations inside a chunk. Flat counter over (dir,jump,angle,hook) advances across ticks and candidates without restart, so every tick of every candidate gets a unique combination.")
 // Score method — combine any of these (checkboxes; final score = weighted sum of enabled)
 MACRO_CONFIG_INT(ClPfScoreDist, cl_pf_score_dist, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Score: distance reduction (how much closer the chunk moved us to goal)")
-MACRO_CONFIG_INT(ClPfScoreTime, cl_pf_score_time, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Score: fewer ticks (prefer shorter chunks that reach the same progress)")
 MACRO_CONFIG_INT(ClPfScoreFlow, cl_pf_score_flow, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Score: flow-field alignment (how well the trajectory follows the BFS flow field)")
 // Fine method — penalty weights (checkboxes; each enabled penalty is added to the score)
 MACRO_CONFIG_INT(ClPfFineFreeze, cl_pf_fine_freeze, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Fine: freeze penalty (per freeze tile touched)")
