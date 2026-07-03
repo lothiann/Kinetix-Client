@@ -511,6 +511,65 @@ public:
 
         // Placeholder processing for c_send and UI Send Command
         static std::string ReplacePlaceholders(const std::string &Cmd, int DummyIndex, CGameClient *pGame);
+
+private:
+        // =========================================================
+        // Internal helpers (v1.56.32 refactor — extracted from ProcessDummy
+        // and the two Compute*Pathfinder methods to kill duplication and
+        // make the per-dummy tick readable.  Behavior is identical.)
+        // =========================================================
+
+        // Zero direction/jump/hook, advance the fire-release bit, mask fire,
+        // and copy back into m_Controls.  Used by every early-return path.
+        void ResetAndCommitInput(CGameClient *pGame, CNetObj_PlayerInput *pInput, int Dummy);
+
+        // Issue a "kill" console command on the given dummy by temporarily
+        // switching g_Config.m_ClDummy.  No-op safe (restores prior value).
+        void IssueKillForDummy(int Dummy);
+
+        // Detect map dimension change / 5-second reload timer.  Two slots so
+        // PathfinderGo + Attack-BranchA share one timer (legacy behaviour)
+        // while Attack-BranchB keeps its own independent timer.
+        //   reloadSlot 0 = shared (PathfinderGo + Attack-BranchA)
+        //   reloadSlot 1 = separate (Attack-BranchB / smart-rescue)
+        // Returns true when LoadMapGrid() was called.
+        bool MaybeReloadMapGrid(int reloadSlot);
+
+        // The stand-distance used by the "stand when close" check, depending
+        // on whether the current target is the main player (and m_AttackMain
+        // is off) and not a rescue target.  Replaces the 6x duplicated ternary.
+        float EffectiveStandDist(bool TargetIsMain, bool TargetIsRescue) const;
+
+        // True when the bot's tile is adjacent to freeze tiles (repel nonzero).
+        // Replaces the repeated (repel.x*repel.x + repel.y*repel.y) > 0.0001f.
+        bool IsNearFreeze(int botTX, int botTY) const;
+
+        // PfSnap "snap to tile center" — when no horizontal movement, nudge
+        // left/right toward the current tile's center.  Replaces 2x 10-line dup.
+        void ApplyPfSnap(const vec2 &MyPos, bool &left, bool &right) const;
+
+        // Hook pulse cycle (ticks) from m_HookDelay.  Replaces 2x identical calc.
+        int ComputeHookTicksCycle() const;
+
+        // --- ProcessDummy sub-steps (each returns true when it handled the
+        //     tick and ProcessDummy should return immediately; false = fall
+        //     through to the next stage). ---
+        bool HandleFrozenDummy(CGameClient *pGame, CNetObj_PlayerInput *pInput, int Dummy, int LocalID);
+        bool HandleNoFeatureIdle(CGameClient *pGame, CNetObj_PlayerInput *pInput, int Dummy, CBotNetDummy &State);
+        bool ProcessMacroPlayback(CGameClient *pGame, CNetObj_PlayerInput *pInput, int Dummy, CBotNetDummy &State);
+        bool ProcessMacroRecording(CGameClient *pGame, CNetObj_PlayerInput *pInput, int Dummy, CBotNetDummy &State, int LocalID, int64_t CurTick);
+        bool ApplyClientDelayGate(CGameClient *pGame, CNetObj_PlayerInput *pInput, int Dummy);
+        bool ProcessCopyMoves(CGameClient *pGame, CNetObj_PlayerInput *pInput, int Dummy);
+        bool ProcessPathfinderGo(CGameClient *pGame, CNetObj_PlayerInput *pInput, int Dummy, CBotNetDummy &State, int LocalID);
+        void ProcessRandomAim(int Dummy, CBotNetDummy &State, int64_t CurTick); // fall-through (void)
+
+        // Shared A* engine for ComputePathfinder / ComputePathfinderRescue.
+        // Multi-source BFS-style Dijkstra/A* from `sources` toward bot tile.
+        //   skipFreeze = true  → freeze tiles are impassable (rescue variant)
+        //   skipFreeze = false → freeze tiles passable at +PF_FREEZE_COST
+        // Returns true if the bot tile was reached.  Fills m_pfDist / m_pfVisited.
+        bool PfAStarSearch(int botTX, int botTY,
+                const std::vector<std::pair<int, int>> &sources, bool skipFreeze);
 };
 
 #endif

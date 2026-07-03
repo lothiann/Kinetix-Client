@@ -232,6 +232,107 @@ void CBotNet::OnConsoleInit()
 }
 
 // =========================================================
+// INTERNAL HELPERS (v1.56.32 refactor)
+// Extracted from ProcessDummy + Compute*Pathfinder to kill duplication.
+// Behavior is byte-for-byte identical to the inlined originals.
+// =========================================================
+
+void CBotNet::ResetAndCommitInput(CGameClient *pGame, CNetObj_PlayerInput *pInput, int Dummy)
+{
+        // Zero movement inputs, advance the fire-release bit so a held fire
+        // doesn't get stuck, mask fire to the valid 2-bit state, then commit.
+        pInput->m_Direction = 0;
+        pInput->m_Jump = 0;
+        pInput->m_Hook = 0;
+        if((pInput->m_Fire & 1) != 0)
+                pInput->m_Fire++;
+        pInput->m_Fire &= INPUT_STATE_MASK;
+        pGame->m_Controls.m_aInputData[Dummy] = *pInput;
+}
+
+void CBotNet::IssueKillForDummy(int Dummy)
+{
+        // "kill" must run on the right dummy slot; temporarily switch ClDummy.
+        int OldDummy = g_Config.m_ClDummy;
+        g_Config.m_ClDummy = Dummy;
+        Console()->ExecuteLine("kill", -1, -1);
+        g_Config.m_ClDummy = OldDummy;
+}
+
+bool CBotNet::MaybeReloadMapGrid(int reloadSlot)
+{
+        // reloadSlot 0 is shared between PathfinderGo and Attack-BranchA (legacy
+        // behaviour: a single 5s static timer).  reloadSlot 1 is BranchB's own
+        // independent timer.  Two slots => two statics => same semantics as before.
+        static int64_t s_LastReload[2] = {0, 0};
+
+        bool mapChanged = false;
+        if(m_MapGridLoaded)
+        {
+                CLayers *pLayers = GameClient()->Layers();
+                if(pLayers && pLayers->GameLayer())
+                {
+                        int curW = pLayers->GameLayer()->m_Width;
+                        int curH = pLayers->GameLayer()->m_Height;
+                        if(curW != m_MapWidth || curH != m_MapHeight)
+                                mapChanged = true;
+                }
+        }
+
+        int64_t now = time_get();
+        if(now - s_LastReload[reloadSlot] > time_freq() * 5)
+        {
+                mapChanged = true;
+                s_LastReload[reloadSlot] = now;
+        }
+
+        if(!m_MapGridLoaded || mapChanged)
+        {
+                LoadMapGrid();
+                return true;
+        }
+        return false;
+}
+
+float CBotNet::EffectiveStandDist(bool TargetIsMain, bool TargetIsRescue) const
+{
+        // When targeting the main player and not in attack-main mode (and not a
+        // rescue target), use the larger m_MainStandDist so the bot keeps some
+        // distance; otherwise m_StandDist.
+        return (TargetIsMain && !m_AttackMain && !TargetIsRescue) ? m_MainStandDist : m_StandDist;
+}
+
+bool CBotNet::IsNearFreeze(int botTX, int botTY) const
+{
+        // ComputeFreezeRepel returns a unit-ish vec2 pointing away from nearby
+        // freeze tiles; nonzero => at least one freeze neighbour is exerting force.
+        if(!m_AvoidFreeze || !m_MapGridLoaded)
+                return false;
+        vec2 repel = const_cast<CBotNet *>(this)->ComputeFreezeRepel(botTX, botTY);
+        return (repel.x * repel.x + repel.y * repel.y) > 0.0001f;
+}
+
+void CBotNet::ApplyPfSnap(const vec2 &MyPos, bool &left, bool &right) const
+{
+        // When no horizontal movement is requested, nudge toward the current
+        // tile's X center so the bot rides the tile grid cleanly (PfSnap option).
+        int snapTX = (int)roundf(MyPos.x / 32.0f);
+        float tileCenterX = snapTX * 32.0f + 16.0f;
+        float offsetX = MyPos.x - tileCenterX;
+        if(offsetX > 0)
+                left = true;
+        else if(offsetX < 0)
+                right = true;
+}
+
+int CBotNet::ComputeHookTicksCycle() const
+{
+        // Hook pulse period in ticks, derived from m_HookDelay (ms).  Min 2 ticks.
+        int cycle = (50 * m_HookDelay / 1000);
+        return cycle < 2 ? 2 : cycle;
+}
+
+// =========================================================
 // PATHFINDER
 // =========================================================
 
@@ -427,48 +528,43 @@ bool CBotNet::HasLineOfSightTiles(int r1, int c1, int r2, int c2)
         return true;
 }
 
-void CBotNet::ComputePathfinder(int botTX, int botTY, int targetTX, int targetTY, CBotNetDummy &State)
+// =========================================================
+// SHARED A* ENGINE (v1.56.32 refactor)
+// One implementation of the 8-directional Dijkstra/A* loop, used by both
+// ComputePathfinder (single source = target tile, freeze passable) and
+// ComputePathfinderRescue (multi-source = safe tiles, freeze impassable).
+// =========================================================
+bool CBotNet::PfAStarSearch(int botTX, int botTY,
+        const std::vector<std::pair<int, int>> &sources, bool skipFreeze)
 {
-        if(!m_MapGridLoaded || m_MapWidth <= 0 || m_MapHeight <= 0)
-                return;
-
+        // Reset the working buffers.
         int Size = m_MapWidth * m_MapHeight;
-
         for(int i = 0; i < Size; i++)
         {
                 m_pfDist[i] = 1e18f;
                 m_pfVisited[i] = false;
         }
 
-        targetTX = pf_clamp(targetTX, 0, m_MapWidth - 1);
-        targetTY = pf_clamp(targetTY, 0, m_MapHeight - 1);
-        botTX = pf_clamp(botTX, 0, m_MapWidth - 1);
-        botTY = pf_clamp(botTY, 0, m_MapHeight - 1);
-
-        if(!IsTileWalkable(targetTX, targetTY) || !IsTileWalkable(botTX, botTY))
-        {
-                State.m_PathFound = false;
-                State.m_FlowDir = vec2(0, 0);
-                State.m_PfHookTile = vec2(0, 0);
-                return;
-        }
-
         const float SQRT2 = 1.4142135623730951f;
+        // 8-neighbour offsets: 4 orthogonal + 4 diagonal.
+        static const int dr[] = {-1, 1, 0, 0, -1, -1, 1, 1};
+        static const int dc[] = {0, 0, -1, 1, -1, 1, -1, 1};
 
-        int dr[] = {-1, 1, 0, 0, -1, -1, 1, 1};
-        int dc[] = {0, 0, -1, 1, -1, 1, -1, 1};
-
+        // Octile-distance heuristic toward the bot tile (admissible).
         auto heuristic = [&](int r, int c) -> float {
                 int dy = abs(r - botTY);
                 int dx = abs(c - botTX);
                 return pf_maxf((float)dy, (float)dx) + (SQRT2 - 1.0f) * pf_minf((float)dy, (float)dx);
         };
 
-        int tIdx = targetTY * m_MapWidth + targetTX;
-        m_pfDist[tIdx] = 0.0f;
-
+        // Multi-source seed: every source tile starts at g=0.
         std::priority_queue<PfNode, std::vector<PfNode>, std::greater<PfNode>> open;
-        open.push({heuristic(targetTY, targetTX), 0.0f, targetTY, targetTX});
+        for(const auto &src : sources)
+        {
+                int idx = src.second * m_MapWidth + src.first;
+                m_pfDist[idx] = 0.0f;
+                open.push({heuristic(src.second, src.first), 0.0f, src.second, src.first});
+        }
 
         while(!open.empty())
         {
@@ -489,10 +585,15 @@ void CBotNet::ComputePathfinder(int botTX, int botTY, int targetTX, int targetTY
                         if(nc < 0 || nr < 0 || nc >= m_MapWidth || nr >= m_MapHeight)
                                 continue;
 
+                        // Rescue variant: freeze tiles are walls (skip entirely).
+                        if(skipFreeze && IsTileFreeze(nc, nr))
+                                continue;
+
                         float tileCost = GetTileCost(nc, nr);
                         if(tileCost < 0)
                                 continue;
 
+                        // Diagonal move: prevent corner-cutting through two solids.
                         if(abs(dr[d]) + abs(dc[d]) == 2)
                         {
                                 if(!IsTileWalkable(cur.c, cur.r + dr[d]) || !IsTileWalkable(cur.c + dc[d], cur.r))
@@ -512,16 +613,39 @@ void CBotNet::ComputePathfinder(int botTX, int botTY, int targetTX, int targetTY
                 }
         }
 
-        State.m_PathFound = m_pfVisited[botTY * m_MapWidth + botTX];
+        return m_pfVisited[botTY * m_MapWidth + botTX];
+}
+
+void CBotNet::ComputePathfinder(int botTX, int botTY, int targetTX, int targetTY, CBotNetDummy &State)
+{
+        if(!m_MapGridLoaded || m_MapWidth <= 0 || m_MapHeight <= 0)
+                return;
+
+        targetTX = pf_clamp(targetTX, 0, m_MapWidth - 1);
+        targetTY = pf_clamp(targetTY, 0, m_MapHeight - 1);
+        botTX = pf_clamp(botTX, 0, m_MapWidth - 1);
+        botTY = pf_clamp(botTY, 0, m_MapHeight - 1);
+
+        if(!IsTileWalkable(targetTX, targetTY) || !IsTileWalkable(botTX, botTY))
+        {
+                State.m_PathFound = false;
+                State.m_FlowDir = vec2(0, 0);
+                State.m_PfHookTile = vec2(0, 0);
+                return;
+        }
+
+        // Single source = the target tile; freeze passable (cost-penalised).
+        std::vector<std::pair<int, int>> sources{{targetTX, targetTY}};
+        bool reached = PfAStarSearch(botTX, botTY, sources, /*skipFreeze=*/false);
+
+        State.m_PathFound = reached;
         State.m_LastTargetTX = targetTX;
         State.m_LastTargetTY = targetTY;
         State.m_LastBotTX = botTX;
         State.m_LastBotTY = botTY;
 
-        if(State.m_PathFound)
-        {
+        if(reached)
                 ComputeFlowForTile(botTY, botTX, State);
-        }
         else
         {
                 State.m_FlowDir = vec2(0, 0);
@@ -549,6 +673,8 @@ void CBotNet::ComputePathfinderRescue(int botTX, int botTY, int targetTX, int ta
                 return;
         }
 
+        // Ray-fan around the (frozen) target to find nearby walkable, non-freeze
+        // tiles — these are candidate "safe spots" the bot can pull the target to.
         int hookRadiusTiles = (int)(m_HookDist / 32.0f);
         if(hookRadiusTiles < 1)
                 hookRadiusTiles = 1;
@@ -556,7 +682,7 @@ void CBotNet::ComputePathfinderRescue(int botTX, int botTY, int targetTX, int ta
         struct SafeTile
         {
                 int tx, ty;
-                int dist;
+                int dist; // squared distance to target (for sort + grouping)
         };
         SafeTile safeTiles[1024];
         int numSafe = 0;
@@ -574,10 +700,8 @@ void CBotNet::ComputePathfinderRescue(int botTX, int botTY, int targetTX, int ta
 
                         if(tc < 0 || tr < 0 || tc >= m_MapWidth || tr >= m_MapHeight)
                                 break;
-
                         if(!IsTileWalkable(tc, tr))
                                 break;
-
                         if(IsTileFreeze(tc, tr))
                                 continue;
 
@@ -600,6 +724,7 @@ void CBotNet::ComputePathfinderRescue(int botTX, int botTY, int targetTX, int ta
                 return;
         }
 
+        // Sort by squared distance (bubble sort — numSafe is small).
         for(int a = 0; a < numSafe - 1; a++)
                 for(int b = a + 1; b < numSafe; b++)
                         if(safeTiles[b].dist < safeTiles[a].dist)
@@ -609,88 +734,24 @@ void CBotNet::ComputePathfinderRescue(int botTX, int botTY, int targetTX, int ta
                                 safeTiles[b] = tmp;
                         }
 
-        const float SQRT2 = 1.4142135623730951f;
-        int dr[] = {-1, 1, 0, 0, -1, -1, 1, 1};
-        int dc[] = {0, 0, -1, 1, -1, 1, -1, 1};
-
-        auto heuristic = [&](int r, int c) -> float {
-                int dy = abs(r - botTY);
-                int dx = abs(c - botTX);
-                return pf_maxf((float)dy, (float)dx) + (SQRT2 - 1.0f) * pf_minf((float)dy, (float)dx);
-        };
-
-        int Size = m_MapWidth * m_MapHeight;
-
+        // Try safe tiles in distance rings: all tiles at the same squared distance
+        // from the target seed the A* together (multi-source).  Stop at the first
+        // ring that reaches the bot — nearest safe spot wins.
         int startIdx = 0;
         while(startIdx < numSafe)
         {
                 int curDist = safeTiles[startIdx].dist;
-
-                for(int i = 0; i < Size; i++)
-                {
-                        m_pfDist[i] = 1e18f;
-                        m_pfVisited[i] = false;
-                }
-
-                std::priority_queue<PfNode, std::vector<PfNode>, std::greater<PfNode>> open;
-
+                std::vector<std::pair<int, int>> sources;
                 int endIdx = startIdx;
                 while(endIdx < numSafe && safeTiles[endIdx].dist == curDist)
                 {
-                        int tx = safeTiles[endIdx].tx;
-                        int ty = safeTiles[endIdx].ty;
-                        int idx = ty * m_MapWidth + tx;
-                        m_pfDist[idx] = 0.0f;
-                        open.push({heuristic(ty, tx), 0.0f, ty, tx});
+                        sources.emplace_back(safeTiles[endIdx].tx, safeTiles[endIdx].ty);
                         endIdx++;
                 }
 
-                while(!open.empty())
-                {
-                        PfNode cur = open.top();
-                        open.pop();
-
-                        if(m_pfVisited[cur.r * m_MapWidth + cur.c])
-                                continue;
-                        m_pfVisited[cur.r * m_MapWidth + cur.c] = true;
-
-                        if(cur.r == botTY && cur.c == botTX)
-                                break;
-
-                        for(int d = 0; d < 8; d++)
-                        {
-                                int nr = cur.r + dr[d];
-                                int nc = cur.c + dc[d];
-                                if(nc < 0 || nr < 0 || nc >= m_MapWidth || nr >= m_MapHeight)
-                                        continue;
-
-                                if(IsTileFreeze(nc, nr))
-                                        continue;
-
-                                float tileCost = GetTileCost(nc, nr);
-                                if(tileCost < 0)
-                                        continue;
-
-                                if(abs(dr[d]) + abs(dc[d]) == 2)
-                                {
-                                        if(!IsTileWalkable(cur.c, cur.r + dr[d]) || !IsTileWalkable(cur.c + dc[d], cur.r))
-                                                continue;
-                                }
-
-                                float moveCost = (abs(dr[d]) + abs(dc[d]) == 2) ? SQRT2 * tileCost : tileCost;
-                                float newG = cur.g + moveCost;
-                                int nIdx = nr * m_MapWidth + nc;
-
-                                if(newG < m_pfDist[nIdx])
-                                {
-                                        m_pfDist[nIdx] = newG;
-                                        float f = newG + heuristic(nr, nc);
-                                        open.push({f, newG, nr, nc});
-                                }
-                        }
-                }
-
-                if(m_pfVisited[botTY * m_MapWidth + botTX])
+                // Rescue variant: freeze tiles are impassable (skipFreeze=true).
+                bool reached = PfAStarSearch(botTX, botTY, sources, /*skipFreeze=*/true);
+                if(reached)
                 {
                         State.m_PathFound = true;
                         State.m_LastTargetTX = targetTX;
@@ -1098,6 +1159,373 @@ void CBotNet::OnUpdate()
 // PROCESS DUMMY — core logic for one inactive dummy
 // =========================================================
 
+// =========================================================
+// PROCESSDUMMY SUB-STEPS (v1.56.32 refactor)
+// Each handler corresponds to one early-return block that used to live
+// inline in ProcessDummy.  Returns true when it handled the tick (and
+// ProcessDummy must return immediately); false = fall through to the
+// next stage.  Logic is identical to the inlined originals.
+// =========================================================
+
+bool CBotNet::HandleFrozenDummy(CGameClient *pGame, CNetObj_PlayerInput *pInput, int Dummy, int LocalID)
+{
+        // Frozen / deep-frozen dummies can't act.  Optionally kill on freeze,
+        // then zero inputs and bail for the rest of the tick.
+        if(pGame->m_aClients[LocalID].m_FreezeEnd > 0 || pGame->m_aClients[LocalID].m_DeepFrozen)
+        {
+                if(m_KillOnFreeze && pGame->m_aClients[LocalID].m_FreezeEnd > 0)
+                        IssueKillForDummy(Dummy);
+                ResetAndCommitInput(pGame, pInput, Dummy);
+                return true;
+        }
+        return false;
+}
+
+bool CBotNet::HandleNoFeatureIdle(CGameClient *pGame, CNetObj_PlayerInput *pInput, int Dummy, CBotNetDummy &State)
+{
+        // Nothing to do this tick — clear inputs and return.
+        if(!m_AttackEnabled && !m_CopyMoves && !m_RandomAim && !State.m_MacroPlaying && !State.m_PathfinderGoActive)
+        {
+                ResetAndCommitInput(pGame, pInput, Dummy);
+                return true;
+        }
+        return false;
+}
+
+bool CBotNet::ProcessMacroPlayback(CGameClient *pGame, CNetObj_PlayerInput *pInput, int Dummy, CBotNetDummy &State)
+{
+        if(!State.m_MacroPlaying)
+                return false;
+
+        // Sleep gating: wait until the recorded sleep window elapses.
+        if(State.m_MacroSleepTicks > 0)
+        {
+                int64_t Now = Client()->GameTick(0);
+                if(Now >= State.m_MacroSleepUntilTick)
+                        State.m_MacroSleepTicks = 0;
+                else
+                {
+                        pGame->m_Controls.m_aInputData[Dummy] = *pInput;
+                        return true;
+                }
+        }
+
+        if(State.m_MacroPlayIndex < (int)State.m_MacroPlayLines.size())
+        {
+                const std::string &line = State.m_MacroPlayLines[State.m_MacroPlayIndex];
+                State.m_MacroPlayIndex++;
+
+                std::istringstream iss(line);
+                std::string cmd;
+                iss >> cmd;
+
+                if(cmd == "sleep")
+                {
+                        int ms;
+                        if(iss >> ms)
+                        {
+                                int TickSpeed = Client()->GameTickSpeed();
+                                if(TickSpeed <= 0)
+                                        TickSpeed = 50;
+                                State.m_MacroSleepTicks = 1;
+                                State.m_MacroSleepUntilTick = Client()->GameTick(0) + (int64_t)ms * TickSpeed / 1000;
+                        }
+                        pGame->m_Controls.m_aInputData[Dummy] = *pInput;
+                        return true;
+                }
+                else if(cmd == "input")
+                {
+                        std::string action;
+                        iss >> action;
+                        if(action == "left")
+                        {
+                                int val = 1;
+                                iss >> val;
+                                SetDirection(pGame, Dummy, val != 0, false);
+                        }
+                        else if(action == "right")
+                        {
+                                int val = 1;
+                                iss >> val;
+                                SetDirection(pGame, Dummy, false, val != 0);
+                        }
+                        else if(action == "jump")
+                        {
+                                int val = 1;
+                                iss >> val;
+                                pInput->m_Jump = (val != 0) ? 1 : 0;
+                        }
+                        else if(action == "hook")
+                        {
+                                int val = 1;
+                                iss >> val;
+                                pInput->m_Hook = (val != 0) ? 1 : 0;
+                        }
+                        else if(action == "fire")
+                        {
+                                pInput->m_Fire++;
+                        }
+                        else if(action == "weapon")
+                        {
+                                int val = 1;
+                                if(iss >> val)
+                                        pInput->m_WantedWeapon = val;
+                        }
+                }
+                else if(cmd == "aim")
+                {
+                        int x, y;
+                        if(iss >> x >> y)
+                                SetMousePos(pGame, Dummy, vec2(x, y));
+                }
+        }
+        else
+        {
+                State.m_MacroPlaying = false;
+                SetDirection(pGame, Dummy, false, false);
+                ResetAndCommitInput(pGame, pInput, Dummy);
+                GameClient()->m_BotControl.ActionStop(Dummy);
+                dbg_msg("botnet_macro", "Playback finished.");
+        }
+
+        pInput->m_PlayerFlags |= 1;
+        pGame->m_Controls.m_aInputData[Dummy] = *pInput;
+        return true;
+}
+
+bool CBotNet::ProcessMacroRecording(CGameClient *pGame, CNetObj_PlayerInput *pInput, int Dummy, CBotNetDummy &State, int LocalID, int64_t CurTick)
+{
+        if(!State.m_MacroRecording)
+                return false;
+
+        // Emergency stop: prevent unbounded buffer growth.
+        if(State.m_MacroRecordBuffer.size() > 100000)
+        {
+                dbg_msg("botnet_macro", "EMERGENCY STOP: Buffer exceeded 100,000 lines! Stopping recording to prevent crash.");
+                State.m_MacroRecording = false;
+                pGame->m_Controls.m_aInputData[Dummy] = *pInput;
+                return true;
+        }
+
+        int captureID = (State.m_MacroCaptureID >= 0 && State.m_MacroCaptureID < 128) ? State.m_MacroCaptureID : LocalID;
+
+        // Sample current input state — either from the local dummy or from a
+        // remote capture target (its snapshot).
+        int curDir = 0, curJump = 0, curHook = 0, curFire = 0, curAimX = 0, curAimY = 0, curWeapon = 0;
+        if(captureID == LocalID)
+        {
+                if(pInput->m_Direction == -1)
+                        curDir = -1;
+                else if(pInput->m_Direction == 1)
+                        curDir = 1;
+                curJump = (pInput->m_Jump != 0) ? 1 : 0;
+                curHook = (pInput->m_Hook != 0) ? 1 : 0;
+                curFire = pInput->m_Fire;
+                curAimX = pInput->m_TargetX;
+                curAimY = pInput->m_TargetY;
+                curWeapon = pGame->m_Snap.m_aCharacters[LocalID].m_Cur.m_Weapon;
+        }
+        else
+        {
+                const auto &TChar = pGame->m_Snap.m_aCharacters[captureID];
+                if(TChar.m_Active)
+                {
+                        curDir = TChar.m_Cur.m_Direction;
+                        curJump = (TChar.m_Cur.m_Jumped & 1);
+                        curHook = (TChar.m_Cur.m_HookState > 0) ? 1 : 0;
+                        curFire = TChar.m_Cur.m_AttackTick;
+                        curAimX = TChar.m_HasExtendedData ? TChar.m_ExtendedData.m_TargetX : 0;
+                        curAimY = TChar.m_HasExtendedData ? TChar.m_ExtendedData.m_TargetY : 0;
+                        curWeapon = TChar.m_Cur.m_Weapon;
+                }
+                else
+                {
+                        // Capture target went away — bail this tick.
+                        pGame->m_Controls.m_aInputData[Dummy] = *pInput;
+                        return true;
+                }
+        }
+
+        // Emit delta-encoded lines only when something changed since last sample.
+        bool changed = (curDir != State.m_LastRecordedDir) ||
+                (curJump != State.m_LastRecordedJump) ||
+                (curHook != State.m_LastRecordedHook) ||
+                (curAimX != State.m_LastRecordedAimX || curAimY != State.m_LastRecordedAimY) ||
+                (curFire != State.m_LastRecordedFire) ||
+                (curWeapon != State.m_LastRecordedWeapon);
+
+        if(changed)
+        {
+                int64_t deltaTick = CurTick - State.m_LastMacroRecordTick;
+                int TickSpeed = Client()->GameTickSpeed();
+                if(TickSpeed <= 0)
+                        TickSpeed = 50;
+                int deltaMs = (int)(deltaTick * 1000 / TickSpeed);
+
+                if(deltaMs > 1 && !State.m_MacroRecordBuffer.empty())
+                        State.m_MacroRecordBuffer.push_back("sleep " + std::to_string(deltaMs));
+
+                if(curDir != State.m_LastRecordedDir)
+                {
+                        if(curDir == -1)
+                                State.m_MacroRecordBuffer.push_back("input left 1");
+                        else if(curDir == 1)
+                                State.m_MacroRecordBuffer.push_back("input right 1");
+                        else
+                                State.m_MacroRecordBuffer.push_back("input left 0");
+                }
+                if(curJump != State.m_LastRecordedJump)
+                        State.m_MacroRecordBuffer.push_back(curJump != 0 ? "input jump 1" : "input jump 0");
+                if(curHook != State.m_LastRecordedHook)
+                        State.m_MacroRecordBuffer.push_back(curHook != 0 ? "input hook 1" : "input hook 0");
+                if(curAimX != State.m_LastRecordedAimX || curAimY != State.m_LastRecordedAimY)
+                        State.m_MacroRecordBuffer.push_back("aim " + std::to_string(curAimX) + " " + std::to_string(curAimY));
+                if(curFire != State.m_LastRecordedFire)
+                        State.m_MacroRecordBuffer.push_back("input fire");
+                if(curWeapon != State.m_LastRecordedWeapon)
+                        State.m_MacroRecordBuffer.push_back("input weapon " + std::to_string(curWeapon + 1));
+
+                State.m_LastRecordedDir = curDir;
+                State.m_LastRecordedJump = curJump;
+                State.m_LastRecordedHook = curHook;
+                State.m_LastRecordedFire = curFire;
+                State.m_LastRecordedAimX = curAimX;
+                State.m_LastRecordedAimY = curAimY;
+                State.m_LastRecordedWeapon = curWeapon;
+                State.m_LastMacroRecordTick = CurTick;
+        }
+        pGame->m_Controls.m_aInputData[Dummy] = *pInput;
+        return true;
+}
+
+bool CBotNet::ApplyClientDelayGate(CGameClient *pGame, CNetObj_PlayerInput *pInput, int Dummy)
+{
+        // Throttle dummy actions to one per m_ClientDelay ms (per-dummy timer).
+        if(m_ClientDelay <= 0)
+                return false;
+
+        static int64_t s_LastActionTick[MAX_DUMMIES] = {};
+        int64_t Now = Client()->GameTick(0);
+        int64_t TickDelay = ((int64_t)m_ClientDelay * Client()->GameTickSpeed()) / 1000;
+        if(TickDelay < 1)
+                TickDelay = 1;
+        if(Now - s_LastActionTick[Dummy] < TickDelay)
+        {
+                pGame->m_Controls.m_aInputData[Dummy] = *pInput;
+                return true;
+        }
+        s_LastActionTick[Dummy] = Now;
+        return false;
+}
+
+bool CBotNet::ProcessCopyMoves(CGameClient *pGame, CNetObj_PlayerInput *pInput, int Dummy)
+{
+        // Mirror another client's input onto this dummy.  Falls through (returns
+        // false) when the target is valid but inactive — preserves the ability to
+        // fall back to Attack/RandomAim.
+        if(!(m_CopyMoves && m_CopyTargetID >= 0 && m_CopyTargetID < 128))
+                return false;
+
+        const auto &TChar = pGame->m_Snap.m_aCharacters[m_CopyTargetID];
+        if(!(pGame->m_aClients[m_CopyTargetID].m_Active && TChar.m_Active))
+                return false; // fall through
+
+        SetDirection(pGame, Dummy, TChar.m_Cur.m_Direction == -1, TChar.m_Cur.m_Direction == 1);
+        pInput->m_Jump = (TChar.m_Cur.m_Jumped & 1);
+        pInput->m_Hook = (TChar.m_Cur.m_HookState > 0);
+        pInput->m_Fire = TChar.m_Cur.m_AttackTick;
+        pInput->m_WantedWeapon = TChar.m_Cur.m_Weapon + 1;
+        float WorldX = (float)(TChar.m_HasExtendedData ? TChar.m_ExtendedData.m_TargetX : 0);
+        float WorldY = (float)(TChar.m_HasExtendedData ? TChar.m_ExtendedData.m_TargetY : 0);
+        GameClient()->m_BotControl.ActionOverrideAim((int)WorldX, (int)WorldY, Dummy);
+
+        pInput->m_PlayerFlags |= 1;
+        pGame->m_Controls.m_aInputData[Dummy] = *pInput;
+        return true;
+}
+
+bool CBotNet::ProcessPathfinderGo(CGameClient *pGame, CNetObj_PlayerInput *pInput, int Dummy, CBotNetDummy &State, int LocalID)
+{
+        // "Go to position" pathfinder.  Returns true when active (always commits
+        // and ends the tick for this dummy).
+        if(!State.m_PathfinderGoActive)
+                return false;
+
+        vec2 MyPos((float)pGame->m_Snap.m_aCharacters[LocalID].m_Cur.m_X,
+                (float)pGame->m_Snap.m_aCharacters[LocalID].m_Cur.m_Y);
+
+        int botTX = (int)(MyPos.x / 32.0f);
+        int botTY = (int)(MyPos.y / 32.0f);
+        int targetTX = (int)(State.m_PathfinderGoPos.x / 32.0f);
+        int targetTY = (int)(State.m_PathfinderGoPos.y / 32.0f);
+
+        if(botTX == targetTX && botTY == targetTY)
+        {
+                State.m_PathfinderGoActive = false;
+                SetDirection(pGame, Dummy, false, false);
+                pInput->m_Jump = 0;
+                pGame->m_Controls.m_aInputData[Dummy] = *pInput;
+                dbg_msg("botnet", "Reached destination");
+                return true;
+        }
+
+        if(m_PathfinderEnabled)
+        {
+                // Shared 5s reload slot with Attack-BranchA (legacy behaviour).
+                MaybeReloadMapGrid(0);
+
+                if(m_MapGridLoaded)
+                {
+                        UpdatePlayerPenalty(botTX, botTY, targetTX, targetTY, LocalID);
+
+                        // Recompute the A* field only when target moved, no path yet, or
+                        // the bot ended up on an unreachable tile.
+                        bool needRecalc = (targetTX != State.m_LastTargetTX || targetTY != State.m_LastTargetTY) || !State.m_PathFound;
+                        if(State.m_PathFound && botTX >= 0 && botTY >= 0 && botTX < m_MapWidth && botTY < m_MapHeight)
+                        {
+                                if(m_pfDist[botTY * m_MapWidth + botTX] >= 1e17f)
+                                        needRecalc = true;
+                        }
+
+                        if(needRecalc && IsTileWalkable(targetTX, targetTY))
+                                ComputePathfinder(botTX, botTY, targetTX, targetTY, State);
+
+                        if(State.m_PathFound && (botTX != State.m_LastBotTX || botTY != State.m_LastBotTY))
+                        {
+                                ComputeFlowForTile(botTY, botTX, State);
+                                State.m_LastBotTX = botTX;
+                                State.m_LastBotTY = botTY;
+                        }
+
+                        bool left = false, right = false, jump = false;
+                        GetMovementFromFlow(State, left, right, jump);
+
+                        SetDirection(pGame, Dummy, left, right);
+                        pInput->m_Jump = jump ? 1 : 0;
+                        pInput->m_PlayerFlags |= 1;
+                }
+        }
+        pGame->m_Controls.m_aInputData[Dummy] = *pInput;
+        return true;
+}
+
+void CBotNet::ProcessRandomAim(int Dummy, CBotNetDummy &State, int64_t CurTick)
+{
+        // Fall-through (no return): override aim to a random point on a schedule.
+        // Guarded by !m_AttackEnabled && !m_CopyMoves — not redundant with the
+        // no-feature-idle check because CopyMoves may fall through with an inactive
+        // target while m_CopyMoves is still true.
+        if(!(m_RandomAim && !m_AttackEnabled && !m_CopyMoves))
+                return;
+
+        if(CurTick >= State.m_NextRandomAimTick)
+        {
+                GameClient()->m_BotControl.ActionOverrideAim((rand() % 2001) - 1000, (rand() % 2001) - 1000, Dummy);
+                int TS = Client()->GameTickSpeed();
+                State.m_NextRandomAimTick = CurTick + (int64_t)(TS != 0 ? TS : 50) * m_RandomAimInterval / 1000;
+        }
+}
+
 void CBotNet::ProcessDummy(int Dummy)
 {
         CGameClient *pGame = GameClient();
@@ -1106,403 +1534,39 @@ void CBotNet::ProcessDummy(int Dummy)
         int LocalID = pGame->m_aLocalIds[Dummy];
         int64_t CurTick = Client()->GameTick(0);
 
-        // Skip frozen dummies — they can't move/act, processing them wastes CPU
-        if(pGame->m_aClients[LocalID].m_FreezeEnd > 0 || pGame->m_aClients[LocalID].m_DeepFrozen)
-        {
-                // Only keep kill-on-freeze check
-                if(m_KillOnFreeze && pGame->m_aClients[LocalID].m_FreezeEnd > 0)
-                {
-                        int OldDummy = g_Config.m_ClDummy;
-                        g_Config.m_ClDummy = Dummy;
-                        Console()->ExecuteLine("kill", -1, -1);
-                        g_Config.m_ClDummy = OldDummy;
-                }
-                pInput->m_Direction = 0;
-                pInput->m_Jump = 0;
-                pInput->m_Hook = 0;
-                if((pInput->m_Fire & 1) != 0)
-                        pInput->m_Fire++;
-                pInput->m_Fire &= INPUT_STATE_MASK;
-                pGame->m_Controls.m_aInputData[Dummy] = *pInput;
+        // --- Early-return stages (each handler commits inputs + returns true) ---
+
+        // Frozen dummies can't act — optionally kill-on-freeze, then zero inputs.
+        if(HandleFrozenDummy(pGame, pInput, Dummy, LocalID))
                 return;
-        }
 
-        // Early return if no feature active — reset inputs
-        if(!m_AttackEnabled && !m_CopyMoves && !m_RandomAim && !State.m_MacroPlaying && !State.m_PathfinderGoActive)
-        {
-                pInput->m_Direction = 0;
-                pInput->m_Jump = 0;
-                pInput->m_Hook = 0;
-                if((pInput->m_Fire & 1) != 0)
-                        pInput->m_Fire++;
-                pInput->m_Fire &= INPUT_STATE_MASK;
-                pGame->m_Controls.m_aInputData[Dummy] = *pInput;
+        // No feature active — clear inputs and bail.
+        if(HandleNoFeatureIdle(pGame, pInput, Dummy, State))
                 return;
-        }
 
-        // ===== MACRO PLAYING =====
-        if(State.m_MacroPlaying)
-        {
-                if(State.m_MacroSleepTicks > 0)
-                {
-                        int64_t Now = Client()->GameTick(0);
-                        if(Now >= State.m_MacroSleepUntilTick)
-                                State.m_MacroSleepTicks = 0;
-                        else
-                        {
-                                pGame->m_Controls.m_aInputData[Dummy] = *pInput;
-                                return;
-                        }
-                }
-
-                if(State.m_MacroPlayIndex < (int)State.m_MacroPlayLines.size())
-                {
-                        const std::string &line = State.m_MacroPlayLines[State.m_MacroPlayIndex];
-                        State.m_MacroPlayIndex++;
-
-                        std::istringstream iss(line);
-                        std::string cmd;
-                        iss >> cmd;
-
-                        if(cmd == "sleep")
-                        {
-                                int ms;
-                                if(iss >> ms)
-                                {
-                                        int TickSpeed = Client()->GameTickSpeed();
-                                        if(TickSpeed <= 0)
-                                                TickSpeed = 50;
-                                        State.m_MacroSleepTicks = 1;
-                                        State.m_MacroSleepUntilTick = Client()->GameTick(0) + (int64_t)ms * TickSpeed / 1000;
-                                }
-                                pGame->m_Controls.m_aInputData[Dummy] = *pInput;
-                                return;
-                        }
-                        else if(cmd == "input")
-                        {
-                                std::string action;
-                                iss >> action;
-                                if(action == "left")
-                                {
-                                        int val = 1;
-                                        iss >> val;
-                                        SetDirection(pGame, Dummy, val != 0, false);
-                                }
-                                else if(action == "right")
-                                {
-                                        int val = 1;
-                                        iss >> val;
-                                        SetDirection(pGame, Dummy, false, val != 0);
-                                }
-                                else if(action == "jump")
-                                {
-                                        int val = 1;
-                                        iss >> val;
-                                        pInput->m_Jump = (val != 0) ? 1 : 0;
-                                }
-                                else if(action == "hook")
-                                {
-                                        int val = 1;
-                                        iss >> val;
-                                        pInput->m_Hook = (val != 0) ? 1 : 0;
-                                }
-                                else if(action == "fire")
-                                {
-                                        pInput->m_Fire++;
-                                }
-                                else if(action == "weapon")
-                                {
-                                        int val = 1;
-                                        if(iss >> val)
-                                                pInput->m_WantedWeapon = val;
-                                }
-                        }
-                        else if(cmd == "aim")
-                        {
-                                int x, y;
-                                if(iss >> x >> y)
-                                        SetMousePos(pGame, Dummy, vec2(x, y));
-                        }
-                }
-                else
-                {
-                        State.m_MacroPlaying = false;
-                        SetDirection(pGame, Dummy, false, false);
-                        pInput->m_Jump = 0;
-                        pInput->m_Hook = 0;
-                        if((pInput->m_Fire & 1) != 0)
-                                pInput->m_Fire++;
-                        pInput->m_Fire &= INPUT_STATE_MASK;
-                        GameClient()->m_BotControl.ActionStop(Dummy);
-                        dbg_msg("botnet_macro", "Playback finished.");
-                }
-
-                pInput->m_PlayerFlags |= 1;
-                pGame->m_Controls.m_aInputData[Dummy] = *pInput;
+        // Macro playback (sleep gating + input/aim dispatch).
+        if(ProcessMacroPlayback(pGame, pInput, Dummy, State))
                 return;
-        }
 
-        // ===== MACRO RECORDING =====
-        if(State.m_MacroRecording)
-        {
-                if(State.m_MacroRecordBuffer.size() > 100000)
-                {
-                        dbg_msg("botnet_macro", "EMERGENCY STOP: Buffer exceeded 100,000 lines! Stopping recording to prevent crash.");
-                        State.m_MacroRecording = false;
-                        pGame->m_Controls.m_aInputData[Dummy] = *pInput;
-                        return;
-                }
-
-                int captureID = (State.m_MacroCaptureID >= 0 && State.m_MacroCaptureID < 128) ? State.m_MacroCaptureID : LocalID;
-
-                int curDir = 0;
-                int curJump = 0;
-                int curHook = 0;
-                int curFire = 0;
-                int curAimX = 0;
-                int curAimY = 0;
-                int curWeapon = 0;
-
-                if(captureID == LocalID)
-                {
-                        if(pInput->m_Direction == -1)
-                                curDir = -1;
-                        else if(pInput->m_Direction == 1)
-                                curDir = 1;
-                        curJump = (pInput->m_Jump != 0) ? 1 : 0;
-                        curHook = (pInput->m_Hook != 0) ? 1 : 0;
-                        curFire = pInput->m_Fire;
-                        curAimX = pInput->m_TargetX;
-                        curAimY = pInput->m_TargetY;
-                        curWeapon = pGame->m_Snap.m_aCharacters[LocalID].m_Cur.m_Weapon;
-                }
-                else
-                {
-                        const auto &TChar = pGame->m_Snap.m_aCharacters[captureID];
-                        if(TChar.m_Active)
-                        {
-                                curDir = TChar.m_Cur.m_Direction;
-                                curJump = (TChar.m_Cur.m_Jumped & 1);
-                                curHook = (TChar.m_Cur.m_HookState > 0) ? 1 : 0;
-                                curFire = TChar.m_Cur.m_AttackTick;
-                                curAimX = TChar.m_HasExtendedData ? TChar.m_ExtendedData.m_TargetX : 0;
-                                curAimY = TChar.m_HasExtendedData ? TChar.m_ExtendedData.m_TargetY : 0;
-                                curWeapon = TChar.m_Cur.m_Weapon;
-                        }
-                        else
-                        {
-                                pGame->m_Controls.m_aInputData[Dummy] = *pInput;
-                                return;
-                        }
-                }
-
-                bool changed = false;
-                if(curDir != State.m_LastRecordedDir)
-                        changed = true;
-                if(curJump != State.m_LastRecordedJump)
-                        changed = true;
-                if(curHook != State.m_LastRecordedHook)
-                        changed = true;
-                if(curAimX != State.m_LastRecordedAimX || curAimY != State.m_LastRecordedAimY)
-                        changed = true;
-                if(curFire != State.m_LastRecordedFire)
-                        changed = true;
-                if(curWeapon != State.m_LastRecordedWeapon)
-                        changed = true;
-
-                if(changed)
-                {
-                        int64_t deltaTick = CurTick - State.m_LastMacroRecordTick;
-                        int TickSpeed = Client()->GameTickSpeed();
-                        if(TickSpeed <= 0)
-                                TickSpeed = 50;
-                        int deltaMs = (int)(deltaTick * 1000 / TickSpeed);
-
-                        if(deltaMs > 1 && !State.m_MacroRecordBuffer.empty())
-                        {
-                                std::string sleepLine = "sleep " + std::to_string(deltaMs);
-                                State.m_MacroRecordBuffer.push_back(sleepLine);
-                        }
-
-                        if(curDir != State.m_LastRecordedDir)
-                        {
-                                if(curDir == -1)
-                                        State.m_MacroRecordBuffer.push_back("input left 1");
-                                else if(curDir == 1)
-                                        State.m_MacroRecordBuffer.push_back("input right 1");
-                                else
-                                        State.m_MacroRecordBuffer.push_back("input left 0");
-                        }
-                        if(curJump != State.m_LastRecordedJump)
-                        {
-                                if(curJump != 0)
-                                        State.m_MacroRecordBuffer.push_back("input jump 1");
-                                else
-                                        State.m_MacroRecordBuffer.push_back("input jump 0");
-                        }
-                        if(curHook != State.m_LastRecordedHook)
-                        {
-                                if(curHook != 0)
-                                        State.m_MacroRecordBuffer.push_back("input hook 1");
-                                else
-                                        State.m_MacroRecordBuffer.push_back("input hook 0");
-                        }
-                        if(curAimX != State.m_LastRecordedAimX || curAimY != State.m_LastRecordedAimY)
-                        {
-                                std::string aimLine = "aim " + std::to_string(curAimX) + " " + std::to_string(curAimY);
-                                State.m_MacroRecordBuffer.push_back(aimLine);
-                        }
-                        if(curFire != State.m_LastRecordedFire)
-                        {
-                                State.m_MacroRecordBuffer.push_back("input fire");
-                        }
-                        if(curWeapon != State.m_LastRecordedWeapon)
-                        {
-                                std::string wpnLine = "input weapon " + std::to_string(curWeapon + 1);
-                                State.m_MacroRecordBuffer.push_back(wpnLine);
-                        }
-
-                        State.m_LastRecordedDir = curDir;
-                        State.m_LastRecordedJump = curJump;
-                        State.m_LastRecordedHook = curHook;
-                        State.m_LastRecordedFire = curFire;
-                        State.m_LastRecordedAimX = curAimX;
-                        State.m_LastRecordedAimY = curAimY;
-                        State.m_LastRecordedWeapon = curWeapon;
-                        State.m_LastMacroRecordTick = CurTick;
-                }
-                pGame->m_Controls.m_aInputData[Dummy] = *pInput;
+        // Macro recording (delta-encoded input/aim capture, with 100k-line guard).
+        if(ProcessMacroRecording(pGame, pInput, Dummy, State, LocalID, CurTick))
                 return;
-        }
 
-        // ===== CLIENT DELAY =====
-        if(m_ClientDelay > 0)
-        {
-                static int64_t s_LastActionTick[MAX_DUMMIES] = {};
-                int64_t Now = Client()->GameTick(0);
-                int64_t TickDelay = ((int64_t)m_ClientDelay * Client()->GameTickSpeed()) / 1000;
-                if(TickDelay < 1)
-                        TickDelay = 1;
-                if(Now - s_LastActionTick[Dummy] < TickDelay)
-                {
-                        pGame->m_Controls.m_aInputData[Dummy] = *pInput;
-                        return;
-                }
-                s_LastActionTick[Dummy] = Now;
-        }
+        // Throttle actions to one per m_ClientDelay ms (per-dummy static timer).
+        if(ApplyClientDelayGate(pGame, pInput, Dummy))
+                return;
 
-        // ===== KILL ON FREEZE =====
+        // Kill-on-freeze (fall-through — does NOT return; later stages still run).
         if(m_KillOnFreeze && pGame->m_aClients[LocalID].m_FreezeEnd > 0)
-        {
-                int OldDummy = g_Config.m_ClDummy;
-                g_Config.m_ClDummy = Dummy;
-                Console()->ExecuteLine("kill", -1, -1);
-                g_Config.m_ClDummy = OldDummy;
-        }
+                IssueKillForDummy(Dummy);
 
-        // ===== COPY MOVES =====
-        if(m_CopyMoves && m_CopyTargetID >= 0 && m_CopyTargetID < 128)
-        {
-                const auto &TChar = pGame->m_Snap.m_aCharacters[m_CopyTargetID];
-                if(pGame->m_aClients[m_CopyTargetID].m_Active && TChar.m_Active)
-                {
-                        SetDirection(pGame, Dummy, TChar.m_Cur.m_Direction == -1, TChar.m_Cur.m_Direction == 1);
-                        pInput->m_Jump = (TChar.m_Cur.m_Jumped & 1);
-                        pInput->m_Hook = (TChar.m_Cur.m_HookState > 0);
-                        pInput->m_Fire = TChar.m_Cur.m_AttackTick;
-                        pInput->m_WantedWeapon = TChar.m_Cur.m_Weapon + 1;
-                        float WorldX = (float)(TChar.m_HasExtendedData ? TChar.m_ExtendedData.m_TargetX : 0);
-                        float WorldY = (float)(TChar.m_HasExtendedData ? TChar.m_ExtendedData.m_TargetY : 0);
-                        GameClient()->m_BotControl.ActionOverrideAim((int)WorldX, (int)WorldY, Dummy);
-
-                        pInput->m_PlayerFlags |= 1;
-                        pGame->m_Controls.m_aInputData[Dummy] = *pInput;
-                        return;
-                }
-        }
-
-        // ===== PATHFINDER GO =====
-        if(State.m_PathfinderGoActive)
-        {
-                vec2 MyPos((float)pGame->m_Snap.m_aCharacters[LocalID].m_Cur.m_X,
-                        (float)pGame->m_Snap.m_aCharacters[LocalID].m_Cur.m_Y);
-
-                int botTX = (int)(MyPos.x / 32.0f);
-                int botTY = (int)(MyPos.y / 32.0f);
-                int targetTX = (int)(State.m_PathfinderGoPos.x / 32.0f);
-                int targetTY = (int)(State.m_PathfinderGoPos.y / 32.0f);
-
-                if(botTX == targetTX && botTY == targetTY)
-                {
-                        State.m_PathfinderGoActive = false;
-                        SetDirection(pGame, Dummy, false, false);
-                        pInput->m_Jump = 0;
-                        pGame->m_Controls.m_aInputData[Dummy] = *pInput;
-
-                        dbg_msg("botnet", "Reached destination");
-                        return;
-                }
-
-                if(m_PathfinderEnabled)
-                {
-                        bool mapChanged = false;
-                        if(m_MapGridLoaded)
-                        {
-                                CLayers *pLayers = GameClient()->Layers();
-                                if(pLayers && pLayers->GameLayer())
-                                {
-                                        int curW = pLayers->GameLayer()->m_Width;
-                                        int curH = pLayers->GameLayer()->m_Height;
-                                        if(curW != m_MapWidth || curH != m_MapHeight)
-                                                mapChanged = true;
-                                }
-                        }
-                        static int64_t s_LastMapReload = 0;
-                        int64_t now = time_get();
-                        if(now - s_LastMapReload > time_freq() * 5)
-                        {
-                                mapChanged = true;
-                                s_LastMapReload = now;
-                        }
-                        if(!m_MapGridLoaded || mapChanged)
-                                LoadMapGrid();
-
-                        if(m_MapGridLoaded)
-                        {
-                                UpdatePlayerPenalty(botTX, botTY, targetTX, targetTY, LocalID);
-
-                                bool needRecalc = false;
-                                if(targetTX != State.m_LastTargetTX || targetTY != State.m_LastTargetTY)
-                                        needRecalc = true;
-                                if(!State.m_PathFound)
-                                        needRecalc = true;
-                                if(State.m_PathFound && botTX >= 0 && botTY >= 0 && botTX < m_MapWidth && botTY < m_MapHeight)
-                                {
-                                        if(m_pfDist[botTY * m_MapWidth + botTX] >= 1e17f)
-                                                needRecalc = true;
-                                }
-
-                                if(needRecalc && IsTileWalkable(targetTX, targetTY))
-                                        ComputePathfinder(botTX, botTY, targetTX, targetTY, State);
-
-                                if(State.m_PathFound && (botTX != State.m_LastBotTX || botTY != State.m_LastBotTY))
-                                {
-                                        ComputeFlowForTile(botTY, botTX, State);
-                                        State.m_LastBotTX = botTX;
-                                        State.m_LastBotTY = botTY;
-                                }
-
-                                bool left = false, right = false, jump = false;
-                                GetMovementFromFlow(State, left, right, jump);
-
-                                SetDirection(pGame, Dummy, left, right);
-                                pInput->m_Jump = jump ? 1 : 0;
-                                pInput->m_PlayerFlags |= 1;
-                        }
-                }
-                pGame->m_Controls.m_aInputData[Dummy] = *pInput;
+        // Mirror another client's input.  Falls through when target inactive.
+        if(ProcessCopyMoves(pGame, pInput, Dummy))
                 return;
-        }
+
+        // "Go to position" pathfinder (A* + flow-field movement toward m_PathfinderGoPos).
+        if(ProcessPathfinderGo(pGame, pInput, Dummy, State, LocalID))
+                return;
 
         // ===== ATTACK =====
         if(m_AttackEnabled)
@@ -1669,29 +1733,8 @@ void CBotNet::ProcessDummy(int Dummy)
                                 if(m_PathfinderEnabled && !usingSmartRescue)
                                 {
                                         // --- PATHFINDER MOVEMENT ---
-                                        {
-                                                bool mapChanged = false;
-                                                if(m_MapGridLoaded)
-                                                {
-                                                        CLayers *pLayers = GameClient()->Layers();
-                                                        if(pLayers && pLayers->GameLayer())
-                                                        {
-                                                                int curW = pLayers->GameLayer()->m_Width;
-                                                                int curH = pLayers->GameLayer()->m_Height;
-                                                                if(curW != m_MapWidth || curH != m_MapHeight)
-                                                                        mapChanged = true;
-                                                        }
-                                                }
-                                                static int64_t s_LastMapReload = 0;
-                                                int64_t now = time_get();
-                                                if(now - s_LastMapReload > time_freq() * 5)
-                                                {
-                                                        mapChanged = true;
-                                                        s_LastMapReload = now;
-                                                }
-                                                if(!m_MapGridLoaded || mapChanged)
-                                                        LoadMapGrid();
-                                        }
+                                        // Shared 5s reload slot with PathfinderGo (legacy behaviour).
+                                        MaybeReloadMapGrid(0);
 
                                         if(m_MapGridLoaded)
                                         {
@@ -1726,14 +1769,10 @@ void CBotNet::ProcessDummy(int Dummy)
                                                 }
 
                                                 // --- KINODYNAMIC A* MOVEMENT ---
-                                                bool kinoNearFreeze = false;
-                                                if(m_AvoidFreeze && m_MapGridLoaded)
-                                                {
-                                                        vec2 repel = ComputeFreezeRepel(botTX, botTY);
-                                                        kinoNearFreeze = (repel.x * repel.x + repel.y * repel.y) > 0.0001f;
-                                                }
+                                                // Cache near-freeze once: shared by the kinodynamic gate and the stand check.
+                                                bool nearFreeze = IsNearFreeze(botTX, botTY);
 
-                                                if(m_KinodynamicEnabled && State.m_PathFound && !kinoNearFreeze)
+                                                if(m_KinodynamicEnabled && State.m_PathFound && !nearFreeze)
                                                 {
                                                         CKinodynamicCache &kinoCache = State.m_KinoCache;
 
@@ -1766,8 +1805,8 @@ void CBotNet::ProcessDummy(int Dummy)
                                                         {
                                                                 // Check if bot should stand (close enough to target)
                                                                 bool kinoStandActive = false;
-                                                                float standDist = (TargetIsMain && !m_AttackMain && !TargetIsRescue) ? m_MainStandDist : m_StandDist;
-                                                                if(m_StandEnabled && !kinoNearFreeze &&
+                                                                float standDist = EffectiveStandDist(TargetIsMain, TargetIsRescue);
+                                                                if(m_StandEnabled && !nearFreeze &&
                                                                         ((!m_StandOnXOnly && Dist < standDist) ||
                                                                                 (m_StandOnXOnly && absolute(dx) < standDist)))
                                                                 {
@@ -1798,7 +1837,7 @@ void CBotNet::ProcessDummy(int Dummy)
                                                 // 1. Kinodynamic is disabled
                                                 // 2. Bot is near freeze (kinodynamic skips to let avoid-freeze logic work)
                                                 // 3. Kinodynamic cache is invalid (no valid path found by simulation)
-                                                if(!m_KinodynamicEnabled || kinoNearFreeze || !State.m_KinoCache.IsValid())
+                                                if(!m_KinodynamicEnabled || nearFreeze || !State.m_KinoCache.IsValid())
                                                 {
                                                         GetMovementFromFlow(State, left, right, jump);
                                                         // When falling back from kinodynamic to normal movement, clear hook
@@ -1808,24 +1847,10 @@ void CBotNet::ProcessDummy(int Dummy)
                                                 }
 
                                                 if(m_PfSnap && State.m_PathFound && !left && !right)
-                                                {
-                                                        int snapTX = (int)roundf(MyPos.x / 32.0f);
-                                                        float tileCenterX = snapTX * 32.0f + 16.0f;
-                                                        float offsetX = MyPos.x - tileCenterX;
+                                                        ApplyPfSnap(MyPos, left, right);
 
-                                                        if(offsetX > 0)
-                                                                left = true;
-                                                        else if(offsetX < 0)
-                                                                right = true;
-                                                }
-
-                                                bool nearFreeze = false;
-                                                if(m_AvoidFreeze && m_MapGridLoaded)
-                                                {
-                                                        vec2 repel = ComputeFreezeRepel(botTX, botTY);
-                                                        nearFreeze = (repel.x * repel.x + repel.y * repel.y) > 0.0001f;
-                                                }
-                                                float standDist = (TargetIsMain && !m_AttackMain && !TargetIsRescue) ? m_MainStandDist : m_StandDist;
+                                                // nearFreeze cached above (shared with the kinodynamic gate).
+                                                float standDist = EffectiveStandDist(TargetIsMain, TargetIsRescue);
                                                 if(m_StandEnabled && !nearFreeze &&
                                                         ((!m_StandOnXOnly && Dist < standDist) ||
                                                                 (m_StandOnXOnly && absolute(dx) < standDist)))
@@ -1853,29 +1878,8 @@ void CBotNet::ProcessDummy(int Dummy)
                                 else if(m_PathfinderEnabled && usingSmartRescue)
                                 {
                                         // --- SMART RESCUE PATHFINDER MOVEMENT ---
-                                        {
-                                                bool mapChanged = false;
-                                                if(m_MapGridLoaded)
-                                                {
-                                                        CLayers *pLayers = GameClient()->Layers();
-                                                        if(pLayers && pLayers->GameLayer())
-                                                        {
-                                                                int curW = pLayers->GameLayer()->m_Width;
-                                                                int curH = pLayers->GameLayer()->m_Height;
-                                                                if(curW != m_MapWidth || curH != m_MapHeight)
-                                                                        mapChanged = true;
-                                                        }
-                                                }
-                                                static int64_t s_LastMapReload2 = 0;
-                                                int64_t now = time_get();
-                                                if(now - s_LastMapReload2 > time_freq() * 5)
-                                                {
-                                                        mapChanged = true;
-                                                        s_LastMapReload2 = now;
-                                                }
-                                                if(!m_MapGridLoaded || mapChanged)
-                                                        LoadMapGrid();
-                                        }
+                                        // Separate 5s reload slot (BranchB keeps its own timer, legacy behaviour).
+                                        MaybeReloadMapGrid(1);
 
                                         if(m_MapGridLoaded)
                                         {
@@ -1912,15 +1916,11 @@ void CBotNet::ProcessDummy(int Dummy)
 
                                                 GetMovementFromFlow(State, left, right, jump);
 
-                                                bool nearFreeze = false;
-                                                if(m_AvoidFreeze && m_MapGridLoaded)
-                                                {
-                                                        vec2 repel = ComputeFreezeRepel(botTX, botTY);
-                                                        nearFreeze = (repel.x * repel.x + repel.y * repel.y) > 0.0001f;
-                                                }
+                                                bool nearFreeze = IsNearFreeze(botTX, botTY);
+                                                float standDist = EffectiveStandDist(TargetIsMain, TargetIsRescue);
                                                 if(m_StandEnabled && !nearFreeze &&
-                                                        ((!m_StandOnXOnly && Dist < ((TargetIsMain && !m_AttackMain && !TargetIsRescue) ? m_MainStandDist : m_StandDist)) ||
-                                                                (m_StandOnXOnly && absolute(dx) < ((TargetIsMain && !m_AttackMain && !TargetIsRescue) ? m_MainStandDist : m_StandDist))))
+                                                        ((!m_StandOnXOnly && Dist < standDist) ||
+                                                                (m_StandOnXOnly && absolute(dx) < standDist)))
                                                 {
                                                         left = false;
                                                         right = false;
@@ -1928,21 +1928,13 @@ void CBotNet::ProcessDummy(int Dummy)
                                                 }
 
                                                 if(m_PfSnap && State.m_PathFound && !left && !right)
-                                                {
-                                                        int snapTX = (int)roundf(MyPos.x / 32.0f);
-                                                        float tileCenterX = snapTX * 32.0f + 16.0f;
-                                                        float offsetX = MyPos.x - tileCenterX;
-
-                                                        if(offsetX > 0)
-                                                                left = true;
-                                                        else if(offsetX < 0)
-                                                                right = true;
-                                                }
+                                                        ApplyPfSnap(MyPos, left, right);
                                         }
                                 }
                                 else
                                 {
-                                        if(!m_StandEnabled || (!m_StandOnXOnly && Dist >= ((TargetIsMain && !m_AttackMain && !TargetIsRescue) ? m_MainStandDist : m_StandDist)) || (m_StandOnXOnly && absolute(dx) >= ((TargetIsMain && !m_AttackMain && !TargetIsRescue) ? m_MainStandDist : m_StandDist)))
+                                        float standDist = EffectiveStandDist(TargetIsMain, TargetIsRescue);
+                                        if(!m_StandEnabled || (!m_StandOnXOnly && Dist >= standDist) || (m_StandOnXOnly && absolute(dx) >= standDist))
                                         {
                                                 left = (dx < -20.0f);
                                                 right = (dx > 20.0f);
@@ -2079,9 +2071,7 @@ void CBotNet::ProcessDummy(int Dummy)
 
                                         if(canHook)
                                         {
-                                                int TicksCycle = (50 * m_HookDelay / 1000);
-                                                if(TicksCycle < 2)
-                                                        TicksCycle = 2;
+                                                int TicksCycle = ComputeHookTicksCycle();
                                                 State.m_HookTickTimer++;
                                                 if(State.m_HookTickTimer >= TicksCycle)
                                                         State.m_HookTickTimer = 0;
@@ -2110,9 +2100,7 @@ void CBotNet::ProcessDummy(int Dummy)
                                 }
                                 else
                                 {
-                                        int TicksCycle = (50 * m_HookDelay / 1000);
-                                        if(TicksCycle < 2)
-                                                TicksCycle = 2;
+                                        int TicksCycle = ComputeHookTicksCycle();
 
                                         float hDx = State.m_PfHookTile.x - MyPos.x;
                                         float hDy = State.m_PfHookTile.y - MyPos.y;
@@ -2151,16 +2139,8 @@ void CBotNet::ProcessDummy(int Dummy)
                 }
         }
 
-        // ===== RANDOM AIM =====
-        if(m_RandomAim && !m_AttackEnabled && !m_CopyMoves)
-        {
-                if(CurTick >= State.m_NextRandomAimTick)
-                {
-                        GameClient()->m_BotControl.ActionOverrideAim((rand() % 2001) - 1000, (rand() % 2001) - 1000, Dummy);
-                        int TS = Client()->GameTickSpeed();
-                        State.m_NextRandomAimTick = CurTick + (int64_t)(TS != 0 ? TS : 50) * m_RandomAimInterval / 1000;
-                }
-        }
+        // Random aim (fall-through — overrides aim on a schedule, does not return).
+        ProcessRandomAim(Dummy, State, CurTick);
 
         // Always copy back at end
         pGame->m_Controls.m_aInputData[Dummy] = *pInput;
@@ -2193,13 +2173,7 @@ void CBotNet::ResetDummyInputs(int Dummy)
                 return;
         CGameClient *pGame = GameClient();
         CNetObj_PlayerInput *pInput = &pGame->m_aDummyInput[Dummy];
-        pInput->m_Direction = 0;
-        pInput->m_Jump = 0;
-        pInput->m_Hook = 0;
-        if((pInput->m_Fire & 1) != 0)
-                pInput->m_Fire++;
-        pInput->m_Fire &= INPUT_STATE_MASK;
-        pGame->m_Controls.m_aInputData[Dummy] = *pInput;
+        ResetAndCommitInput(pGame, pInput, Dummy);
 }
 
 // =========================================================
