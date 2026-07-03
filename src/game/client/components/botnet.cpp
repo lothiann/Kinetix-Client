@@ -3325,22 +3325,47 @@ float CBotNet::PfScoreChunk(const vec2 &startPos, const vec2 &endPos, bool reach
         float score = 0.0f;
         const float INF = 1e17f; // unreachable threshold (m_PfFlowField uses 1e18)
 
-        // Score method: flow-field alignment (how much closer the chunk moved us
-        // toward finish in the BFS distance field). Gated by ClPfScoreFlow.
-        if(g_Config.m_ClPfScoreFlow && m_PfFlowField)
+        // Score method: flow-field alignment (how well the chunk's movement
+        // direction matches the flow-field direction toward finish).
+        // Gated by ClPfScoreFlow. Uses cosine of angle between movement vector
+        // and flow-field gradient at start tile: +1 = along flow (toward finish),
+        // -1 = against flow (away from finish), 0 = perpendicular.
+        if(g_Config.m_ClPfScoreFlow && m_PfFlowField && m_MapWidth > 0 && m_MapHeight > 0)
         {
-                int sx = pf_clamp((int)(startPos.x / 32.0f), 0, m_MapWidth - 1);
-                int sy = pf_clamp((int)(startPos.y / 32.0f), 0, m_MapHeight - 1);
-                int ex = pf_clamp((int)(endPos.x / 32.0f), 0, m_MapWidth - 1);
-                int ey = pf_clamp((int)(endPos.y / 32.0f), 0, m_MapHeight - 1);
-                float dStart = m_PfFlowField[sy * m_MapWidth + sx];
-                float dEnd = m_PfFlowField[ey * m_MapWidth + ex];
-                if(dStart < INF && dEnd < INF)
-                        score += (dStart - dEnd) * 10.0f;
-                else if(dEnd < INF && dStart >= INF)
-                        score += 50.0f; // escaped an unreachable tile
-                else if(dEnd >= INF && dStart < INF)
-                        score -= 50.0f; // moved INTO an unreachable tile
+                vec2 move = endPos - startPos;
+                float moveLen = sqrtf(move.x * move.x + move.y * move.y);
+                if(moveLen > 0.001f)
+                {
+                        int sx = pf_clamp((int)(startPos.x / 32.0f), 0, m_MapWidth - 1);
+                        int sy = pf_clamp((int)(startPos.y / 32.0f), 0, m_MapHeight - 1);
+                        // Flow direction at start tile = gradient of m_PfFlowField
+                        // (points toward finish, i.e. toward smaller distance).
+                        float fd = m_PfFlowField[sy * m_MapWidth + sx];
+                        if(fd < INF)
+                        {
+                                float fdx_m = (sx > 0) ? m_PfFlowField[sy * m_MapWidth + (sx - 1)] : fd;
+                                float fdx_p = (sx < m_MapWidth - 1) ? m_PfFlowField[sy * m_MapWidth + (sx + 1)] : fd;
+                                float fdy_m = (sy > 0) ? m_PfFlowField[(sy - 1) * m_MapWidth + sx] : fd;
+                                float fdy_p = (sy < m_MapHeight - 1) ? m_PfFlowField[(sy + 1) * m_MapWidth + sx] : fd;
+                                // Unreachable neighbors → treat as equal (no spurious gradient).
+                                if(fdx_m >= INF) fdx_m = fd;
+                                if(fdx_p >= INF) fdx_p = fd;
+                                if(fdy_m >= INF) fdy_m = fd;
+                                if(fdy_p >= INF) fdy_p = fd;
+                                // Gradient: negative of distance increase direction.
+                                // gx = fdx_m - fdx_p (points toward smaller distance).
+                                float gx = fdx_m - fdx_p;
+                                float gy = fdy_m - fdy_p;
+                                float gLen = sqrtf(gx * gx + gy * gy);
+                                if(gLen > 0.001f)
+                                {
+                                        // Cosine of angle between move and flow direction.
+                                        float cosA = (move.x * gx + move.y * gy) / (moveLen * gLen);
+                                        // cosA in [-1, +1]. Scale to score weight.
+                                        score += cosA * 10.0f;
+                                }
+                        }
+                }
         }
 
         // Score method: distance reduction (BFS flow-field distance to finish).
