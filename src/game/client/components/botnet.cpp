@@ -3187,6 +3187,10 @@ void CBotNet::PfComputeFlowField()
                 }
         }
 
+        // === Phase 1: BFS from finish, STRICTLY skip freeze tiles. ===
+        // Freeze tiles stay 1e18 (unreachable). If the bot's start position is
+        // reachable in Phase 1, we're done — path exists without freeze.
+        // Otherwise, Phase 2 takes over with a full reset.
         for(int i = 0; i < Size; i++)
                 m_PfFlowField[i] = 1e18f;
 
@@ -3194,6 +3198,15 @@ void CBotNet::PfComputeFlowField()
                 return;
 
         const float SQRT2 = 1.4142135623730951f;
+        const int dr[] = {-1, 1, 0, 0, -1, -1, 1, 1};
+        const int dc[] = {0, 0, -1, 1, -1, 1, -1, 1};
+
+        auto fnIsFreeze = [&](int tx, int ty) -> bool {
+                int idx = ty * m_MapWidth + tx;
+                return m_pMapGrid[idx] == TILE_FREEZE || m_pMapGrid[idx] == TILE_DFREEZE ||
+                       m_pFrontGrid[idx] == TILE_FREEZE || m_pFrontGrid[idx] == TILE_DFREEZE;
+        };
+
         std::priority_queue<PfNode, std::vector<PfNode>, std::greater<PfNode>> open;
         for(const vec2 &fp : m_PfFinishTiles)
         {
@@ -3204,9 +3217,6 @@ void CBotNet::PfComputeFlowField()
                 m_PfFlowField[ty * m_MapWidth + tx] = 0.0f;
                 open.push({0.0f, 0.0f, ty, tx});
         }
-
-        int dr[] = {-1, 1, 0, 0, -1, -1, 1, 1};
-        int dc[] = {0, 0, -1, 1, -1, 1, -1, 1};
 
         while(!open.empty())
         {
@@ -3224,9 +3234,8 @@ void CBotNet::PfComputeFlowField()
                                 continue;
                         if(!IsTileWalkable(nc, nr))
                                 continue;
-                        // Freeze tiles are passable in Phase 1 — they get real distance
-                        // to finish, so the gradient on neighboring tiles points TOWARD
-                        // finish (through freeze), not away from freeze.
+                        if(fnIsFreeze(nc, nr))
+                                continue; // Phase 1: strictly skip freeze
                         if(abs(dr[d]) + abs(dc[d]) == 2)
                         {
                                 if(!IsTileWalkable(cur.c, cur.r + dr[d]) || !IsTileWalkable(cur.c + dc[d], cur.r))
@@ -3243,25 +3252,36 @@ void CBotNet::PfComputeFlowField()
                 }
         }
 
-        // Phase 2: if some tiles are still 1e18 (unreachable without freeze),
-        // run second BFS allowing freeze tiles with high cost
-        bool needPhase2 = false;
-        // Check if start area is reachable (any tile with value < 1e17)
-        // Actually check: are there freeze tiles adjacent to reachable tiles?
-        std::priority_queue<PfNode, std::vector<PfNode>, std::greater<PfNode>> open2;
-        for(int ty = 0; ty < m_MapHeight; ty++)
+        // === Phase 1 reachability check: did Phase 1 reach the bot's start? ===
+        // m_PfStartPos is set in PfResetRun (bot pos at run start). If it's still
+        // (0,0) or out of map, skip Phase 2 (no start to check).
+        int startTX = (int)(m_PfStartPos.x / 32.0f);
+        int startTY = (int)(m_PfStartPos.y / 32.0f);
+        bool phase1ReachedStart = false;
+        if(startTX >= 0 && startTY >= 0 && startTX < m_MapWidth && startTY < m_MapHeight &&
+           (m_PfStartPos.x != 0.0f || m_PfStartPos.y != 0.0f))
         {
-                for(int tx = 0; tx < m_MapWidth; tx++)
-                {
-                        int idx = ty * m_MapWidth + tx;
-                        if(m_PfFlowField[idx] >= 1e17f)
-                                continue;
-                        // Push reachable tiles as seeds for phase 2
-                        open2.push({m_PfFlowField[idx], m_PfFlowField[idx], ty, tx});
-                }
+                phase1ReachedStart = m_PfFlowField[startTY * m_MapWidth + startTX] < 1e17f;
         }
-        if(!open2.empty())
+
+        // === Phase 2: full reset + BFS with freeze passable (cost 1). ===
+        // Only if Phase 1 did NOT reach the bot's start (path requires freeze).
+        if(!phase1ReachedStart)
         {
+                for(int i = 0; i < Size; i++)
+                        m_PfFlowField[i] = 1e18f;
+
+                std::priority_queue<PfNode, std::vector<PfNode>, std::greater<PfNode>> open2;
+                for(const vec2 &fp : m_PfFinishTiles)
+                {
+                        int tx = (int)(fp.x / 32.0f);
+                        int ty = (int)(fp.y / 32.0f);
+                        if(!IsTileWalkable(tx, ty))
+                                continue;
+                        m_PfFlowField[ty * m_MapWidth + tx] = 0.0f;
+                        open2.push({0.0f, 0.0f, ty, tx});
+                }
+
                 while(!open2.empty())
                 {
                         PfNode cur = open2.top();
@@ -3276,15 +3296,15 @@ void CBotNet::PfComputeFlowField()
                                 int nc = cur.c + dc[d];
                                 if(nc < 0 || nr < 0 || nc >= m_MapWidth || nr >= m_MapHeight)
                                         continue;
-                                float tileCost = GetTileCost(nc, nr);
-                                if(tileCost < 0)
+                                if(!IsTileWalkable(nc, nr))
                                         continue;
+                                // Phase 2: freeze passable at cost 1 (same as normal tiles).
                                 if(abs(dr[d]) + abs(dc[d]) == 2)
                                 {
                                         if(!IsTileWalkable(cur.c, cur.r + dr[d]) || !IsTileWalkable(cur.c + dc[d], cur.r))
                                                 continue;
                                 }
-                                float moveCost = (abs(dr[d]) + abs(dc[d]) == 2) ? SQRT2 * tileCost : tileCost;
+                                float moveCost = (abs(dr[d]) + abs(dc[d]) == 2) ? SQRT2 : 1.0f;
                                 float newG = cur.g + moveCost;
                                 int nIdx = nr * m_MapWidth + nc;
                                 if(newG < m_PfFlowField[nIdx])
