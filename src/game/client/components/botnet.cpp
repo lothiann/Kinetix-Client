@@ -3717,15 +3717,38 @@ static int PfAStarHeapPop(std::vector<int> &heap, const std::vector<CBotNet::ASt
 
 float CBotNet::PfAStarHeuristic(const vec2 &pos, const vec2 &endPos)
 {
-        if(m_PfFlowField && m_MapWidth > 0 && m_MapHeight > 0)
+        // Heuristic is gated by the same Score Method checkboxes as PfScoreChunk:
+        //   ClPfScoreFlow → flow-field distance (BFS to finish)
+        //   ClPfScoreDist → euclidean distance to finish
+        //   Both on        → min(flow, euclidean) — admissible
+        //   Both off       → 0 (Dijkstra, blind search)
+        bool flowOn = g_Config.m_ClPfScoreFlow != 0;
+        bool distOn = g_Config.m_ClPfScoreDist != 0;
+
+        if(!flowOn && !distOn)
+                return 0.0f; // Dijkstra
+
+        float hFlow = 1e18f;
+        float hDist = 1e18f;
+
+        if(flowOn && m_PfFlowField && m_MapWidth > 0 && m_MapHeight > 0)
         {
                 int tx = pf_clamp((int)(pos.x / 32.0f), 0, m_MapWidth - 1);
                 int ty = pf_clamp((int)(pos.y / 32.0f), 0, m_MapHeight - 1);
                 float fd = m_PfFlowField[ty * m_MapWidth + tx];
                 if(fd < 1e17f)
-                        return fd * 2.0f;
+                        hFlow = fd * 2.0f;
         }
-        return (fabsf(pos.x - endPos.x) + fabsf(pos.y - endPos.y)) / 10.0f;
+
+        if(distOn)
+                hDist = distance(pos, endPos);
+
+        // If only one method is on, return its value (the other stays 1e18 → loses).
+        // If both on, return min (admissible).
+        float h = hFlow < hDist ? hFlow : hDist;
+        if(h >= 1e17f)
+                return 0.0f; // no usable estimate → don't mislead A* with huge value
+        return h;
 }
 
 // Setup clean FutureWorld (local variable passed by caller — same as v1.55 PfGenerateChunk)
