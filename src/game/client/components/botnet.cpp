@@ -3746,37 +3746,30 @@ static int PfAStarHeapPop(std::vector<int> &heap, const std::vector<CBotNet::ASt
 float CBotNet::PfAStarHeuristic(const vec2 &pos, const vec2 &endPos)
 {
         // Heuristic is gated by the same Score Method checkboxes as PfScoreChunk:
-        //   ClPfScoreFlow → flow-field distance (BFS to finish)
-        //   ClPfScoreDist → euclidean distance to finish
-        //   Both on        → min(flow, euclidean) — admissible
+        //   ClPfScoreFlow → flow-field direction alignment (cosine with gradient)
+        //                    — but for A* H we need a distance estimate, so use
+        //                    flow-field distance to finish (fd * 2.0f).
+        //   ClPfScoreDist → flow-field distance to finish (BFS, accounts for walls)
+        //   Both on        → flow-field distance (same source, both rely on flow field)
         //   Both off       → 0 (Dijkstra, blind search)
+        // Note: Dist and Flow both use flow-field distance for H. The difference
+        // between them is only in PfScoreChunk (Dist = distance delta, Flow = cosine
+        // alignment). For A* heuristic, both resolve to flow-field distance.
         bool flowOn = g_Config.m_ClPfScoreFlow != 0;
         bool distOn = g_Config.m_ClPfScoreDist != 0;
 
         if(!flowOn && !distOn)
                 return 0.0f; // Dijkstra
 
-        float hFlow = 1e18f;
-        float hDist = 1e18f;
-
-        if(flowOn && m_PfFlowField && m_MapWidth > 0 && m_MapHeight > 0)
+        if(m_PfFlowField && m_MapWidth > 0 && m_MapHeight > 0)
         {
                 int tx = pf_clamp((int)(pos.x / 32.0f), 0, m_MapWidth - 1);
                 int ty = pf_clamp((int)(pos.y / 32.0f), 0, m_MapHeight - 1);
                 float fd = m_PfFlowField[ty * m_MapWidth + tx];
                 if(fd < 1e17f)
-                        hFlow = fd * 2.0f;
+                        return fd * 2.0f;
         }
-
-        if(distOn)
-                hDist = distance(pos, endPos);
-
-        // If only one method is on, return its value (the other stays 1e18 → loses).
-        // If both on, return min (admissible).
-        float h = hFlow < hDist ? hFlow : hDist;
-        if(h >= 1e17f)
-                return 0.0f; // no usable estimate → don't mislead A* with huge value
-        return h;
+        return 0.0f; // flow field unavailable → blind
 }
 
 // Setup clean FutureWorld (local variable passed by caller — same as v1.55 PfGenerateChunk)
