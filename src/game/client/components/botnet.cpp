@@ -3343,21 +3343,24 @@ float CBotNet::PfScoreChunk(const vec2 &startPos, const vec2 &endPos, bool reach
                         score -= 50.0f; // moved INTO an unreachable tile
         }
 
-        // Score method: distance reduction (euclidean closer to finish).
-        // Gated by ClPfScoreDist. Positive when chunk moved us closer.
-        if(g_Config.m_ClPfScoreDist && !m_PfFinishTiles.empty())
+        // Score method: distance reduction (BFS flow-field distance to finish).
+        // Gated by ClPfScoreDist. Positive when chunk moved us closer to finish
+        // in the BFS distance field. Uses flow field (not euclidean) so walls
+        // are accounted for — same algorithm as the old always-on flow progress.
+        if(g_Config.m_ClPfScoreDist && m_PfFlowField && m_MapWidth > 0 && m_MapHeight > 0)
         {
-                // Distance from startPos to nearest finish, vs endPos to nearest finish.
-                float dStartMin = 1e18f;
-                float dEndMin = 1e18f;
-                for(const vec2 &fp : m_PfFinishTiles)
-                {
-                        float ds = distance(startPos, fp);
-                        float de = distance(endPos, fp);
-                        if(ds < dStartMin) dStartMin = ds;
-                        if(de < dEndMin) dEndMin = de;
-                }
-                score += (dStartMin - dEndMin) * 1.0f; // px reduction
+                int sx = pf_clamp((int)(startPos.x / 32.0f), 0, m_MapWidth - 1);
+                int sy = pf_clamp((int)(startPos.y / 32.0f), 0, m_MapHeight - 1);
+                int ex = pf_clamp((int)(endPos.x / 32.0f), 0, m_MapWidth - 1);
+                int ey = pf_clamp((int)(endPos.y / 32.0f), 0, m_MapHeight - 1);
+                float dStart = m_PfFlowField[sy * m_MapWidth + sx];
+                float dEnd = m_PfFlowField[ey * m_MapWidth + ex];
+                if(dStart < INF && dEnd < INF)
+                        score += (dStart - dEnd) * 10.0f;
+                else if(dEnd < INF && dStart >= INF)
+                        score += 50.0f; // escaped an unreachable tile
+                else if(dEnd >= INF && dStart < INF)
+                        score -= 50.0f; // moved INTO an unreachable tile
         }
 
         // Finish bonus
