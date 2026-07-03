@@ -3356,13 +3356,6 @@ void CBotNet::UpdatePathfinder()
                 return;
         }
 
-        // Max Chunks cap only for playback (path length), not A* search
-        if(m_PfAPathReady && m_PfChunkCount >= g_Config.m_ClPfMaxChunks)
-        {
-                m_PfState = PF_STATE_FINISHED;
-                return;
-        }
-
         if(m_PfFlowField == nullptr || m_PfFinishTiles.empty())
                 PfComputeFlowField();
         if(m_PfFinishTiles.empty())
@@ -3600,8 +3593,8 @@ bool CBotNet::PfBacktrack()
                 m_PfTotalFreezeTicks = entry.totalFreezeTicks;
 
                 // Truncate trajectory and restore chunk count to the active
-                // trajectory length (Max Chunks limits active chunks, not total
-                // attempts — otherwise backtracking burns the budget on retries).
+                // trajectory length (active chunks, not total attempts — otherwise
+                // backtracking burns the budget on retries).
                 m_PfVPath.resize(entry.vPathSize);
                 m_PfChunkCount = entry.chunkCount;
 
@@ -5019,9 +5012,9 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
 
         // ── Freeze-skip (v1.55): if the bot is frozen, fast-forward through
         // all freeze ticks as ONE chunk with empty input. This avoids wasting
-        // multiple chunks (and Max Chunks budget) on freeze stall. The frozen
-        // bot still experiences gravity/friction (real DDNet behavior via
-        // CCharacter), so it falls/slides correctly during the skip.
+        // multiple chunks on freeze stall. The frozen bot still experiences
+        // gravity/friction (real DDNet behavior via CCharacter), so it
+        // falls/slides correctly during the skip.
         // Discovered via Python benchmark: maps with freeze (e.g. map 9 with
         // 3 freeze walls = 450 ticks) are unsolvable without this macro-step.
         if(pBot->m_FreezeTime > 0)

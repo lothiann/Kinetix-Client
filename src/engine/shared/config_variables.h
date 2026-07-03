@@ -300,7 +300,6 @@ MACRO_CONFIG_INT(ClPfChunkSize, cl_pf_chunk_size, 20, 5, 50, CFGFLAG_CLIENT | CF
 MACRO_CONFIG_INT(ClPfCandidates, cl_pf_candidates, 200, 50, 2000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: max search nodes per chunk")
 MACRO_CONFIG_INT(ClPfHookAngles, cl_pf_hook_angles, 9, 4, 32, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: hook fan-raycast rays (4-32)")
 MACRO_CONFIG_INT(ClPfHorizon, cl_pf_horizon, 6, 1, 50, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: ticks to apply per chunk before re-planning (1-chunk_size)")
-MACRO_CONFIG_INT(ClPfMaxChunks, cl_pf_max_chunks, 200, 10, 2000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: max chunks before giving up (safety cap)")
 MACRO_CONFIG_INT(ClPfBacktrackCandidates, cl_pf_backtrack_candidates, 100, PF_CANDIDATES_MIN, PF_CANDIDATES_MAX, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: top-N candidates kept per chunk for backtracking")
 MACRO_CONFIG_INT(ClPfAStarWeight, cl_pf_astar_weight, 3, 1, 20, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: A* heuristic weight (1=optimal, higher=faster but suboptimal)")
 MACRO_CONFIG_INT(ClPfAStarNodeBudget, cl_pf_astar_node_budget, 100000, 1000, 1000000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: A* max nodes before giving up (1000-1000000)")

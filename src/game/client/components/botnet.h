@@ -82,7 +82,7 @@ struct PfBacktrackEntry
         int freezeTime; // m_PfCurFreezeTime at this backtrack point
         float totalFreezeTicks;
         int vPathSize; // m_PfVPath.size() before this chunk was applied
-        int chunkCount; // m_PfChunkCount at this backtrack point (for Max Chunks limit on active trajectory)
+        int chunkCount; // m_PfChunkCount at this backtrack point
         struct Candidate
         {
                 std::vector<CNetObj_PlayerInput> inputs;
@@ -326,7 +326,7 @@ public:
         // Pathfinder tab (Kinetix→Pathfinder) — chunk-based mini TAS maker.
         // State machine driven by m_PfState; trajectory in m_PfVPath.
         // m_PfStartPos = active-player position when RUNNING started (for re-anchor).
-        // m_PfChunkCount = chunks generated so far (safety cap = ClPfMaxChunks).
+        // m_PfChunkCount = chunks generated so far.
         // m_PfFlowField = multi-source BFS distance field to ALL finish tiles.
         int m_PfState;                  // EPfState
         int m_PfChunkCount;             // chunks generated this run

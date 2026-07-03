@@ -5373,7 +5373,7 @@ void CMenus::RenderSettingsPathfinder(CUIRect MainView)
 
         // === Container 1: Parameters ===
         {
-                const int numRows = 7; // algo + chunk + hook angles + max chunks + candidates + perf + advanced
+                const int numRows = 6; // algo + chunk + hook angles + candidates + perf + advanced
                 const float SectionH = PanelPad + 25.0f + 5.0f + numRows * LineSize + (numRows - 1) * RowGap + PanelPad;
                 MainView.HSplitTop(SectionH, &PanelBg, &MainView);
                 PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
@@ -5427,13 +5427,6 @@ void CMenus::RenderSettingsPathfinder(CUIRect MainView)
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
                 Ui()->DoScrollbarOption(&g_Config.m_ClPfHookAngles, &g_Config.m_ClPfHookAngles, &Row,
                         Localize("Hook Angles"), 4, 32, &CUi::ms_LinearScrollbarScale,
-                        CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
-
-                // --- Max chunks slider ---
-                Panel.HSplitTop(LineSize, &Row, &Panel);
-                Panel.HSplitTop(RowGap, nullptr, &Panel);
-                Ui()->DoScrollbarOption(&g_Config.m_ClPfMaxChunks, &g_Config.m_ClPfMaxChunks, &Row,
-                        Localize("Max Chunks"), 10, 2000, &CUi::ms_LinearScrollbarScale,
                         CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
 
                 // --- Candidates slider (dynamic max = 3 * (ChunkSize+1) * (1+HookAngles)) ---
