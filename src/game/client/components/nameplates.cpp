@@ -10,7 +10,7 @@
 
 #include <game/client/animstate.h>
 #include <game/client/gameclient.h>
-#include <game/client/components/irc.h>
+#include <game/client/components/kinetix/irc.h>
 #include <game/client/prediction/entities/character.h>
 
 #include <memory>

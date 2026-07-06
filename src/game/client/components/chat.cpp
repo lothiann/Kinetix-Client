@@ -22,7 +22,7 @@
 #include <game/client/components/skins.h>
 #include <game/client/components/sounds.h>
 #include <game/client/gameclient.h>
-#include <game/client/components/irc.h>
+#include <game/client/components/kinetix/irc.h>
 #include <game/localization.h>
 
 char CChat::ms_aDisplayText[MAX_LINE_LENGTH] = "";

@@ -21,8 +21,8 @@
 #include <game/collision.h>
 
 // bot_control integration
-#include <game/client/components/bot_control.h>
-#include <game/client/components/botnet.h>
+#include <game/client/components/kinetix/bot_control.h>
+#include <game/client/components/kinetix/kinetix.h>
 
 CControls::CControls()
 {

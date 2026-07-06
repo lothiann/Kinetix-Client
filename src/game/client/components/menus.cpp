@@ -31,7 +31,7 @@
 
 #include <game/client/animstate.h>
 #include <game/client/components/binds.h>
-#include <game/client/components/code_exec.h>
+#include <game/client/components/kinetix/code_exec/code_exec.h>
 #include <game/client/components/console.h>
 #include <game/client/components/key_binder.h>
 #include <game/client/components/menu_background.h>

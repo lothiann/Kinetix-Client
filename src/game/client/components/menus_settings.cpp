@@ -29,9 +29,9 @@
 #include <game/client/components/menu_background.h>
 #include <game/client/components/sounds.h>
 #include <game/client/gameclient.h>
-#include <game/client/components/bot_control.h>
-#include <game/client/components/botnet.h>
-#include <game/client/components/code_exec.h>
+#include <game/client/components/kinetix/bot_control.h>
+#include <game/client/components/kinetix/kinetix.h>
+#include <game/client/components/kinetix/code_exec/code_exec.h>
 #include <algorithm>
 #include <game/client/skin.h>
 #include <game/client/ui.h>

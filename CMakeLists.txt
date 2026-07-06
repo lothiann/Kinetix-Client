@@ -2512,12 +2512,6 @@ if(CLIENT)
     component.h
     components/background.cpp
     components/background.h
-    components/bot_control.cpp
-    components/bot_control.h
-    components/botnet.cpp
-    components/botnet.h
-    components/irc.cpp
-    components/irc.h
     components/binds.cpp
     components/binds.h
     components/broadcast.cpp
@@ -2528,8 +2522,6 @@ if(CLIENT)
     components/censor.h
     components/chat.cpp
     components/chat.h
-    components/code_exec.cpp
-    components/code_exec.h
     components/community_icons.cpp
     components/community_icons.h
     components/console.cpp
@@ -2564,6 +2556,30 @@ if(CLIENT)
     components/items.h
     components/key_binder.cpp
     components/key_binder.h
+    components/kinetix/attack/attack.cpp
+    components/kinetix/attack/attack_commands.cpp
+    components/kinetix/bot_control.cpp
+    components/kinetix/bot_control.h
+    components/kinetix/code_exec/code_exec.cpp
+    components/kinetix/code_exec/code_exec.h
+    components/kinetix/code_exec/code_exec_bindings.cpp
+    components/kinetix/console/console_commands.cpp
+    components/kinetix/dummies/dummy_helpers.cpp
+    components/kinetix/dummies/dummy_management.cpp
+    components/kinetix/dummies/process_dummy.cpp
+    components/kinetix/helpers.cpp
+    components/kinetix/irc.cpp
+    components/kinetix/irc.h
+    components/kinetix/kinetix.cpp
+    components/kinetix/kinetix.h
+    components/kinetix/kinetix_internal.h
+    components/kinetix/kinodynamic/kinodynamic.cpp
+    components/kinetix/kinodynamic/kinodynamic_render.cpp
+    components/kinetix/macro/macro_commands.cpp
+    components/kinetix/pathfinder/map_grid.cpp
+    components/kinetix/pathfinder/pathfinder.cpp
+    components/kinetix/pathfinder/pathfinder_astar.cpp
+    components/kinetix/pathfinder/pathfinder_tab.cpp
     components/local_server.cpp
     components/local_server.h
     components/mapimages.cpp
