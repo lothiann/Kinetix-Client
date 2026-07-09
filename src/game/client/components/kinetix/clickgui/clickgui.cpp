@@ -400,6 +400,7 @@ void CClickGui::OnRender()
                         if(!m_aPanelPosValid[i])
                         {
                                 m_aPanelPos[i] = PanelHomePos(i);
+                                m_aPanelTarget[i] = PanelHomePos(i);
                                 m_aPanelPosValid[i] = true;
                         }
                 }
