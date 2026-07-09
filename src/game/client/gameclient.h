@@ -31,6 +31,7 @@
 #include "components/background.h"
 #include "components/binds.h"
 #include "components/kinetix/bot_control.h"
+#include "components/kinetix/clickgui/clickgui.h"
 #include "components/kinetix/kinetix.h"
 #include "components/kinetix/irc.h"
 #include "components/broadcast.h"
@@ -152,6 +153,7 @@ public:
         CChat m_Chat;
         CCensor m_Censor;
         CCodeExec m_CodeExec;
+        CClickGui m_ClickGui;
         CMotd m_Motd;
         CBroadcast m_Broadcast;
         CGameConsole m_GameConsole;

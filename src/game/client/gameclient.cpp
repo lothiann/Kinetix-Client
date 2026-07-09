@@ -205,6 +205,7 @@ void CGameClient::OnConsoleInit()
                                               &m_Scoreboard,
                                               &m_Statboard,
                                               &m_Motd,
+                                              &m_ClickGui,
                                               &m_Menus,
                                               &m_Tooltips,
                                               &m_KeyBinder,

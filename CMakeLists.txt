@@ -879,6 +879,17 @@ if(NOT CRYPTO_FOUND)
   set(DEP_MD5 $<TARGET_OBJECTS:md5>)
 endif()
 
+# Yoga (flexbox layout engine, MIT) — used by the Kinetix ClickGUI component.
+# Bundled as source under src/engine/external/yoga/ . Includes use
+# <yoga/Yoga.h>, so the include path is the parent of the yoga/ folder.
+file(GLOB_RECURSE DEP_YOGA_SRC CONFIGURE_DEPENDS src/engine/external/yoga/*.cpp)
+add_library(yogacore EXCLUDE_FROM_ALL OBJECT ${DEP_YOGA_SRC})
+target_include_directories(yogacore PUBLIC ${CMAKE_SOURCE_DIR}/src/engine/external)
+# Yoga is C++17 (uses std::optional, etc.) — make sure the target picks that up.
+target_compile_features(yogacore PUBLIC cxx_std_17)
+list(APPEND TARGETS_DEP yogacore)
+set(DEP_YOGA $<TARGET_OBJECTS:yogacore>)
+
 ########################################################################
 # RUST
 ########################################################################
@@ -2560,6 +2571,8 @@ if(CLIENT)
     components/kinetix/attack/attack_commands.cpp
     components/kinetix/bot_control.cpp
     components/kinetix/bot_control.h
+    components/kinetix/clickgui/clickgui.cpp
+    components/kinetix/clickgui/clickgui.h
     components/kinetix/code_exec/code_exec.cpp
     components/kinetix/code_exec/code_exec.h
     components/kinetix/code_exec/code_exec_bindings.cpp
@@ -2795,7 +2808,7 @@ if(CLIENT)
   )
   set(CLIENT_SRC ${ENGINE_CLIENT} ${PLATFORM_CLIENT} ${GAME_CLIENT} ${GAME_EDITOR} ${GAME_MAP} ${GAME_GENERATED_CLIENT})
 
-  set(DEPS_CLIENT ${DEPS} ${DEP_LUA} ${GLEW_DEP} ${WAVPACK_DEP})
+  set(DEPS_CLIENT ${DEPS} ${DEP_LUA} ${DEP_YOGA} ${GLEW_DEP} ${WAVPACK_DEP})
 
   # Libraries
   set(LIBS_CLIENT
@@ -2894,6 +2907,7 @@ if(CLIENT)
 
   target_include_directories(game-client SYSTEM PRIVATE
     # tidy-alphabetical-start
+    ${CMAKE_SOURCE_DIR}/src/engine/external
     ${CMAKE_SOURCE_DIR}/src/engine/external/lua
     ${CMAKE_SOURCE_DIR}/src/engine/external/sol2
     ${DISCORDSDK_INCLUDE_DIRS}
