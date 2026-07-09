@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 
 #include <base/color.h>
 #include <base/str.h>
@@ -156,9 +157,11 @@ static const SPanel g_Panels[3] = {
 // ============================================================================
 
 // RGBA hex (0xRRGGBBAA). ColorRGBA(hex, true) decodes these.
-static constexpr unsigned COL_PANEL_BG = 0x1a1a2eff;
+// v1.56.37: shifted purple from #8a2be2 (blueviolet, looked blue on dark bg)
+// to #9d4edd (vivid purple) for clear purple identity. Panel bg/border kept.
+static constexpr unsigned COL_PANEL_BG = 0x161622ff;
 static constexpr unsigned COL_PANEL_BORDER = 0x2a2a3eff;
-static constexpr unsigned COL_HEADER_BG = 0x8a2be2ff;
+static constexpr unsigned COL_HEADER_BG = 0x9d4eddff; // vivid purple
 static constexpr unsigned COL_HEADER_TEXT = 0xffffffff;
 static constexpr unsigned COL_ARROW = 0xddddddff;
 static constexpr unsigned COL_ROW_TEXT = 0xd8d8e8ff;
@@ -166,28 +169,31 @@ static constexpr unsigned COL_ROW_TEXT_ON = 0xffffffff;
 static constexpr unsigned COL_CHECK_ON = 0x00ff00ff;
 static constexpr unsigned COL_EXPAND_ARROW = 0x8a8aa8ff;
 static constexpr unsigned COL_SUB_LIST_BG = 0x0000002e; // 18% alpha
-static constexpr unsigned COL_SUB_LIST_BORDER = 0x8a2be24d; // 30% alpha
+static constexpr unsigned COL_SUB_LIST_BORDER = 0x9d4edd4d; // 30% alpha
 static constexpr unsigned COL_SLIDER_TRACK = 0x2a2a3eff;
-static constexpr unsigned COL_SLIDER_THUMB = 0x8a2be2ff;
+static constexpr unsigned COL_SLIDER_THUMB = 0x9d4eddff;
 static constexpr unsigned COL_SLIDER_THUMB_BORDER = 0xb8b8e8ff;
 static constexpr unsigned COL_INPUT_BG = 0x0d0d18ff;
 static constexpr unsigned COL_INPUT_BORDER = 0x2a2a3eff;
 static constexpr unsigned COL_VALUE_BG = 0x0000004dff; // 30% alpha
 
-// Row heights (px).
-static constexpr float ROW_H_TOGGLE = 20.0f;
-static constexpr float ROW_H_SLIDER = 32.0f;
-static constexpr float ROW_H_INPUT = 22.0f;
-static constexpr float ROW_H_EXPANDABLE = 20.0f;
+// Row heights (px) — scaled up 1.25x in v1.56.37.
+static constexpr float ROW_H_TOGGLE = 25.0f;
+static constexpr float ROW_H_SLIDER = 40.0f;
+static constexpr float ROW_H_INPUT = 28.0f;
+static constexpr float ROW_H_EXPANDABLE = 25.0f;
 
-// Row internal layout (px).
-static constexpr float CHECK_W = 12.0f;
-static constexpr float ARROW_W = 12.0f;
-static constexpr float DROPDOWN_W = 80.0f;
-static constexpr float DROPDOWN_H = 16.0f;
-static constexpr float SLIDER_TRACK_H = 4.0f;
-static constexpr float SLIDER_THUMB_R = 5.0f;
-static constexpr float SUB_LIST_INDENT = 14.0f;
+// Row internal layout (px) — scaled up 1.25x.
+static constexpr float CHECK_W = 15.0f;
+static constexpr float ARROW_W = 15.0f;
+static constexpr float DROPDOWN_W = 100.0f;
+static constexpr float DROPDOWN_H = 20.0f;
+static constexpr float SLIDER_TRACK_H = 5.0f;
+static constexpr float SLIDER_THUMB_R = 6.5f;
+static constexpr float SUB_LIST_INDENT = 18.0f;
+
+// Offscreen margin: how far outside the visible screen panels fly when hidden.
+static constexpr float OFFSCREEN_MARGIN = 100.0f;
 
 static float RowHeight(ERowType t)
 {
@@ -215,39 +221,94 @@ static float RowHeight(ERowType t)
 
 vec2 CClickGui::PanelHomePos(int panelIdx)
 {
-        // Matches the inline style="left/top" in clickgui.html.
+        // Matches the inline style="left/top" in clickgui.html, scaled up 1.25x.
         switch(panelIdx)
         {
-        case 0: return vec2(40.0f, 60.0f);
-        case 1: return vec2(260.0f, 60.0f);
-        case 2: return vec2(480.0f, 60.0f);
-        default: return vec2(40.0f, 60.0f);
+        case 0: return vec2(50.0f, 75.0f);
+        case 1: return vec2(325.0f, 75.0f);
+        case 2: return vec2(600.0f, 75.0f);
+        default: return vec2(50.0f, 75.0f);
         }
 }
 
-vec2 CClickGui::PanelSlideDir(int panelIdx)
+// Cubic-bezier easing matching CSS cubic-bezier(0.16, 1, 0.3, 1) exactly.
+// P0=(0,0), P1=(0.16,1), P2=(0.3,1), P3=(1,1). Solved with Newton-Raphson.
+// This is the EXACT curve used by the HTML transition.
+float CClickGui::CubicBezierEase(float t)
 {
-        // Each panel flies in from a distinct side (deterministic, not random —
-        // the HTML used random offscreen positions, but for UI-only a stable
-        // direction reads cleaner and matches the cubic-bezier timing exactly).
-        switch(panelIdx)
-        {
-        case 0: return vec2(-1.0f, 0.0f); // from left
-        case 1: return vec2(0.0f, -1.0f); // from top
-        case 2: return vec2(1.0f, 0.0f); // from right
-        default: return vec2(0.0f, -1.0f);
-        }
-}
-
-float CClickGui::EaseOutExpo(float t)
-{
-        // Approximates cubic-bezier(0.16, 1, 0.3, 1) closely enough for the 0..1
-        // easing range. At t=0 returns 0, at t=1 returns 1, monotonic.
         if(t <= 0.0f)
                 return 0.0f;
         if(t >= 1.0f)
                 return 1.0f;
-        return 1.0f - std::pow(2.0f, -10.0f * t);
+
+        // Bezier control points (x coordinates of P1, P2; P0.x=0, P3.x=1)
+        const float x1 = 0.16f, x2 = 0.3f;
+        // y coordinates of P1, P2; P0.y=0, P3.y=1
+        const float y1 = 1.0f, y2 = 1.0f;
+
+        // Solve for parameter s such that bezierX(s) = t, using Newton-Raphson.
+        // bezierX(s) = 3(1-s)^2 * s * x1 + 3(1-s) * s^2 * x2 + s^3
+        // bezierY(s) = 3(1-s)^2 * s * y1 + 3(1-s) * s^2 * y2 + s^3
+        float s = t; // initial guess
+        for(int i = 0; i < 8; ++i)
+        {
+                const float oneMinusS = 1.0f - s;
+                const float x = 3.0f * oneMinusS * oneMinusS * s * x1
+                             + 3.0f * oneMinusS * s * s * x2
+                             + s * s * s;
+                // derivative of bezierX w.r.t. s
+                const float dx = 3.0f * oneMinusS * oneMinusS * (x1 - 0.0f)
+                               + 6.0f * oneMinusS * s * (x2 - x1)
+                               + 3.0f * s * s * (1.0f - x2);
+                if(dx < 1e-6f)
+                        break;
+                const float delta = (x - t) / dx;
+                s -= delta;
+                if(s < 0.0f)
+                        s = 0.0f;
+                else if(s > 1.0f)
+                        s = 1.0f;
+                if(std::abs(delta) < 1e-5f)
+                        break;
+        }
+
+        // Evaluate bezierY at the solved s.
+        const float oneMinusS = 1.0f - s;
+        return 3.0f * oneMinusS * oneMinusS * s * y1
+             + 3.0f * oneMinusS * s * s * y2
+             + s * s * s;
+}
+
+vec2 CClickGui::PickRandomOffscreenPos(int panelIdx, float screenW, float screenH) const
+{
+        // Pick one of 4 sides; place panel fully outside the visible screen plus
+        // OFFSCREEN_MARGIN. Matches the HTML's pickRandomOffscreenPos() behavior.
+        const float pw = PANEL_WIDTH;
+        const float ph = HEADER_HEIGHT + 300.0f; // approximate panel height for offscreen calc
+
+        const int side = (int)(std::rand() % 4);
+        float x, y;
+        if(side == 0) // left
+        {
+                x = -pw - OFFSCREEN_MARGIN - (float)(std::rand() % 200);
+                y = (float)(std::rand() % (int)std::max(screenH - ph, 100.0f));
+        }
+        else if(side == 1) // right
+        {
+                x = screenW + OFFSCREEN_MARGIN + (float)(std::rand() % 200);
+                y = (float)(std::rand() % (int)std::max(screenH - ph, 100.0f));
+        }
+        else if(side == 2) // top
+        {
+                x = (float)(std::rand() % (int)std::max(screenW - pw, 100.0f));
+                y = -ph - OFFSCREEN_MARGIN - (float)(std::rand() % 200);
+        }
+        else // bottom
+        {
+                x = (float)(std::rand() % (int)std::max(screenW - pw, 100.0f));
+                y = screenH + OFFSCREEN_MARGIN + (float)(std::rand() % 200);
+        }
+        return vec2(x, y);
 }
 
 // ============================================================================
@@ -290,12 +351,34 @@ void CClickGui::DrawText(float x, float y, float size, const char *pText, ColorR
 void CClickGui::OnReset()
 {
         m_AnimProgress = 0.0f;
+        m_WasOpen = false;
+        for(int i = 0; i < 3; ++i)
+                m_aOffscreenValid[i] = false;
 }
 
 void CClickGui::OnRender()
 {
+        const bool isOpen = g_Config.m_ClClickGui != 0;
+
+        // Detect transition 0->1 (opening): pick fresh random offscreen positions
+        // for each panel (matches HTML's "generate fresh random offscreen targets
+        // each time we hide" — we do it on open so panels fly IN from those spots).
+        if(isOpen && !m_WasOpen)
+        {
+                const float sw = (float)Graphics()->ScreenWidth();
+                const float sh = (float)Graphics()->ScreenHeight();
+                for(int i = 0; i < 3; ++i)
+                {
+                        m_aOffscreenPos[i] = PickRandomOffscreenPos(i, sw, sh);
+                        m_aOffscreenValid[i] = true;
+                }
+                // Show Windows cursor while ClickGUI is open.
+                Input()->MouseModeAbsolute();
+        }
+        m_WasOpen = isOpen;
+
         // Drive animation toward the current cl_clickgui target (0 or 1).
-        const float target = g_Config.m_ClClickGui ? 1.0f : 0.0f;
+        const float target = isOpen ? 1.0f : 0.0f;
         const float dt = Client()->RenderFrameTime();
         const float speed = (ANIM_DURATION > 0.0f) ? (1.0f / ANIM_DURATION) : 1.0f;
         if(m_AnimProgress < target)
@@ -311,27 +394,52 @@ void CClickGui::OnRender()
                         m_AnimProgress = target;
         }
 
-        // Skip rendering entirely when fully closed.
-        if(m_AnimProgress <= 0.0f)
+        // When fully closed, restore relative mouse mode (hide cursor).
+        if(m_AnimProgress <= 0.0f && !isOpen)
+        {
+                Input()->MouseModeRelative();
+                // Still pick fresh offscreen spots for next open, so the opening
+                // animation starts from a new random direction each time.
                 return;
+        }
 
-        const float eased = EaseOutExpo(m_AnimProgress);
+        const float eased = CubicBezierEase(m_AnimProgress);
         const float alpha = eased; // fade in/out
-        const float slideT = 1.0f - eased; // 1 at start of open (offscreen), 0 at fully open
 
         // Set up a pixel-space projection (0,0) = top-left, (W,H) = bottom-right.
         const float screenW = (float)Graphics()->ScreenWidth();
         const float screenH = (float)Graphics()->ScreenHeight();
         Graphics()->MapScreen(0.0f, 0.0f, screenW, screenH);
 
-        // Render each panel at its animated position.
+        // CRITICAL: clear any bound texture so DrawRect draws solid colored quads,
+        // not textured ones (which would tint our colors unpredictably). This was
+        // the cause of v1.56.34's "blue instead of purple" — a sprite texture from
+        // a previous component was still bound.
+        Graphics()->TextureClear();
+
+        // Render each panel at its animated position (lerp offscreen -> home).
         for(int i = 0; i < 3; ++i)
         {
                 const vec2 home = PanelHomePos(i);
-                const vec2 dir = PanelSlideDir(i);
-                const vec2 pos = home + dir * (SLIDE_DISTANCE * slideT);
+                vec2 offscreen;
+                if(m_aOffscreenValid[i])
+                        offscreen = m_aOffscreenPos[i];
+                else
+                {
+                        offscreen = PickRandomOffscreenPos(i, screenW, screenH);
+                        m_aOffscreenPos[i] = offscreen;
+                        m_aOffscreenValid[i] = true;
+                }
+                // position = lerp(offscreen, home, eased)
+                const vec2 pos = vec2(
+                        offscreen.x + (home.x - offscreen.x) * eased,
+                        offscreen.y + (home.y - offscreen.y) * eased);
                 RenderPanel(i, pos, alpha);
         }
+
+        // Reset text color to white so we don't leak our color into other components
+        // (this was the cause of v1.56.34's "console text colored in clickgui color").
+        TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
 }
 
 // ============================================================================
@@ -394,29 +502,29 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
 
         // Panel border (1px-ish outline via slightly larger dark rect behind).
         DrawRoundedRect(px - 1.0f, py - 1.0f, PANEL_WIDTH + 2.0f, panelH + 2.0f,
-                4.0f, IGraphics::CORNER_ALL,
+                5.0f, IGraphics::CORNER_ALL,
                 ColorRGBA(COL_PANEL_BORDER, true).WithAlpha(alpha));
 
         // Panel background.
         DrawRoundedRect(px, py, PANEL_WIDTH, panelH,
-                4.0f, IGraphics::CORNER_ALL,
+                5.0f, IGraphics::CORNER_ALL,
                 ColorRGBA(COL_PANEL_BG, true).WithAlpha(alpha));
 
         // ---- Step 3: header ----
         // Header is the top HEADER_HEIGHT px; rounded only on top corners so it
         // blends with the body below.
         DrawRoundedRect(px, py, PANEL_WIDTH, HEADER_HEIGHT,
-                4.0f, IGraphics::CORNER_T,
+                5.0f, IGraphics::CORNER_T,
                 ColorRGBA(COL_HEADER_BG, true).WithAlpha(alpha));
 
         // ▼ collapse arrow (left side of header).
-        DrawText(px + 8.0f, py + 7.0f, 10.0f, "\xe2\x96\xbc" /* ▼ */,
+        DrawText(px + 10.0f, py + 9.0f, 15.0f, "\xe2\x96\xbc" /* ▼ */,
                 ColorRGBA(COL_ARROW, true).WithAlpha(alpha));
 
         // Title centered.
         {
-                const float titleSize = 12.0f;
-                DrawText(px + PANEL_WIDTH * 0.5f, py + 7.0f, titleSize,
+                const float titleSize = 15.0f;
+                DrawText(px + PANEL_WIDTH * 0.5f, py + 9.0f, titleSize,
                         panel.pTitle, ColorRGBA(COL_HEADER_TEXT, true).WithAlpha(alpha),
                         TEXTALIGN_CENTER);
         }
@@ -460,18 +568,18 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                 {
                         // [✓ or empty] [name]
                         if(row.on)
-                                DrawText(rx + 1.0f, ry + 4.0f, 12.0f, "\xe2\x9c\x93" /* ✓ */,
+                                DrawText(rx + 1.0f, ry + 5.0f, 15.0f, "\xe2\x9c\x93" /* ✓ */,
                                         ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha));
-                        DrawText(rx + CHECK_W + 4.0f, ry + 4.0f, 12.0f, row.pName, textCol);
+                        DrawText(rx + CHECK_W + 4.0f, ry + 5.0f, 15.0f, row.pName, textCol);
                         break;
                 }
                 case ERowType::ToggleDropdown:
                 {
                         // [✓ or empty] [name] [select box]
                         if(row.on)
-                                DrawText(rx + 1.0f, ry + 4.0f, 12.0f, "\xe2\x9c\x93",
+                                DrawText(rx + 1.0f, ry + 5.0f, 15.0f, "\xe2\x9c\x93",
                                         ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha));
-                        DrawText(rx + CHECK_W + 4.0f, ry + 4.0f, 12.0f, row.pName, textCol);
+                        DrawText(rx + CHECK_W + 4.0f, ry + 5.0f, 15.0f, row.pName, textCol);
 
                         // Dropdown box on the right.
                         const float ddX = rx + rw - DROPDOWN_W - 2.0f;
@@ -482,14 +590,14 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                         const char *pVal = (row.optionCount > 0 && row.valueIdx >= 0 && row.valueIdx < row.optionCount)
                                 ? row.pOptions[row.valueIdx]
                                 : "";
-                        DrawText(ddX + 4.0f, ddY + 3.0f, 11.0f, pVal, textCol);
+                        DrawText(ddX + 4.0f, ddY + 4.0f, 14.0f, pVal, textCol);
                         break;
                 }
                 case ERowType::Slider:
                 {
                         // Top: [name]              [value]
                         // Bottom: [track with thumb at value%]
-                        DrawText(rx + 2.0f, ry + 3.0f, 11.0f, row.pName, textCol);
+                        DrawText(rx + 2.0f, ry + 4.0f, 14.0f, row.pName, textCol);
 
                         // Value chip.
                         char valBuf[32];
@@ -497,13 +605,13 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                 str_format(valBuf, sizeof(valBuf), "%.2f%s", row.value, row.pSuffix);
                         else
                                 str_format(valBuf, sizeof(valBuf), "%.2f", row.value);
-                        const float valW = TextRender()->TextWidth(11.0f, valBuf) + 10.0f;
+                        const float valW = TextRender()->TextWidth(14.0f, valBuf) + 10.0f;
                         const float valX = rx + rw - valW - 2.0f;
                         const float valY = ry + 1.0f;
-                        DrawRoundedRect(valX, valY, valW, 14.0f, 2.0f,
+                        DrawRoundedRect(valX, valY, valW, 18.0f, 2.0f,
                                 IGraphics::CORNER_ALL,
                                 ColorRGBA(COL_VALUE_BG, true).WithAlpha(alpha));
-                        DrawText(valX + 5.0f, valY + 2.0f, 11.0f, valBuf, textCol);
+                        DrawText(valX + 6.0f, valY + 3.0f, 14.0f, valBuf, textCol);
 
                         // Track.
                         const float trackX = rx + 2.0f;
@@ -530,8 +638,8 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                 case ERowType::Input:
                 {
                         // [name (compact)] [text input box]
-                        const float nameW = std::min(70.0f, TextRender()->TextWidth(11.0f, row.pName) + 4.0f);
-                        DrawText(rx + 2.0f, ry + 4.0f, 11.0f, row.pName, textCol);
+                        const float nameW = std::min(88.0f, TextRender()->TextWidth(14.0f, row.pName) + 4.0f);
+                        DrawText(rx + 2.0f, ry + 5.0f, 14.0f, row.pName, textCol);
                         const float inX = rx + nameW + 2.0f;
                         const float inY = ry + 2.0f;
                         const float inW = rw - nameW - 4.0f;
@@ -548,14 +656,14 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                 const ColorRGBA inCol = (row.pInputValue && row.pInputValue[0])
                                         ? textCol
                                         : ColorRGBA(0x8a8aa8ff, true).WithAlpha(alpha);
-                                DrawText(inX + 4.0f, inY + 3.0f, 11.0f, pText, inCol);
+                                DrawText(inX + 4.0f, inY + 4.0f, 14.0f, pText, inCol);
                         }
                         break;
                 }
                 case ERowType::Dropdown:
                 {
                         // [name] [select box]
-                        DrawText(rx + 2.0f, ry + 4.0f, 12.0f, row.pName, textCol);
+                        DrawText(rx + 2.0f, ry + 5.0f, 15.0f, row.pName, textCol);
                         const float ddX = rx + rw - DROPDOWN_W - 2.0f;
                         const float ddY = ry + (rh - DROPDOWN_H) * 0.5f;
                         DrawRoundedRect(ddX, ddY, DROPDOWN_W, DROPDOWN_H, 2.0f,
@@ -564,23 +672,23 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                         const char *pVal = (row.optionCount > 0 && row.valueIdx >= 0 && row.valueIdx < row.optionCount)
                                 ? row.pOptions[row.valueIdx]
                                 : "";
-                        DrawText(ddX + 4.0f, ddY + 3.0f, 11.0f, pVal, textCol);
+                        DrawText(ddX + 4.0f, ddY + 4.0f, 14.0f, pVal, textCol);
                         break;
                 }
                 case ERowType::Expandable:
                 {
                         // [✓ or empty] [name] [▶ or ▼]
                         if(row.on)
-                                DrawText(rx + 1.0f, ry + 4.0f, 12.0f, "\xe2\x9c\x93",
+                                DrawText(rx + 1.0f, ry + 5.0f, 15.0f, "\xe2\x9c\x93",
                                         ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha));
-                        DrawText(rx + CHECK_W + 4.0f, ry + 4.0f, 12.0f, row.pName,
+                        DrawText(rx + CHECK_W + 4.0f, ry + 5.0f, 15.0f, row.pName,
                                 row.on ? ColorRGBA(COL_ROW_TEXT_ON, true).WithAlpha(alpha) : textCol);
                         // Arrow on the right (▶ collapsed, ▼ expanded).
                         const char *pArrow = row.expanded ? "\xe2\x96\xbc" : "\xe2\x96\xb6";
                         const ColorRGBA arrowCol = row.expanded
                                 ? ColorRGBA(0xb8b8e8ff, true).WithAlpha(alpha)
                                 : ColorRGBA(COL_EXPAND_ARROW, true).WithAlpha(alpha);
-                        DrawText(rx + rw - ARROW_W - 2.0f, ry + 4.0f, 10.0f, pArrow, arrowCol);
+                        DrawText(rx + rw - ARROW_W - 2.0f, ry + 5.0f, 12.0f, pArrow, arrowCol);
                         break;
                 }
                 }
@@ -611,24 +719,24 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                 {
                                 case ERowType::Toggle:
                                         if(child.on)
-                                                DrawText(crx + 1.0f, cry + 4.0f, 11.0f, "\xe2\x9c\x93",
+                                                DrawText(crx + 1.0f, cry + 5.0f, 14.0f, "\xe2\x9c\x93",
                                                         ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha));
-                                        DrawText(crx + CHECK_W + 4.0f, cry + 4.0f, 11.0f, child.pName, cText);
+                                        DrawText(crx + CHECK_W + 4.0f, cry + 5.0f, 14.0f, child.pName, cText);
                                         break;
                                 case ERowType::Slider:
                                 {
-                                        DrawText(crx + 2.0f, cry + 3.0f, 11.0f, child.pName, cText);
+                                        DrawText(crx + 2.0f, cry + 5.0f, 14.0f, child.pName, cText);
                                         char vbuf[32];
                                         if(child.pSuffix)
                                                 str_format(vbuf, sizeof(vbuf), "%.2f%s", child.value, child.pSuffix);
                                         else
                                                 str_format(vbuf, sizeof(vbuf), "%.2f", child.value);
-                                        const float vw = TextRender()->TextWidth(11.0f, vbuf) + 10.0f;
+                                        const float vw = TextRender()->TextWidth(14.0f, vbuf) + 10.0f;
                                         const float vx = crx + crw - vw - 2.0f;
-                                        DrawRoundedRect(vx, cry + 1.0f, vw, 14.0f, 2.0f,
+                                        DrawRoundedRect(vx, cry + 1.0f, vw, 18.0f, 2.0f,
                                                 IGraphics::CORNER_ALL,
                                                 ColorRGBA(COL_VALUE_BG, true).WithAlpha(alpha));
-                                        DrawText(vx + 5.0f, cry + 2.0f, 11.0f, vbuf, cText);
+                                        DrawText(vx + 6.0f, cry + 2.0f, 14.0f, vbuf, cText);
                                         const float trx = crx + 2.0f;
                                         const float trY = cry + crh - SLIDER_TRACK_H - 4.0f;
                                         const float trW = crw - 4.0f;
@@ -650,8 +758,8 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                 }
                                 case ERowType::Input:
                                 {
-                                        const float nw = std::min(70.0f, TextRender()->TextWidth(11.0f, child.pName) + 4.0f);
-                                        DrawText(crx + 2.0f, cry + 4.0f, 11.0f, child.pName, cText);
+                                        const float nw = std::min(88.0f, TextRender()->TextWidth(14.0f, child.pName) + 4.0f);
+                                        DrawText(crx + 2.0f, cry + 5.0f, 14.0f, child.pName, cText);
                                         const float ix = crx + nw + 2.0f;
                                         const float iy = cry + 2.0f;
                                         const float iw = crw - nw - 4.0f;
@@ -665,7 +773,7 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                                 const ColorRGBA ic = (child.pInputValue && child.pInputValue[0])
                                                         ? cText
                                                         : ColorRGBA(0x8a8aa8ff, true).WithAlpha(alpha);
-                                                DrawText(ix + 4.0f, iy + 3.0f, 11.0f, pT, ic);
+                                                DrawText(ix + 4.0f, iy + 3.0f, 14.0f, pT, ic);
                                         }
                                         break;
                                 }
@@ -673,9 +781,9 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                 case ERowType::ToggleDropdown:
                                 {
                                         if(child.type == ERowType::ToggleDropdown && child.on)
-                                                DrawText(crx + 1.0f, cry + 4.0f, 11.0f, "\xe2\x9c\x93",
+                                                DrawText(crx + 1.0f, cry + 5.0f, 14.0f, "\xe2\x9c\x93",
                                                         ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha));
-                                        DrawText(crx + CHECK_W + 4.0f, cry + 4.0f, 11.0f, child.pName, cText);
+                                        DrawText(crx + CHECK_W + 4.0f, cry + 5.0f, 14.0f, child.pName, cText);
                                         const float ddx = crx + crw - DROPDOWN_W - 2.0f;
                                         const float ddy = cry + (crh - DROPDOWN_H) * 0.5f;
                                         DrawRoundedRect(ddx, ddy, DROPDOWN_W, DROPDOWN_H, 2.0f,
@@ -684,15 +792,15 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                         const char *pV = (child.optionCount > 0 && child.valueIdx >= 0 && child.valueIdx < child.optionCount)
                                                 ? child.pOptions[child.valueIdx]
                                                 : "";
-                                        DrawText(ddx + 4.0f, ddy + 3.0f, 11.0f, pV, cText);
+                                        DrawText(ddx + 4.0f, ddy + 3.0f, 14.0f, pV, cText);
                                         break;
                                 }
                                 case ERowType::Expandable:
                                         // Nested expandables not in the data model; render as a plain toggle.
                                         if(child.on)
-                                                DrawText(crx + 1.0f, cry + 4.0f, 11.0f, "\xe2\x9c\x93",
+                                                DrawText(crx + 1.0f, cry + 5.0f, 14.0f, "\xe2\x9c\x93",
                                                         ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha));
-                                        DrawText(crx + CHECK_W + 4.0f, cry + 4.0f, 11.0f, child.pName, cText);
+                                        DrawText(crx + CHECK_W + 4.0f, cry + 5.0f, 14.0f, child.pName, cText);
                                         break;
                                 }
                         }
