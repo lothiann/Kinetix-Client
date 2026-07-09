@@ -456,10 +456,14 @@ void CClickGui::OnRender()
                 SRow *pTarget = (m_DragSliderChild >= 0 && row.pChildren) ? &row.pChildren[m_DragSliderChild] : &row;
                 if(pTarget->type == ERowType::Slider && pTarget->max > pTarget->min)
                 {
-                        // Slider track spans the row width with 2px margin each side.
+                        // Track geometry MUST match RenderPanel: 2px margin each side.
+                        // Child sliders are indented by SUB_LIST_INDENT, so their track
+                        // is narrower — must account for that or the thumb position
+                        // won't match the mouse.
                         const vec2 ppos = m_aPanelPos[m_DragSliderPanel];
-                        const float trackX = ppos.x + BODY_PADDING + 2.0f;
-                        const float trackW = PANEL_WIDTH - BODY_PADDING * 2 - 4.0f;
+                        const float indent = (m_DragSliderChild >= 0) ? SUB_LIST_INDENT : 0.0f;
+                        const float trackX = ppos.x + BODY_PADDING + indent + 2.0f;
+                        const float trackW = PANEL_WIDTH - BODY_PADDING * 2 - indent - 4.0f;
                         float pct = (m_MousePos.x - trackX) / trackW;
                         pct = std::clamp(pct, 0.0f, 1.0f);
                         pTarget->value = pTarget->min + pct * (pTarget->max - pTarget->min);
