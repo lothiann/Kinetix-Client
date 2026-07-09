@@ -661,7 +661,41 @@ int CGameClient::OnSnapInput(int *pData, int Conn, bool Force)
         }
         else
         {
-                if(m_aDummyFire[Conn] % 25 != 0)
+                // Determine if auto-fly is active: dummy auto-hammers every tick when
+                // the active player is within hammer radius.
+                const bool autoFly = g_Config.m_ClDummyHammerAuto != 0;
+                bool canHammerNow = true;
+                if(autoFly)
+                {
+                        const int activeId = m_aLocalIds[g_Config.m_ClDummy];
+                        if(activeId < 0)
+                        {
+                                canHammerNow = false;
+                        }
+                        else
+                        {
+                                const vec2 activePos = m_aClients[activeId].m_RenderPos;
+                                const vec2 dummyPos = m_aClients[m_aLocalIds[Conn]].m_RenderPos;
+                                const float distSq = (activePos - dummyPos).x * (activePos - dummyPos).x + (activePos - dummyPos).y * (activePos - dummyPos).y;
+                                constexpr float HAMMER_RADIUS = 50.0f;
+                                if(distSq > HAMMER_RADIUS * HAMMER_RADIUS)
+                                        canHammerNow = false;
+                        }
+                        // Auto fly overrides custom latency — hammers every tick when in range.
+                }
+                else if(g_Config.m_ClDummyHammerCustomLatency)
+                {
+                        const int latencyTicks = std::max(1, (g_Config.m_ClDummyHammerLatencyMs + 19) / 20);
+                        if(m_aDummyFire[Conn] % latencyTicks != 0)
+                                canHammerNow = false;
+                }
+                else
+                {
+                        if(m_aDummyFire[Conn] % 25 != 0)
+                                canHammerNow = false;
+                }
+
+                if(!canHammerNow)
                 {
                         m_aDummyFire[Conn]++;
                         return 0;
@@ -673,12 +707,76 @@ int CGameClient::OnSnapInput(int *pData, int Conn, bool Force)
                 if(!g_Config.m_ClDummyRestoreWeapon)
                         m_aDummyInput[Conn].m_WantedWeapon = WEAPON_HAMMER + 1;
 
+                // Aim is always overridden toward the active player for hammerfly correctness.
                 const vec2 Dir = m_LocalCharacterPos - m_aClients[m_aLocalIds[Conn]].m_RenderPos;
                 m_aHammerInput[Conn].m_TargetX = (int)Dir.x;
                 m_aHammerInput[Conn].m_TargetY = (int)Dir.y;
 
+                // Preserve inputs: when on, keep dummy's movement inputs (direction/jump/hook)
+                // from m_aDummyInput. When off, hammer input fully overrides (old behavior).
+                if(g_Config.m_ClDummyHammerKeepInputs)
+                {
+                        m_aHammerInput[Conn].m_Direction = m_aDummyInput[Conn].m_Direction;
+                        m_aHammerInput[Conn].m_Jump = m_aDummyInput[Conn].m_Jump;
+                        m_aHammerInput[Conn].m_Hook = m_aDummyInput[Conn].m_Hook;
+                }
+
                 mem_copy(pData, &m_aHammerInput[Conn], sizeof(m_aHammerInput[Conn]));
                 return sizeof(m_aHammerInput[Conn]);
+        }
+}
+
+void CGameClient::ApplyCopyMovesTransforms(int D)
+{
+        // Only applies when copy moves is on; transforms the dummy's input in-place.
+        if(!g_Config.m_ClDummyCopyMoves)
+                return;
+        if(D < 0 || D >= MAX_DUMMIES || D == g_Config.m_ClDummy)
+                return;
+        if(D != 0 && !Client()->DummyConnected(D))
+                return;
+
+        // --- Mirror direction (XOR) ---
+        if(g_Config.m_ClDummyCopyMirrorDir)
+        {
+                // m_Direction: -1, 0, +1. Mirror flips the sign.
+                m_aDummyInput[D].m_Direction = -m_aDummyInput[D].m_Direction;
+        }
+
+        // --- Aim transforms (only when Smart Aim or Mirror Aim enabled) ---
+        const bool wantSmart = (g_Config.m_ClDummyCopyAimMode == 0) && g_Config.m_ClDummyCopySmartAim;
+        const bool wantMirror = (g_Config.m_ClDummyCopyAimMode == 1) && (g_Config.m_ClDummyCopyMirrorAimX || g_Config.m_ClDummyCopyMirrorAimY);
+        if(!wantSmart && !wantMirror)
+                return;
+
+        const int activeId = m_aLocalIds[g_Config.m_ClDummy];
+        if(activeId < 0 || m_aLocalIds[D] < 0)
+                return;
+        const vec2 activePos = m_aClients[activeId].m_RenderPos;
+        const vec2 dummyPos = m_aClients[m_aLocalIds[D]].m_RenderPos;
+
+        if(wantSmart)
+        {
+                // Smart aim: dummy aims at the same WORLD point as the player.
+                // Player's world aim = activePos + (m_TargetX, m_TargetY) from player's input.
+                const vec2 playerWorldAim = activePos + vec2(
+                        (float)m_Controls.m_aInputData[g_Config.m_ClDummy].m_TargetX,
+                        (float)m_Controls.m_aInputData[g_Config.m_ClDummy].m_TargetY);
+                const vec2 dummyAim = playerWorldAim - dummyPos;
+                m_aDummyInput[D].m_TargetX = (int)dummyAim.x;
+                m_aDummyInput[D].m_TargetY = (int)dummyAim.y;
+        }
+        else // wantMirror
+        {
+                // Mirror aim: reflect the player's LOCAL aim vector by X and/or Y.
+                int tx = m_Controls.m_aInputData[g_Config.m_ClDummy].m_TargetX;
+                int ty = m_Controls.m_aInputData[g_Config.m_ClDummy].m_TargetY;
+                if(g_Config.m_ClDummyCopyMirrorAimX)
+                        tx = -tx;
+                if(g_Config.m_ClDummyCopyMirrorAimY)
+                        ty = -ty;
+                m_aDummyInput[D].m_TargetX = tx;
+                m_aDummyInput[D].m_TargetY = ty;
         }
 }
 

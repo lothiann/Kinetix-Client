@@ -621,6 +621,11 @@ public:
         void OnActivateEditor() override;
         void OnDummySwap() override;
         int OnSnapInput(int *pData, int Conn, bool Force) override;
+
+        // Apply copy-moves transformations (filter, mirror direction, mirror aim,
+        // smart aim) to a non-active dummy's input. Called after m_aDummyInput[D]
+        // is set from the player's input. Only active when cl_dummy_copy_moves is on.
+        void ApplyCopyMovesTransforms(int D);
         void OnShutdown() override;
         void OnEnterGame() override;
         void OnRconType(bool UsernameReq) override;

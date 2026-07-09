@@ -252,9 +252,24 @@ MACRO_CONFIG_INT(ClDummyDefaultEyes, dummy_default_eyes, 0, 0, 5, CFGFLAG_CLIENT
 // Max value 7 = MAX_DUMMIES-1 — update when MAX_DUMMIES changes
 MACRO_CONFIG_INT(ClDummy, cl_dummy, 0, 0, 7, CFGFLAG_CLIENT | CFGFLAG_INSENSITIVE, "Which player you control (0 = main, 1-7 = dummies)")
 MACRO_CONFIG_INT(ClDummyHammer, cl_dummy_hammer, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_INSENSITIVE, "Whether dummy is hammering for a hammerfly")
+MACRO_CONFIG_INT(ClDummyHammerKeepInputs, cl_dummy_hammer_keep_inputs, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Preserve dummy movement inputs (direction/jump/hook) during hammerfly; aim is still overridden for hammer direction")
+MACRO_CONFIG_INT(ClDummyHammerCustomLatency, cl_dummy_hammer_custom_latency, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Use custom hammer latency instead of default 500ms")
+MACRO_CONFIG_INT(ClDummyHammerLatencyMs, cl_dummy_hammer_latency_ms, 500, 50, 2000, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Hammer latency in milliseconds (only used when cl_dummy_hammer_custom_latency is on)")
+MACRO_CONFIG_INT(ClDummyHammerAuto, cl_dummy_hammer_auto, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Auto-hammer: dummy hammers the active player every tick when in hammer radius (overrides custom latency)")
 MACRO_CONFIG_INT(ClDummyResetOnSwitch, cl_dummy_resetonswitch, 0, 0, 2, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Whether dummy or player should stop pressing keys when you switch (0 = off, 1 = dummy, 2 = player)")
 MACRO_CONFIG_INT(ClDummyRestoreWeapon, cl_dummy_restore_weapon, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Whether dummy should switch to last weapon after hammerfly")
 MACRO_CONFIG_INT(ClDummyCopyMoves, cl_dummy_copy_moves, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_INSENSITIVE, "Whether dummy should copy your moves")
+MACRO_CONFIG_INT(ClDummyCopyMovesFilter, cl_dummy_copy_moves_filter, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "When on with copy_moves, only copy selected inputs (jump/direction/hook/aim/fire) instead of all")
+MACRO_CONFIG_INT(ClDummyCopyMovesFilterJump, cl_dummy_copy_moves_filter_jump, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Copy Moves Filter: copy jump")
+MACRO_CONFIG_INT(ClDummyCopyMovesFilterDirection, cl_dummy_copy_moves_filter_direction, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Copy Moves Filter: copy direction")
+MACRO_CONFIG_INT(ClDummyCopyMovesFilterHook, cl_dummy_copy_moves_filter_hook, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Copy Moves Filter: copy hook")
+MACRO_CONFIG_INT(ClDummyCopyMovesFilterAim, cl_dummy_copy_moves_filter_aim, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Copy Moves Filter: copy aim (target X/Y)")
+MACRO_CONFIG_INT(ClDummyCopyMovesFilterFire, cl_dummy_copy_moves_filter_fire, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Copy Moves Filter: copy fire")
+MACRO_CONFIG_INT(ClDummyCopyMirrorDir, cl_dummy_copy_mirror_dir, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Mirror direction of inactive dummies by XOR when copy moves is on")
+MACRO_CONFIG_INT(ClDummyCopyAimMode, cl_dummy_copy_aim_mode, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Aim mode for copy moves: 0 = Smart (world coords), 1 = Mirror")
+MACRO_CONFIG_INT(ClDummyCopyMirrorAimX, cl_dummy_copy_mirror_aim_x, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Mirror aim X of inactive dummies when copy moves is on (mirror mode)")
+MACRO_CONFIG_INT(ClDummyCopyMirrorAimY, cl_dummy_copy_mirror_aim_y, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Mirror aim Y of inactive dummies when copy moves is on (mirror mode)")
+MACRO_CONFIG_INT(ClDummyCopySmartAim, cl_dummy_copy_smart_aim, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Smart aim: inactive dummies aim at the same world point as the player (smart mode)")
 MACRO_CONFIG_INT(ClVersionSpoof, cl_version_spoof, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Spoof DDNet client version number")
 MACRO_CONFIG_INT(ClVersionSpoofId, cl_version_spoof_id, 20000, 10000, 21000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "DDNet version number to spoof (10000-21000)")
 
@@ -271,6 +286,8 @@ MACRO_CONFIG_INT(ClDummyControl, cl_dummy_control, 0, 0, 1, CFGFLAG_CLIENT | CFG
 MACRO_CONFIG_INT(ClDummyJump, cl_dummy_jump, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_INSENSITIVE, "Whether dummy is jumping (requires cl_dummy_control 1)")
 MACRO_CONFIG_INT(ClDummyFire, cl_dummy_fire, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_INSENSITIVE, "Whether dummy is firing (requires cl_dummy_control 1)")
 MACRO_CONFIG_INT(ClDummyHook, cl_dummy_hook, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_INSENSITIVE, "Whether dummy is hooking (requires cl_dummy_control 1)")
+MACRO_CONFIG_INT(ClDummyAim, cl_dummy_aim, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_INSENSITIVE, "Whether dummy is aiming (requires cl_dummy_control 1)")
+MACRO_CONFIG_INT(ClDummyDirection, cl_dummy_direction, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_INSENSITIVE, "Whether dummy is moving (requires cl_dummy_control 1)")
 
 // bot control
 MACRO_CONFIG_INT(ClBotActionDuration, cl_bot_action_duration, 500, 100, 10000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Duration in ms for bot input actions (c_input UI buttons)")

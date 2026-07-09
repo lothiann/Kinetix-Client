@@ -3312,7 +3312,7 @@ void CMenus::RenderSettingsDummies(CUIRect MainView)
 
         // === Movement Panel ===
         {
-                const float SectionH = PanelPad + 25.0f + 5.0f + 4 * 20.0f + 3 * RowGap + PanelPad;
+                const float SectionH = PanelPad + 25.0f + 5.0f + 2 * 20.0f + RowGap + PanelPad;
                 MainView.HSplitTop(SectionH, &PanelBg, &MainView);
                 PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
                 s_DummiesScrollRegion.AddRect(PanelBg);
@@ -3330,34 +3330,20 @@ void CMenus::RenderSettingsDummies(CUIRect MainView)
                 GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyCopyMoves, &Row, Localize("All dummies copy your movement (direction, jump, hook, aim, fire, weapon switches)"));
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
 
-                // Dummy hammer
-                Panel.HSplitTop(20.0f, &Row, &Panel);
-                if(DoButton_CheckBox(&g_Config.m_ClDummyHammer, Localize("Dummy hammer"), g_Config.m_ClDummyHammer, &Row))
-                        g_Config.m_ClDummyHammer ^= 1;
-                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyHammer, &Row, Localize("All dummies will hammer towards you for hammerfly"));
-                Panel.HSplitTop(RowGap, nullptr, &Panel);
-
                 // Restore weapon after hammer
                 Panel.HSplitTop(20.0f, &Row, &Panel);
                 if(DoButton_CheckBox(&g_Config.m_ClDummyRestoreWeapon, Localize("Restore weapon after hammer"), g_Config.m_ClDummyRestoreWeapon, &Row))
                         g_Config.m_ClDummyRestoreWeapon ^= 1;
                 GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyRestoreWeapon, &Row, Localize("Switch back to previous weapon after hammerfly ends"));
-                Panel.HSplitTop(RowGap, nullptr, &Panel);
-
-                // Predict dummy movement
-                Panel.HSplitTop(20.0f, &Row, &Panel);
-                if(DoButton_CheckBox(&g_Config.m_ClPredictDummy, Localize("Predict dummy movement"), g_Config.m_ClPredictDummy, &Row))
-                        g_Config.m_ClPredictDummy ^= 1;
-                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClPredictDummy, &Row, Localize("Predict dummy positions locally for smoother rendering (similar to cl_predict)"));
         }
 
         MainView.HSplitTop(PanelGap, nullptr, &MainView);
 
-        // === Dummy Control Panel ===
+        // === Fly Panel ===
         {
-                float SectionH = PanelPad + 25.0f + 5.0f + 20.0f;
-                if(g_Config.m_ClDummyControl)
-                        SectionH += RowGap + 3 * 20.0f + 2 * RowGap;
+                float SectionH = PanelPad + 25.0f + 5.0f + 4 * 20.0f + 3 * RowGap;
+                if(g_Config.m_ClDummyHammerCustomLatency)
+                        SectionH += 20.0f + RowGap;
                 SectionH += PanelPad;
                 MainView.HSplitTop(SectionH, &PanelBg, &MainView);
                 PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
@@ -3366,10 +3352,70 @@ void CMenus::RenderSettingsDummies(CUIRect MainView)
 
                 // Header
                 Panel.HSplitTop(25.0f, &Label, &Panel);
-                Ui()->DoLabel(&Label, Localize("Dummy Control"), 16.0f, TEXTALIGN_ML);
+                Ui()->DoLabel(&Label, Localize("Fly"), 16.0f, TEXTALIGN_ML);
                 Panel.HSplitTop(5.0f, nullptr, &Panel);
 
-                // Dummy control
+                // Dummy hammer
+                Panel.HSplitTop(20.0f, &Row, &Panel);
+                if(DoButton_CheckBox(&g_Config.m_ClDummyHammer, Localize("Dummy hammer"), g_Config.m_ClDummyHammer, &Row))
+                        g_Config.m_ClDummyHammer ^= 1;
+                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyHammer, &Row, Localize("All dummies will hammer towards you for hammerfly"));
+                Panel.HSplitTop(RowGap, nullptr, &Panel);
+
+                // Preserve inputs (DOIODH)
+                Panel.HSplitTop(20.0f, &Row, &Panel);
+                if(DoButton_CheckBox(&g_Config.m_ClDummyHammerKeepInputs, Localize("Preserve inputs"), g_Config.m_ClDummyHammerKeepInputs, &Row))
+                        g_Config.m_ClDummyHammerKeepInputs ^= 1;
+                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyHammerKeepInputs, &Row, Localize("Keep dummy movement inputs (direction/jump/hook) during hammerfly; aim is still overridden for hammer direction"));
+                Panel.HSplitTop(RowGap, nullptr, &Panel);
+
+                // Custom latency (checkbox + conditional slider)
+                Panel.HSplitTop(20.0f, &Row, &Panel);
+                if(DoButton_CheckBox(&g_Config.m_ClDummyHammerCustomLatency, Localize("Custom latency"), g_Config.m_ClDummyHammerCustomLatency, &Row))
+                        g_Config.m_ClDummyHammerCustomLatency ^= 1;
+                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyHammerCustomLatency, &Row, Localize("Use custom hammer latency instead of default 500ms"));
+                Panel.HSplitTop(RowGap, nullptr, &Panel);
+
+                if(g_Config.m_ClDummyHammerCustomLatency)
+                {
+                        Panel.HSplitTop(20.0f, &Row, &Panel);
+                        Ui()->DoScrollbarOption(&g_Config.m_ClDummyHammerLatencyMs, &g_Config.m_ClDummyHammerLatencyMs, &Row, Localize("Latency (ms)"), 50, 2000, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_NOCLAMPVALUE, "ms");
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
+                }
+
+                // Auto fly
+                Panel.HSplitTop(20.0f, &Row, &Panel);
+                if(DoButton_CheckBox(&g_Config.m_ClDummyHammerAuto, Localize("Auto fly"), g_Config.m_ClDummyHammerAuto, &Row))
+                        g_Config.m_ClDummyHammerAuto ^= 1;
+                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyHammerAuto, &Row, Localize("Dummy auto-hammers the active player every tick when in hammer radius (overrides custom latency)"));
+        }
+
+        MainView.HSplitTop(PanelGap, nullptr, &MainView);
+
+        // === Copy Moves Panel ===
+        {
+                float SectionH = PanelPad + 25.0f + 5.0f + 20.0f; // header + main checkbox
+                if(g_Config.m_ClDummyControl)
+                        SectionH += RowGap + 5 * 20.0f + 4 * RowGap; // Jump/Fire/Hook/Aim/Direction
+                // Mirror direction + Aim mode dropdown + conditional aim options
+                SectionH += RowGap + 20.0f + RowGap; // Mirror direction
+                SectionH += 20.0f + RowGap; // Aim mode dropdown
+                if(g_Config.m_ClDummyCopyAimMode == 1) // Mirror
+                        SectionH += 2 * (20.0f + RowGap);
+                else // Smart
+                        SectionH += 20.0f + RowGap;
+                SectionH += PanelPad;
+                MainView.HSplitTop(SectionH, &PanelBg, &MainView);
+                PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
+                s_DummiesScrollRegion.AddRect(PanelBg);
+                PanelBg.Margin(PanelPad, &Panel);
+
+                // Header
+                Panel.HSplitTop(25.0f, &Label, &Panel);
+                Ui()->DoLabel(&Label, Localize("Copy Moves"), 16.0f, TEXTALIGN_ML);
+                Panel.HSplitTop(5.0f, nullptr, &Panel);
+
+                // Dummy control (main toggle — original DDNet, unchanged logic)
                 Panel.HSplitTop(20.0f, &Row, &Panel);
                 if(DoButton_CheckBox(&g_Config.m_ClDummyControl, Localize("Dummy control"), g_Config.m_ClDummyControl, &Row))
                         g_Config.m_ClDummyControl ^= 1;
@@ -3379,25 +3425,121 @@ void CMenus::RenderSettingsDummies(CUIRect MainView)
                 {
                         Panel.HSplitTop(RowGap, nullptr, &Panel);
 
-                        // Dummy jump
+                        // Jump
                         Panel.HSplitTop(20.0f, &Row, &Panel);
-                        if(DoButton_CheckBox(&g_Config.m_ClDummyJump, Localize("Dummy jump"), g_Config.m_ClDummyJump, &Row))
+                        if(DoButton_CheckBox(&g_Config.m_ClDummyJump, Localize("Jump"), g_Config.m_ClDummyJump, &Row))
                                 g_Config.m_ClDummyJump ^= 1;
                         GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyJump, &Row, Localize("All dummies will jump (requires Dummy control)"));
                         Panel.HSplitTop(RowGap, nullptr, &Panel);
 
-                        // Dummy fire
+                        // Fire
                         Panel.HSplitTop(20.0f, &Row, &Panel);
-                        if(DoButton_CheckBox(&g_Config.m_ClDummyFire, Localize("Dummy fire"), g_Config.m_ClDummyFire, &Row))
+                        if(DoButton_CheckBox(&g_Config.m_ClDummyFire, Localize("Fire"), g_Config.m_ClDummyFire, &Row))
                                 g_Config.m_ClDummyFire ^= 1;
                         GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyFire, &Row, Localize("All dummies will fire their weapon (requires Dummy control)"));
                         Panel.HSplitTop(RowGap, nullptr, &Panel);
 
-                        // Dummy hook
+                        // Hook
                         Panel.HSplitTop(20.0f, &Row, &Panel);
-                        if(DoButton_CheckBox(&g_Config.m_ClDummyHook, Localize("Dummy hook"), g_Config.m_ClDummyHook, &Row))
+                        if(DoButton_CheckBox(&g_Config.m_ClDummyHook, Localize("Hook"), g_Config.m_ClDummyHook, &Row))
                                 g_Config.m_ClDummyHook ^= 1;
                         GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyHook, &Row, Localize("All dummies will use hook (requires Dummy control)"));
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
+
+                        // Aim
+                        Panel.HSplitTop(20.0f, &Row, &Panel);
+                        if(DoButton_CheckBox(&g_Config.m_ClDummyAim, Localize("Aim"), g_Config.m_ClDummyAim, &Row))
+                                g_Config.m_ClDummyAim ^= 1;
+                        GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyAim, &Row, Localize("All dummies will copy your aim (requires Dummy control)"));
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
+
+                        // Direction
+                        Panel.HSplitTop(20.0f, &Row, &Panel);
+                        if(DoButton_CheckBox(&g_Config.m_ClDummyDirection, Localize("Direction"), g_Config.m_ClDummyDirection, &Row))
+                                g_Config.m_ClDummyDirection ^= 1;
+                        GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyDirection, &Row, Localize("All dummies will copy your movement direction (requires Dummy control)"));
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
+                }
+
+                // Copy Moves Filter (filters which fields copy_moves copies)
+                Panel.HSplitTop(20.0f, &Row, &Panel);
+                if(DoButton_CheckBox(&g_Config.m_ClDummyCopyMovesFilter, Localize("Copy Moves Filter"), g_Config.m_ClDummyCopyMovesFilter, &Row))
+                        g_Config.m_ClDummyCopyMovesFilter ^= 1;
+                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyCopyMovesFilter, &Row, Localize("When on with copy moves, only copy selected inputs (jump/direction/hook/aim/fire) instead of all"));
+                Panel.HSplitTop(RowGap, nullptr, &Panel);
+
+                if(g_Config.m_ClDummyCopyMovesFilter)
+                {
+                        // Filter sub-checkboxes
+                        Panel.HSplitTop(20.0f, &Row, &Panel);
+                        if(DoButton_CheckBox(&g_Config.m_ClDummyCopyMovesFilterJump, Localize("Filter: Jump"), g_Config.m_ClDummyCopyMovesFilterJump, &Row))
+                                g_Config.m_ClDummyCopyMovesFilterJump ^= 1;
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
+
+                        Panel.HSplitTop(20.0f, &Row, &Panel);
+                        if(DoButton_CheckBox(&g_Config.m_ClDummyCopyMovesFilterDirection, Localize("Filter: Direction"), g_Config.m_ClDummyCopyMovesFilterDirection, &Row))
+                                g_Config.m_ClDummyCopyMovesFilterDirection ^= 1;
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
+
+                        Panel.HSplitTop(20.0f, &Row, &Panel);
+                        if(DoButton_CheckBox(&g_Config.m_ClDummyCopyMovesFilterHook, Localize("Filter: Hook"), g_Config.m_ClDummyCopyMovesFilterHook, &Row))
+                                g_Config.m_ClDummyCopyMovesFilterHook ^= 1;
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
+
+                        Panel.HSplitTop(20.0f, &Row, &Panel);
+                        if(DoButton_CheckBox(&g_Config.m_ClDummyCopyMovesFilterAim, Localize("Filter: Aim"), g_Config.m_ClDummyCopyMovesFilterAim, &Row))
+                                g_Config.m_ClDummyCopyMovesFilterAim ^= 1;
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
+
+                        Panel.HSplitTop(20.0f, &Row, &Panel);
+                        if(DoButton_CheckBox(&g_Config.m_ClDummyCopyMovesFilterFire, Localize("Filter: Fire"), g_Config.m_ClDummyCopyMovesFilterFire, &Row))
+                                g_Config.m_ClDummyCopyMovesFilterFire ^= 1;
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
+                }
+
+                // Mirror direction
+                Panel.HSplitTop(20.0f, &Row, &Panel);
+                if(DoButton_CheckBox(&g_Config.m_ClDummyCopyMirrorDir, Localize("Mirror direction"), g_Config.m_ClDummyCopyMirrorDir, &Row))
+                        g_Config.m_ClDummyCopyMirrorDir ^= 1;
+                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyCopyMirrorDir, &Row, Localize("Mirror direction of inactive dummies by XOR when copy moves is on"));
+                Panel.HSplitTop(RowGap, nullptr, &Panel);
+
+                // Aim mode dropdown (Smart / Mirror)
+                Panel.HSplitTop(20.0f, &Row, &Panel);
+                {
+                        CUIRect LabelRect, ButtonRect;
+                        Row.VSplitLeft(200.0f, &LabelRect, &ButtonRect);
+                        Ui()->DoLabel(&LabelRect, Localize("Aim mode"), 13.0f, TEXTALIGN_ML);
+                        static const char *s_apAimModeNames[] = {"Smart", "Mirror"};
+                        static CButtonContainer s_AimModeButton;
+                        if(DoButton_MenuTab(&s_AimModeButton, s_apAimModeNames[g_Config.m_ClDummyCopyAimMode], 0, &ButtonRect, IGraphics::CORNER_ALL))
+                        {
+                                g_Config.m_ClDummyCopyAimMode = (g_Config.m_ClDummyCopyAimMode + 1) % 2;
+                        }
+                        GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyCopyAimMode, &Row, Localize("Aim mode for copy moves: Smart (world coords) or Mirror (reflect aim)"));
+                }
+                Panel.HSplitTop(RowGap, nullptr, &Panel);
+
+                // Conditional aim options based on mode.
+                if(g_Config.m_ClDummyCopyAimMode == 1) // Mirror
+                {
+                        Panel.HSplitTop(20.0f, &Row, &Panel);
+                        if(DoButton_CheckBox(&g_Config.m_ClDummyCopyMirrorAimX, Localize("Mirror Aim X"), g_Config.m_ClDummyCopyMirrorAimX, &Row))
+                                g_Config.m_ClDummyCopyMirrorAimX ^= 1;
+                        GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyCopyMirrorAimX, &Row, Localize("Mirror aim X of inactive dummies when copy moves is on (mirror mode)"));
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
+
+                        Panel.HSplitTop(20.0f, &Row, &Panel);
+                        if(DoButton_CheckBox(&g_Config.m_ClDummyCopyMirrorAimY, Localize("Mirror Aim Y"), g_Config.m_ClDummyCopyMirrorAimY, &Row))
+                                g_Config.m_ClDummyCopyMirrorAimY ^= 1;
+                        GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyCopyMirrorAimY, &Row, Localize("Mirror aim Y of inactive dummies when copy moves is on (mirror mode)"));
+                }
+                else // Smart
+                {
+                        Panel.HSplitTop(20.0f, &Row, &Panel);
+                        if(DoButton_CheckBox(&g_Config.m_ClDummyCopySmartAim, Localize("Smart Aim"), g_Config.m_ClDummyCopySmartAim, &Row))
+                                g_Config.m_ClDummyCopySmartAim ^= 1;
+                        GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyCopySmartAim, &Row, Localize("Smart aim: inactive dummies aim at the same world point as the player (smart mode)"));
                 }
         }
 

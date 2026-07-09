@@ -348,6 +348,7 @@ int CControls::SnapInput(int *pData)
                 // dummy copy moves
                 if(g_Config.m_ClDummyCopyMoves)
                 {
+                        const bool filter = g_Config.m_ClDummyCopyMovesFilter != 0;
                         for(int D = 0; D < MAX_DUMMIES; D++)
                         {
                                 if(D == g_Config.m_ClDummy)
@@ -360,21 +361,39 @@ int CControls::SnapInput(int *pData)
                                 // Don't copy any input to dummy when spectating others
                                 if(!GameClient()->m_Snap.m_SpecInfo.m_Active || GameClient()->m_Snap.m_SpecInfo.m_SpectatorId < 0)
                                 {
-                                        pDummyInput->m_Direction = m_aInputData[g_Config.m_ClDummy].m_Direction;
-                                        pDummyInput->m_Hook = m_aInputData[g_Config.m_ClDummy].m_Hook;
-                                        pDummyInput->m_Jump = m_aInputData[g_Config.m_ClDummy].m_Jump;
+                                        // Copy Moves Filter: when on, only copy selected fields.
+                                        // When off, copy everything (original behavior).
+                                        const bool copyJump      = !filter || g_Config.m_ClDummyCopyMovesFilterJump;
+                                        const bool copyDirection = !filter || g_Config.m_ClDummyCopyMovesFilterDirection;
+                                        const bool copyHook      = !filter || g_Config.m_ClDummyCopyMovesFilterHook;
+                                        const bool copyAim       = !filter || g_Config.m_ClDummyCopyMovesFilterAim;
+                                        const bool copyFire      = !filter || g_Config.m_ClDummyCopyMovesFilterFire;
+
+                                        if(copyDirection)
+                                                pDummyInput->m_Direction = m_aInputData[g_Config.m_ClDummy].m_Direction;
+                                        if(copyHook)
+                                                pDummyInput->m_Hook = m_aInputData[g_Config.m_ClDummy].m_Hook;
+                                        if(copyJump)
+                                                pDummyInput->m_Jump = m_aInputData[g_Config.m_ClDummy].m_Jump;
                                         pDummyInput->m_PlayerFlags = m_aInputData[g_Config.m_ClDummy].m_PlayerFlags;
-                                        pDummyInput->m_TargetX = m_aInputData[g_Config.m_ClDummy].m_TargetX;
-                                        pDummyInput->m_TargetY = m_aInputData[g_Config.m_ClDummy].m_TargetY;
+                                        if(copyAim)
+                                        {
+                                                pDummyInput->m_TargetX = m_aInputData[g_Config.m_ClDummy].m_TargetX;
+                                                pDummyInput->m_TargetY = m_aInputData[g_Config.m_ClDummy].m_TargetY;
+                                        }
                                         pDummyInput->m_WantedWeapon = m_aInputData[g_Config.m_ClDummy].m_WantedWeapon;
 
-                                        if(!g_Config.m_ClDummyControl)
+                                        if(!g_Config.m_ClDummyControl && copyFire)
                                                 pDummyInput->m_Fire += m_aInputData[g_Config.m_ClDummy].m_Fire - m_aLastData[g_Config.m_ClDummy].m_Fire;
 
                                         pDummyInput->m_NextWeapon += m_aInputData[g_Config.m_ClDummy].m_NextWeapon - m_aLastData[g_Config.m_ClDummy].m_NextWeapon;
                                         pDummyInput->m_PrevWeapon += m_aInputData[g_Config.m_ClDummy].m_PrevWeapon - m_aLastData[g_Config.m_ClDummy].m_PrevWeapon;
                                 }
 
+                                m_aInputData[D] = *pDummyInput;
+
+                                // Apply mirror direction / mirror aim / smart aim.
+                                GameClient()->ApplyCopyMovesTransforms(D);
                                 m_aInputData[D] = *pDummyInput;
                         }
                 }
@@ -398,6 +417,18 @@ int CControls::SnapInput(int *pData)
                                         pDummyInput->m_Fire++;
 
                                 pDummyInput->m_Hook = g_Config.m_ClDummyHook;
+
+                                // Aim: copy player's target X/Y to dummy (like Jump/Fire/Hook).
+                                if(g_Config.m_ClDummyAim)
+                                {
+                                        pDummyInput->m_TargetX = m_aInputData[g_Config.m_ClDummy].m_TargetX;
+                                        pDummyInput->m_TargetY = m_aInputData[g_Config.m_ClDummy].m_TargetY;
+                                }
+
+                                // Direction: copy player's movement direction to dummy.
+                                if(g_Config.m_ClDummyDirection)
+                                        pDummyInput->m_Direction = m_aInputData[g_Config.m_ClDummy].m_Direction;
+
                                 m_aInputData[D] = *pDummyInput;
                         }
                 }
