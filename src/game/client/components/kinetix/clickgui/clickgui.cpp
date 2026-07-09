@@ -364,6 +364,9 @@ void CClickGui::OnReset()
         m_DragSliderPanel = -1;
         m_DragSliderRow = -1;
         m_DragSliderChild = -1;
+        m_DropdownOpen = false;
+        m_InputEditing = false;
+        Input()->StopTextInput();
         for(int i = 0; i < 3; ++i)
         {
                 m_aOffscreenValid[i] = false;
@@ -420,6 +423,12 @@ void CClickGui::OnRender()
         if(m_AnimProgress <= 0.0f && !isOpen)
         {
                 Input()->MouseModeRelative();
+                // Also stop text input if we were editing when ClickGUI closed.
+                if(m_InputEditing)
+                {
+                        m_InputEditing = false;
+                        Input()->StopTextInput();
+                }
                 return;
         }
 
@@ -534,13 +543,7 @@ bool CClickGui::OnInput(const IInput::CEvent &Event)
         if(m_AnimProgress < 0.95f)
                 return false;
 
-        // If editing an input field, route key events to text editing.
-        if(m_InputEditing && (Event.m_Flags & (IInput::FLAG_PRESS | IInput::FLAG_TEXT)))
-        {
-                HandleTextInput(Event);
-                return true;
-        }
-
+        // Mouse clicks ALWAYS go through HandleMouseDown/Up regardless of input editing.
         if(Event.m_Flags & IInput::FLAG_PRESS && Event.m_Key == KEY_MOUSE_1)
         {
                 HandleMouseDown(m_MousePos);
@@ -551,6 +554,15 @@ bool CClickGui::OnInput(const IInput::CEvent &Event)
                 HandleMouseUp(m_MousePos);
                 return true;
         }
+
+        // If editing an input field, route keyboard events to text editing.
+        // (Mouse clicks already handled above — they can commit/switch input focus.)
+        if(m_InputEditing && (Event.m_Flags & (IInput::FLAG_PRESS | IInput::FLAG_TEXT)))
+        {
+                HandleTextInput(Event);
+                return true;
+        }
+
         // Consume all other input while open so the game doesn't react.
         return true;
 }
@@ -611,7 +623,7 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                         // mutate it in place safely, so we just stop editing; the value stays as
                         // the original pointer). For v1.56.41 we accept this limitation.
                 }
-                m_InputEditing = false;
+                m_InputEditing = false; Input()->StopTextInput();
         }
 
         // Iterate panels top-to-bottom (high z first) to find the topmost hit.
@@ -737,6 +749,10 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 m_InputBuf[len] = 0;
                                                 m_InputLen = len;
                                         }
+                                        // CRITICAL: enable SDL text input so FLAG_TEXT events arrive.
+                                        // Without this, SDL doesn't send SDL_TEXTINPUT and no chars
+                                        // reach our HandleTextInput.
+                                        Input()->StartTextInput();
                                         return;
                                 }
                                 return;
@@ -925,7 +941,7 @@ void CClickGui::HandleTextInput(const IInput::CEvent &Event)
         SRow *pRow = (SRow *)GetEditingInputRowPtr();
         if(!pRow || pRow->type != ERowType::Input)
         {
-                m_InputEditing = false;
+                m_InputEditing = false; Input()->StopTextInput();
                 return;
         }
 
@@ -934,12 +950,12 @@ void CClickGui::HandleTextInput(const IInput::CEvent &Event)
         {
                 if(Event.m_Key == KEY_ESCAPE)
                 {
-                        m_InputEditing = false;
+                        m_InputEditing = false; Input()->StopTextInput();
                         return;
                 }
                 if(Event.m_Key == KEY_RETURN)
                 {
-                        m_InputEditing = false;
+                        m_InputEditing = false; Input()->StopTextInput();
                         return;
                 }
                 if(Event.m_Key == KEY_BACKSPACE)
