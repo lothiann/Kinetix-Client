@@ -223,6 +223,7 @@ void CGameClient::OnConsoleInit()
                                                   &m_Emoticon,
                                                   &m_ImportantAlert,
                                                   &m_Menus,
+                                                  &m_ClickGui, // consume clicks/keys when ClickGUI is open
                                                   &m_Controls,
                                                   &m_TouchControls,
                                                   &m_Binds});
