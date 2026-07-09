@@ -1,15 +1,26 @@
 // (c) Kinetix. ClickGUI overlay component.
-// v1.56.37: UI-only (no UX) — renders 3 column panels (Combat/Movement/Misc)
-// using Yoga for layout and IGraphics for rendering. Open/close animation
-// driven by the `cl_clickgui` config var (typically bound to a key, e.g.
-//   bind tab "toggle cl_clickgui 1 0"
-// ). No UX yet (no drag, no toggling, no input handling) — purely visual.
+// v1.56.39: Full UX (drag, toggle, slider, expand/collapse) + 30% background
+// dimming with smooth animation. Row states are reference-only (no real
+// behavior wired to game systems) — will be replaced with real hooks later.
 //
 // Layout pipeline:
-//   data model (static, mirrors upload/clickgui.html `data` object)
+//   data model (mirrors upload/clickgui.html `data` object, mutable)
 //     -> Yoga tree built per panel each frame
 //       -> YGNodeCalculateLayout
 //         -> rectangles read back and drawn via IGraphics.
+//
+// UX:
+//   - Drag panel by header (left mouse). Z-order: dragged panel on top.
+//   - Click ✓ / name → toggle on/off.
+//   - Click ▶/▼ → expand/collapse children (expandable rows).
+//   - Click ▼ in header → collapse column body.
+//   - Drag slider thumb → change value.
+//   - Dropdown / Input: visual only this iteration (rendered, not interactive).
+//
+// Animation:
+//   - Open/close: panels fly in from random offscreen positions,
+//     cubic-bezier(0.16, 1, 0.3, 1) easing, 0.55s.
+//   - Background dimming: 0% → 30% black overlay, same easing curve.
 
 #ifndef GAME_CLIENT_COMPONENTS_KINETIX_CLICKGUI_CLICKGUI_H
 #define GAME_CLIENT_COMPONENTS_KINETIX_CLICKGUI_CLICKGUI_H
@@ -22,55 +33,93 @@
 class CClickGui : public CComponent
 {
 public:
-	CClickGui() = default;
-	~CClickGui() override = default;
+        CClickGui() = default;
+        ~CClickGui() override = default;
 
-	int Sizeof() const override { return sizeof(*this); }
+        int Sizeof() const override { return sizeof(*this); }
 
-	void OnReset() override;
-	void OnRender() override;
+        void OnReset() override;
+        void OnRender() override;
+        bool OnInput(const IInput::CEvent &Event) override;
+        bool OnCursorMove(float x, float y, IInput::ECursorType CursorType) override;
 
 private:
-	// Animation state: 0.0 = fully closed, 1.0 = fully open.
-	float m_AnimProgress = 0.0f;
+        // Animation state: 0.0 = fully closed, 1.0 = fully open.
+        float m_AnimProgress = 0.0f;
 
-	// Per-panel offscreen target (randomized each time ClickGUI closes).
-	// When m_AnimProgress < 1, panels interpolate from home -> offscreen.
-	// When m_AnimProgress > 0 (opening), panels interpolate from offscreen -> home.
-	vec2 m_aOffscreenPos[3] = {vec2(0, 0), vec2(0, 0), vec2(0, 0)};
-	bool m_aOffscreenValid[3] = {false, false, false};
+        // Per-panel offscreen target (randomized each time ClickGUI closes).
+        vec2 m_aOffscreenPos[3] = {vec2(0, 0), vec2(0, 0), vec2(0, 0)};
+        bool m_aOffscreenValid[3] = {false, false, false};
 
-	// Track cl_clickgui state to detect transitions (for picking fresh offscreen spots).
-	bool m_WasOpen = false;
+        // Track cl_clickgui state to detect transitions (for picking fresh offscreen spots).
+        bool m_WasOpen = false;
 
-	// Animation timing. ANIM_DURATION matches the HTML transition:
-	// `transition: left/top 0.55s cubic-bezier(0.16, 1, 0.3, 1)`.
-	static constexpr float ANIM_DURATION = 0.55f;
+        // Per-panel current position (draggable). Initialized to home on first open.
+        vec2 m_aPanelPos[3] = {vec2(0, 0), vec2(0, 0), vec2(0, 0)};
+        bool m_aPanelPosValid[3] = {false, false, false};
 
-	// Panel geometry — scaled up 1.25x from v1.56.34 for readability.
-	static constexpr float PANEL_WIDTH = 250.0f;
-	static constexpr float HEADER_HEIGHT = 32.0f;
-	static constexpr float BODY_PADDING = 5.0f;
-	static constexpr float ROW_GAP = 3.0f;
+        // Per-panel collapsed state (body hidden, only header shown).
+        bool m_aPanelCollapsed[3] = {false, false, false};
 
-	// Per-panel fixed "home" position (top-left corner, screen-space px).
-	// Matches the inline style="left/top" in the HTML, scaled up.
-	static vec2 PanelHomePos(int panelIdx);
+        // Z-order: which panel is on top (0..2, higher = on top). Dragged panel
+        // gets bumped to top. We render in low->high order so high paints last.
+        int m_aZOrder[3] = {0, 1, 2};
 
-	// Cubic-bezier easing exactly matching CSS cubic-bezier(0.16, 1, 0.3, 1).
-	// Uses Newton-Raphson to solve the bezier parametric equation for a given t.
-	static float CubicBezierEase(float t);
+        // Drag state.
+        bool m_Dragging = false;
+        int m_DragPanelIdx = -1; // which panel is being dragged
+        vec2 m_DragOffset = vec2(0, 0); // mouse - panel-topleft at drag start
 
-	// Pick a random offscreen position for a panel (one of 4 sides: L/R/T/B),
-	// ensuring the panel is fully outside the visible screen area plus margin.
-	vec2 PickRandomOffscreenPos(int panelIdx, float screenW, float screenH) const;
+        // Slider drag state.
+        int m_DragSliderPanel = -1;
+        int m_DragSliderRow = -1;
+        int m_DragSliderChild = -1; // -1 = top-level row, >=0 = child index within expandable
 
-	// Render one panel at the given screen position with the given alpha.
-	void RenderPanel(int panelIdx, vec2 pos, float alpha);
+        // Mouse position in screen-space px (updated each frame from NativeMousePos).
+        vec2 m_MousePos = vec2(0, 0);
 
-	// Low-level draw helpers (all screen-space px).
-	void DrawRoundedRect(float x, float y, float w, float h, float radius, int corners, ColorRGBA color);
-	void DrawText(float x, float y, float size, const char *pText, ColorRGBA color, int align = 0);
+        // Animation timing. ANIM_DURATION matches the HTML transition:
+        // `transition: left/top 0.55s cubic-bezier(0.16, 1, 0.3, 1)`.
+        static constexpr float ANIM_DURATION = 0.55f;
+
+        // Panel geometry — scaled up again 1.2x in v1.56.39 for readability.
+        static constexpr float PANEL_WIDTH = 300.0f;
+        static constexpr float HEADER_HEIGHT = 38.0f;
+        static constexpr float BODY_PADDING = 6.0f;
+        static constexpr float ROW_GAP = 4.0f;
+
+        // Background dimming: black overlay at this alpha when fully open.
+        static constexpr float BG_DIM_ALPHA = 0.30f;
+
+        // Per-panel fixed "home" position (top-left corner, screen-space px).
+        static vec2 PanelHomePos(int panelIdx);
+
+        // Cubic-bezier easing exactly matching CSS cubic-bezier(0.16, 1, 0.3, 1).
+        static float CubicBezierEase(float t);
+
+        // Pick a random offscreen position for a panel (one of 4 sides: L/R/T/B).
+        vec2 PickRandomOffscreenPos(int panelIdx, float screenW, float screenH) const;
+
+        // Render one panel at the given screen position with the given alpha.
+        void RenderPanel(int panelIdx, vec2 pos, float alpha);
+
+        // Hit-test helpers (screen-space px).
+        bool PointInRect(vec2 p, float x, float y, float w, float h) const;
+
+        // Bring a panel to the top of the z-order.
+        void BringToFront(int panelIdx);
+
+        // UX event handling (called from OnInput / OnCursorMove).
+        void HandleMouseDown(vec2 mousePos);
+        void HandleMouseUp(vec2 mousePos);
+
+        // Find which row a click hit. Returns row/child indices via out-params.
+        // panelIdx is an input (which panel to test). Returns true if a row was hit.
+        bool HitTestRow(vec2 mousePos, int panelIdx, int &outRow, int &outChild, float &outRowX, float &outRowY, float &outRowW, float &outRowH);
+
+        // Low-level draw helpers (all screen-space px).
+        void DrawRoundedRect(float x, float y, float w, float h, float radius, int corners, ColorRGBA color);
+        void DrawText(float x, float y, float size, const char *pText, ColorRGBA color, int align = 0);
 };
 
 #endif // GAME_CLIENT_COMPONENTS_KINETIX_CLICKGUI_CLICKGUI_H

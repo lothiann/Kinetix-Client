@@ -21,6 +21,8 @@
 
 #include <engine/client.h>
 #include <engine/graphics.h>
+#include <engine/input.h>
+#include <engine/keys.h>
 #include <engine/shared/config.h>
 #include <engine/textrender.h>
 
@@ -36,7 +38,9 @@ inline int bodyH_safe(float h)
 
 // ============================================================================
 // Data model — mirrors the `data` object in upload/clickgui.html exactly.
-// All values are static; v1.56.34 has no UX so they never change at runtime.
+// v1.56.39: mutable (UX can toggle/expand/drag). All row state is reference-
+// only — clicking a toggle doesn't do anything real yet, it just flips the
+// bool. Real hooks will be wired in a future iteration.
 // ============================================================================
 
 namespace {
@@ -63,7 +67,7 @@ struct SRow
         const char *const *pOptions; // dropdown / toggle-dropdown
         int optionCount; // dropdown / toggle-dropdown
         int valueIdx; // dropdown / toggle-dropdown
-        const SRow *pChildren; // expandable only
+        SRow *pChildren; // expandable only (non-const for child mutation)
         int childCount; // expandable only
 };
 
@@ -71,19 +75,19 @@ struct SRow
 static const char *const g_AimbotOpts[] = {"Head", "Body", "Legs"};
 static const char *const g_TracersOpts[] = {"Top", "Center", "Bottom"};
 static const char *const g_AutoArmorOpts[] = {"Off", "Weak", "Strong"};
-static const SRow g_EspChildren[] = {
+static SRow g_EspChildren[] = {
         {ERowType::Toggle, "Box", true, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Outline", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Health Bar", true, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Name Tags", true, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Tracers", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
-static const SRow g_CritChildren[] = {
+static SRow g_CritChildren[] = {
         {ERowType::Toggle, "Air Criticals", true, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "No Cooldown", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Delay", false, false, 0.0f, 1.0f, 0.05f, 0.25f, "s", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
-static const SRow g_CombatRows[] = {
+static SRow g_CombatRows[] = {
         {ERowType::Toggle, "KillAura", true, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "AutoClicker", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::ToggleDropdown, "Aimbot", true, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_AimbotOpts, 3, 0, nullptr, 0},
@@ -95,17 +99,17 @@ static const SRow g_CombatRows[] = {
 };
 
 // ---------- Movement panel (2) ----------
-static const SRow g_MvTweaksChildren[] = {
+static SRow g_MvTweaksChildren[] = {
         {ERowType::Toggle, "NoFall", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Jesus", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "AutoJump", true, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Sneak", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
-static const SRow g_VelocityChildren[] = {
+static SRow g_VelocityChildren[] = {
         {ERowType::Slider, "Horizontal", false, false, 0.0f, 100.0f, 1.0f, 80.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Vertical", false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
-static const SRow g_MovementRows[] = {
+static SRow g_MovementRows[] = {
         {ERowType::Toggle, "Fly", true, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Speed", false, false, 0.0f, 10.0f, 0.1f, 2.5f, "x", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Jump", false, false, 0.0f, 5.0f, 0.1f, 1.0f, "x", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
@@ -121,13 +125,13 @@ static const SRow g_MovementRows[] = {
 static const char *const g_LangOpts[] = {"EN", "RU", "DE", "JP"};
 static const char *const g_ThemeOpts[] = {"Dark", "Light", "Purple", "Neon"};
 static const char *const g_AutoSaveOpts[] = {"Off", "5s", "30s", "5m"};
-static const SRow g_KeybindsChildren[] = {
+static SRow g_KeybindsChildren[] = {
         {ERowType::Input, "Open Menu", false, false, 0, 0, 0, 0, nullptr, "RShift", "key...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Input, "Toggle Fly", false, false, 0, 0, 0, 0, nullptr, "F", "key...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Input, "Toggle Speed", false, false, 0, 0, 0, 0, nullptr, "V", "key...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Input, "Toggle ESP", false, false, 0, 0, 0, 0, nullptr, "X", "key...", nullptr, 0, 0, nullptr, 0},
 };
-static const SRow g_MiscRows[] = {
+static SRow g_MiscRows[] = {
         {ERowType::Input, "Tag", false, false, 0, 0, 0, 0, nullptr, "[Z]", "tag...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Input, "Say Text", false, false, 0, 0, 0, 0, nullptr, "gg", "auto-say", nullptr, 0, 0, nullptr, 0},
         {ERowType::Dropdown, "Language", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_LangOpts, 4, 1, nullptr, 0},
@@ -141,11 +145,11 @@ static const SRow g_MiscRows[] = {
 struct SPanel
 {
         const char *pTitle;
-        const SRow *pRows;
+        SRow *pRows;
         int rowCount;
 };
 
-static const SPanel g_Panels[3] = {
+static SPanel g_Panels[3] = {
         {"Combat", g_CombatRows, sizeof(g_CombatRows) / sizeof(g_CombatRows[0])},
         {"Movement", g_MovementRows, sizeof(g_MovementRows) / sizeof(g_MovementRows[0])},
         {"Misc", g_MiscRows, sizeof(g_MiscRows) / sizeof(g_MiscRows[0])},
@@ -180,19 +184,19 @@ static constexpr unsigned COL_VALUE_BG = 0x4d000000; // 30% alpha, black
 static constexpr unsigned COL_PLACEHOLDER = 0xff8a8aa8;
 
 // Row heights (px) — scaled up 1.25x in v1.56.37.
-static constexpr float ROW_H_TOGGLE = 25.0f;
-static constexpr float ROW_H_SLIDER = 40.0f;
-static constexpr float ROW_H_INPUT = 28.0f;
-static constexpr float ROW_H_EXPANDABLE = 25.0f;
+static constexpr float ROW_H_TOGGLE = 30.0f;
+static constexpr float ROW_H_SLIDER = 48.0f;
+static constexpr float ROW_H_INPUT = 34.0f;
+static constexpr float ROW_H_EXPANDABLE = 30.0f;
 
 // Row internal layout (px) — scaled up 1.25x.
-static constexpr float CHECK_W = 15.0f;
-static constexpr float ARROW_W = 15.0f;
-static constexpr float DROPDOWN_W = 100.0f;
-static constexpr float DROPDOWN_H = 20.0f;
-static constexpr float SLIDER_TRACK_H = 5.0f;
-static constexpr float SLIDER_THUMB_R = 6.5f;
-static constexpr float SUB_LIST_INDENT = 18.0f;
+static constexpr float CHECK_W = 18.0f;
+static constexpr float ARROW_W = 18.0f;
+static constexpr float DROPDOWN_W = 120.0f;
+static constexpr float DROPDOWN_H = 24.0f;
+static constexpr float SLIDER_TRACK_H = 6.0f;
+static constexpr float SLIDER_THUMB_R = 8.0f;
+static constexpr float SUB_LIST_INDENT = 22.0f;
 
 // Offscreen margin: how far outside the visible screen panels fly when hidden.
 static constexpr float OFFSCREEN_MARGIN = 100.0f;
@@ -226,10 +230,10 @@ vec2 CClickGui::PanelHomePos(int panelIdx)
         // Matches the inline style="left/top" in clickgui.html, scaled up 1.25x.
         switch(panelIdx)
         {
-        case 0: return vec2(50.0f, 75.0f);
-        case 1: return vec2(325.0f, 75.0f);
-        case 2: return vec2(600.0f, 75.0f);
-        default: return vec2(50.0f, 75.0f);
+        case 0: return vec2(60.0f, 90.0f);
+        case 1: return vec2(390.0f, 90.0f);
+        case 2: return vec2(720.0f, 90.0f);
+        default: return vec2(60.0f, 90.0f);
         }
 }
 
@@ -354,17 +358,29 @@ void CClickGui::OnReset()
 {
         m_AnimProgress = 0.0f;
         m_WasOpen = false;
+        m_Dragging = false;
+        m_DragPanelIdx = -1;
+        m_DragSliderPanel = -1;
+        m_DragSliderRow = -1;
+        m_DragSliderChild = -1;
         for(int i = 0; i < 3; ++i)
+        {
                 m_aOffscreenValid[i] = false;
+                m_aPanelPosValid[i] = false;
+                m_aPanelCollapsed[i] = false;
+                m_aZOrder[i] = i;
+        }
 }
 
 void CClickGui::OnRender()
 {
         const bool isOpen = g_Config.m_ClClickGui != 0;
 
+        // Update mouse position from native SDL cursor (screen-space px).
+        m_MousePos = Input()->NativeMousePos();
+
         // Detect transition 0->1 (opening): pick fresh random offscreen positions
-        // for each panel (matches HTML's "generate fresh random offscreen targets
-        // each time we hide" — we do it on open so panels fly IN from those spots).
+        // for each panel and initialize panel positions to home (if first open).
         if(isOpen && !m_WasOpen)
         {
                 const float sw = (float)Graphics()->ScreenWidth();
@@ -373,9 +389,12 @@ void CClickGui::OnRender()
                 {
                         m_aOffscreenPos[i] = PickRandomOffscreenPos(i, sw, sh);
                         m_aOffscreenValid[i] = true;
+                        if(!m_aPanelPosValid[i])
+                        {
+                                m_aPanelPos[i] = PanelHomePos(i);
+                                m_aPanelPosValid[i] = true;
+                        }
                 }
-                // Show Windows cursor while ClickGUI is open.
-                Input()->MouseModeAbsolute();
         }
         m_WasOpen = isOpen;
 
@@ -396,7 +415,7 @@ void CClickGui::OnRender()
                         m_AnimProgress = target;
         }
 
-        // When fully closed, restore relative mouse mode (hide cursor).
+        // When fully closed, restore relative mouse mode (hide cursor) and bail.
         if(m_AnimProgress <= 0.0f && !isOpen)
         {
                 Input()->MouseModeRelative();
@@ -404,29 +423,71 @@ void CClickGui::OnRender()
         }
 
         // While open (or animating), force absolute mouse mode EVERY FRAME.
-        // Like the F1/F2 console does — window focus events etc. can switch back
-        // to relative mode, so we must re-assert every frame to keep cursor visible.
         if(isOpen)
                 Input()->MouseModeAbsolute();
 
-        const float eased = CubicBezierEase(m_AnimProgress);
-        const float alpha = eased; // fade in/out
+        // If dragging a panel, update its position to follow the mouse.
+        if(m_Dragging && m_DragPanelIdx >= 0)
+        {
+                m_aPanelPos[m_DragPanelIdx] = m_MousePos - m_DragOffset;
+                m_aPanelPosValid[m_DragPanelIdx] = true;
+        }
 
-        // Set up a pixel-space projection (0,0) = top-left, (W,H) = bottom-right.
+        // If dragging a slider, update its value from mouse X position.
+        if(m_DragSliderPanel >= 0 && m_DragSliderRow >= 0)
+        {
+                SPanel &panel = g_Panels[m_DragSliderPanel];
+                SRow &row = panel.pRows[m_DragSliderRow];
+                SRow *pTarget = (m_DragSliderChild >= 0 && row.pChildren) ? &row.pChildren[m_DragSliderChild] : &row;
+                if(pTarget->type == ERowType::Slider && pTarget->max > pTarget->min)
+                {
+                        // Slider track spans the row width with 2px margin each side.
+                        const vec2 ppos = m_aPanelPos[m_DragSliderPanel];
+                        const float trackX = ppos.x + BODY_PADDING + 2.0f;
+                        const float trackW = PANEL_WIDTH - BODY_PADDING * 2 - 4.0f;
+                        float pct = (m_MousePos.x - trackX) / trackW;
+                        pct = std::clamp(pct, 0.0f, 1.0f);
+                        pTarget->value = pTarget->min + pct * (pTarget->max - pTarget->min);
+                }
+        }
+
+        const float eased = CubicBezierEase(m_AnimProgress);
+        const float alpha = eased;
+
+        // Set up pixel-space projection.
         const float screenW = (float)Graphics()->ScreenWidth();
         const float screenH = (float)Graphics()->ScreenHeight();
         Graphics()->MapScreen(0.0f, 0.0f, screenW, screenH);
 
-        // CRITICAL: clear any bound texture so DrawRect draws solid colored quads,
-        // not textured ones (which would tint our colors unpredictably). This was
-        // the cause of v1.56.34's "blue instead of purple" — a sprite texture from
-        // a previous component was still bound.
         Graphics()->TextureClear();
 
-        // Render each panel at its animated position (lerp offscreen -> home).
-        for(int i = 0; i < 3; ++i)
+        // Background dimming: black overlay, alpha = BG_DIM_ALPHA * eased.
+        // Drawn FIRST so panels appear on top of it. Fades in/out smoothly.
+        if(eased > 0.0f)
         {
+                Graphics()->BlendNormal();
+                Graphics()->DrawRect(0.0f, 0.0f, screenW, screenH,
+                        ColorRGBA(0.0f, 0.0f, 0.0f, BG_DIM_ALPHA * eased),
+                        IGraphics::CORNER_NONE, 0.0f);
+        }
+
+        // Render panels in z-order (low z first = painted behind, high z on top).
+        // Build a list of panel indices sorted by z-order ascending.
+        int renderOrder[3] = {0, 1, 2};
+        for(int a = 0; a < 3; ++a)
+                for(int b = a + 1; b < 3; ++b)
+                        if(m_aZOrder[renderOrder[b]] < m_aZOrder[renderOrder[a]])
+                        {
+                                int tmp = renderOrder[a];
+                                renderOrder[a] = renderOrder[b];
+                                renderOrder[b] = tmp;
+                        }
+
+        for(int idx = 0; idx < 3; ++idx)
+        {
+                const int i = renderOrder[idx];
                 const vec2 home = PanelHomePos(i);
+                const vec2 current = m_aPanelPosValid[i] ? m_aPanelPos[i] : home;
                 vec2 offscreen;
                 if(m_aOffscreenValid[i])
                         offscreen = m_aOffscreenPos[i];
@@ -436,16 +497,223 @@ void CClickGui::OnRender()
                         m_aOffscreenPos[i] = offscreen;
                         m_aOffscreenValid[i] = true;
                 }
-                // position = lerp(offscreen, home, eased)
+                // Position = lerp(offscreen, current, eased).
+                // When closed (eased=0), panel is fully offscreen; when open (eased=1),
+                // panel is at its dragged/home position.
                 const vec2 pos = vec2(
-                        offscreen.x + (home.x - offscreen.x) * eased,
-                        offscreen.y + (home.y - offscreen.y) * eased);
+                        offscreen.x + (current.x - offscreen.x) * eased,
+                        offscreen.y + (current.y - offscreen.y) * eased);
                 RenderPanel(i, pos, alpha);
         }
 
-        // Reset text color to white so we don't leak our color into other components
-        // (this was the cause of v1.56.34's "console text colored in clickgui color").
         TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
+}
+
+// ============================================================================
+// CClickGui — UX (input handling)
+// ============================================================================
+
+bool CClickGui::OnInput(const IInput::CEvent &Event)
+{
+        if(g_Config.m_ClClickGui == 0 && m_AnimProgress <= 0.0f)
+                return false;
+
+        // Only handle events when ClickGUI is fully open (avoid clicks during anim).
+        if(m_AnimProgress < 0.95f)
+                return false;
+
+        if(Event.m_Flags & IInput::FLAG_PRESS && Event.m_Key == KEY_MOUSE_1)
+        {
+                HandleMouseDown(m_MousePos);
+                return true; // consume — don't let the game see clicks while ClickGUI is open
+        }
+        if(Event.m_Flags & IInput::FLAG_RELEASE && Event.m_Key == KEY_MOUSE_1)
+        {
+                HandleMouseUp(m_MousePos);
+                return true;
+        }
+        // Consume all other input while open so the game doesn't react.
+        return true;
+}
+
+bool CClickGui::OnCursorMove(float x, float y, IInput::ECursorType CursorType)
+{
+        if(g_Config.m_ClClickGui != 0)
+        {
+                // NativeMousePos is updated by SDL; we just need to consume the event.
+                return true;
+        }
+        return false;
+}
+
+void CClickGui::BringToFront(int panelIdx)
+{
+        const int oldZ = m_aZOrder[panelIdx];
+        if(oldZ == 2)
+                return; // already on top
+        // Shift panels with z > oldZ down by 1, set this panel to 2.
+        for(int i = 0; i < 3; ++i)
+        {
+                if(i == panelIdx)
+                        m_aZOrder[i] = 2;
+                else if(m_aZOrder[i] > oldZ)
+                        m_aZOrder[i] -= 1;
+        }
+}
+
+bool CClickGui::PointInRect(vec2 p, float x, float y, float w, float h) const
+{
+        return p.x >= x && p.x < x + w && p.y >= y && p.y < y + h;
+}
+
+void CClickGui::HandleMouseDown(vec2 mousePos)
+{
+        // Iterate panels top-to-bottom (high z first) to find the topmost hit.
+        int clickOrder[3] = {0, 1, 2};
+        for(int a = 0; a < 3; ++a)
+                for(int b = a + 1; b < 3; ++b)
+                        if(m_aZOrder[clickOrder[b]] > m_aZOrder[clickOrder[a]])
+                        {
+                                int tmp = clickOrder[a];
+                                clickOrder[a] = clickOrder[b];
+                                clickOrder[b] = tmp;
+                        }
+
+        for(int idx = 0; idx < 3; ++idx)
+        {
+                const int i = clickOrder[idx];
+                const vec2 ppos = m_aPanelPosValid[i] ? m_aPanelPos[i] : PanelHomePos(i);
+
+                // Check header hit (drag + collapse arrow).
+                if(PointInRect(mousePos, ppos.x, ppos.y, PANEL_WIDTH, HEADER_HEIGHT))
+                {
+                        BringToFront(i);
+
+                        // Collapse arrow ▼ on left side of header (first ~24px).
+                        if(PointInRect(mousePos, ppos.x + 4.0f, ppos.y + 4.0f, 24.0f, HEADER_HEIGHT - 8.0f))
+                        {
+                                m_aPanelCollapsed[i] = !m_aPanelCollapsed[i];
+                                return;
+                        }
+
+                        // Otherwise start dragging.
+                        m_Dragging = true;
+                        m_DragPanelIdx = i;
+                        m_DragOffset = mousePos - ppos;
+                        return;
+                }
+
+                // If panel is collapsed, body doesn't exist — skip row hit-test.
+                if(m_aPanelCollapsed[i])
+                        continue;
+
+                // Check row hits in the body.
+                int outRow, outChild;
+                float rx, ry, rw, rh;
+                if(HitTestRow(mousePos, i, outRow, outChild, rx, ry, rw, rh))
+                {
+                        BringToFront(i);
+                        SPanel &panel = g_Panels[i];
+                        SRow &row = panel.pRows[outRow];
+                        SRow *pTarget = (outChild >= 0 && row.pChildren) ? &row.pChildren[outChild] : &row;
+
+                        // Sub-region hits within the row.
+                        if(pTarget->type == ERowType::Toggle || pTarget->type == ERowType::ToggleDropdown || pTarget->type == ERowType::Expandable)
+                        {
+                                // Click on check area or name area → toggle on/off.
+                                // (For toggle-dropdown/expandable, the dropdown/arrow regions are
+                                // on the right and excluded here.)
+                                const float toggleEndX = rx + rw - (pTarget->type == ERowType::Expandable ? ARROW_W + 4.0f : (pTarget->type == ERowType::ToggleDropdown ? DROPDOWN_W + 4.0f : 0.0f));
+                                if(mousePos.x < toggleEndX)
+                                {
+                                        pTarget->on = !pTarget->on;
+                                        return;
+                                }
+                        }
+                        if(pTarget->type == ERowType::Expandable)
+                        {
+                                // Click on ▶/▼ area → toggle expand.
+                                if(mousePos.x >= rx + rw - ARROW_W - 4.0f)
+                                {
+                                        pTarget->expanded = !pTarget->expanded;
+                                        return;
+                                }
+                        }
+                        if(pTarget->type == ERowType::Slider)
+                        {
+                                // Start slider drag.
+                                m_DragSliderPanel = i;
+                                m_DragSliderRow = outRow;
+                                m_DragSliderChild = outChild;
+                                // Set value immediately from click position.
+                                const float trackX = rx + 2.0f;
+                                const float trackW = rw - 4.0f;
+                                float pct = (mousePos.x - trackX) / trackW;
+                                pct = std::clamp(pct, 0.0f, 1.0f);
+                                pTarget->value = pTarget->min + pct * (pTarget->max - pTarget->min);
+                                return;
+                        }
+                        // Dropdown / Input: visual-only this iteration.
+                        return;
+                }
+        }
+}
+
+void CClickGui::HandleMouseUp(vec2 mousePos)
+{
+        m_Dragging = false;
+        m_DragPanelIdx = -1;
+        m_DragSliderPanel = -1;
+        m_DragSliderRow = -1;
+        m_DragSliderChild = -1;
+}
+
+bool CClickGui::HitTestRow(vec2 mousePos, int panelIdx, int &outRow, int &outChild, float &outRowX, float &outRowY, float &outRowW, float &outRowH)
+{
+        // Walk all rows (incl. expanded children) and check rect hits.
+        // Uses the same geometry constants as RenderPanel for consistency.
+        const vec2 ppos = m_aPanelPosValid[panelIdx] ? m_aPanelPos[panelIdx] : PanelHomePos(panelIdx);
+        const float bodyX = ppos.x + BODY_PADDING;
+        float cursorY = ppos.y + HEADER_HEIGHT + BODY_PADDING;
+
+        for(int r = 0; r < g_Panels[panelIdx].rowCount; ++r)
+        {
+                SRow &row = g_Panels[panelIdx].pRows[r];
+                const float rh = RowHeight(row.type);
+                const float rw = PANEL_WIDTH - BODY_PADDING * 2;
+                if(PointInRect(mousePos, bodyX, cursorY, rw, rh))
+                {
+                        outRow = r;
+                        outChild = -1;
+                        outRowX = bodyX;
+                        outRowY = cursorY;
+                        outRowW = rw;
+                        outRowH = rh;
+                        return true;
+                }
+                cursorY += rh + ROW_GAP;
+                if(row.type == ERowType::Expandable && row.expanded && row.pChildren)
+                {
+                        for(int c = 0; c < row.childCount; ++c)
+                        {
+                                SRow &child = row.pChildren[c];
+                                const float crh = RowHeight(child.type);
+                                const float crw = rw - SUB_LIST_INDENT;
+                                if(PointInRect(mousePos, bodyX + SUB_LIST_INDENT, cursorY, crw, crh))
+                                {
+                                        outRow = r;
+                                        outChild = c;
+                                        outRowX = bodyX + SUB_LIST_INDENT;
+                                        outRowY = cursorY;
+                                        outRowW = crw;
+                                        outRowH = crh;
+                                        return true;
+                                }
+                                cursorY += crh + ROW_GAP;
+                        }
+                }
+        }
+        return false;
 }
 
 // ============================================================================
@@ -455,49 +723,50 @@ void CClickGui::OnRender()
 void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
 {
         const SPanel &panel = g_Panels[panelIdx];
+        const bool collapsed = m_aPanelCollapsed[panelIdx];
 
         // ---- Step 1: build a Yoga tree for the body and compute its height ----
-        // Root body node: width = PANEL_WIDTH, padding = BODY_PADDING, flex-column,
-        // gap = ROW_GAP. We add one YGNode child per row (including expandable's
-        // children when expanded, indented via margin-left).
-        YGNodeRef bodyRoot = YGNodeNew();
-        YGNodeStyleSetWidth(bodyRoot, PANEL_WIDTH);
-        YGNodeStyleSetPadding(bodyRoot, YGEdgeAll, BODY_PADDING);
-        YGNodeStyleSetFlexDirection(bodyRoot, YGFlexDirectionColumn);
-        YGNodeStyleSetGap(bodyRoot, YGGutterAll, ROW_GAP);
-        YGNodeStyleSetOverflow(bodyRoot, YGOverflowHidden);
-
-        // Allocate row nodes; one per rendered row (top-level + expanded children).
-        // Use a simple fixed-size array since each panel has a bounded row count.
-        constexpr int MAX_ROWS = 32;
-        YGNodeRef rowNodes[MAX_ROWS];
+        // (Skipped when collapsed — body height = 0, only header is drawn.)
+        YGNodeRef bodyRoot = nullptr;
+        YGNodeRef rowNodes[32];
         int rowCount = 0;
+        float bodyHeight = 0.0f;
 
-        auto addRowNode = [&](const SRow &row, bool isChild) {
-                if(rowCount >= MAX_ROWS)
-                        return;
-                YGNodeRef n = YGNodeNew();
-                YGNodeStyleSetHeight(n, RowHeight(row.type));
-                if(isChild)
-                        YGNodeStyleSetMargin(n, YGEdgeLeft, SUB_LIST_INDENT);
-                YGNodeInsertChild(bodyRoot, n, (size_t)rowCount);
-                rowNodes[rowCount++] = n;
-        };
-
-        for(int r = 0; r < panel.rowCount; ++r)
+        if(!collapsed)
         {
-                const SRow &row = panel.pRows[r];
-                addRowNode(row, false);
-                if(row.type == ERowType::Expandable && row.expanded && row.pChildren)
-                {
-                        for(int c = 0; c < row.childCount; ++c)
-                                addRowNode(row.pChildren[c], true);
-                }
-        }
+                bodyRoot = YGNodeNew();
+                YGNodeStyleSetWidth(bodyRoot, PANEL_WIDTH);
+                YGNodeStyleSetPadding(bodyRoot, YGEdgeAll, BODY_PADDING);
+                YGNodeStyleSetFlexDirection(bodyRoot, YGFlexDirectionColumn);
+                YGNodeStyleSetGap(bodyRoot, YGGutterAll, ROW_GAP);
+                YGNodeStyleSetOverflow(bodyRoot, YGOverflowHidden);
 
-        // Calculate layout: width = PANEL_WIDTH, height = auto (undefined).
-        YGNodeCalculateLayout(bodyRoot, PANEL_WIDTH, YGUndefined, YGDirectionLTR);
-        const float bodyHeight = YGNodeLayoutGetHeight(bodyRoot);
+                constexpr int MAX_ROWS = 32;
+                auto addRowNode = [&](const SRow &row, bool isChild) {
+                        if(rowCount >= MAX_ROWS)
+                                return;
+                        YGNodeRef n = YGNodeNew();
+                        YGNodeStyleSetHeight(n, RowHeight(row.type));
+                        if(isChild)
+                                YGNodeStyleSetMargin(n, YGEdgeLeft, SUB_LIST_INDENT);
+                        YGNodeInsertChild(bodyRoot, n, (size_t)rowCount);
+                        rowNodes[rowCount++] = n;
+                };
+
+                for(int r = 0; r < panel.rowCount; ++r)
+                {
+                        const SRow &row = panel.pRows[r];
+                        addRowNode(row, false);
+                        if(row.type == ERowType::Expandable && row.expanded && row.pChildren)
+                        {
+                                for(int c = 0; c < row.childCount; ++c)
+                                        addRowNode(row.pChildren[c], true);
+                        }
+                }
+
+                YGNodeCalculateLayout(bodyRoot, PANEL_WIDTH, YGUndefined, YGDirectionLTR);
+                bodyHeight = YGNodeLayoutGetHeight(bodyRoot);
+        }
 
         // ---- Step 2: panel geometry ----
         const float panelH = HEADER_HEIGHT + bodyHeight;
@@ -523,30 +792,35 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                 5.0f, IGraphics::CORNER_T,
                 ColorRGBA(COL_HEADER_BG, true).WithAlpha(alpha));
 
-        // ▼ collapse arrow (left side of header).
-        DrawText(px + 10.0f, py + 9.0f, 15.0f, "\xe2\x96\xbc" /* ▼ */,
-                ColorRGBA(COL_ARROW, true).WithAlpha(alpha));
+        // ▼/▶ collapse arrow (left side of header) — ▼ when expanded, ▶ when collapsed.
+        {
+                const char *pArrowStr = collapsed ? "\xe2\x96\xb6" /* ▶ */ : "\xe2\x96\xbc" /* ▼ */;
+                DrawText(px + 10.0f, py + 9.0f, 18.0f, pArrowStr,
+                        ColorRGBA(COL_ARROW, true).WithAlpha(alpha));
+        }
 
         // Title centered.
         {
-                const float titleSize = 15.0f;
+                const float titleSize = 18.0f;
                 DrawText(px + PANEL_WIDTH * 0.5f, py + 9.0f, titleSize,
                         panel.pTitle, ColorRGBA(COL_HEADER_TEXT, true).WithAlpha(alpha),
                         TEXTALIGN_CENTER);
         }
 
-        // ---- Step 4: body (clip to body rect so overflowing rows are hidden) ----
-        const float bodyX = px;
-        const float bodyY = py + HEADER_HEIGHT;
-        const float bodyW = PANEL_WIDTH;
+        // ---- Step 4: body (only when not collapsed) ----
+        if(!collapsed)
+        {
+                const float bodyX = px;
+                const float bodyY = py + HEADER_HEIGHT;
+                const float bodyW = PANEL_WIDTH;
 
-        // Subtle sub-list backdrop tint (the HTML has rgba(0,0,0,0.18) under
-        // expandable children; we tint the whole body faintly for visual depth).
-        DrawRoundedRect(bodyX, bodyY, bodyW, bodyHeight,
-                0.0f, IGraphics::CORNER_NONE,
-                ColorRGBA(COL_SUB_LIST_BG, true).WithAlpha(alpha * 0.5f));
+                // Subtle sub-list backdrop tint (the HTML has rgba(0,0,0,0.18) under
+                // expandable children; we tint the whole body faintly for visual depth).
+                DrawRoundedRect(bodyX, bodyY, bodyW, bodyHeight,
+                        0.0f, IGraphics::CORNER_NONE,
+                        ColorRGBA(COL_SUB_LIST_BG, true).WithAlpha(alpha * 0.5f));
 
-        Graphics()->ClipEnable((int)bodyX, (int)bodyY, (int)bodyW, (int)bodyH_safe(bodyHeight));
+                Graphics()->ClipEnable((int)bodyX, (int)bodyY, (int)bodyW, (int)bodyH_safe(bodyHeight));
 
         // ---- Step 5: draw each row using its Yoga-computed rectangle ----
         int rowIdx = 0;
@@ -574,18 +848,18 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                 {
                         // [✓ or empty] [name]
                         if(row.on)
-                                DrawText(rx + 1.0f, ry + 5.0f, 15.0f, "\xe2\x9c\x93" /* ✓ */,
+                                DrawText(rx + 1.0f, ry + 5.0f, 18.0f, "\xe2\x9c\x93" /* ✓ */,
                                         ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha));
-                        DrawText(rx + CHECK_W + 4.0f, ry + 5.0f, 15.0f, row.pName, textCol);
+                        DrawText(rx + CHECK_W + 4.0f, ry + 5.0f, 18.0f, row.pName, textCol);
                         break;
                 }
                 case ERowType::ToggleDropdown:
                 {
                         // [✓ or empty] [name] [select box]
                         if(row.on)
-                                DrawText(rx + 1.0f, ry + 5.0f, 15.0f, "\xe2\x9c\x93",
+                                DrawText(rx + 1.0f, ry + 5.0f, 18.0f, "\xe2\x9c\x93",
                                         ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha));
-                        DrawText(rx + CHECK_W + 4.0f, ry + 5.0f, 15.0f, row.pName, textCol);
+                        DrawText(rx + CHECK_W + 4.0f, ry + 5.0f, 18.0f, row.pName, textCol);
 
                         // Dropdown box on the right.
                         const float ddX = rx + rw - DROPDOWN_W - 2.0f;
@@ -596,14 +870,14 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                         const char *pVal = (row.optionCount > 0 && row.valueIdx >= 0 && row.valueIdx < row.optionCount)
                                 ? row.pOptions[row.valueIdx]
                                 : "";
-                        DrawText(ddX + 4.0f, ddY + 4.0f, 14.0f, pVal, textCol);
+                        DrawText(ddX + 4.0f, ddY + 4.0f, 17.0f, pVal, textCol);
                         break;
                 }
                 case ERowType::Slider:
                 {
                         // Top: [name]              [value]
                         // Bottom: [track with thumb at value%]
-                        DrawText(rx + 2.0f, ry + 4.0f, 14.0f, row.pName, textCol);
+                        DrawText(rx + 2.0f, ry + 4.0f, 17.0f, row.pName, textCol);
 
                         // Value chip.
                         char valBuf[32];
@@ -611,13 +885,13 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                 str_format(valBuf, sizeof(valBuf), "%.2f%s", row.value, row.pSuffix);
                         else
                                 str_format(valBuf, sizeof(valBuf), "%.2f", row.value);
-                        const float valW = TextRender()->TextWidth(14.0f, valBuf) + 10.0f;
+                        const float valW = TextRender()->TextWidth(17.0f, valBuf) + 10.0f;
                         const float valX = rx + rw - valW - 2.0f;
                         const float valY = ry + 1.0f;
                         DrawRoundedRect(valX, valY, valW, 18.0f, 2.0f,
                                 IGraphics::CORNER_ALL,
                                 ColorRGBA(COL_VALUE_BG, true).WithAlpha(alpha));
-                        DrawText(valX + 6.0f, valY + 3.0f, 14.0f, valBuf, textCol);
+                        DrawText(valX + 6.0f, valY + 3.0f, 17.0f, valBuf, textCol);
 
                         // Track.
                         const float trackX = rx + 2.0f;
@@ -644,8 +918,8 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                 case ERowType::Input:
                 {
                         // [name (compact)] [text input box]
-                        const float nameW = std::min(88.0f, TextRender()->TextWidth(14.0f, row.pName) + 4.0f);
-                        DrawText(rx + 2.0f, ry + 5.0f, 14.0f, row.pName, textCol);
+                        const float nameW = std::min(88.0f, TextRender()->TextWidth(17.0f, row.pName) + 4.0f);
+                        DrawText(rx + 2.0f, ry + 5.0f, 17.0f, row.pName, textCol);
                         const float inX = rx + nameW + 2.0f;
                         const float inY = ry + 2.0f;
                         const float inW = rw - nameW - 4.0f;
@@ -662,14 +936,14 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                 const ColorRGBA inCol = (row.pInputValue && row.pInputValue[0])
                                         ? textCol
                                         : ColorRGBA(0xff8a8aa8, true).WithAlpha(alpha);
-                                DrawText(inX + 4.0f, inY + 4.0f, 14.0f, pText, inCol);
+                                DrawText(inX + 4.0f, inY + 4.0f, 17.0f, pText, inCol);
                         }
                         break;
                 }
                 case ERowType::Dropdown:
                 {
                         // [name] [select box]
-                        DrawText(rx + 2.0f, ry + 5.0f, 15.0f, row.pName, textCol);
+                        DrawText(rx + 2.0f, ry + 5.0f, 18.0f, row.pName, textCol);
                         const float ddX = rx + rw - DROPDOWN_W - 2.0f;
                         const float ddY = ry + (rh - DROPDOWN_H) * 0.5f;
                         DrawRoundedRect(ddX, ddY, DROPDOWN_W, DROPDOWN_H, 2.0f,
@@ -678,23 +952,23 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                         const char *pVal = (row.optionCount > 0 && row.valueIdx >= 0 && row.valueIdx < row.optionCount)
                                 ? row.pOptions[row.valueIdx]
                                 : "";
-                        DrawText(ddX + 4.0f, ddY + 4.0f, 14.0f, pVal, textCol);
+                        DrawText(ddX + 4.0f, ddY + 4.0f, 17.0f, pVal, textCol);
                         break;
                 }
                 case ERowType::Expandable:
                 {
                         // [✓ or empty] [name] [▶ or ▼]
                         if(row.on)
-                                DrawText(rx + 1.0f, ry + 5.0f, 15.0f, "\xe2\x9c\x93",
+                                DrawText(rx + 1.0f, ry + 5.0f, 18.0f, "\xe2\x9c\x93",
                                         ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha));
-                        DrawText(rx + CHECK_W + 4.0f, ry + 5.0f, 15.0f, row.pName,
+                        DrawText(rx + CHECK_W + 4.0f, ry + 5.0f, 18.0f, row.pName,
                                 row.on ? ColorRGBA(COL_ROW_TEXT_ON, true).WithAlpha(alpha) : textCol);
                         // Arrow on the right (▶ collapsed, ▼ expanded).
                         const char *pArrow = row.expanded ? "\xe2\x96\xbc" : "\xe2\x96\xb6";
                         const ColorRGBA arrowCol = row.expanded
                                 ? ColorRGBA(0xffb8b8e8, true).WithAlpha(alpha)
                                 : ColorRGBA(COL_EXPAND_ARROW, true).WithAlpha(alpha);
-                        DrawText(rx + rw - ARROW_W - 2.0f, ry + 5.0f, 12.0f, pArrow, arrowCol);
+                        DrawText(rx + rw - ARROW_W - 2.0f, ry + 5.0f, 14.0f, pArrow, arrowCol);
                         break;
                 }
                 }
@@ -725,24 +999,24 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                 {
                                 case ERowType::Toggle:
                                         if(child.on)
-                                                DrawText(crx + 1.0f, cry + 5.0f, 14.0f, "\xe2\x9c\x93",
+                                                DrawText(crx + 1.0f, cry + 5.0f, 17.0f, "\xe2\x9c\x93",
                                                         ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha));
-                                        DrawText(crx + CHECK_W + 4.0f, cry + 5.0f, 14.0f, child.pName, cText);
+                                        DrawText(crx + CHECK_W + 4.0f, cry + 5.0f, 17.0f, child.pName, cText);
                                         break;
                                 case ERowType::Slider:
                                 {
-                                        DrawText(crx + 2.0f, cry + 5.0f, 14.0f, child.pName, cText);
+                                        DrawText(crx + 2.0f, cry + 5.0f, 17.0f, child.pName, cText);
                                         char vbuf[32];
                                         if(child.pSuffix)
                                                 str_format(vbuf, sizeof(vbuf), "%.2f%s", child.value, child.pSuffix);
                                         else
                                                 str_format(vbuf, sizeof(vbuf), "%.2f", child.value);
-                                        const float vw = TextRender()->TextWidth(14.0f, vbuf) + 10.0f;
+                                        const float vw = TextRender()->TextWidth(17.0f, vbuf) + 10.0f;
                                         const float vx = crx + crw - vw - 2.0f;
                                         DrawRoundedRect(vx, cry + 1.0f, vw, 18.0f, 2.0f,
                                                 IGraphics::CORNER_ALL,
                                                 ColorRGBA(COL_VALUE_BG, true).WithAlpha(alpha));
-                                        DrawText(vx + 6.0f, cry + 2.0f, 14.0f, vbuf, cText);
+                                        DrawText(vx + 6.0f, cry + 2.0f, 17.0f, vbuf, cText);
                                         const float trx = crx + 2.0f;
                                         const float trY = cry + crh - SLIDER_TRACK_H - 4.0f;
                                         const float trW = crw - 4.0f;
@@ -764,8 +1038,8 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                 }
                                 case ERowType::Input:
                                 {
-                                        const float nw = std::min(88.0f, TextRender()->TextWidth(14.0f, child.pName) + 4.0f);
-                                        DrawText(crx + 2.0f, cry + 5.0f, 14.0f, child.pName, cText);
+                                        const float nw = std::min(88.0f, TextRender()->TextWidth(17.0f, child.pName) + 4.0f);
+                                        DrawText(crx + 2.0f, cry + 5.0f, 17.0f, child.pName, cText);
                                         const float ix = crx + nw + 2.0f;
                                         const float iy = cry + 2.0f;
                                         const float iw = crw - nw - 4.0f;
@@ -779,7 +1053,7 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                                 const ColorRGBA ic = (child.pInputValue && child.pInputValue[0])
                                                         ? cText
                                                         : ColorRGBA(0xff8a8aa8, true).WithAlpha(alpha);
-                                                DrawText(ix + 4.0f, iy + 3.0f, 14.0f, pT, ic);
+                                                DrawText(ix + 4.0f, iy + 3.0f, 17.0f, pT, ic);
                                         }
                                         break;
                                 }
@@ -787,9 +1061,9 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                 case ERowType::ToggleDropdown:
                                 {
                                         if(child.type == ERowType::ToggleDropdown && child.on)
-                                                DrawText(crx + 1.0f, cry + 5.0f, 14.0f, "\xe2\x9c\x93",
+                                                DrawText(crx + 1.0f, cry + 5.0f, 17.0f, "\xe2\x9c\x93",
                                                         ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha));
-                                        DrawText(crx + CHECK_W + 4.0f, cry + 5.0f, 14.0f, child.pName, cText);
+                                        DrawText(crx + CHECK_W + 4.0f, cry + 5.0f, 17.0f, child.pName, cText);
                                         const float ddx = crx + crw - DROPDOWN_W - 2.0f;
                                         const float ddy = cry + (crh - DROPDOWN_H) * 0.5f;
                                         DrawRoundedRect(ddx, ddy, DROPDOWN_W, DROPDOWN_H, 2.0f,
@@ -798,23 +1072,26 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                         const char *pV = (child.optionCount > 0 && child.valueIdx >= 0 && child.valueIdx < child.optionCount)
                                                 ? child.pOptions[child.valueIdx]
                                                 : "";
-                                        DrawText(ddx + 4.0f, ddy + 3.0f, 14.0f, pV, cText);
+                                        DrawText(ddx + 4.0f, ddy + 3.0f, 17.0f, pV, cText);
                                         break;
                                 }
                                 case ERowType::Expandable:
                                         // Nested expandables not in the data model; render as a plain toggle.
                                         if(child.on)
-                                                DrawText(crx + 1.0f, cry + 5.0f, 14.0f, "\xe2\x9c\x93",
+                                                DrawText(crx + 1.0f, cry + 5.0f, 17.0f, "\xe2\x9c\x93",
                                                         ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha));
-                                        DrawText(crx + CHECK_W + 4.0f, cry + 5.0f, 14.0f, child.pName, cText);
+                                        DrawText(crx + CHECK_W + 4.0f, cry + 5.0f, 17.0f, child.pName, cText);
                                         break;
                                 }
                         }
                 }
         }
 
-        Graphics()->ClipDisable();
+                Graphics()->ClipDisable();
+        } // end if(!collapsed)
 
         // Free the Yoga tree (root + children are freed by YGNodeFreeRecursive).
-        YGNodeFreeRecursive(bodyRoot);
+        // Safe to call with nullptr (collapsed case) — YGNodeFreeRecursive handles it.
+        if(bodyRoot)
+                YGNodeFreeRecursive(bodyRoot);
 }
