@@ -565,7 +565,7 @@ bool CClickGui::OnInput(const IInput::CEvent &Event)
         if(m_AnimProgress < 0.95f)
                 return false;
 
-        // Mouse clicks ALWAYS go through HandleMouseDown/Up regardless of input editing.
+        // Mouse clicks ALWAYS go through HandleMouseDown/Up — consumed by ClickGUI.
         if(Event.m_Flags & IInput::FLAG_PRESS && Event.m_Key == KEY_MOUSE_1)
         {
                 HandleMouseDown(m_MousePos);
@@ -585,8 +585,10 @@ bool CClickGui::OnInput(const IInput::CEvent &Event)
                 return true;
         }
 
-        // Consume all other input while open so the game doesn't react.
-        return true;
+        // Keyboard input when NOT editing an input field: let it fall through to
+        // the game so binds (e.g. tab to toggle cl_clickgui, movement keys) work.
+        // Only mouse is consumed by ClickGUI; keyboard is free for the game.
+        return false;
 }
 
 bool CClickGui::OnCursorMove(float x, float y, IInput::ECursorType CursorType)
