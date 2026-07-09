@@ -885,8 +885,10 @@ endif()
 file(GLOB_RECURSE DEP_YOGA_SRC CONFIGURE_DEPENDS src/engine/external/yoga/*.cpp)
 add_library(yogacore EXCLUDE_FROM_ALL OBJECT ${DEP_YOGA_SRC})
 target_include_directories(yogacore PUBLIC ${CMAKE_SOURCE_DIR}/src/engine/external)
-# Yoga is C++17 (uses std::optional, etc.) — make sure the target picks that up.
-target_compile_features(yogacore PUBLIC cxx_std_17)
+# Yoga is C++20 (uses concepts, std::bit_width, etc.) — must match DDNet's
+# global C++20 setting (which only applies to TARGETS_OWN, and yogacore is in
+# TARGETS_DEP, so we set it explicitly here).
+target_compile_features(yogacore PUBLIC cxx_std_20)
 list(APPEND TARGETS_DEP yogacore)
 set(DEP_YOGA $<TARGET_OBJECTS:yogacore>)
 
