@@ -517,17 +517,23 @@ void CClickGui::OnRender()
                         m_aPanelTarget[i] = home;
                         m_aPanelPosValid[i] = true;
                 }
-                // Smooth drag: lerp current position toward target.
-                // Higher factor = snappier; lower = smoother. 0.35 gives a nice glide.
-                const float dragLerp = 0.35f;
+        // Smooth drag: lerp current position toward target, frame-rate independent.
+        // Uses exponential approach: factor = 1 - exp(-k * dt). At high FPS the
+        // per-frame step is small; at low FPS it's large — total speed is constant.
+        // k = 25 means ~63% of remaining distance covered in 1/25s (40ms).
+        // Only the dragged panel lerps; others keep target synced (no glide).
+        const float dtDrag = Client()->RenderFrameTime();
+        const float dragK = 25.0f;
+        const float dragFactor = 1.0f - std::exp(-dragK * dtDrag);
+        if(m_Dragging && m_DragPanelIdx == i)
+        {
                 m_aPanelPos[i] = vec2(
-                        m_aPanelPos[i].x + (m_aPanelTarget[i].x - m_aPanelPos[i].x) * dragLerp,
-                        m_aPanelPos[i].y + (m_aPanelTarget[i].y - m_aPanelPos[i].y) * dragLerp);
-                // When not dragging, keep target synced to current (so non-dragged
-                // panels stay put — their lerp is a no-op).
-                if(!(m_Dragging && m_DragPanelIdx == i))
-                        m_aPanelTarget[i] = m_aPanelPos[i];
-                const vec2 current = m_aPanelPos[i];
+                        m_aPanelPos[i].x + (m_aPanelTarget[i].x - m_aPanelPos[i].x) * dragFactor,
+                        m_aPanelPos[i].y + (m_aPanelTarget[i].y - m_aPanelPos[i].y) * dragFactor);
+        }
+        else
+                m_aPanelTarget[i] = m_aPanelPos[i];
+        const vec2 current = m_aPanelPos[i];
                 vec2 offscreen;
                 if(m_aOffscreenValid[i])
                         offscreen = m_aOffscreenPos[i];
