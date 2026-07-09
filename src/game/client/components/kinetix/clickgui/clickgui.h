@@ -43,27 +43,29 @@ public:
         bool OnInput(const IInput::CEvent &Event) override;
         bool OnCursorMove(float x, float y, IInput::ECursorType CursorType) override;
 
+        static constexpr int NUM_PANELS = 5;
+
 private:
         // Animation state: 0.0 = fully closed, 1.0 = fully open.
         float m_AnimProgress = 0.0f;
 
         // Per-panel offscreen target (randomized each time ClickGUI closes).
-        vec2 m_aOffscreenPos[3] = {vec2(0, 0), vec2(0, 0), vec2(0, 0)};
-        bool m_aOffscreenValid[3] = {false, false, false};
+        vec2 m_aOffscreenPos[NUM_PANELS] = {};
+        bool m_aOffscreenValid[NUM_PANELS] = {};
 
         // Track cl_clickgui state to detect transitions (for picking fresh offscreen spots).
         bool m_WasOpen = false;
 
         // Per-panel current position (draggable). Initialized to home on first open.
-        vec2 m_aPanelPos[3] = {vec2(0, 0), vec2(0, 0), vec2(0, 0)};
-        bool m_aPanelPosValid[3] = {false, false, false};
+        vec2 m_aPanelPos[NUM_PANELS] = {};
+        bool m_aPanelPosValid[NUM_PANELS] = {};
 
         // Per-panel collapsed state (body hidden, only header shown).
-        bool m_aPanelCollapsed[3] = {false, false, false};
+        bool m_aPanelCollapsed[NUM_PANELS] = {};
 
         // Z-order: which panel is on top (0..2, higher = on top). Dragged panel
         // gets bumped to top. We render in low->high order so high paints last.
-        int m_aZOrder[3] = {0, 1, 2};
+        int m_aZOrder[NUM_PANELS] = {};
 
         // Drag state.
         bool m_Dragging = false;
@@ -96,7 +98,7 @@ private:
         int m_InputSelEnd = -1; // selection end
 
         // Smooth drag: target position lerps to mouse, panel position lerps to target.
-        vec2 m_aPanelTarget[3] = {vec2(0, 0), vec2(0, 0), vec2(0, 0)};
+        vec2 m_aPanelTarget[NUM_PANELS] = {};
 
         // Mouse position in screen-space px (updated each frame from NativeMousePos).
         vec2 m_MousePos = vec2(0, 0);

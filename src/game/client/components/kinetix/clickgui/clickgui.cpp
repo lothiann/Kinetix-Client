@@ -30,6 +30,9 @@
 #include <game/client/gameclient.h>
 
 namespace {
+// Total number of ClickGUI panels. Must match CClickGui::NUM_PANELS in .h.
+constexpr int NUM_PANELS = 5;
+
 // Coerce a body height to int for ClipEnable without truncation surprises.
 inline int bodyH_safe(float h)
 {
@@ -147,6 +150,17 @@ static SRow g_MiscRows[] = {
         {ERowType::Input, "Webhook URL", false, false, 0, 0, 0, 0, nullptr, "", "https://...", nullptr, 0, 0, nullptr, 0},
 };
 
+// ---------- Functions panel (4) ----------
+static SRow g_FunctionsRows[] = {
+        {ERowType::Toggle, "Block", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Random Aim", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
+
+// ---------- Advanced panel (5) ----------
+static SRow g_AdvancedRows[] = {
+        {ERowType::Toggle, "Trajectory", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
+
 struct SPanel
 {
         const char *pTitle;
@@ -154,10 +168,12 @@ struct SPanel
         int rowCount;
 };
 
-static SPanel g_Panels[3] = {
+static SPanel g_Panels[NUM_PANELS] = {
         {"Combat", g_CombatRows, sizeof(g_CombatRows) / sizeof(g_CombatRows[0])},
         {"Movement", g_MovementRows, sizeof(g_MovementRows) / sizeof(g_MovementRows[0])},
         {"Misc", g_MiscRows, sizeof(g_MiscRows) / sizeof(g_MiscRows[0])},
+        {"Functions", g_FunctionsRows, sizeof(g_FunctionsRows) / sizeof(g_FunctionsRows[0])},
+        {"Advanced", g_AdvancedRows, sizeof(g_AdvancedRows) / sizeof(g_AdvancedRows[0])},
 };
 
 // ============================================================================
@@ -232,12 +248,15 @@ static float RowHeight(ERowType t)
 
 vec2 CClickGui::PanelHomePos(int panelIdx)
 {
-        // Matches the inline style="left/top" in clickgui.html, scaled up 1.25x.
+        // 5 panels: Combat, Movement, Misc, Functions, Advanced.
+        // Spaced horizontally at the top, 330px apart (300px panel + 30px gap).
         switch(panelIdx)
         {
-        case 0: return vec2(60.0f, 90.0f);
-        case 1: return vec2(390.0f, 90.0f);
-        case 2: return vec2(720.0f, 90.0f);
+        case 0: return vec2(60.0f, 90.0f); // Combat
+        case 1: return vec2(390.0f, 90.0f); // Movement
+        case 2: return vec2(720.0f, 90.0f); // Misc
+        case 3: return vec2(1050.0f, 90.0f); // Functions
+        case 4: return vec2(1380.0f, 90.0f); // Advanced
         default: return vec2(60.0f, 90.0f);
         }
 }
@@ -371,7 +390,7 @@ void CClickGui::OnReset()
         m_DropdownOpen = false;
         m_InputEditing = false;
         Input()->StopTextInput();
-        for(int i = 0; i < 3; ++i)
+        for(int i = 0; i < NUM_PANELS; ++i)
         {
                 m_aOffscreenValid[i] = false;
                 m_aPanelPosValid[i] = false;
@@ -393,7 +412,7 @@ void CClickGui::OnRender()
         {
                 const float sw = (float)Graphics()->ScreenWidth();
                 const float sh = (float)Graphics()->ScreenHeight();
-                for(int i = 0; i < 3; ++i)
+                for(int i = 0; i < NUM_PANELS; ++i)
                 {
                         m_aOffscreenPos[i] = PickRandomOffscreenPos(i, sw, sh);
                         m_aOffscreenValid[i] = true;
@@ -500,9 +519,9 @@ void CClickGui::OnRender()
 
         // Render panels in z-order (low z first = painted behind, high z on top).
         // Build a list of panel indices sorted by z-order ascending.
-        int renderOrder[3] = {0, 1, 2};
-        for(int a = 0; a < 3; ++a)
-                for(int b = a + 1; b < 3; ++b)
+        int renderOrder[NUM_PANELS] = {0, 1, 2, 3, 4};
+        for(int a = 0; a < NUM_PANELS; ++a)
+                for(int b = a + 1; b < NUM_PANELS; ++b)
                         if(m_aZOrder[renderOrder[b]] < m_aZOrder[renderOrder[a]])
                         {
                                 int tmp = renderOrder[a];
@@ -510,7 +529,7 @@ void CClickGui::OnRender()
                                 renderOrder[b] = tmp;
                         }
 
-        for(int idx = 0; idx < 3; ++idx)
+        for(int idx = 0; idx < NUM_PANELS; ++idx)
         {
                 const int i = renderOrder[idx];
                 const vec2 home = PanelHomePos(i);
@@ -614,13 +633,14 @@ bool CClickGui::OnCursorMove(float x, float y, IInput::ECursorType CursorType)
 void CClickGui::BringToFront(int panelIdx)
 {
         const int oldZ = m_aZOrder[panelIdx];
-        if(oldZ == 2)
+        if(oldZ == NUM_PANELS - 1)
                 return; // already on top
-        // Shift panels with z > oldZ down by 1, set this panel to 2.
-        for(int i = 0; i < 3; ++i)
+        // Shift panels with z > oldZ down by 1, set this panel to top.
+        const int topZ = NUM_PANELS - 1;
+        for(int i = 0; i < NUM_PANELS; ++i)
         {
                 if(i == panelIdx)
-                        m_aZOrder[i] = 2;
+                        m_aZOrder[i] = topZ;
                 else if(m_aZOrder[i] > oldZ)
                         m_aZOrder[i] -= 1;
         }
@@ -663,9 +683,9 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
         }
 
         // Iterate panels top-to-bottom (high z first) to find the topmost hit.
-        int clickOrder[3] = {0, 1, 2};
-        for(int a = 0; a < 3; ++a)
-                for(int b = a + 1; b < 3; ++b)
+        int clickOrder[NUM_PANELS] = {0, 1, 2, 3, 4};
+        for(int a = 0; a < NUM_PANELS; ++a)
+                for(int b = a + 1; b < NUM_PANELS; ++b)
                         if(m_aZOrder[clickOrder[b]] > m_aZOrder[clickOrder[a]])
                         {
                                 int tmp = clickOrder[a];
@@ -673,7 +693,7 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 clickOrder[b] = tmp;
                         }
 
-        for(int idx = 0; idx < 3; ++idx)
+        for(int idx = 0; idx < NUM_PANELS; ++idx)
         {
                 const int i = clickOrder[idx];
                 const vec2 ppos = m_aPanelPosValid[i] ? m_aPanelPos[i] : PanelHomePos(i);
