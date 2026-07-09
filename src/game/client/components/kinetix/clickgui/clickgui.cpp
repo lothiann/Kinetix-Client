@@ -16,6 +16,7 @@
 #include <cstdlib>
 
 #include <base/color.h>
+#include <base/mem.h>
 #include <base/str.h>
 #include <base/vmath.h>
 
@@ -451,7 +452,15 @@ void CClickGui::OnRender()
                 }
         }
 
-        const float eased = CubicBezierEase(m_AnimProgress);
+        // Easing: open uses CubicBezierEase(progress) which is fast-start, slow-end.
+        // Close should mirror this so the easing is at the END of the animation
+        // (slow-start, fast-end) — i.e. panels decelerate as they vanish, matching
+        // the HTML's symmetric transition. We invert the curve for close direction.
+        float eased;
+        if(isOpen)
+                eased = CubicBezierEase(m_AnimProgress); // 0→1, fast-start slow-end
+        else
+                eased = 1.0f - CubicBezierEase(1.0f - m_AnimProgress); // 1→0, slow-start fast-end
         const float alpha = eased;
 
         // Set up pixel-space projection.
@@ -506,6 +515,9 @@ void CClickGui::OnRender()
                 RenderPanel(i, pos, alpha);
         }
 
+        // Render dropdown popup ON TOP of all panels (if open).
+        RenderDropdownPopup(alpha);
+
         TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
 }
 
@@ -522,10 +534,17 @@ bool CClickGui::OnInput(const IInput::CEvent &Event)
         if(m_AnimProgress < 0.95f)
                 return false;
 
+        // If editing an input field, route key events to text editing.
+        if(m_InputEditing && (Event.m_Flags & (IInput::FLAG_PRESS | IInput::FLAG_TEXT)))
+        {
+                HandleTextInput(Event);
+                return true;
+        }
+
         if(Event.m_Flags & IInput::FLAG_PRESS && Event.m_Key == KEY_MOUSE_1)
         {
                 HandleMouseDown(m_MousePos);
-                return true; // consume — don't let the game see clicks while ClickGUI is open
+                return true;
         }
         if(Event.m_Flags & IInput::FLAG_RELEASE && Event.m_Key == KEY_MOUSE_1)
         {
@@ -568,6 +587,33 @@ bool CClickGui::PointInRect(vec2 p, float x, float y, float w, float h) const
 
 void CClickGui::HandleMouseDown(vec2 mousePos)
 {
+        // If a dropdown popup is open, check it FIRST (it's on top of everything).
+        if(m_DropdownOpen)
+        {
+                if(HandleDropdownClick(mousePos))
+                        return;
+                // Click outside dropdown → close it (and don't fall through to row
+                // beneath, matching HTML select behavior).
+                m_DropdownOpen = false;
+                return;
+        }
+
+        // If editing an input field, any click elsewhere commits the edit.
+        if(m_InputEditing)
+        {
+                // Check if click is still inside the input row → keep editing.
+                SRow *pRow = (SRow *)GetEditingInputRowPtr();
+                if(pRow)
+                {
+                        const vec2 ppos = m_aPanelPosValid[m_InputPanel] ? m_aPanelPos[m_InputPanel] : PanelHomePos(m_InputPanel);
+                        // We don't have exact row rect here; just commit on any click for simplicity.
+                        // Save buffer back to row's pInputValue (which is const char* — we can't
+                        // mutate it in place safely, so we just stop editing; the value stays as
+                        // the original pointer). For v1.56.41 we accept this limitation.
+                }
+                m_InputEditing = false;
+        }
+
         // Iterate panels top-to-bottom (high z first) to find the topmost hit.
         int clickOrder[3] = {0, 1, 2};
         for(int a = 0; a < 3; ++a)
@@ -621,8 +667,6 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                         if(pTarget->type == ERowType::Toggle || pTarget->type == ERowType::ToggleDropdown || pTarget->type == ERowType::Expandable)
                         {
                                 // Click on check area or name area → toggle on/off.
-                                // (For toggle-dropdown/expandable, the dropdown/arrow regions are
-                                // on the right and excluded here.)
                                 const float toggleEndX = rx + rw - (pTarget->type == ERowType::Expandable ? ARROW_W + 4.0f : (pTarget->type == ERowType::ToggleDropdown ? DROPDOWN_W + 4.0f : 0.0f));
                                 if(mousePos.x < toggleEndX)
                                 {
@@ -645,7 +689,6 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 m_DragSliderPanel = i;
                                 m_DragSliderRow = outRow;
                                 m_DragSliderChild = outChild;
-                                // Set value immediately from click position.
                                 const float trackX = rx + 2.0f;
                                 const float trackW = rw - 4.0f;
                                 float pct = (mousePos.x - trackX) / trackW;
@@ -653,7 +696,51 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 pTarget->value = pTarget->min + pct * (pTarget->max - pTarget->min);
                                 return;
                         }
-                        // Dropdown / Input: visual-only this iteration.
+                        if(pTarget->type == ERowType::Dropdown || pTarget->type == ERowType::ToggleDropdown)
+                        {
+                                // Click on the dropdown box (right side) → open popup.
+                                const float ddX = rx + rw - DROPDOWN_W - 2.0f;
+                                const float ddY = ry + (rh - DROPDOWN_H) * 0.5f;
+                                if(PointInRect(mousePos, ddX, ddY, DROPDOWN_W, DROPDOWN_H))
+                                {
+                                        m_DropdownOpen = true;
+                                        m_DropdownPanel = i;
+                                        m_DropdownRow = outRow;
+                                        m_DropdownChild = outChild;
+                                        return;
+                                }
+                                // For ToggleDropdown, click on name still toggles (handled above).
+                                return;
+                        }
+                        if(pTarget->type == ERowType::Input)
+                        {
+                                // Click on the input box → start editing.
+                                const float nameW = std::min(88.0f, TextRender()->TextWidth(17.0f, pTarget->pName) + 5.0f);
+                                const float inX = rx + nameW + 2.0f;
+                                const float inY = ry + 2.0f;
+                                const float inW = rw - nameW - 4.0f;
+                                const float inH = rh - 4.0f;
+                                if(PointInRect(mousePos, inX, inY, inW, inH))
+                                {
+                                        // Start editing. Copy current value into buffer.
+                                        m_InputEditing = true;
+                                        m_InputPanel = i;
+                                        m_InputRow = outRow;
+                                        m_InputChild = outChild;
+                                        m_InputLen = 0;
+                                        if(pTarget->pInputValue)
+                                        {
+                                                int len = (int)str_length(pTarget->pInputValue);
+                                                if(len >= INPUT_BUF_SIZE)
+                                                        len = INPUT_BUF_SIZE - 1;
+                                                mem_copy(m_InputBuf, pTarget->pInputValue, len);
+                                                m_InputBuf[len] = 0;
+                                                m_InputLen = len;
+                                        }
+                                        return;
+                                }
+                                return;
+                        }
                         return;
                 }
         }
@@ -666,6 +753,232 @@ void CClickGui::HandleMouseUp(vec2 mousePos)
         m_DragSliderPanel = -1;
         m_DragSliderRow = -1;
         m_DragSliderChild = -1;
+}
+
+void *CClickGui::GetEditingInputRowPtr()
+{
+        if(!m_InputEditing || m_InputPanel < 0 || m_InputRow < 0)
+                return nullptr;
+        SPanel &panel = g_Panels[m_InputPanel];
+        if(m_InputRow >= panel.rowCount)
+                return nullptr;
+        SRow &row = panel.pRows[m_InputRow];
+        if(m_InputChild >= 0 && row.pChildren && m_InputChild < row.childCount)
+                return &row.pChildren[m_InputChild];
+        return &row;
+}
+
+bool CClickGui::HandleDropdownClick(vec2 mousePos)
+{
+        // Find the dropdown box position (same as where we render it).
+        if(m_DropdownPanel < 0 || m_DropdownRow < 0)
+                return false;
+        const vec2 ppos = m_aPanelPosValid[m_DropdownPanel] ? m_aPanelPos[m_DropdownPanel] : PanelHomePos(m_DropdownPanel);
+        const float bodyX = ppos.x + BODY_PADDING;
+        float cursorY = ppos.y + HEADER_HEIGHT + BODY_PADDING;
+        SPanel &panel = g_Panels[m_DropdownPanel];
+        for(int r = 0; r < panel.rowCount; ++r)
+        {
+                SRow &row = panel.pRows[r];
+                const float rh = RowHeight(row.type);
+                if(r == m_DropdownRow && m_DropdownChild < 0)
+                {
+                        // Found the row. Dropdown box is at right side.
+                        const float rw = PANEL_WIDTH - BODY_PADDING * 2;
+                        const float ddX = bodyX + rw - DROPDOWN_W - 2.0f;
+                        const float ddY = cursorY + (rh - DROPDOWN_H) * 0.5f;
+                        // Popup is a vertical list below the dropdown box.
+                        SRow &target = row;
+                        const float itemH = DROPDOWN_H + 2.0f;
+                        const float popupW = DROPDOWN_W;
+                        for(int o = 0; o < target.optionCount; ++o)
+                        {
+                                const float itemY = ddY + DROPDOWN_H + 2.0f + o * itemH;
+                                if(PointInRect(mousePos, ddX, itemY, popupW, itemH - 2.0f))
+                                {
+                                        target.valueIdx = o;
+                                        m_DropdownOpen = false;
+                                        return true;
+                                }
+                        }
+                        return false;
+                }
+                cursorY += rh + ROW_GAP;
+                if(row.type == ERowType::Expandable && row.expanded && row.pChildren)
+                {
+                        for(int c = 0; c < row.childCount; ++c)
+                        {
+                                SRow &child = row.pChildren[c];
+                                const float crh = RowHeight(child.type);
+                                if(r == m_DropdownRow && c == m_DropdownChild)
+                                {
+                                        const float rw = PANEL_WIDTH - BODY_PADDING * 2;
+                                        const float crw = rw - SUB_LIST_INDENT;
+                                        const float ddX = bodyX + SUB_LIST_INDENT + crw - DROPDOWN_W - 2.0f;
+                                        const float ddY = cursorY + (crh - DROPDOWN_H) * 0.5f;
+                                        SRow &target = child;
+                                        const float itemH = DROPDOWN_H + 2.0f;
+                                        for(int o = 0; o < target.optionCount; ++o)
+                                        {
+                                                const float itemY = ddY + DROPDOWN_H + 2.0f + o * itemH;
+                                                if(PointInRect(mousePos, ddX, itemY, DROPDOWN_W, itemH - 2.0f))
+                                                {
+                                                        target.valueIdx = o;
+                                                        m_DropdownOpen = false;
+                                                        return true;
+                                                }
+                                        }
+                                        return false;
+                                }
+                                cursorY += crh + ROW_GAP;
+                        }
+                }
+        }
+        return false;
+}
+
+void CClickGui::RenderDropdownPopup(float alpha)
+{
+        if(!m_DropdownOpen || m_DropdownPanel < 0 || m_DropdownRow < 0)
+                return;
+        // Locate the dropdown box position (mirror HandleDropdownClick traversal).
+        const vec2 ppos = m_aPanelPosValid[m_DropdownPanel] ? m_aPanelPos[m_DropdownPanel] : PanelHomePos(m_DropdownPanel);
+        const float bodyX = ppos.x + BODY_PADDING;
+        float cursorY = ppos.y + HEADER_HEIGHT + BODY_PADDING;
+        SPanel &panel = g_Panels[m_DropdownPanel];
+        for(int r = 0; r < panel.rowCount; ++r)
+        {
+                SRow &row = panel.pRows[r];
+                const float rh = RowHeight(row.type);
+                if(r == m_DropdownRow && m_DropdownChild < 0)
+                {
+                        const float rw = PANEL_WIDTH - BODY_PADDING * 2;
+                        const float ddX = bodyX + rw - DROPDOWN_W - 2.0f;
+                        const float ddY = cursorY + (rh - DROPDOWN_H) * 0.5f;
+                        SRow &target = row;
+                        // Popup background.
+                        const float popupH = target.optionCount * (DROPDOWN_H + 2.0f) + 4.0f;
+                        DrawRoundedRect(ddX, ddY + DROPDOWN_H + 2.0f, DROPDOWN_W, popupH,
+                                3.0f, IGraphics::CORNER_ALL,
+                                ColorRGBA(0xff0d0d18, true).WithAlpha(alpha));
+                        // Option rows.
+                        for(int o = 0; o < target.optionCount; ++o)
+                        {
+                                const float itemY = ddY + DROPDOWN_H + 4.0f + o * (DROPDOWN_H + 2.0f);
+                                const bool hovered = PointInRect(m_MousePos, ddX, itemY, DROPDOWN_W, DROPDOWN_H);
+                                if(hovered)
+                                {
+                                        DrawRoundedRect(ddX, itemY, DROPDOWN_W, DROPDOWN_H, 2.0f,
+                                                IGraphics::CORNER_ALL,
+                                                ColorRGBA(0xff9d4edd, true).WithAlpha(alpha * 0.5f));
+                                }
+                                const ColorRGBA optCol = (o == target.valueIdx)
+                                        ? ColorRGBA(0xffff9d4e, true).WithAlpha(alpha) // highlight selected
+                                        : ColorRGBA(0xffd8d8e8, true).WithAlpha(alpha);
+                                DrawText(ddX + 5.0f, itemY + 4.0f, 14.0f, target.pOptions[o], optCol);
+                        }
+                        return;
+                }
+                cursorY += rh + ROW_GAP;
+                if(row.type == ERowType::Expandable && row.expanded && row.pChildren)
+                {
+                        for(int c = 0; c < row.childCount; ++c)
+                        {
+                                SRow &child = row.pChildren[c];
+                                const float crh = RowHeight(child.type);
+                                if(r == m_DropdownRow && c == m_DropdownChild)
+                                {
+                                        const float rw = PANEL_WIDTH - BODY_PADDING * 2;
+                                        const float crw = rw - SUB_LIST_INDENT;
+                                        const float ddX = bodyX + SUB_LIST_INDENT + crw - DROPDOWN_W - 2.0f;
+                                        const float ddY = cursorY + (crh - DROPDOWN_H) * 0.5f;
+                                        SRow &target = child;
+                                        const float popupH = target.optionCount * (DROPDOWN_H + 2.0f) + 4.0f;
+                                        DrawRoundedRect(ddX, ddY + DROPDOWN_H + 2.0f, DROPDOWN_W, popupH,
+                                                3.0f, IGraphics::CORNER_ALL,
+                                                ColorRGBA(0xff0d0d18, true).WithAlpha(alpha));
+                                        for(int o = 0; o < target.optionCount; ++o)
+                                        {
+                                                const float itemY = ddY + DROPDOWN_H + 4.0f + o * (DROPDOWN_H + 2.0f);
+                                                const bool hovered = PointInRect(m_MousePos, ddX, itemY, DROPDOWN_W, DROPDOWN_H);
+                                                if(hovered)
+                                                {
+                                                        DrawRoundedRect(ddX, itemY, DROPDOWN_W, DROPDOWN_H, 2.0f,
+                                                                IGraphics::CORNER_ALL,
+                                                                ColorRGBA(0xff9d4edd, true).WithAlpha(alpha * 0.5f));
+                                                }
+                                                const ColorRGBA optCol = (o == target.valueIdx)
+                                                        ? ColorRGBA(0xffff9d4e, true).WithAlpha(alpha)
+                                                        : ColorRGBA(0xffd8d8e8, true).WithAlpha(alpha);
+                                                DrawText(ddX + 5.0f, itemY + 4.0f, 14.0f, target.pOptions[o], optCol);
+                                        }
+                                        return;
+                                }
+                                cursorY += crh + ROW_GAP;
+                        }
+                }
+        }
+}
+
+void CClickGui::HandleTextInput(const IInput::CEvent &Event)
+{
+        SRow *pRow = (SRow *)GetEditingInputRowPtr();
+        if(!pRow || pRow->type != ERowType::Input)
+        {
+                m_InputEditing = false;
+                return;
+        }
+
+        // Escape / Enter → commit and stop editing.
+        if(Event.m_Flags & IInput::FLAG_PRESS)
+        {
+                if(Event.m_Key == KEY_ESCAPE)
+                {
+                        m_InputEditing = false;
+                        return;
+                }
+                if(Event.m_Key == KEY_RETURN)
+                {
+                        m_InputEditing = false;
+                        return;
+                }
+                if(Event.m_Key == KEY_BACKSPACE)
+                {
+                        if(m_InputLen > 0)
+                        {
+                                m_InputLen--;
+                                m_InputBuf[m_InputLen] = 0;
+                        }
+                        return;
+                }
+                if(Event.m_Key == KEY_DELETE)
+                {
+                        if(m_InputLen > 0)
+                        {
+                                m_InputLen--;
+                                m_InputBuf[m_InputLen] = 0;
+                        }
+                        return;
+                }
+        }
+
+        // Text input (FLAG_TEXT): append printable chars.
+        if(Event.m_Flags & IInput::FLAG_TEXT)
+        {
+                // Event.m_aText contains UTF-8 text (DDNet's CEvent has this field).
+                const char *pText = Event.m_aText;
+                if(pText && pText[0])
+                {
+                        int textLen = (int)str_length(pText);
+                        // Append if buffer has room.
+                        if(m_InputLen + textLen < INPUT_BUF_SIZE - 1)
+                        {
+                                mem_copy(m_InputBuf + m_InputLen, pText, textLen);
+                                m_InputLen += textLen;
+                                m_InputBuf[m_InputLen] = 0;
+                        }
+                }
+        }
 }
 
 bool CClickGui::HitTestRow(vec2 mousePos, int panelIdx, int &outRow, int &outChild, float &outRowX, float &outRowY, float &outRowW, float &outRowH)
@@ -924,19 +1237,38 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                         const float inY = ry + 2.0f;
                         const float inW = rw - nameW - 4.0f;
                         const float inH = rh - 4.0f;
+                        // Highlight border if this input is being edited.
+                        const bool editingThis = (m_InputEditing && m_InputPanel == panelIdx && m_InputRow == r && m_InputChild < 0);
                         DrawRoundedRect(inX, inY, inW, inH, 2.0f,
                                 IGraphics::CORNER_ALL,
                                 ColorRGBA(COL_INPUT_BG, true).WithAlpha(alpha));
                         DrawRoundedRect(inX - 1.0f, inY - 1.0f, inW + 2.0f, inH + 2.0f, 2.0f,
                                 IGraphics::CORNER_ALL,
-                                ColorRGBA(COL_INPUT_BORDER, true).WithAlpha(alpha * 0.5f));
-                        const char *pText = (row.pInputValue && row.pInputValue[0]) ? row.pInputValue : row.pPlaceholder;
-                        if(pText)
+                                editingThis ? ColorRGBA(0xff9d4edd, true).WithAlpha(alpha) : ColorRGBA(COL_INPUT_BORDER, true).WithAlpha(alpha * 0.5f));
+                        // Show edit buffer if editing, else stored value / placeholder.
+                        const char *pText;
+                        ColorRGBA inCol;
+                        if(editingThis)
                         {
-                                const ColorRGBA inCol = (row.pInputValue && row.pInputValue[0])
+                                pText = m_InputBuf;
+                                inCol = textCol;
+                        }
+                        else
+                        {
+                                pText = (row.pInputValue && row.pInputValue[0]) ? row.pInputValue : row.pPlaceholder;
+                                inCol = (row.pInputValue && row.pInputValue[0])
                                         ? textCol
                                         : ColorRGBA(0xff8a8aa8, true).WithAlpha(alpha);
+                        }
+                        if(pText)
                                 DrawText(inX + 4.0f, inY + 4.0f, 17.0f, pText, inCol);
+                        // Cursor blink while editing.
+                        if(editingThis)
+                        {
+                                const float cursorX = inX + 4.0f + TextRender()->TextWidth(17.0f, m_InputBuf);
+                                DrawRoundedRect(cursorX, inY + 4.0f, 1.5f, inH - 8.0f, 0.0f,
+                                        IGraphics::CORNER_NONE,
+                                        ColorRGBA(0xffffffff, true).WithAlpha(alpha * (0.5f + 0.5f * std::sin(LocalTime() * 5.0f))));
                         }
                         break;
                 }

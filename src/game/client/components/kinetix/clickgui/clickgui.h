@@ -75,6 +75,23 @@ private:
         int m_DragSliderRow = -1;
         int m_DragSliderChild = -1; // -1 = top-level row, >=0 = child index within expandable
 
+        // Dropdown popup state: when open, a list of options is rendered below the
+        // dropdown box. Only one dropdown can be open at a time.
+        bool m_DropdownOpen = false;
+        int m_DropdownPanel = -1;
+        int m_DropdownRow = -1;
+        int m_DropdownChild = -1;
+
+        // Input field editing state: when active, keystrokes go into the buffer.
+        bool m_InputEditing = false;
+        int m_InputPanel = -1;
+        int m_InputRow = -1;
+        int m_InputChild = -1;
+        // Edit buffer (static so it survives across frames; one field at a time).
+        static constexpr int INPUT_BUF_SIZE = 256;
+        char m_InputBuf[INPUT_BUF_SIZE] = {};
+        int m_InputLen = 0;
+
         // Mouse position in screen-space px (updated each frame from NativeMousePos).
         vec2 m_MousePos = vec2(0, 0);
 
@@ -116,6 +133,16 @@ private:
         // Find which row a click hit. Returns row/child indices via out-params.
         // panelIdx is an input (which panel to test). Returns true if a row was hit.
         bool HitTestRow(vec2 mousePos, int panelIdx, int &outRow, int &outChild, float &outRowX, float &outRowY, float &outRowW, float &outRowH);
+
+        // Dropdown popup rendering + hit testing.
+        void RenderDropdownPopup(float alpha);
+        bool HandleDropdownClick(vec2 mousePos);
+
+        // Input field text editing. Returns pointer to the row being edited
+        // (defined in .cpp where SRow is visible), or nullptr. We use void* to
+        // avoid forward-declaring the anonymous-namespace SRow in the header.
+        void *GetEditingInputRowPtr();
+        void HandleTextInput(const IInput::CEvent &Event);
 
         // Low-level draw helpers (all screen-space px).
         void DrawRoundedRect(float x, float y, float w, float h, float radius, int corners, ColorRGBA color);
