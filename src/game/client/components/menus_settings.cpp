@@ -3312,7 +3312,18 @@ void CMenus::RenderSettingsDummies(CUIRect MainView)
 
         // === Movement Panel ===
         {
-                const float SectionH = PanelPad + 25.0f + 5.0f + 2 * 20.0f + RowGap + PanelPad;
+                // Layout: header + Copy moves + Restore weapon + "Fly" subheader + Dummy hammer + Preserve inputs + Custom latency (+slider) + Auto fly
+                float SectionH = PanelPad + 25.0f + 5.0f; // header
+                SectionH += 20.0f + RowGap; // Copy moves
+                SectionH += 20.0f + RowGap; // Restore weapon after hammer
+                SectionH += 25.0f + 5.0f; // "Fly" subheader (16px + spacing)
+                SectionH += 20.0f + RowGap; // Dummy hammer
+                SectionH += 20.0f + RowGap; // Preserve inputs
+                SectionH += 20.0f + RowGap; // Custom latency (checkbox)
+                if(g_Config.m_ClDummyHammerCustomLatency)
+                        SectionH += 20.0f + RowGap; // latency slider
+                SectionH += 20.0f; // Auto fly (last, no gap after)
+                SectionH += PanelPad;
                 MainView.HSplitTop(SectionH, &PanelBg, &MainView);
                 PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
                 s_DummiesScrollRegion.AddRect(PanelBg);
@@ -3335,22 +3346,9 @@ void CMenus::RenderSettingsDummies(CUIRect MainView)
                 if(DoButton_CheckBox(&g_Config.m_ClDummyRestoreWeapon, Localize("Restore weapon after hammer"), g_Config.m_ClDummyRestoreWeapon, &Row))
                         g_Config.m_ClDummyRestoreWeapon ^= 1;
                 GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyRestoreWeapon, &Row, Localize("Switch back to previous weapon after hammerfly ends"));
-        }
+                Panel.HSplitTop(RowGap, nullptr, &Panel);
 
-        MainView.HSplitTop(PanelGap, nullptr, &MainView);
-
-        // === Fly Panel ===
-        {
-                float SectionH = PanelPad + 25.0f + 5.0f + 4 * 20.0f + 3 * RowGap;
-                if(g_Config.m_ClDummyHammerCustomLatency)
-                        SectionH += 20.0f + RowGap;
-                SectionH += PanelPad;
-                MainView.HSplitTop(SectionH, &PanelBg, &MainView);
-                PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
-                s_DummiesScrollRegion.AddRect(PanelBg);
-                PanelBg.Margin(PanelPad, &Panel);
-
-                // Header
+                // "Fly" subheader — same style as panel header (16px).
                 Panel.HSplitTop(25.0f, &Label, &Panel);
                 Ui()->DoLabel(&Label, Localize("Fly"), 16.0f, TEXTALIGN_ML);
                 Panel.HSplitTop(5.0f, nullptr, &Panel);
@@ -3392,14 +3390,21 @@ void CMenus::RenderSettingsDummies(CUIRect MainView)
 
         MainView.HSplitTop(PanelGap, nullptr, &MainView);
 
-        // === Copy Moves Panel ===
+        // === Dummy Control Panel ===
         {
+                // Layout: header + Dummy control (+ Jump/Fire/Hook/Aim/Direction) + "Copy moves" subheader + Copy Moves Filter (+sub) + Mirror direction + Aim mode dropdown + conditional aim options
                 float SectionH = PanelPad + 25.0f + 5.0f + 20.0f; // header + main checkbox
                 if(g_Config.m_ClDummyControl)
                         SectionH += RowGap + 5 * 20.0f + 4 * RowGap; // Jump/Fire/Hook/Aim/Direction
+                // "Copy moves" subheader
+                SectionH += 25.0f + 5.0f;
+                // Copy Moves Filter + sub-checkboxes
+                SectionH += 20.0f + RowGap;
+                if(g_Config.m_ClDummyCopyMovesFilter)
+                        SectionH += 5 * (20.0f + RowGap);
                 // Mirror direction + Aim mode dropdown + conditional aim options
-                SectionH += RowGap + 20.0f + RowGap; // Mirror direction
-                SectionH += 20.0f + RowGap; // Aim mode dropdown
+                SectionH += 20.0f + RowGap;
+                SectionH += 20.0f + RowGap;
                 if(g_Config.m_ClDummyCopyAimMode == 1) // Mirror
                         SectionH += 2 * (20.0f + RowGap);
                 else // Smart
@@ -3412,7 +3417,7 @@ void CMenus::RenderSettingsDummies(CUIRect MainView)
 
                 // Header
                 Panel.HSplitTop(25.0f, &Label, &Panel);
-                Ui()->DoLabel(&Label, Localize("Copy Moves"), 16.0f, TEXTALIGN_ML);
+                Ui()->DoLabel(&Label, Localize("Dummy Control"), 16.0f, TEXTALIGN_ML);
                 Panel.HSplitTop(5.0f, nullptr, &Panel);
 
                 // Dummy control (main toggle — original DDNet, unchanged logic)
@@ -3460,6 +3465,11 @@ void CMenus::RenderSettingsDummies(CUIRect MainView)
                         GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyDirection, &Row, Localize("All dummies will copy your movement direction (requires Dummy control)"));
                         Panel.HSplitTop(RowGap, nullptr, &Panel);
                 }
+
+                // "Copy moves" subheader — same style as panel header (16px).
+                Panel.HSplitTop(25.0f, &Label, &Panel);
+                Ui()->DoLabel(&Label, Localize("Copy moves"), 16.0f, TEXTALIGN_ML);
+                Panel.HSplitTop(5.0f, nullptr, &Panel);
 
                 // Copy Moves Filter (filters which fields copy_moves copies)
                 Panel.HSplitTop(20.0f, &Row, &Panel);
