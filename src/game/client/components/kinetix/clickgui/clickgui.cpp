@@ -63,13 +63,17 @@ struct SRow
         bool expanded; // expandable only
         float min, max, step, value; // slider only
         const char *pSuffix; // slider only
-        const char *pInputValue; // input only
+        const char *pInputValue; // input only (default value, const)
         const char *pPlaceholder; // input only
         const char *const *pOptions; // dropdown / toggle-dropdown
         int optionCount; // dropdown / toggle-dropdown
         int valueIdx; // dropdown / toggle-dropdown
         SRow *pChildren; // expandable only (non-const for child mutation)
         int childCount; // expandable only
+        // v1.56.43: mutable input buffer (so edited text persists).
+        // Lazy-initialized from pInputValue on first render.
+        char m_aInputBuf[256] = {};
+        bool m_InputInitialized = false;
 };
 
 // ---------- Combat panel (1) ----------
@@ -436,11 +440,11 @@ void CClickGui::OnRender()
         if(isOpen)
                 Input()->MouseModeAbsolute();
 
-        // If dragging a panel, update its position to follow the mouse.
+        // If dragging a panel, set its target position to follow the mouse.
+        // The panel lerps toward this target (smooth drag) in the render loop below.
         if(m_Dragging && m_DragPanelIdx >= 0)
         {
-                m_aPanelPos[m_DragPanelIdx] = m_MousePos - m_DragOffset;
-                m_aPanelPosValid[m_DragPanelIdx] = true;
+                m_aPanelTarget[m_DragPanelIdx] = m_MousePos - m_DragOffset;
         }
 
         // If dragging a slider, update its value from mouse X position.
@@ -505,7 +509,24 @@ void CClickGui::OnRender()
         {
                 const int i = renderOrder[idx];
                 const vec2 home = PanelHomePos(i);
-                const vec2 current = m_aPanelPosValid[i] ? m_aPanelPos[i] : home;
+                // Initialize target on first valid frame.
+                if(!m_aPanelPosValid[i])
+                {
+                        m_aPanelPos[i] = home;
+                        m_aPanelTarget[i] = home;
+                        m_aPanelPosValid[i] = true;
+                }
+                // Smooth drag: lerp current position toward target.
+                // Higher factor = snappier; lower = smoother. 0.35 gives a nice glide.
+                const float dragLerp = 0.35f;
+                m_aPanelPos[i] = vec2(
+                        m_aPanelPos[i].x + (m_aPanelTarget[i].x - m_aPanelPos[i].x) * dragLerp,
+                        m_aPanelPos[i].y + (m_aPanelTarget[i].y - m_aPanelPos[i].y) * dragLerp);
+                // When not dragging, keep target synced to current (so non-dragged
+                // panels stay put — their lerp is a no-op).
+                if(!(m_Dragging && m_DragPanelIdx == i))
+                        m_aPanelTarget[i] = m_aPanelPos[i];
+                const vec2 current = m_aPanelPos[i];
                 vec2 offscreen;
                 if(m_aOffscreenValid[i])
                         offscreen = m_aOffscreenPos[i];
@@ -610,18 +631,20 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                 return;
         }
 
-        // If editing an input field, any click elsewhere commits the edit.
+        // If editing an input field, commit the edit buffer back to the row before
+        // processing the new click (so the typed text is saved).
         if(m_InputEditing)
         {
-                // Check if click is still inside the input row → keep editing.
                 SRow *pRow = (SRow *)GetEditingInputRowPtr();
                 if(pRow)
                 {
-                        const vec2 ppos = m_aPanelPosValid[m_InputPanel] ? m_aPanelPos[m_InputPanel] : PanelHomePos(m_InputPanel);
-                        // We don't have exact row rect here; just commit on any click for simplicity.
-                        // Save buffer back to row's pInputValue (which is const char* — we can't
-                        // mutate it in place safely, so we just stop editing; the value stays as
-                        // the original pointer). For v1.56.41 we accept this limitation.
+                        if(!pRow->m_InputInitialized)
+                        {
+                                if(pRow->pInputValue)
+                                        str_copy(pRow->m_aInputBuf, pRow->pInputValue, sizeof(pRow->m_aInputBuf));
+                                pRow->m_InputInitialized = true;
+                        }
+                        mem_copy(pRow->m_aInputBuf, m_InputBuf, m_InputLen + 1);
                 }
                 m_InputEditing = false; Input()->StopTextInput();
         }
@@ -658,6 +681,7 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                         m_Dragging = true;
                         m_DragPanelIdx = i;
                         m_DragOffset = mousePos - ppos;
+                        // Target is set in OnRender render loop; just mark dragging.
                         return;
                 }
 
@@ -734,24 +758,43 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 const float inH = rh - 4.0f;
                                 if(PointInRect(mousePos, inX, inY, inW, inH))
                                 {
-                                        // Start editing. Copy current value into buffer.
+                                        // Lazy-init the row's mutable buffer from pInputValue.
+                                        if(!pTarget->m_InputInitialized)
+                                        {
+                                                if(pTarget->pInputValue)
+                                                        str_copy(pTarget->m_aInputBuf, pTarget->pInputValue, sizeof(pTarget->m_aInputBuf));
+                                                pTarget->m_InputInitialized = true;
+                                        }
+                                        // Start editing. Copy row buffer into edit buffer.
                                         m_InputEditing = true;
                                         m_InputPanel = i;
                                         m_InputRow = outRow;
                                         m_InputChild = outChild;
-                                        m_InputLen = 0;
-                                        if(pTarget->pInputValue)
+                                        m_InputLen = (int)str_length(pTarget->m_aInputBuf);
+                                        if(m_InputLen >= INPUT_BUF_SIZE)
+                                                m_InputLen = INPUT_BUF_SIZE - 1;
+                                        mem_copy(m_InputBuf, pTarget->m_aInputBuf, m_InputLen);
+                                        m_InputBuf[m_InputLen] = 0;
+                                        // Position cursor at click location (approximate: nearest char).
+                                        const float textX = inX + 4.0f;
+                                        const float clickOffset = mousePos.x - textX;
+                                        m_InputCursor = 0;
+                                        float accumW = 0.0f;
+                                        for(int ci = 0; ci < m_InputLen; ++ci)
                                         {
-                                                int len = (int)str_length(pTarget->pInputValue);
-                                                if(len >= INPUT_BUF_SIZE)
-                                                        len = INPUT_BUF_SIZE - 1;
-                                                mem_copy(m_InputBuf, pTarget->pInputValue, len);
-                                                m_InputBuf[len] = 0;
-                                                m_InputLen = len;
+                                                char tmp[2] = {m_InputBuf[ci], 0};
+                                                float cw = TextRender()->TextWidth(17.0f, tmp);
+                                                if(accumW + cw * 0.5f > clickOffset)
+                                                {
+                                                        m_InputCursor = ci;
+                                                        break;
+                                                }
+                                                accumW += cw;
+                                                m_InputCursor = ci + 1;
                                         }
+                                        m_InputSelStart = -1;
+                                        m_InputSelEnd = -1;
                                         // CRITICAL: enable SDL text input so FLAG_TEXT events arrive.
-                                        // Without this, SDL doesn't send SDL_TEXTINPUT and no chars
-                                        // reach our HandleTextInput.
                                         Input()->StartTextInput();
                                         return;
                                 }
@@ -945,53 +988,162 @@ void CClickGui::HandleTextInput(const IInput::CEvent &Event)
                 return;
         }
 
+        // Helper: commit edit buffer back to the row's mutable buffer.
+        auto &&CommitToRow = [&]() {
+                // Lazy-init if needed (defensive).
+                if(!pRow->m_InputInitialized)
+                {
+                        if(pRow->pInputValue)
+                                str_copy(pRow->m_aInputBuf, pRow->pInputValue, sizeof(pRow->m_aInputBuf));
+                        pRow->m_InputInitialized = true;
+                }
+                mem_copy(pRow->m_aInputBuf, m_InputBuf, m_InputLen + 1);
+        };
+
+        // Helper: delete the current selection (if any). Returns true if deleted.
+        auto &&DeleteSelection = [&]() {
+                if(m_InputSelStart < 0 || m_InputSelEnd < 0 || m_InputSelStart >= m_InputSelEnd)
+                        return false;
+                const int delCount = m_InputSelEnd - m_InputSelStart;
+                for(int i = m_InputSelStart; i + delCount < m_InputLen; ++i)
+                        m_InputBuf[i] = m_InputBuf[i + delCount];
+                m_InputLen -= delCount;
+                m_InputBuf[m_InputLen] = 0;
+                m_InputCursor = m_InputSelStart;
+                m_InputSelStart = -1;
+                m_InputSelEnd = -1;
+                return true;
+        };
+
+        const bool shiftPressed = Input()->ShiftIsPressed();
+
         // Escape / Enter → commit and stop editing.
         if(Event.m_Flags & IInput::FLAG_PRESS)
         {
                 if(Event.m_Key == KEY_ESCAPE)
                 {
+                        CommitToRow();
                         m_InputEditing = false; Input()->StopTextInput();
                         return;
                 }
                 if(Event.m_Key == KEY_RETURN)
                 {
+                        CommitToRow();
                         m_InputEditing = false; Input()->StopTextInput();
                         return;
                 }
                 if(Event.m_Key == KEY_BACKSPACE)
                 {
-                        if(m_InputLen > 0)
+                        if(DeleteSelection())
+                                ;
+                        else if(m_InputCursor > 0)
                         {
+                                for(int i = m_InputCursor - 1; i < m_InputLen; ++i)
+                                        m_InputBuf[i] = m_InputBuf[i + 1];
                                 m_InputLen--;
                                 m_InputBuf[m_InputLen] = 0;
+                                m_InputCursor--;
                         }
                         return;
                 }
                 if(Event.m_Key == KEY_DELETE)
                 {
-                        if(m_InputLen > 0)
+                        if(DeleteSelection())
+                                ;
+                        else if(m_InputCursor < m_InputLen)
                         {
+                                for(int i = m_InputCursor; i < m_InputLen; ++i)
+                                        m_InputBuf[i] = m_InputBuf[i + 1];
                                 m_InputLen--;
                                 m_InputBuf[m_InputLen] = 0;
                         }
                         return;
                 }
+                if(Event.m_Key == KEY_LEFT)
+                {
+                        if(m_InputCursor > 0)
+                        {
+                                m_InputCursor--;
+                                if(!shiftPressed)
+                                {
+                                        m_InputSelStart = -1;
+                                        m_InputSelEnd = -1;
+                                }
+                                else
+                                {
+                                        // Extend selection.
+                                        if(m_InputSelStart < 0)
+                                        {
+                                                m_InputSelStart = m_InputCursor + 1;
+                                                m_InputSelEnd = m_InputCursor + 1;
+                                        }
+                                        m_InputSelStart = m_InputCursor;
+                                }
+                        }
+                        return;
+                }
+                if(Event.m_Key == KEY_RIGHT)
+                {
+                        if(m_InputCursor < m_InputLen)
+                        {
+                                m_InputCursor++;
+                                if(!shiftPressed)
+                                {
+                                        m_InputSelStart = -1;
+                                        m_InputSelEnd = -1;
+                                }
+                                else
+                                {
+                                        if(m_InputSelEnd < 0)
+                                        {
+                                                m_InputSelStart = m_InputCursor - 1;
+                                                m_InputSelEnd = m_InputCursor - 1;
+                                        }
+                                        m_InputSelEnd = m_InputCursor;
+                                }
+                        }
+                        return;
+                }
+                if(Event.m_Key == KEY_HOME)
+                {
+                        m_InputCursor = 0;
+                        if(!shiftPressed)
+                        {
+                                m_InputSelStart = -1;
+                                m_InputSelEnd = -1;
+                        }
+                        return;
+                }
+                if(Event.m_Key == KEY_END)
+                {
+                        m_InputCursor = m_InputLen;
+                        if(!shiftPressed)
+                        {
+                                m_InputSelStart = -1;
+                                m_InputSelEnd = -1;
+                        }
+                        return;
+                }
         }
 
-        // Text input (FLAG_TEXT): append printable chars.
+        // Text input (FLAG_TEXT): insert at cursor, replacing selection.
         if(Event.m_Flags & IInput::FLAG_TEXT)
         {
-                // Event.m_aText contains UTF-8 text (DDNet's CEvent has this field).
                 const char *pText = Event.m_aText;
                 if(pText && pText[0])
                 {
+                        // Delete existing selection first.
+                        DeleteSelection();
                         int textLen = (int)str_length(pText);
-                        // Append if buffer has room.
                         if(m_InputLen + textLen < INPUT_BUF_SIZE - 1)
                         {
-                                mem_copy(m_InputBuf + m_InputLen, pText, textLen);
+                                // Shift chars after cursor right.
+                                for(int i = m_InputLen; i >= m_InputCursor; --i)
+                                        m_InputBuf[i + textLen] = m_InputBuf[i];
+                                mem_copy(m_InputBuf + m_InputCursor, pText, textLen);
                                 m_InputLen += textLen;
                                 m_InputBuf[m_InputLen] = 0;
+                                m_InputCursor += textLen;
                         }
                 }
         }
@@ -1084,7 +1236,7 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
 
                 for(int r = 0; r < panel.rowCount; ++r)
                 {
-                        const SRow &row = panel.pRows[r];
+                        SRow &row = panel.pRows[r];
                         addRowNode(row, false);
                         if(row.type == ERowType::Expandable && row.expanded && row.pChildren)
                         {
@@ -1155,7 +1307,7 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
         int rowIdx = 0;
         for(int r = 0; r < panel.rowCount; ++r)
         {
-                const SRow &row = panel.pRows[r];
+                SRow &row = panel.pRows[r];
                 const YGNodeRef node = rowNodes[rowIdx];
                 const float rxLocal = YGNodeLayoutGetLeft(node);
                 const float ryLocal = YGNodeLayoutGetTop(node);
@@ -1261,7 +1413,14 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                         DrawRoundedRect(inX - 1.0f, inY - 1.0f, inW + 2.0f, inH + 2.0f, 2.0f,
                                 IGraphics::CORNER_ALL,
                                 editingThis ? ColorRGBA(0xff9d4edd, true).WithAlpha(alpha) : ColorRGBA(COL_INPUT_BORDER, true).WithAlpha(alpha * 0.5f));
-                        // Show edit buffer if editing, else stored value / placeholder.
+                        // Lazy-init the row's mutable buffer.
+                        if(!row.m_InputInitialized)
+                        {
+                                if(row.pInputValue)
+                                        str_copy(row.m_aInputBuf, row.pInputValue, sizeof(row.m_aInputBuf));
+                                row.m_InputInitialized = true;
+                        }
+                        // Show edit buffer if editing, else stored mutable buffer / placeholder.
                         const char *pText;
                         ColorRGBA inCol;
                         if(editingThis)
@@ -1271,17 +1430,35 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                         }
                         else
                         {
-                                pText = (row.pInputValue && row.pInputValue[0]) ? row.pInputValue : row.pPlaceholder;
-                                inCol = (row.pInputValue && row.pInputValue[0])
+                                pText = (row.m_aInputBuf[0]) ? row.m_aInputBuf : row.pPlaceholder;
+                                inCol = (row.m_aInputBuf[0])
                                         ? textCol
                                         : ColorRGBA(0xff8a8aa8, true).WithAlpha(alpha);
                         }
+                        // Draw selection highlight (if editing and selection active).
+                        if(editingThis && m_InputSelStart >= 0 && m_InputSelEnd > m_InputSelStart)
+                        {
+                                // Measure width up to selStart and selEnd.
+                                char tmp[256];
+                                int n = std::min(m_InputSelStart, (int)sizeof(tmp) - 1);
+                                mem_copy(tmp, m_InputBuf, n); tmp[n] = 0;
+                                float selStartX = inX + 4.0f + TextRender()->TextWidth(17.0f, tmp);
+                                n = std::min(m_InputSelEnd, (int)sizeof(tmp) - 1);
+                                mem_copy(tmp, m_InputBuf, n); tmp[n] = 0;
+                                float selEndX = inX + 4.0f + TextRender()->TextWidth(17.0f, tmp);
+                                DrawRoundedRect(selStartX, inY + 3.0f, selEndX - selStartX, inH - 6.0f, 1.0f,
+                                        IGraphics::CORNER_NONE,
+                                        ColorRGBA(0xff9d4edd, true).WithAlpha(alpha * 0.5f));
+                        }
                         if(pText)
                                 DrawText(inX + 4.0f, inY + 4.0f, 17.0f, pText, inCol);
-                        // Cursor blink while editing.
+                        // Cursor at m_InputCursor position while editing.
                         if(editingThis)
                         {
-                                const float cursorX = inX + 4.0f + TextRender()->TextWidth(17.0f, m_InputBuf);
+                                char tmp[256];
+                                int n = std::min(m_InputCursor, (int)sizeof(tmp) - 1);
+                                mem_copy(tmp, m_InputBuf, n); tmp[n] = 0;
+                                const float cursorX = inX + 4.0f + TextRender()->TextWidth(17.0f, tmp);
                                 DrawRoundedRect(cursorX, inY + 4.0f, 1.5f, inH - 8.0f, 0.0f,
                                         IGraphics::CORNER_NONE,
                                         ColorRGBA(0xffffffff, true).WithAlpha(alpha * (0.5f + 0.5f * std::sin(LocalTime() * 5.0f))));
@@ -1326,7 +1503,7 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                 {
                         for(int c = 0; c < row.childCount; ++c)
                         {
-                                const SRow &child = row.pChildren[c];
+                                SRow &child = row.pChildren[c];
                                 const YGNodeRef cnode = rowNodes[rowIdx];
                                 const float crx = bodyX + YGNodeLayoutGetLeft(cnode);
                                 const float cry = bodyY + YGNodeLayoutGetTop(cnode);
@@ -1392,16 +1569,60 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                         const float iy = cry + 2.0f;
                                         const float iw = crw - nw - 4.0f;
                                         const float ih = crh - 4.0f;
+                                        // Lazy-init child's mutable buffer.
+                                        if(!child.m_InputInitialized)
+                                        {
+                                                if(child.pInputValue)
+                                                        str_copy(child.m_aInputBuf, child.pInputValue, sizeof(child.m_aInputBuf));
+                                                child.m_InputInitialized = true;
+                                        }
+                                        const bool editingChild = (m_InputEditing && m_InputPanel == panelIdx && m_InputRow == r && m_InputChild == c);
                                         DrawRoundedRect(ix, iy, iw, ih, 2.0f,
                                                 IGraphics::CORNER_ALL,
                                                 ColorRGBA(COL_INPUT_BG, true).WithAlpha(alpha));
-                                        const char *pT = (child.pInputValue && child.pInputValue[0]) ? child.pInputValue : child.pPlaceholder;
-                                        if(pT)
+                                        DrawRoundedRect(ix - 1.0f, iy - 1.0f, iw + 2.0f, ih + 2.0f, 2.0f,
+                                                IGraphics::CORNER_ALL,
+                                                editingChild ? ColorRGBA(0xff9d4edd, true).WithAlpha(alpha) : ColorRGBA(COL_INPUT_BORDER, true).WithAlpha(alpha * 0.5f));
+                                        const char *pT;
+                                        ColorRGBA ic;
+                                        if(editingChild)
                                         {
-                                                const ColorRGBA ic = (child.pInputValue && child.pInputValue[0])
+                                                pT = m_InputBuf;
+                                                ic = cText;
+                                        }
+                                        else
+                                        {
+                                                pT = (child.m_aInputBuf[0]) ? child.m_aInputBuf : child.pPlaceholder;
+                                                ic = (child.m_aInputBuf[0])
                                                         ? cText
                                                         : ColorRGBA(0xff8a8aa8, true).WithAlpha(alpha);
+                                        }
+                                        // Selection highlight.
+                                        if(editingChild && m_InputSelStart >= 0 && m_InputSelEnd > m_InputSelStart)
+                                        {
+                                                char tmp[256];
+                                                int n = std::min(m_InputSelStart, (int)sizeof(tmp) - 1);
+                                                mem_copy(tmp, m_InputBuf, n); tmp[n] = 0;
+                                                float selStartX = ix + 4.0f + TextRender()->TextWidth(17.0f, tmp);
+                                                n = std::min(m_InputSelEnd, (int)sizeof(tmp) - 1);
+                                                mem_copy(tmp, m_InputBuf, n); tmp[n] = 0;
+                                                float selEndX = ix + 4.0f + TextRender()->TextWidth(17.0f, tmp);
+                                                DrawRoundedRect(selStartX, iy + 3.0f, selEndX - selStartX, ih - 6.0f, 1.0f,
+                                                        IGraphics::CORNER_NONE,
+                                                        ColorRGBA(0xff9d4edd, true).WithAlpha(alpha * 0.5f));
+                                        }
+                                        if(pT)
                                                 DrawText(ix + 4.0f, iy + 3.0f, 17.0f, pT, ic);
+                                        // Cursor.
+                                        if(editingChild)
+                                        {
+                                                char tmp[256];
+                                                int n = std::min(m_InputCursor, (int)sizeof(tmp) - 1);
+                                                mem_copy(tmp, m_InputBuf, n); tmp[n] = 0;
+                                                const float cursorX = ix + 4.0f + TextRender()->TextWidth(17.0f, tmp);
+                                                DrawRoundedRect(cursorX, iy + 3.0f, 1.5f, ih - 6.0f, 0.0f,
+                                                        IGraphics::CORNER_NONE,
+                                                        ColorRGBA(0xffffffff, true).WithAlpha(alpha * (0.5f + 0.5f * std::sin(LocalTime() * 5.0f))));
                                         }
                                         break;
                                 }

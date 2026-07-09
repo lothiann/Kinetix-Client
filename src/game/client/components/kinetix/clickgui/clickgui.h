@@ -91,6 +91,12 @@ private:
         static constexpr int INPUT_BUF_SIZE = 256;
         char m_InputBuf[INPUT_BUF_SIZE] = {};
         int m_InputLen = 0;
+        int m_InputCursor = 0; // cursor position (0..m_InputLen)
+        int m_InputSelStart = -1; // selection start (-1 = no selection)
+        int m_InputSelEnd = -1; // selection end
+
+        // Smooth drag: target position lerps to mouse, panel position lerps to target.
+        vec2 m_aPanelTarget[3] = {vec2(0, 0), vec2(0, 0), vec2(0, 0)};
 
         // Mouse position in screen-space px (updated each frame from NativeMousePos).
         vec2 m_MousePos = vec2(0, 0);
