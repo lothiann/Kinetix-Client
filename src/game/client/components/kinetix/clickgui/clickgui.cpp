@@ -156,26 +156,28 @@ static const SPanel g_Panels[3] = {
 // per the spec; everything else matches the HTML aesthetic).
 // ============================================================================
 
-// RGBA hex (0xRRGGBBAA). ColorRGBA(hex, true) decodes these.
-// v1.56.37: shifted purple from #8a2be2 (blueviolet, looked blue on dark bg)
-// to #9d4edd (vivid purple) for clear purple identity. Panel bg/border kept.
-static constexpr unsigned COL_PANEL_BG = 0x161622ff;
-static constexpr unsigned COL_PANEL_BORDER = 0x2a2a3eff;
-static constexpr unsigned COL_HEADER_BG = 0x9d4eddff; // vivid purple
+// v1.56.38: FIXED hex color format. ColorRGBA(unsigned col, bool alpha=true)
+// decodes as 0xAARRGGBB (alpha in high byte), NOT 0xRRGGBBAA. Previous versions
+// had R and B swapped and alpha in wrong position — header looked blue/cyan
+// instead of purple. Now all colors use correct 0xAARRGGBB format.
+static constexpr unsigned COL_PANEL_BG = 0xff161622;
+static constexpr unsigned COL_PANEL_BORDER = 0xff2a2a3e;
+static constexpr unsigned COL_HEADER_BG = 0xff9d4edd; // vivid purple (A=ff,R=9d,G=4e,B=dd)
 static constexpr unsigned COL_HEADER_TEXT = 0xffffffff;
-static constexpr unsigned COL_ARROW = 0xddddddff;
-static constexpr unsigned COL_ROW_TEXT = 0xd8d8e8ff;
+static constexpr unsigned COL_ARROW = 0xffdddddd;
+static constexpr unsigned COL_ROW_TEXT = 0xffd8d8e8;
 static constexpr unsigned COL_ROW_TEXT_ON = 0xffffffff;
-static constexpr unsigned COL_CHECK_ON = 0x00ff00ff;
-static constexpr unsigned COL_EXPAND_ARROW = 0x8a8aa8ff;
-static constexpr unsigned COL_SUB_LIST_BG = 0x0000002e; // 18% alpha
-static constexpr unsigned COL_SUB_LIST_BORDER = 0x9d4edd4d; // 30% alpha
-static constexpr unsigned COL_SLIDER_TRACK = 0x2a2a3eff;
-static constexpr unsigned COL_SLIDER_THUMB = 0x9d4eddff;
-static constexpr unsigned COL_SLIDER_THUMB_BORDER = 0xb8b8e8ff;
-static constexpr unsigned COL_INPUT_BG = 0x0d0d18ff;
-static constexpr unsigned COL_INPUT_BORDER = 0x2a2a3eff;
-static constexpr unsigned COL_VALUE_BG = 0x0000004dff; // 30% alpha
+static constexpr unsigned COL_CHECK_ON = 0xff00ff00; // green check
+static constexpr unsigned COL_EXPAND_ARROW = 0xff8a8aa8;
+static constexpr unsigned COL_SUB_LIST_BG = 0x2e000000; // 18% alpha, black
+static constexpr unsigned COL_SUB_LIST_BORDER = 0x4d9d4edd; // 30% alpha purple
+static constexpr unsigned COL_SLIDER_TRACK = 0xff2a2a3e;
+static constexpr unsigned COL_SLIDER_THUMB = 0xff9d4edd;
+static constexpr unsigned COL_SLIDER_THUMB_BORDER = 0xffb8b8e8;
+static constexpr unsigned COL_INPUT_BG = 0xff0d0d18;
+static constexpr unsigned COL_INPUT_BORDER = 0xff2a2a3e;
+static constexpr unsigned COL_VALUE_BG = 0x4d000000; // 30% alpha, black
+static constexpr unsigned COL_PLACEHOLDER = 0xff8a8aa8;
 
 // Row heights (px) — scaled up 1.25x in v1.56.37.
 static constexpr float ROW_H_TOGGLE = 25.0f;
@@ -398,10 +400,14 @@ void CClickGui::OnRender()
         if(m_AnimProgress <= 0.0f && !isOpen)
         {
                 Input()->MouseModeRelative();
-                // Still pick fresh offscreen spots for next open, so the opening
-                // animation starts from a new random direction each time.
                 return;
         }
+
+        // While open (or animating), force absolute mouse mode EVERY FRAME.
+        // Like the F1/F2 console does — window focus events etc. can switch back
+        // to relative mode, so we must re-assert every frame to keep cursor visible.
+        if(isOpen)
+                Input()->MouseModeAbsolute();
 
         const float eased = CubicBezierEase(m_AnimProgress);
         const float alpha = eased; // fade in/out
@@ -655,7 +661,7 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                         {
                                 const ColorRGBA inCol = (row.pInputValue && row.pInputValue[0])
                                         ? textCol
-                                        : ColorRGBA(0x8a8aa8ff, true).WithAlpha(alpha);
+                                        : ColorRGBA(0xff8a8aa8, true).WithAlpha(alpha);
                                 DrawText(inX + 4.0f, inY + 4.0f, 14.0f, pText, inCol);
                         }
                         break;
@@ -686,7 +692,7 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                         // Arrow on the right (▶ collapsed, ▼ expanded).
                         const char *pArrow = row.expanded ? "\xe2\x96\xbc" : "\xe2\x96\xb6";
                         const ColorRGBA arrowCol = row.expanded
-                                ? ColorRGBA(0xb8b8e8ff, true).WithAlpha(alpha)
+                                ? ColorRGBA(0xffb8b8e8, true).WithAlpha(alpha)
                                 : ColorRGBA(COL_EXPAND_ARROW, true).WithAlpha(alpha);
                         DrawText(rx + rw - ARROW_W - 2.0f, ry + 5.0f, 12.0f, pArrow, arrowCol);
                         break;
@@ -708,7 +714,7 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
 
                                 const ColorRGBA cText = child.on
                                         ? ColorRGBA(COL_ROW_TEXT_ON, true).WithAlpha(alpha)
-                                        : ColorRGBA(0xb0b0d0ff, true).WithAlpha(alpha);
+                                        : ColorRGBA(0xffb0b0d0, true).WithAlpha(alpha);
 
                                 // Faint sub-list background band under each child.
                                 DrawRoundedRect(crx - 2.0f, cry - 1.0f, crw + 4.0f, crh + 1.0f,
@@ -772,7 +778,7 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                         {
                                                 const ColorRGBA ic = (child.pInputValue && child.pInputValue[0])
                                                         ? cText
-                                                        : ColorRGBA(0x8a8aa8ff, true).WithAlpha(alpha);
+                                                        : ColorRGBA(0xff8a8aa8, true).WithAlpha(alpha);
                                                 DrawText(ix + 4.0f, iy + 3.0f, 14.0f, pT, ic);
                                         }
                                         break;
