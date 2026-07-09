@@ -423,6 +423,22 @@ void CClickGui::OnRender()
                                 m_aPanelPosValid[i] = true;
                         }
                 }
+                // Sync reference toggles with real subsystem state on open.
+                // (So if c_attack / c_random_aim / cl_show_trajectory were enabled
+                // via console before opening ClickGUI, the checkboxes reflect that.)
+                for(int p = 0; p < NUM_PANELS; ++p)
+                {
+                        for(int r = 0; r < g_Panels[p].rowCount; ++r)
+                        {
+                                SRow &row = g_Panels[p].pRows[r];
+                                if(str_comp(row.pName, "Block") == 0)
+                                        row.on = GameClient()->m_BotNet.m_AttackEnabled;
+                                else if(str_comp(row.pName, "Random Aim") == 0)
+                                        row.on = GameClient()->m_BotNet.m_RandomAim;
+                                else if(str_comp(row.pName, "Trajectory") == 0)
+                                        row.on = g_Config.m_ClShowTrajectory != 0;
+                        }
+                }
         }
         m_WasOpen = isOpen;
 
@@ -740,6 +756,16 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 if(mousePos.x < toggleEndX)
                                 {
                                         pTarget->on = !pTarget->on;
+                                        // Wire reference toggles to real subsystems.
+                                        // Block → c_attack (m_AttackEnabled)
+                                        // Random Aim → c_random_aim (m_RandomAim)
+                                        // Trajectory → g_Config.m_ClShowTrajectory
+                                        if(str_comp(pTarget->pName, "Block") == 0)
+                                                GameClient()->m_BotNet.m_AttackEnabled = pTarget->on;
+                                        else if(str_comp(pTarget->pName, "Random Aim") == 0)
+                                                GameClient()->m_BotNet.m_RandomAim = pTarget->on;
+                                        else if(str_comp(pTarget->pName, "Trajectory") == 0)
+                                                g_Config.m_ClShowTrajectory = pTarget->on ? 1 : 0;
                                         return;
                                 }
                         }
