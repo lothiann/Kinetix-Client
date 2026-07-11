@@ -151,9 +151,35 @@ static SRow g_MiscRows[] = {
 };
 
 // ---------- Functions panel (4) ----------
+// "Custom latency" expandable: 1 slider child.
+static SRow g_CustomLatencyChildren[] = {
+        {ERowType::Slider, "Latency (ms)", false, false, 50.0f, 2000.0f, 10.0f, 500.0f, "ms", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
+// "Copy Moves Filter" expandable: 5 sub-toggles.
+static SRow g_CopyMovesFilterChildren[] = {
+        {ERowType::Toggle, "Filter: Jump", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Filter: Direction", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Filter: Hook", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Filter: Aim", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Filter: Fire", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
+// Aim mode dropdown options.
+static const char *const g_AimModeOpts[] = {"Smart", "Mirror"};
 static SRow g_FunctionsRows[] = {
         {ERowType::Toggle, "Block", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Random Aim", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        // Fly sub-section
+        {ERowType::Toggle, "Preserve input", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Expandable, "Custom latency", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CustomLatencyChildren, 1},
+        {ERowType::Toggle, "Auto fly", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        // Copy Moves sub-section
+        {ERowType::Expandable, "Copy Moves Filter", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CopyMovesFilterChildren, 5},
+        {ERowType::Toggle, "Mirror direction", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "Aim mode", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_AimModeOpts, 2, 0, nullptr, 0},
+        // Conditional aim options (visibility based on Aim mode)
+        {ERowType::Toggle, "Mirror aim X", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Mirror aim Y", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Smart aim", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 
 // ---------- Advanced panel (5) ----------
@@ -175,6 +201,33 @@ static SPanel g_Panels[NUM_PANELS] = {
         {"Functions", g_FunctionsRows, sizeof(g_FunctionsRows) / sizeof(g_FunctionsRows[0])},
         {"Advanced", g_AdvancedRows, sizeof(g_AdvancedRows) / sizeof(g_AdvancedRows[0])},
 };
+
+// Conditional visibility for Functions panel top-level rows.
+// Mirror aim X/Y visible only when Aim mode = Mirror (valueIdx=1).
+// Smart aim visible only when Aim mode = Smart (valueIdx=0).
+// All other rows always visible.
+static bool FunctionsRowVisible(const SRow *pRows, int rowCount, int idx)
+{
+        if(idx < 0 || idx >= rowCount)
+                return false;
+        const SRow &row = pRows[idx];
+        // Find Aim mode dropdown in the same array.
+        int aimModeIdx = 0; // default Smart
+        for(int i = 0; i < rowCount; ++i)
+        {
+                if(str_comp(pRows[i].pName, "Aim mode") == 0)
+                {
+                        aimModeIdx = pRows[i].valueIdx;
+                        break;
+                }
+        }
+        const bool isMirror = (aimModeIdx == 1);
+        if(str_comp(row.pName, "Mirror aim X") == 0 || str_comp(row.pName, "Mirror aim Y") == 0)
+                return isMirror;
+        if(str_comp(row.pName, "Smart aim") == 0)
+                return !isMirror;
+        return true;
+}
 
 // ============================================================================
 // Constants — colors and geometry from clickgui.html (box-shadow/blur dropped
@@ -437,6 +490,40 @@ void CClickGui::OnRender()
                                         row.on = GameClient()->m_BotNet.m_RandomAim;
                                 else if(str_comp(row.pName, "Trajectory") == 0)
                                         row.on = g_Config.m_ClShowTrajectory != 0;
+                                // Functions panel — Fly/Copy Moves sub-section
+                                else if(str_comp(row.pName, "Preserve input") == 0)
+                                        row.on = g_Config.m_ClDummyHammerKeepInputs != 0;
+                                else if(str_comp(row.pName, "Custom latency") == 0)
+                                        row.on = g_Config.m_ClDummyHammerCustomLatency != 0;
+                                else if(str_comp(row.pName, "Auto fly") == 0)
+                                        row.on = g_Config.m_ClDummyHammerAuto != 0;
+                                else if(str_comp(row.pName, "Mirror direction") == 0)
+                                        row.on = g_Config.m_ClDummyCopyMirrorDir != 0;
+                                else if(str_comp(row.pName, "Aim mode") == 0)
+                                        row.valueIdx = g_Config.m_ClDummyCopyAimMode;
+                                else if(str_comp(row.pName, "Mirror aim X") == 0)
+                                        row.on = g_Config.m_ClDummyCopyMirrorAimX != 0;
+                                else if(str_comp(row.pName, "Mirror aim Y") == 0)
+                                        row.on = g_Config.m_ClDummyCopyMirrorAimY != 0;
+                                else if(str_comp(row.pName, "Smart aim") == 0)
+                                        row.on = g_Config.m_ClDummyCopySmartAim != 0;
+                                // Sync children of expandable rows
+                                for(int c = 0; c < row.childCount; ++c)
+                                {
+                                        SRow &child = row.pChildren[c];
+                                        if(str_comp(child.pName, "Latency (ms)") == 0)
+                                                child.value = (float)g_Config.m_ClDummyHammerLatencyMs;
+                                        else if(str_comp(child.pName, "Filter: Jump") == 0)
+                                                child.on = g_Config.m_ClDummyCopyMovesFilterJump != 0;
+                                        else if(str_comp(child.pName, "Filter: Direction") == 0)
+                                                child.on = g_Config.m_ClDummyCopyMovesFilterDirection != 0;
+                                        else if(str_comp(child.pName, "Filter: Hook") == 0)
+                                                child.on = g_Config.m_ClDummyCopyMovesFilterHook != 0;
+                                        else if(str_comp(child.pName, "Filter: Aim") == 0)
+                                                child.on = g_Config.m_ClDummyCopyMovesFilterAim != 0;
+                                        else if(str_comp(child.pName, "Filter: Fire") == 0)
+                                                child.on = g_Config.m_ClDummyCopyMovesFilterFire != 0;
+                                }
                         }
                 }
         }
@@ -502,6 +589,8 @@ void CClickGui::OnRender()
                         float pct = (m_MousePos.x - trackX) / trackW;
                         pct = std::clamp(pct, 0.0f, 1.0f);
                         pTarget->value = pTarget->min + pct * (pTarget->max - pTarget->min);
+                        if(str_comp(pTarget->pName, "Latency (ms)") == 0)
+                                g_Config.m_ClDummyHammerLatencyMs = (int)pTarget->value;
                 }
         }
 
@@ -757,15 +846,38 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 {
                                         pTarget->on = !pTarget->on;
                                         // Wire reference toggles to real subsystems.
-                                        // Block → c_attack (m_AttackEnabled)
-                                        // Random Aim → c_random_aim (m_RandomAim)
-                                        // Trajectory → g_Config.m_ClShowTrajectory
                                         if(str_comp(pTarget->pName, "Block") == 0)
                                                 GameClient()->m_BotNet.m_AttackEnabled = pTarget->on;
                                         else if(str_comp(pTarget->pName, "Random Aim") == 0)
                                                 GameClient()->m_BotNet.m_RandomAim = pTarget->on;
                                         else if(str_comp(pTarget->pName, "Trajectory") == 0)
                                                 g_Config.m_ClShowTrajectory = pTarget->on ? 1 : 0;
+                                        // Functions panel — Fly/Copy Moves sub-section
+                                        else if(str_comp(pTarget->pName, "Preserve input") == 0)
+                                                g_Config.m_ClDummyHammerKeepInputs = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Custom latency") == 0)
+                                                g_Config.m_ClDummyHammerCustomLatency = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Auto fly") == 0)
+                                                g_Config.m_ClDummyHammerAuto = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Mirror direction") == 0)
+                                                g_Config.m_ClDummyCopyMirrorDir = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Mirror aim X") == 0)
+                                                g_Config.m_ClDummyCopyMirrorAimX = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Mirror aim Y") == 0)
+                                                g_Config.m_ClDummyCopyMirrorAimY = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Smart aim") == 0)
+                                                g_Config.m_ClDummyCopySmartAim = pTarget->on ? 1 : 0;
+                                        // Copy Moves Filter sub-toggles
+                                        else if(str_comp(pTarget->pName, "Filter: Jump") == 0)
+                                                g_Config.m_ClDummyCopyMovesFilterJump = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Filter: Direction") == 0)
+                                                g_Config.m_ClDummyCopyMovesFilterDirection = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Filter: Hook") == 0)
+                                                g_Config.m_ClDummyCopyMovesFilterHook = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Filter: Aim") == 0)
+                                                g_Config.m_ClDummyCopyMovesFilterAim = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Filter: Fire") == 0)
+                                                g_Config.m_ClDummyCopyMovesFilterFire = pTarget->on ? 1 : 0;
                                         return;
                                 }
                         }
@@ -789,6 +901,8 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 float pct = (mousePos.x - trackX) / trackW;
                                 pct = std::clamp(pct, 0.0f, 1.0f);
                                 pTarget->value = pTarget->min + pct * (pTarget->max - pTarget->min);
+                                if(str_comp(pTarget->pName, "Latency (ms)") == 0)
+                                        g_Config.m_ClDummyHammerLatencyMs = (int)pTarget->value;
                                 return;
                         }
                         if(pTarget->type == ERowType::Dropdown || pTarget->type == ERowType::ToggleDropdown)
@@ -898,6 +1012,15 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
         for(int r = 0; r < panel.rowCount; ++r)
         {
                 SRow &row = panel.pRows[r];
+                // Conditional visibility: skip hidden rows in Functions panel.
+                if(str_comp(panel.pTitle, "Functions") == 0 && !FunctionsRowVisible(panel.pRows, panel.rowCount, r))
+                {
+                        cursorY += RowHeight(row.type) + ROW_GAP;
+                        if(row.type == ERowType::Expandable && row.expanded && row.pChildren)
+                                for(int c = 0; c < row.childCount; ++c)
+                                        cursorY += RowHeight(row.pChildren[c].type) + ROW_GAP;
+                        continue;
+                }
                 const float rh = RowHeight(row.type);
                 if(r == m_DropdownRow && m_DropdownChild < 0)
                 {
@@ -915,6 +1038,8 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                                 if(PointInRect(mousePos, ddX, itemY, popupW, itemH - 2.0f))
                                 {
                                         target.valueIdx = o;
+                                        if(str_comp(target.pName, "Aim mode") == 0)
+                                                g_Config.m_ClDummyCopyAimMode = o;
                                         m_DropdownOpen = false;
                                         return true;
                                 }
@@ -942,6 +1067,8 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                                                 if(PointInRect(mousePos, ddX, itemY, DROPDOWN_W, itemH - 2.0f))
                                                 {
                                                         target.valueIdx = o;
+                                                        if(str_comp(target.pName, "Aim mode") == 0)
+                                                                g_Config.m_ClDummyCopyAimMode = o;
                                                         m_DropdownOpen = false;
                                                         return true;
                                                 }
@@ -967,6 +1094,15 @@ void CClickGui::RenderDropdownPopup(float alpha)
         for(int r = 0; r < panel.rowCount; ++r)
         {
                 SRow &row = panel.pRows[r];
+                // Conditional visibility: skip hidden rows in Functions panel.
+                if(str_comp(panel.pTitle, "Functions") == 0 && !FunctionsRowVisible(panel.pRows, panel.rowCount, r))
+                {
+                        cursorY += RowHeight(row.type) + ROW_GAP;
+                        if(row.type == ERowType::Expandable && row.expanded && row.pChildren)
+                                for(int c = 0; c < row.childCount; ++c)
+                                        cursorY += RowHeight(row.pChildren[c].type) + ROW_GAP;
+                        continue;
+                }
                 const float rh = RowHeight(row.type);
                 if(r == m_DropdownRow && m_DropdownChild < 0)
                 {
@@ -1219,6 +1355,15 @@ bool CClickGui::HitTestRow(vec2 mousePos, int panelIdx, int &outRow, int &outChi
         for(int r = 0; r < g_Panels[panelIdx].rowCount; ++r)
         {
                 SRow &row = g_Panels[panelIdx].pRows[r];
+                // Conditional visibility: skip hidden rows in Functions panel.
+                if(str_comp(g_Panels[panelIdx].pTitle, "Functions") == 0 && !FunctionsRowVisible(g_Panels[panelIdx].pRows, g_Panels[panelIdx].rowCount, r))
+                {
+                        cursorY += RowHeight(row.type) + ROW_GAP;
+                        if(row.type == ERowType::Expandable && row.expanded && row.pChildren)
+                                for(int c = 0; c < row.childCount; ++c)
+                                        cursorY += RowHeight(row.pChildren[c].type) + ROW_GAP;
+                        continue;
+                }
                 const float rh = RowHeight(row.type);
                 const float rw = PANEL_WIDTH - BODY_PADDING * 2;
                 if(PointInRect(mousePos, bodyX, cursorY, rw, rh))
@@ -1296,6 +1441,9 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                 for(int r = 0; r < panel.rowCount; ++r)
                 {
                         SRow &row = panel.pRows[r];
+                        // Conditional visibility: skip hidden rows in Functions panel.
+                        if(str_comp(panel.pTitle, "Functions") == 0 && !FunctionsRowVisible(panel.pRows, panel.rowCount, r))
+                                continue;
                         addRowNode(row, false);
                         if(row.type == ERowType::Expandable && row.expanded && row.pChildren)
                         {
@@ -1367,6 +1515,9 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
         for(int r = 0; r < panel.rowCount; ++r)
         {
                 SRow &row = panel.pRows[r];
+                // Conditional visibility: skip hidden rows in Functions panel.
+                if(str_comp(panel.pTitle, "Functions") == 0 && !FunctionsRowVisible(panel.pRows, panel.rowCount, r))
+                        continue;
                 const YGNodeRef node = rowNodes[rowIdx];
                 const float rxLocal = YGNodeLayoutGetLeft(node);
                 const float ryLocal = YGNodeLayoutGetTop(node);
