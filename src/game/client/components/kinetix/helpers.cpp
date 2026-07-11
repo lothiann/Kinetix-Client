@@ -10,14 +10,22 @@
 void CBotNet::ResetAndCommitInput(CGameClient *pGame, CNetObj_PlayerInput *pInput, int Dummy)
 {
         // Zero movement inputs, advance the fire-release bit so a held fire
-        // doesn't get stuck, mask fire to the valid 2-bit state, then commit.
+        // doesn't get stuck, mask fire to the valid 2-bit state.
         pInput->m_Direction = 0;
         pInput->m_Jump = 0;
         pInput->m_Hook = 0;
         if((pInput->m_Fire & 1) != 0)
                 pInput->m_Fire++;
         pInput->m_Fire &= INPUT_STATE_MASK;
-        pGame->m_Controls.m_aInputData[Dummy] = *pInput;
+        // REMOVED: pGame->m_Controls.m_aInputData[Dummy] = *pInput;
+        // This line clobbered m_aInputData[D] (which holds the player's last sent
+        // input for non-active slots, set by copy_moves/dummy_control in controls.cpp
+        // SnapInput) with the dummy's modified input. When OnDummySwap later saves
+        // m_aInputData[D] → m_aDummyInput[D] on the next cl_dummy swap, it saved
+        // the CLOBBERED value, losing the player's weapon state (m_WantedWeapon).
+        // m_aInputData[D] for non-active D should only be written by:
+        //   - controls.cpp SnapInput (copy_moves/dummy_control/bot_control blocks)
+        //   - gameclient.cpp OnDummySwap (restore path — but only m_Fire now)
 }
 
 void CBotNet::IssueKillForDummy(int Dummy)

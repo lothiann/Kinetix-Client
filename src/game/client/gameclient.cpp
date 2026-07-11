@@ -559,9 +559,8 @@ void CGameClient::OnDummySwap()
 {
         if(g_Config.m_ClDummyResetOnSwitch)
         {
-                // Original: PlayerOrDummy = (reset==2) ? ClDummy : (!ClDummy)
-                // !ClDummy in 2-player means "the other slot" (the non-active one).
-                // For multi-dummy: when reset==1, reset the PREVIOUS active slot
+                // DDNet: PlayerOrDummy = (reset==2) ? ClDummy : (!ClDummy)
+                // Multi-dummy: when reset==1, reset the PREVIOUS active slot
                 // (the slot that just became non-active = m_LastActiveDummy).
                 int PlayerOrDummy = (g_Config.m_ClDummyResetOnSwitch == 2) ? g_Config.m_ClDummy : m_LastActiveDummy;
                 if(PlayerOrDummy >= 0 && PlayerOrDummy < MAX_DUMMIES)
@@ -571,68 +570,46 @@ void CGameClient::OnDummySwap()
                 }
         }
 
-        // Original DDNet OnDummySwap logic:
+        // ── DDNet OnDummySwap logic, adapted for multi-dummy ───────────────────
+        // Original DDNet (NUM_DUMMIES=2, shared m_DummyInput):
         //   const int PrevDummyFire = m_DummyInput.m_Fire;
         //   m_DummyInput = m_Controls.m_aInputData[!g_Config.m_ClDummy];
         //   m_Controls.m_aInputData[g_Config.m_ClDummy].m_Fire = PrevDummyFire;
         //
-        // In the original, m_DummyInput is shared and holds the CURRENT dummy's input
-        // (the slot that IS the dummy before the swap). After the swap, that slot
-        // becomes the new active. The fire transfer gives the new active its own
-        // fire counter back (from before m_DummyInput was overwritten).
+        // In DDNet, m_DummyInput holds the CURRENT dummy's input (the slot that IS
+        // the dummy before the swap). After swap, that slot becomes the new active.
+        // The fire transfer gives the new active its own fire counter back.
         //
-        // For multi-dummy: the new active was previously a dummy, so its fire counter
-        // is in m_aDummyInput[g_Config.m_ClDummy]. Save it BEFORE overwriting.
+        // In Kinetix (MAX_DUMMIES=8, per-slot m_aDummyInput[D]):
+        // The new active (g_Config.m_ClDummy) was previously a dummy, so its fire
+        // counter is in m_aDummyInput[g_Config.m_ClDummy]. Save it BEFORE overwriting.
         const int NewActivePrevFire = m_aDummyInput[g_Config.m_ClDummy].m_Fire;
 
-        // Now update all non-active dummy inputs.
-        // Each non-active slot D gets its m_aDummyInput[D] set from its current
-        // m_aInputData[D] (preserving all counters for server continuity).
+        // For each non-active D, copy m_aInputData[D] → m_aDummyInput[D].
+        // This gives the OLD active (now becoming a dummy) its active input as
+        // dummy input. Other inactive dummies get a refresh too (harmless — they
+        // were inactive, their m_aInputData[D] was last set by copy_moves or
+        // dummy_control, both of which keep m_aInputData[D] in sync with what
+        // the server expects).
         for(int D = 0; D < MAX_DUMMIES; D++)
         {
                 if(D == g_Config.m_ClDummy)
                         continue;
                 if(D != 0 && !Client()->DummyConnected(D))
                         continue;
-
                 m_aDummyInput[D] = m_Controls.m_aInputData[D];
         }
 
-        // Copy the entire m_aDummyInput to m_aInputData for the new active
-        // player (previously a dummy). This ensures weapon counters
-        // (m_WantedWeapon, m_NextWeapon, m_PrevWeapon) match what the server
-        // was last receiving from that connection, preventing spurious weapon
-        // switches when switching via cl_dummy command.
-        // Then restore the fire counter from before the copy (see comment above).
-        // Direction, jump, hook etc. will be overwritten by player's key state
-        // on the next SnapInput() call anyway.
-        m_Controls.m_aInputData[g_Config.m_ClDummy] = m_aDummyInput[g_Config.m_ClDummy];
+        // Give the new active its fire counter back. This is the ONLY change to
+        // m_aInputData[g_Config.m_ClDummy] — we do NOT do a full copy from
+        // m_aDummyInput (that was a Kinetix addition that clobbered the player's
+        // weapon state with hammer input's m_WantedWeapon=HAMMER+1).
+        // Direction/jump/hook will be overwritten by the player's key state on
+        // the next SnapInput() call anyway.
         m_Controls.m_aInputData[g_Config.m_ClDummy].m_Fire = NewActivePrevFire;
-
-        // Sync m_aLastData with m_aInputData for the new active dummy to prevent
-        // stale deltas from copy-move (NextWeapon/PrevWeapon/Fire) causing
-        // continuous weapon switching or firing when switching to a dummy.
-        // This is NOT done in the original DDNet, but is necessary here because
-        // with copy_moves, m_aInputData[D] is overwritten every tick while
-        // m_aLastData[D] is not (only m_aLastData[ClDummy] is updated in SnapInput).
-        m_Controls.m_aLastData[g_Config.m_ClDummy] = m_Controls.m_aInputData[g_Config.m_ClDummy];
-
-        // Sync m_aLastData for non-active dummies too.
-        for(int D = 0; D < MAX_DUMMIES; D++)
-        {
-                if(D == g_Config.m_ClDummy)
-                        continue;
-                if(D != 0 && !Client()->DummyConnected(D))
-                        continue;
-
-                m_Controls.m_aLastData[D] = m_Controls.m_aInputData[D];
-        }
 
         m_LastActiveDummy = g_Config.m_ClDummy;
         m_IsDummySwapping = 1;
-
-        // Clear input buffer for new active connection (pred tick timelines diverge per-connection)
-        Client()->ClearInput(g_Config.m_ClDummy);
 }
 
 int CGameClient::OnSnapInput(int *pData, int Conn, bool Force)
@@ -649,8 +626,17 @@ int CGameClient::OnSnapInput(int *pData, int Conn, bool Force)
         {
                 if(m_aDummyFire[Conn] != 0)
                 {
+                        // Hammer just turned off — send a release (even fire counter).
                         m_aDummyInput[Conn].m_Fire = (m_aHammerInput[Conn].m_Fire + 1) & ~1;
                         m_aDummyFire[Conn] = 0;
+                        // GUARANTEE the release is sent this frame. Without this, the
+                        // `!Force && !dir && !jump && !hook` skip-check below would drop
+                        // the release when the dummy is idle, leaving the server thinking
+                        // the dummy is still firing → extra hammer hit on next press.
+                        // This matches DDNet's implicit guarantee (DDNet's ProcessDummy-
+                        // free pipeline keeps dir/jump/hook non-zero from copy_moves or
+                        // the last OnDummySwap, so the skip-check rarely triggers).
+                        Force = true;
                 }
 
                 if(!Force && (!m_aDummyInput[Conn].m_Direction && !m_aDummyInput[Conn].m_Jump && !m_aDummyInput[Conn].m_Hook))
@@ -674,8 +660,13 @@ int CGameClient::OnSnapInput(int *pData, int Conn, bool Force)
                         }
                         else
                         {
-                                const vec2 activePos = m_aClients[activeId].m_RenderPos;
-                                const vec2 dummyPos = m_aClients[m_aLocalIds[Conn]].m_RenderPos;
+                                // Use m_Predicted.m_Pos (server-accurate) instead of m_RenderPos
+                                // (interpolated, lags 2-5 ticks). m_RenderPos caused spurious
+                                // hammer fires when the dummy appeared in-range visually but had
+                                // already moved out of range on the server. DDNet uses
+                                // m_Predicted.m_Pos for the same reason.
+                                const vec2 activePos = m_aClients[activeId].m_Predicted.m_Pos;
+                                const vec2 dummyPos = m_aClients[m_aLocalIds[Conn]].m_Predicted.m_Pos;
                                 const float distSq = (activePos - dummyPos).x * (activePos - dummyPos).x + (activePos - dummyPos).y * (activePos - dummyPos).y;
                                 constexpr float HAMMER_RADIUS = 50.0f;
                                 if(distSq > HAMMER_RADIUS * HAMMER_RADIUS)
@@ -695,20 +686,22 @@ int CGameClient::OnSnapInput(int *pData, int Conn, bool Force)
                                 canHammerNow = false;
                 }
 
-                if(!canHammerNow)
-                {
-                        m_aDummyFire[Conn]++;
-                        return 0;
-                }
-                m_aDummyFire[Conn]++;
-
-                m_aHammerInput[Conn].m_Fire = (m_aHammerInput[Conn].m_Fire + 1) | 1;
+                // Always update aim + movement inputs from m_aDummyInput, EVEN when
+                // we're not firing this tick. Without this, when ClDummyHammerKeepInputs
+                // is on, the server holds the last sent hammer input (with stale
+                // direction/jump/hook) until the next hammer hit — so dummy movement
+                // lags by up to 25 ticks (default) or the full custom-latency interval.
+                // We send a fresh packet every tick: fire parity ONLY flips when we
+                // actually want to fire (canHammerNow); otherwise we keep the same
+                // parity, which the server treats as "no change" (no new press, no
+                // release) but still updates direction/jump/hook/aim fields.
                 m_aHammerInput[Conn].m_WantedWeapon = WEAPON_HAMMER + 1;
                 if(!g_Config.m_ClDummyRestoreWeapon)
                         m_aDummyInput[Conn].m_WantedWeapon = WEAPON_HAMMER + 1;
 
-                // Aim is always overridden toward the active player for hammerfly correctness.
-                const vec2 Dir = m_LocalCharacterPos - m_aClients[m_aLocalIds[Conn]].m_RenderPos;
+                // Aim toward the active player. Use m_Predicted.m_Pos (matches DDNet)
+                // for server-accurate aim. m_RenderPos was causing aim drift.
+                const vec2 Dir = m_LocalCharacterPos - m_aClients[m_aLocalIds[Conn]].m_Predicted.m_Pos;
                 m_aHammerInput[Conn].m_TargetX = (int)Dir.x;
                 m_aHammerInput[Conn].m_TargetY = (int)Dir.y;
 
@@ -719,6 +712,20 @@ int CGameClient::OnSnapInput(int *pData, int Conn, bool Force)
                         m_aHammerInput[Conn].m_Direction = m_aDummyInput[Conn].m_Direction;
                         m_aHammerInput[Conn].m_Jump = m_aDummyInput[Conn].m_Jump;
                         m_aHammerInput[Conn].m_Hook = m_aDummyInput[Conn].m_Hook;
+                }
+
+                if(canHammerNow)
+                {
+                        // Fire this tick — flip parity to odd (press).
+                        m_aDummyFire[Conn]++;
+                        m_aHammerInput[Conn].m_Fire = (m_aHammerInput[Conn].m_Fire + 1) | 1;
+                }
+                else
+                {
+                        // Not firing this tick — advance counter but DON'T flip fire
+                        // parity. Server sees same parity → no new trigger, but
+                        // direction/aim/hook fields still update.
+                        m_aDummyFire[Conn]++;
                 }
 
                 mem_copy(pData, &m_aHammerInput[Conn], sizeof(m_aHammerInput[Conn]));

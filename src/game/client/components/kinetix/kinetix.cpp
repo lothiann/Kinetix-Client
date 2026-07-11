@@ -214,6 +214,39 @@ void CBotNet::OnUpdate()
                         m_MainID = ActiveID;
         }
 
+        // ── DDNet-compatibility gate ──────────────────────────────────────────
+        // DDNet has NO ProcessDummy. Its dummy input pipeline is:
+        //   1. controls.cpp SnapInput  (copy_moves / dummy_control for inactive D)
+        //   2. gameclient.cpp OnSnapInput  (hammer branch for inactive D)
+        //   3. gameclient.cpp OnDummySwap  (fire counter transfer on cl_dummy swap)
+        //
+        // Kinetix adds ProcessDummy for its OWN botnet features (attack, copy mirror,
+        // pathfinder, macro, random aim). When NONE of these are active, running
+        // ProcessDummy only causes damage: HandleNoFeatureIdle → ResetAndCommitInput
+        // clobbers m_aDummyInput[D].m_Direction/Jump/Hook every frame, which breaks
+        // the OnSnapInput skip-release check and delays hammer release sends.
+        //
+        // Solution: skip the entire ProcessDummy loop when no botnet features are
+        // active. This makes the default dummy input pipeline byte-identical to DDNet.
+        bool anyBotnetFeature = m_AttackEnabled || m_CopyMoves || m_RandomAim;
+        if(!anyBotnetFeature)
+        {
+                for(int D = 0; D < MAX_DUMMIES; D++)
+                {
+                        if(D == g_Config.m_ClDummy)
+                                continue;
+                        if(D != 0 && !Client()->DummyConnected(D))
+                                continue;
+                        if(m_aDummies[D].m_MacroPlaying || m_aDummies[D].m_PathfinderGoActive)
+                        {
+                                anyBotnetFeature = true;
+                                break;
+                        }
+                }
+        }
+        if(!anyBotnetFeature)
+                return;
+
         for(int D = 0; D < MAX_DUMMIES; D++)
         {
                 if(D == g_Config.m_ClDummy)
