@@ -686,27 +686,20 @@ int CGameClient::OnSnapInput(int *pData, int Conn, bool Force)
                                 canHammerNow = false;
                 }
 
-                // Always update aim + movement inputs from m_aDummyInput, EVEN when
-                // we're not firing this tick. Without this, when ClDummyHammerKeepInputs
-                // is on, the server holds the last sent hammer input (with stale
-                // direction/jump/hook) until the next hammer hit — so dummy movement
-                // lags by up to 25 ticks (default) or the full custom-latency interval.
-                // We send a fresh packet every tick: fire parity ONLY flips when we
-                // actually want to fire (canHammerNow); otherwise we keep the same
-                // parity, which the server treats as "no change" (no new press, no
-                // release) but still updates direction/jump/hook/aim fields.
+                // Always send a fresh packet every tick (not just on hammer hits).
+                // Without this, when ClDummyHammerKeepInputs is on, the server holds
+                // the last sent hammer input (with stale direction/jump/hook) until
+                // the next hammer hit — so dummy movement lags by up to 25 ticks
+                // (default) or the full custom-latency interval. Fire parity ONLY
+                // flips when we actually fire (canHammerNow); otherwise we keep the
+                // same parity, which the server treats as "no change" (no new press,
+                // no release) but still updates direction/jump/hook fields.
                 m_aHammerInput[Conn].m_WantedWeapon = WEAPON_HAMMER + 1;
                 if(!g_Config.m_ClDummyRestoreWeapon)
                         m_aDummyInput[Conn].m_WantedWeapon = WEAPON_HAMMER + 1;
 
-                // Aim toward the active player. Use m_Predicted.m_Pos (matches DDNet)
-                // for server-accurate aim. m_RenderPos was causing aim drift.
-                const vec2 Dir = m_LocalCharacterPos - m_aClients[m_aLocalIds[Conn]].m_Predicted.m_Pos;
-                m_aHammerInput[Conn].m_TargetX = (int)Dir.x;
-                m_aHammerInput[Conn].m_TargetY = (int)Dir.y;
-
                 // Preserve inputs: when on, keep dummy's movement inputs (direction/jump/hook)
-                // from m_aDummyInput. When off, hammer input fully overrides (old behavior).
+                // from m_aDummyInput EVERY tick. When off, hammer input fully overrides.
                 if(g_Config.m_ClDummyHammerKeepInputs)
                 {
                         m_aHammerInput[Conn].m_Direction = m_aDummyInput[Conn].m_Direction;
@@ -717,14 +710,21 @@ int CGameClient::OnSnapInput(int *pData, int Conn, bool Force)
                 if(canHammerNow)
                 {
                         // Fire this tick — flip parity to odd (press).
+                        // Update aim toward active player ONLY on fire ticks (matches
+                        // DDNet — aim is recomputed only when actually hammering, not
+                        // every tick, so dummy doesn't jitter toward player between hits).
                         m_aDummyFire[Conn]++;
                         m_aHammerInput[Conn].m_Fire = (m_aHammerInput[Conn].m_Fire + 1) | 1;
+                        const vec2 Dir = m_LocalCharacterPos - m_aClients[m_aLocalIds[Conn]].m_Predicted.m_Pos;
+                        m_aHammerInput[Conn].m_TargetX = (int)Dir.x;
+                        m_aHammerInput[Conn].m_TargetY = (int)Dir.y;
                 }
                 else
                 {
                         // Not firing this tick — advance counter but DON'T flip fire
                         // parity. Server sees same parity → no new trigger, but
-                        // direction/aim/hook fields still update.
+                        // direction/jump/hook fields (updated above) still take effect.
+                        // Aim (m_TargetX/Y) is NOT updated — stays at last fire value.
                         m_aDummyFire[Conn]++;
                 }
 
