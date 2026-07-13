@@ -12,6 +12,8 @@
 #include <engine/client.h>
 #include <engine/shared/config.h>
 
+#include <game/client/prediction/entities/character.h>
+#include <game/client/prediction/gameworld.h>
 #include <generated/protocol.h>
 
 #include <game/client/components/camera.h>
@@ -562,17 +564,47 @@ int CControls::SnapInput(int *pData)
 
         if(g_Config.m_ClFakeAim)
         {
-                // Detect weapon fire via m_Fire parity rising edge.
-                // NOTE: previously this used a full CGameWorld CopyWorld +
-                // 1-tick prediction every SnapInput call (~50/sec) just to
-                // detect fire — that was a major cause of the FPS collapse.
-                // m_aLastData holds the PREVIOUS input state (it is updated
-                // at the very end of SnapInput, after this block), so a
-                // rising edge on the fire bit means the player started
-                // firing this tick. This matches what the server sees.
-                int CurFire = m_aInputData[g_Config.m_ClDummy].m_Fire;
-                int PrevFire = m_aLastData[g_Config.m_ClDummy].m_Fire;
-                willFire = ((CurFire & 1) != 0) && ((PrevFire & 1) == 0);
+                // Detect weapon fire via 1-tick prediction.
+                // This catches EVERY real shot (not just the rising edge of
+                // m_Fire), which is what the aim-release system needs: while
+                // the player holds fire, the server fires on the weapon's
+                // reload cadence, and we must release the fake aim on each
+                // of those ticks so the shot lands. A parity rising-edge
+                // only catches the first press and breaks Random/Spin/Lag.
+                //
+                // Cost: one full CGameWorld CopyWorld per SnapInput (~50/sec).
+                // This is cheap in practice — CopyWorld on the stack is
+                // allocation+free of the world's entities, no leak (the
+                // stack CGameWorld destructor runs Clear() which deletes
+                // every entity it owns). The FPS collapse in v1.56.55 was
+                // caused by the RemoveEntity leak in laser_unfreeze.cpp,
+                // NOT by this prediction. That leak is fixed in v1.56.56.
+                CGameClient *pGC = GameClient();
+                if(pGC && pGC->m_Snap.m_pLocalInfo)
+                {
+                        int LocalID = pGC->m_Snap.m_LocalClientId;
+                        CCharacter *pChar = pGC->m_PredictedWorld.GetCharacterById(LocalID);
+                        if(pChar)
+                        {
+                                int tickBefore = pChar->GetAttackTick();
+                                CGameWorld FutureWorld;
+                                FutureWorld.CopyWorld(&pGC->m_PredictedWorld);
+                                CCharacter *pFuture = FutureWorld.GetCharacterById(LocalID);
+                                if(pFuture)
+                                {
+                                        CNetObj_PlayerInput FutureInput = m_aInputData[g_Config.m_ClDummy];
+                                        pFuture->OnDirectInput(&FutureInput);
+                                        FutureWorld.m_GameTick = FutureWorld.GameTick() + 1;
+                                        pFuture->OnPredictedInput(&FutureInput);
+                                        FutureWorld.Tick();
+                                        if(CCharacter *pAfter = FutureWorld.GetCharacterById(LocalID))
+                                        {
+                                                if(pAfter->GetAttackTick() != tickBefore)
+                                                        willFire = true;
+                                        }
+                                }
+                        }
+                }
 
                 // Hook press edge
                 static int s_LastHook = 0;
