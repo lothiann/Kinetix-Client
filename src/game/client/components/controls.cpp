@@ -611,14 +611,33 @@ int CControls::SnapInput(int *pData)
                 hookPress = (m_aInputData[g_Config.m_ClDummy].m_Hook != 0 && s_LastHook == 0);
                 s_LastHook = m_aInputData[g_Config.m_ClDummy].m_Hook;
 
-                // Robot: always remember last aim state
+                // Robot/Lag: remember last real aim.
+                //
+                // SILENT Laser Unfreeze case: when laserAimActive is true,
+                // Laser Unfreeze is firing at the BOUNCE position
+                // (m_LaserUnfreezeAimOffset), but in silent mode it did NOT
+                // move the visible crosshair (m_aMousePos). So realAim is
+                // still the player's visible aim, NOT where the laser fired.
+                // Storing realAim here would make Robot/Lag remember the
+                // wrong position. Use the laser's bounce offset instead —
+                // it's the actual aim that was sent to the server this tick.
+                //
+                // Non-silent laser: SetMousePos already moved m_aMousePos to
+                // the bounce before SnapInput, so realAim == bounce and
+                // using realAim is correct (laserAimActive path is skipped
+                // via the guard below anyway).
                 if(!s_RobotInit)
                 {
                         s_RobotAim = realAim;
                         s_RobotInit = true;
                 }
                 if(willFire || hookPress)
-                        s_RobotAim = realAim;
+                {
+                        if(laserAimActive)
+                                s_RobotAim = m_LaserUnfreezeAimOffset;
+                        else
+                                s_RobotAim = realAim;
+                }
         }
 
         // Fake aim generation — skipped when laser unfreeze active (laser has priority)
