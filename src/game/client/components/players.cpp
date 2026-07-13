@@ -144,6 +144,17 @@ float CPlayers::GetPlayerTargetAngle(
         if((GameClient()->m_Snap.m_LocalClientId == ClientId || IsDummyCopyId) &&
                 !GameClient()->m_Snap.m_SpecInfo.m_Active && Client()->State() != IClient::STATE_DEMOPLAYBACK)
         {
+                // Fake Aim: if active and show_for_me, use fake offset for character
+                if(GameClient()->m_Controls.m_FakeAimRenderActive &&
+                   g_Config.m_ClFakeAimShowForMe &&
+                   g_Config.m_ClFakeAim)
+                {
+                        vec2 Direction = normalize(GameClient()->m_Controls.m_FakeAimRenderOffset);
+                        if(Direction == vec2(0.0f, 0.0f))
+                                Direction = vec2(1.0f, 0.0f);
+                        return angle(Direction);
+                }
+
                 // calculate what would be sent to the server from our current input
                 vec2 Direction = normalize(vec2((int)GameClient()->m_Controls.m_aMousePos[g_Config.m_ClDummy].x, (int)GameClient()->m_Controls.m_aMousePos[g_Config.m_ClDummy].y));
 

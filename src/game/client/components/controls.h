@@ -15,49 +15,59 @@
 class CControls : public CComponent
 {
 public:
-	float GetMinMouseDistance() const;
-	float GetMaxMouseDistance() const;
+        float GetMinMouseDistance() const;
+        float GetMaxMouseDistance() const;
 
-	enum class EMouseInputType
-	{
-		ABSOLUTE,
-		RELATIVE,
-		AUTOMATED,
-	};
+        enum class EMouseInputType
+        {
+                ABSOLUTE,
+                RELATIVE,
+                AUTOMATED,
+        };
 
-	vec2 m_aMousePos[MAX_DUMMIES];
-	vec2 m_aMousePosOnAction[MAX_DUMMIES];
-	vec2 m_aTargetPos[MAX_DUMMIES];
+        vec2 m_aMousePos[MAX_DUMMIES];
+        vec2 m_aMousePosOnAction[MAX_DUMMIES];
+        vec2 m_aTargetPos[MAX_DUMMIES];
 
-	EMouseInputType m_aMouseInputType[MAX_DUMMIES];
+        EMouseInputType m_aMouseInputType[MAX_DUMMIES];
 
-	int m_aAmmoCount[NUM_WEAPONS];
+        int m_aAmmoCount[NUM_WEAPONS];
 
-	int64_t m_LastSendTime;
-	CNetObj_PlayerInput m_aInputData[MAX_DUMMIES];
-	CNetObj_PlayerInput m_aLastData[MAX_DUMMIES];
-	int m_aInputDirectionLeft[MAX_DUMMIES];
-	int m_aInputDirectionRight[MAX_DUMMIES];
-	int m_aShowHookColl[MAX_DUMMIES];
+        int64_t m_LastSendTime;
+        CNetObj_PlayerInput m_aInputData[MAX_DUMMIES];
+        CNetObj_PlayerInput m_aLastData[MAX_DUMMIES];
+        int m_aInputDirectionLeft[MAX_DUMMIES];
+        int m_aInputDirectionRight[MAX_DUMMIES];
+        int m_aShowHookColl[MAX_DUMMIES];
 
-	CControls();
-	int Sizeof() const override { return sizeof(*this); }
+        // Laser unfreeze silent aim — when active, SnapInput uses this offset
+        // instead of m_aMousePos for m_TargetX/Y. Set by UpdateLaserUnfreeze
+        // when silent mode is on. Consumed (reset to false) by SnapInput.
+        bool m_LaserUnfreezeAimActive = false;
+        vec2 m_LaserUnfreezeAimOffset = vec2(0, 0);
 
-	void OnReset() override;
-	void OnRender() override;
-	void OnMessage(int MsgType, void *pRawMsg) override;
-	bool OnCursorMove(float x, float y, IInput::ECursorType CursorType) override;
-	void OnConsoleInit() override;
-	virtual void OnPlayerDeath();
+        // Fake Aim render data — set in SnapInput, read in players.cpp.
+        bool m_FakeAimRenderActive = false;
+        vec2 m_FakeAimRenderOffset = vec2(0, 0);
 
-	int SnapInput(int *pData);
-	void ClampMousePos();
-	void ResetInput(int Dummy);
+        CControls();
+        int Sizeof() const override { return sizeof(*this); }
+
+        void OnReset() override;
+        void OnRender() override;
+        void OnMessage(int MsgType, void *pRawMsg) override;
+        bool OnCursorMove(float x, float y, IInput::ECursorType CursorType) override;
+        void OnConsoleInit() override;
+        virtual void OnPlayerDeath();
+
+        int SnapInput(int *pData);
+        void ClampMousePos();
+        void ResetInput(int Dummy);
 
 private:
-	static void ConKeyInputState(IConsole::IResult *pResult, void *pUserData);
-	static void ConKeyInputCounter(IConsole::IResult *pResult, void *pUserData);
-	static void ConKeyInputSet(IConsole::IResult *pResult, void *pUserData);
-	static void ConKeyInputNextPrevWeapon(IConsole::IResult *pResult, void *pUserData);
+        static void ConKeyInputState(IConsole::IResult *pResult, void *pUserData);
+        static void ConKeyInputCounter(IConsole::IResult *pResult, void *pUserData);
+        static void ConKeyInputSet(IConsole::IResult *pResult, void *pUserData);
+        static void ConKeyInputNextPrevWeapon(IConsole::IResult *pResult, void *pUserData);
 };
 #endif

@@ -435,6 +435,13 @@ public:
         void UpdatePathfinder();            // called from OnUpdate; runs one chunk if RUNNING
         void RenderPathfinderPath();        // called from OnRender; draws m_PfVPath like RenderPackage
         void PfResetRun();                  // clear vPath + sim state (start fresh from active player)
+        void UpdateLaserUnfreeze();         // called from OnUpdate; predictive laser self-unfreeze
+        void RenderLaserUnfreezePath();     // called from OnRender; draws successful laser path with fade
+        void UpdateFakeAim();               // called from OnUpdate; fake aim for fun
+
+        // Laser unfreeze path storage (for Show attempt rendering)
+        std::vector<vec2> m_LaserUnfreezePath;
+        int64_t m_LaserUnfreezePathTime = 0;
         void PfComputeFlowField();          // multi-source BFS to all finish tiles -> m_PfFlowField
         float PfScoreChunk(const vec2 &startPos, const vec2 &endPos, bool reachedFinish, bool died,
                            int freezeTicks) const;

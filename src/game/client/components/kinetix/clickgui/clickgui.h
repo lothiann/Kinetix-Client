@@ -43,7 +43,7 @@ public:
         bool OnInput(const IInput::CEvent &Event) override;
         bool OnCursorMove(float x, float y, IInput::ECursorType CursorType) override;
 
-        static constexpr int NUM_PANELS = 5;
+        static constexpr int NUM_PANELS = 4;
 
 private:
         // Animation state: 0.0 = fully closed, 1.0 = fully open.

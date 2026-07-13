@@ -2582,6 +2582,7 @@ if(CLIENT)
     components/kinetix/dummies/dummy_helpers.cpp
     components/kinetix/dummies/dummy_management.cpp
     components/kinetix/dummies/process_dummy.cpp
+    components/kinetix/fake_aim.cpp
     components/kinetix/helpers.cpp
     components/kinetix/irc.cpp
     components/kinetix/irc.h
@@ -2590,6 +2591,7 @@ if(CLIENT)
     components/kinetix/kinetix_internal.h
     components/kinetix/kinodynamic/kinodynamic.cpp
     components/kinetix/kinodynamic/kinodynamic_render.cpp
+    components/kinetix/laser_unfreeze.cpp
     components/kinetix/macro/macro_commands.cpp
     components/kinetix/pathfinder/map_grid.cpp
     components/kinetix/pathfinder/pathfinder.cpp

@@ -8,6 +8,7 @@
 // row via IGraphics (rounded rects, gradient fills) and ITextRender (text).
 
 #include <game/client/components/kinetix/clickgui/clickgui.h>
+#include <game/client/components/kinetix/kinetix.h>
 
 #include <yoga/Yoga.h>
 
@@ -27,11 +28,12 @@
 #include <engine/shared/config.h>
 #include <engine/textrender.h>
 
+#include <game/client/components/console.h>
 #include <game/client/gameclient.h>
 
 namespace {
 // Total number of ClickGUI panels. Must match CClickGui::NUM_PANELS in .h.
-constexpr int NUM_PANELS = 5;
+constexpr int NUM_PANELS = 4;
 
 // Coerce a body height to int for ClipEnable without truncation surprises.
 inline int bodyH_safe(float h)
@@ -56,6 +58,7 @@ enum class ERowType
         Input,
         Dropdown,
         Expandable,
+        Button,
 };
 
 struct SRow
@@ -77,77 +80,6 @@ struct SRow
         // Lazy-initialized from pInputValue on first render.
         char m_aInputBuf[256] = {};
         bool m_InputInitialized = false;
-};
-
-// ---------- Combat panel (1) ----------
-static const char *const g_AimbotOpts[] = {"Head", "Body", "Legs"};
-static const char *const g_TracersOpts[] = {"Top", "Center", "Bottom"};
-static const char *const g_AutoArmorOpts[] = {"Off", "Weak", "Strong"};
-static SRow g_EspChildren[] = {
-        {ERowType::Toggle, "Box", true, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Outline", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Health Bar", true, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Name Tags", true, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Tracers", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-};
-static SRow g_CritChildren[] = {
-        {ERowType::Toggle, "Air Criticals", true, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "No Cooldown", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Delay", false, false, 0.0f, 1.0f, 0.05f, 0.25f, "s", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-};
-static SRow g_CombatRows[] = {
-        {ERowType::Toggle, "KillAura", true, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "AutoClicker", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::ToggleDropdown, "Aimbot", true, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_AimbotOpts, 3, 0, nullptr, 0},
-        {ERowType::Expandable, "ESP Settings", true, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_EspChildren, 5},
-        {ERowType::ToggleDropdown, "Tracers", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TracersOpts, 3, 1, nullptr, 0},
-        {ERowType::Toggle, "Reach", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Expandable, "Criticals", true, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CritChildren, 3},
-        {ERowType::ToggleDropdown, "AutoArmor", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_AutoArmorOpts, 3, 0, nullptr, 0},
-};
-
-// ---------- Movement panel (2) ----------
-static SRow g_MvTweaksChildren[] = {
-        {ERowType::Toggle, "NoFall", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Jesus", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "AutoJump", true, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Sneak", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-};
-static SRow g_VelocityChildren[] = {
-        {ERowType::Slider, "Horizontal", false, false, 0.0f, 100.0f, 1.0f, 80.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Vertical", false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-};
-static SRow g_MovementRows[] = {
-        {ERowType::Toggle, "Fly", true, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Speed", false, false, 0.0f, 10.0f, 0.1f, 2.5f, "x", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Jump", false, false, 0.0f, 5.0f, 0.1f, 1.0f, "x", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Sprint", true, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Expandable, "Movement Tweaks", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_MvTweaksChildren, 4},
-        {ERowType::Slider, "Step Height", false, false, 0.0f, 3.0f, 0.25f, 1.0f, "b", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Reach", false, false, 3.0f, 6.0f, 0.05f, 4.5f, "b", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Expandable, "Velocity", true, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_VelocityChildren, 2},
-        {ERowType::Slider, "Timer", false, false, 0.1f, 2.0f, 0.05f, 1.0f, "x", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-};
-
-// ---------- Misc panel (3) ----------
-static const char *const g_LangOpts[] = {"EN", "RU", "DE", "JP"};
-static const char *const g_ThemeOpts[] = {"Dark", "Light", "Purple", "Neon"};
-static const char *const g_AutoSaveOpts[] = {"Off", "5s", "30s", "5m"};
-static SRow g_KeybindsChildren[] = {
-        {ERowType::Input, "Open Menu", false, false, 0, 0, 0, 0, nullptr, "RShift", "key...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Toggle Fly", false, false, 0, 0, 0, 0, nullptr, "F", "key...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Toggle Speed", false, false, 0, 0, 0, 0, nullptr, "V", "key...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Toggle ESP", false, false, 0, 0, 0, 0, nullptr, "X", "key...", nullptr, 0, 0, nullptr, 0},
-};
-static SRow g_MiscRows[] = {
-        {ERowType::Input, "Tag", false, false, 0, 0, 0, 0, nullptr, "[Z]", "tag...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Say Text", false, false, 0, 0, 0, 0, nullptr, "gg", "auto-say", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Dropdown, "Language", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_LangOpts, 4, 1, nullptr, 0},
-        {ERowType::Dropdown, "Theme", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ThemeOpts, 4, 2, nullptr, 0},
-        {ERowType::Input, "Color (hex)", false, false, 0, 0, 0, 0, nullptr, "#8a2be2", "#rrggbb", nullptr, 0, 0, nullptr, 0},
-        {ERowType::ToggleDropdown, "AutoSave", true, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_AutoSaveOpts, 4, 2, nullptr, 0},
-        {ERowType::Expandable, "Keybinds", false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_KeybindsChildren, 4},
-        {ERowType::Input, "Webhook URL", false, false, 0, 0, 0, 0, nullptr, "", "https://...", nullptr, 0, 0, nullptr, 0},
 };
 
 // ---------- Functions panel (4) ----------
@@ -183,8 +115,79 @@ static SRow g_FunctionsRows[] = {
 };
 
 // ---------- Advanced panel (5) ----------
+// "Laser unfreeze" expandable: predictive laser self-unfreeze.
+static SRow g_LaserUnfreezeChildren[] = {
+        {ERowType::Toggle, "Auto laser", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "FOV", false, false, 5.0f, 360.0f, 5.0f, 90.0f, "°", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Angles", false, false, 1.0f, 144.0f, 1.0f, 9.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Ticks", false, false, 1.0f, 50.0f, 1.0f, 10.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Trigger ticks", false, false, 1.0f, 5.0f, 1.0f, 3.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Silent", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Show attempt", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
+// "Fake Aim" expandable.
+static const char *const g_FakeAimModeOpts[] = {"Random", "Robot", "Spin", "Lag"};
+static SRow g_FakeAimChildren[] = {
+        {ERowType::Dropdown, "Mode", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_FakeAimModeOpts, 4, 0, nullptr, 0},
+        {ERowType::Slider, "Speed", false, false, 1.0f, 100.0f, 1.0f, 10.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Show for me", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
 static SRow g_AdvancedRows[] = {
         {ERowType::Toggle, "Trajectory", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Expandable, "Laser unfreeze", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LaserUnfreezeChildren, 7},
+        {ERowType::Expandable, "Fake Aim", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_FakeAimChildren, 3},
+};
+
+// ---------- Settings panel (6) ----------
+// "IRC" expandable: 2 sub-toggles.
+static SRow g_IrcChildren[] = {
+        {ERowType::Toggle, "Reveal join", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Nameplate tag", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
+// "Spoofer" expandable: slider + dropdown + input.
+static const char *const g_ClientPresetOpts[] = {"DDNet", "TClient", "BestClient", "Custom"};
+static SRow g_SpooferChildren[] = {
+        {ERowType::Slider, "Version ID", false, false, 10000.0f, 21000.0f, 1.0f, 20000.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "Client preset", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ClientPresetOpts, 4, 0, nullptr, 0},
+        {ERowType::Input, "Client version", false, false, 0, 0, 0, 0, nullptr, "10.8.7", "version...", nullptr, 0, 0, nullptr, 0},
+};
+static SRow g_SettingsRows[] = {
+        {ERowType::Expandable, "IRC", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_IrcChildren, 2},
+        {ERowType::Expandable, "Spoofer", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_SpooferChildren, 3},
+};
+
+// ---------- Pathfinder panel (7) ----------
+// "Score method" visual expandable (cannot toggle off, only expand).
+static SRow g_ScoreMethodChildren[] = {
+        {ERowType::Toggle, "Distance reduction", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Flow-field alignment", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
+// "Penalties" visual expandable.
+static SRow g_PenaltiesChildren[] = {
+        {ERowType::Toggle, "Freeze penalty", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Hook retract penalty", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Death penalty", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Wall-hit penalty", false, false, 0, 0, 0,0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Air-time penalty", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Hook-fire penalty", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
+// "Visuals" visual expandable.
+static SRow g_VisualsChildren[] = {
+        {ERowType::Toggle, "Show field", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Show hooks", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Show branches", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Show speed", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
+static SRow g_PathfinderRows[] = {
+        {ERowType::Slider, "Chunk size", false, false, 1.0f, 50.0f, 1.0f, 20.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Hook angles", false, false, 4.0f, 32.0f, 1.0f, 9.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Candidates", false, false, 50.0f, 2000.0f, 10.0f, 200.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Performance", false, false, 1.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Advanced search", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Expandable, "Score method", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ScoreMethodChildren, 2},
+        {ERowType::Expandable, "Penalties", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_PenaltiesChildren, 6},
+        {ERowType::Expandable, "Visuals", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_VisualsChildren, 4},
+        {ERowType::Button, "Pathfinding", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 
 struct SPanel
@@ -195,11 +198,10 @@ struct SPanel
 };
 
 static SPanel g_Panels[NUM_PANELS] = {
-        {"Combat", g_CombatRows, sizeof(g_CombatRows) / sizeof(g_CombatRows[0])},
-        {"Movement", g_MovementRows, sizeof(g_MovementRows) / sizeof(g_MovementRows[0])},
-        {"Misc", g_MiscRows, sizeof(g_MiscRows) / sizeof(g_MiscRows[0])},
         {"Functions", g_FunctionsRows, sizeof(g_FunctionsRows) / sizeof(g_FunctionsRows[0])},
         {"Advanced", g_AdvancedRows, sizeof(g_AdvancedRows) / sizeof(g_AdvancedRows[0])},
+        {"Settings", g_SettingsRows, sizeof(g_SettingsRows) / sizeof(g_SettingsRows[0])},
+        {"Pathfinder", g_PathfinderRows, sizeof(g_PathfinderRows) / sizeof(g_PathfinderRows[0])},
 };
 
 // Conditional visibility for Functions panel top-level rows.
@@ -226,6 +228,26 @@ static bool FunctionsRowVisible(const SRow *pRows, int rowCount, int idx)
                 return isMirror;
         if(str_comp(row.pName, "Smart aim") == 0)
                 return !isMirror;
+        return true;
+}
+
+// Fake Aim: Speed hidden when Robot mode (modeIdx == 1)
+static bool FakeAimChildVisible(const SRow *pChildren, int childCount, int idx)
+{
+        if(idx < 0 || idx >= childCount)
+                return false;
+        const SRow &row = pChildren[idx];
+        int modeIdx = 0;
+        for(int i = 0; i < childCount; ++i)
+        {
+                if(str_comp(pChildren[i].pName, "Mode") == 0)
+                {
+                        modeIdx = pChildren[i].valueIdx;
+                        break;
+                }
+        }
+        if(str_comp(row.pName, "Speed") == 0)
+                return modeIdx != 1;
         return true;
 }
 
@@ -262,6 +284,7 @@ static constexpr float ROW_H_TOGGLE = 30.0f;
 static constexpr float ROW_H_SLIDER = 48.0f;
 static constexpr float ROW_H_INPUT = 34.0f;
 static constexpr float ROW_H_EXPANDABLE = 30.0f;
+static constexpr float ROW_H_BUTTON = 36.0f;
 
 // Row internal layout (px) — scaled up 1.25x.
 static constexpr float CHECK_W = 18.0f;
@@ -289,6 +312,8 @@ static float RowHeight(ERowType t)
                 return ROW_H_INPUT;
         case ERowType::Expandable:
                 return ROW_H_EXPANDABLE;
+        case ERowType::Button:
+                return ROW_H_BUTTON;
         }
         return ROW_H_TOGGLE;
 }
@@ -301,15 +326,14 @@ static float RowHeight(ERowType t)
 
 vec2 CClickGui::PanelHomePos(int panelIdx)
 {
-        // 5 panels: Combat, Movement, Misc, Functions, Advanced.
+        // 4 panels: Functions, Advanced, Settings, Pathfinder.
         // Spaced horizontally at the top, 330px apart (300px panel + 30px gap).
         switch(panelIdx)
         {
-        case 0: return vec2(60.0f, 90.0f); // Combat
-        case 1: return vec2(390.0f, 90.0f); // Movement
-        case 2: return vec2(720.0f, 90.0f); // Misc
-        case 3: return vec2(1050.0f, 90.0f); // Functions
-        case 4: return vec2(1380.0f, 90.0f); // Advanced
+        case 0: return vec2(60.0f, 90.0f); // Functions
+        case 1: return vec2(390.0f, 90.0f); // Advanced
+        case 2: return vec2(720.0f, 90.0f); // Settings
+        case 3: return vec2(1050.0f, 90.0f); // Pathfinder
         default: return vec2(60.0f, 90.0f);
         }
 }
@@ -490,6 +514,11 @@ void CClickGui::OnRender()
                                         row.on = GameClient()->m_BotNet.m_RandomAim;
                                 else if(str_comp(row.pName, "Trajectory") == 0)
                                         row.on = g_Config.m_ClShowTrajectory != 0;
+                                // Advanced → Laser unfreeze expandable is master toggle.
+                                else if(str_comp(row.pName, "Laser unfreeze") == 0)
+                                        row.on = g_Config.m_ClLaserUnfreeze != 0;
+                                else if(str_comp(row.pName, "Fake Aim") == 0)
+                                        row.on = g_Config.m_ClFakeAim != 0;
                                 // Functions panel — Fly/Copy Moves sub-section
                                 else if(str_comp(row.pName, "Preserve input") == 0)
                                         row.on = g_Config.m_ClDummyHammerKeepInputs != 0;
@@ -507,10 +536,31 @@ void CClickGui::OnRender()
                                         row.on = g_Config.m_ClDummyCopyMirrorAimY != 0;
                                 else if(str_comp(row.pName, "Smart aim") == 0)
                                         row.on = g_Config.m_ClDummyCopySmartAim != 0;
+                                // Functions → Copy Moves Filter expandable is master toggle.
+                                else if(str_comp(row.pName, "Copy Moves Filter") == 0)
+                                        row.on = g_Config.m_ClDummyCopyMovesFilter != 0;
+                                // Pathfinder top-level sliders/toggles
+                                else if(str_comp(row.pName, "Chunk size") == 0)
+                                        row.value = (float)g_Config.m_ClPfChunkSize;
+                                else if(str_comp(row.pName, "Hook angles") == 0)
+                                        row.value = (float)g_Config.m_ClPfHookAngles;
+                                else if(str_comp(row.pName, "Candidates") == 0)
+                                        row.value = (float)g_Config.m_ClPfCandidates;
+                                else if(str_comp(row.pName, "Performance") == 0)
+                                        row.value = (float)g_Config.m_ClPfPerf;
+                                else if(str_comp(row.pName, "Advanced search") == 0)
+                                        row.on = g_Config.m_ClPfAdvancedSearch != 0;
+                                // Settings → IRC/Spoofer top-level expandables are master toggles.
+                                else if(str_comp(row.pName, "IRC") == 0)
+                                        row.on = g_Config.m_ClIrcEnabled != 0;
+                                else if(str_comp(row.pName, "Spoofer") == 0)
+                                        row.on = (g_Config.m_ClVersionSpoof != 0 || g_Config.m_ClSpoofClientStr != 0);
                                 // Sync children of expandable rows
                                 for(int c = 0; c < row.childCount; ++c)
                                 {
                                         SRow &child = row.pChildren[c];
+                                if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
+                                        continue;
                                         if(str_comp(child.pName, "Latency (ms)") == 0)
                                                 child.value = (float)g_Config.m_ClDummyHammerLatencyMs;
                                         else if(str_comp(child.pName, "Filter: Jump") == 0)
@@ -523,6 +573,65 @@ void CClickGui::OnRender()
                                                 child.on = g_Config.m_ClDummyCopyMovesFilterAim != 0;
                                         else if(str_comp(child.pName, "Filter: Fire") == 0)
                                                 child.on = g_Config.m_ClDummyCopyMovesFilterFire != 0;
+                                        // Settings → IRC children
+                                        else if(str_comp(child.pName, "Reveal join") == 0)
+                                                child.on = g_Config.m_ClIrcRevealJoin != 0;
+                                        else if(str_comp(child.pName, "Nameplate tag") == 0)
+                                                child.on = g_Config.m_ClIrcNameplateTag != 0;
+                                        // Advanced → Laser unfreeze children
+                                        else if(str_comp(child.pName, "Auto laser") == 0)
+                                                child.on = g_Config.m_ClLaserUnfreezeAuto != 0;
+                                        else if(str_comp(child.pName, "FOV") == 0)
+                                                child.value = (float)g_Config.m_ClLaserUnfreezeFov;
+                                        else if(str_comp(child.pName, "Angles") == 0)
+                                                child.value = (float)g_Config.m_ClLaserUnfreezeAngles;
+                                        else if(str_comp(child.pName, "Ticks") == 0)
+                                                child.value = (float)g_Config.m_ClLaserUnfreezeTicks;
+                                        else if(str_comp(child.pName, "Trigger ticks") == 0)
+                                                child.value = (float)g_Config.m_ClLaserUnfreezeTriggerTicks;
+                                        else if(str_comp(child.pName, "Silent") == 0)
+                                                child.on = g_Config.m_ClLaserUnfreezeSilent != 0;
+                                        else if(str_comp(child.pName, "Show attempt") == 0)
+                                                child.on = g_Config.m_ClLaserUnfreezeShowAttempt != 0;
+                                        // Fake Aim children
+                                        else if(str_comp(child.pName, "Mode") == 0 && str_comp(row.pName, "Fake Aim") == 0)
+                                                child.valueIdx = g_Config.m_ClFakeAimMode;
+                                        else if(str_comp(child.pName, "Speed") == 0 && str_comp(row.pName, "Fake Aim") == 0)
+                                                child.value = (float)g_Config.m_ClFakeAimSpeed;
+                                        else if(str_comp(child.pName, "Show for me") == 0)
+                                                child.on = g_Config.m_ClFakeAimShowForMe != 0;
+                                        // Settings → Spoofer children
+                                        else if(str_comp(child.pName, "Version ID") == 0)
+                                                child.value = (float)g_Config.m_ClVersionSpoofId;
+                                        else if(str_comp(child.pName, "Client preset") == 0)
+                                                child.valueIdx = g_Config.m_ClSpoofClientPreset;
+                                        // Pathfinder → Score method children
+                                        else if(str_comp(child.pName, "Distance reduction") == 0)
+                                                child.on = g_Config.m_ClPfScoreDist != 0;
+                                        else if(str_comp(child.pName, "Flow-field alignment") == 0)
+                                                child.on = g_Config.m_ClPfScoreFlow != 0;
+                                        // Pathfinder → Penalties children
+                                        else if(str_comp(child.pName, "Freeze penalty") == 0)
+                                                child.on = g_Config.m_ClPfFineFreeze != 0;
+                                        else if(str_comp(child.pName, "Hook retract penalty") == 0)
+                                                child.on = g_Config.m_ClPfFineRetract != 0;
+                                        else if(str_comp(child.pName, "Death penalty") == 0)
+                                                child.on = g_Config.m_ClPfFineDeath != 0;
+                                        else if(str_comp(child.pName, "Wall-hit penalty") == 0)
+                                                child.on = g_Config.m_ClPfFineWall != 0;
+                                        else if(str_comp(child.pName, "Air-time penalty") == 0)
+                                                child.on = g_Config.m_ClPfFineAir != 0;
+                                        else if(str_comp(child.pName, "Hook-fire penalty") == 0)
+                                                child.on = g_Config.m_ClPfFineHook != 0;
+                                        // Pathfinder → Visuals children
+                                        else if(str_comp(child.pName, "Show field") == 0)
+                                                child.on = g_Config.m_ClPfShowField != 0;
+                                        else if(str_comp(child.pName, "Show hooks") == 0)
+                                                child.on = g_Config.m_ClPfShowHooks != 0;
+                                        else if(str_comp(child.pName, "Show branches") == 0)
+                                                child.on = g_Config.m_ClPfShowBranches != 0;
+                                        else if(str_comp(child.pName, "Show speed") == 0)
+                                                child.on = g_Config.m_ClPfShowSpeed != 0;
                                 }
                         }
                 }
@@ -547,9 +656,12 @@ void CClickGui::OnRender()
         }
 
         // When fully closed, restore relative mouse mode (hide cursor) and bail.
+        // Don't touch mouse mode if game console (F1/F2) is open — it manages
+        // mouse mode itself and we'd conflict with it.
         if(m_AnimProgress <= 0.0f && !isOpen)
         {
-                Input()->MouseModeRelative();
+                if(!GameClient()->m_GameConsole.IsActive())
+                        Input()->MouseModeRelative();
                 // Also stop text input if we were editing when ClickGUI closed.
                 if(m_InputEditing)
                 {
@@ -560,7 +672,8 @@ void CClickGui::OnRender()
         }
 
         // While open (or animating), force absolute mouse mode EVERY FRAME.
-        if(isOpen)
+        // Skip if game console (F1/F2) is open — it manages mouse mode itself.
+        if(isOpen && !GameClient()->m_GameConsole.IsActive())
                 Input()->MouseModeAbsolute();
 
         // If dragging a panel, set its target position to follow the mouse.
@@ -588,9 +701,35 @@ void CClickGui::OnRender()
                         const float trackW = PANEL_WIDTH - BODY_PADDING * 2 - indent - 4.0f;
                         float pct = (m_MousePos.x - trackX) / trackW;
                         pct = std::clamp(pct, 0.0f, 1.0f);
-                        pTarget->value = pTarget->min + pct * (pTarget->max - pTarget->min);
+                        {
+                                float raw = pTarget->min + pct * (pTarget->max - pTarget->min);
+                                if(pTarget->step >= 1.0f)
+                                        pTarget->value = pTarget->min + roundf((raw - pTarget->min) / pTarget->step) * pTarget->step;
+                                else
+                                        pTarget->value = raw;
+                        }
                         if(str_comp(pTarget->pName, "Latency (ms)") == 0)
                                 g_Config.m_ClDummyHammerLatencyMs = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Version ID") == 0)
+                                g_Config.m_ClVersionSpoofId = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "FOV") == 0)
+                                g_Config.m_ClLaserUnfreezeFov = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Angles") == 0)
+                                g_Config.m_ClLaserUnfreezeAngles = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Ticks") == 0)
+                                g_Config.m_ClLaserUnfreezeTicks = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Trigger ticks") == 0)
+                                g_Config.m_ClLaserUnfreezeTriggerTicks = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Speed") == 0)
+                                g_Config.m_ClFakeAimSpeed = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Chunk size") == 0)
+                                g_Config.m_ClPfChunkSize = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Hook angles") == 0)
+                                g_Config.m_ClPfHookAngles = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Candidates") == 0)
+                                g_Config.m_ClPfCandidates = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Performance") == 0)
+                                g_Config.m_ClPfPerf = (int)pTarget->value;
                 }
         }
 
@@ -624,7 +763,9 @@ void CClickGui::OnRender()
 
         // Render panels in z-order (low z first = painted behind, high z on top).
         // Build a list of panel indices sorted by z-order ascending.
-        int renderOrder[NUM_PANELS] = {0, 1, 2, 3, 4};
+        int renderOrder[NUM_PANELS];
+        for(int i = 0; i < NUM_PANELS; ++i)
+                renderOrder[i] = i;
         for(int a = 0; a < NUM_PANELS; ++a)
                 for(int b = a + 1; b < NUM_PANELS; ++b)
                         if(m_aZOrder[renderOrder[b]] < m_aZOrder[renderOrder[a]])
@@ -788,7 +929,9 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
         }
 
         // Iterate panels top-to-bottom (high z first) to find the topmost hit.
-        int clickOrder[NUM_PANELS] = {0, 1, 2, 3, 4};
+        int clickOrder[NUM_PANELS];
+        for(int i = 0; i < NUM_PANELS; ++i)
+                clickOrder[i] = i;
         for(int a = 0; a < NUM_PANELS; ++a)
                 for(int b = a + 1; b < NUM_PANELS; ++b)
                         if(m_aZOrder[clickOrder[b]] > m_aZOrder[clickOrder[a]])
@@ -840,10 +983,22 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                         // Sub-region hits within the row.
                         if(pTarget->type == ERowType::Toggle || pTarget->type == ERowType::ToggleDropdown || pTarget->type == ERowType::Expandable)
                         {
-                                // Click on check area or name area → toggle on/off.
+                                // Visual expandables (Score method, Penalties, Visuals) cannot be
+                                // toggled off — only expand/collapse. Click on name = expand toggle.
+                                const bool isVisualExpandable = (pTarget->type == ERowType::Expandable) &&
+                                        (str_comp(pTarget->pName, "Score method") == 0 ||
+                                         str_comp(pTarget->pName, "Penalties") == 0 ||
+                                         str_comp(pTarget->pName, "Visuals") == 0);
+                                // Click on check area or name area → toggle on/off (or expand for visual).
                                 const float toggleEndX = rx + rw - (pTarget->type == ERowType::Expandable ? ARROW_W + 4.0f : (pTarget->type == ERowType::ToggleDropdown ? DROPDOWN_W + 4.0f : 0.0f));
                                 if(mousePos.x < toggleEndX)
                                 {
+                                        if(isVisualExpandable)
+                                        {
+                                                // Visual expandable: only expand/collapse, no toggle.
+                                                pTarget->expanded = !pTarget->expanded;
+                                                return;
+                                        }
                                         pTarget->on = !pTarget->on;
                                         // Wire reference toggles to real subsystems.
                                         if(str_comp(pTarget->pName, "Block") == 0)
@@ -852,6 +1007,11 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 GameClient()->m_BotNet.m_RandomAim = pTarget->on;
                                         else if(str_comp(pTarget->pName, "Trajectory") == 0)
                                                 g_Config.m_ClShowTrajectory = pTarget->on ? 1 : 0;
+                                        // Advanced → Laser unfreeze expandable is master toggle.
+                                        else if(str_comp(pTarget->pName, "Laser unfreeze") == 0)
+                                                g_Config.m_ClLaserUnfreeze = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Fake Aim") == 0)
+                                                g_Config.m_ClFakeAim = pTarget->on ? 1 : 0;
                                         // Functions panel — Fly/Copy Moves sub-section
                                         else if(str_comp(pTarget->pName, "Preserve input") == 0)
                                                 g_Config.m_ClDummyHammerKeepInputs = pTarget->on ? 1 : 0;
@@ -867,6 +1027,9 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 g_Config.m_ClDummyCopyMirrorAimY = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Smart aim") == 0)
                                                 g_Config.m_ClDummyCopySmartAim = pTarget->on ? 1 : 0;
+                                        // Copy Moves Filter expandable is master toggle.
+                                        else if(str_comp(pTarget->pName, "Copy Moves Filter") == 0)
+                                                g_Config.m_ClDummyCopyMovesFilter = pTarget->on ? 1 : 0;
                                         // Copy Moves Filter sub-toggles
                                         else if(str_comp(pTarget->pName, "Filter: Jump") == 0)
                                                 g_Config.m_ClDummyCopyMovesFilterJump = pTarget->on ? 1 : 0;
@@ -878,8 +1041,83 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 g_Config.m_ClDummyCopyMovesFilterAim = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Filter: Fire") == 0)
                                                 g_Config.m_ClDummyCopyMovesFilterFire = pTarget->on ? 1 : 0;
+                                        // Settings → IRC children
+                                        else if(str_comp(pTarget->pName, "Reveal join") == 0)
+                                                g_Config.m_ClIrcRevealJoin = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Nameplate tag") == 0)
+                                                g_Config.m_ClIrcNameplateTag = pTarget->on ? 1 : 0;
+                                        // Advanced → Laser unfreeze children
+                                        else if(str_comp(pTarget->pName, "Auto laser") == 0)
+                                                g_Config.m_ClLaserUnfreezeAuto = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Silent") == 0)
+                                                g_Config.m_ClLaserUnfreezeSilent = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Show attempt") == 0)
+                                                g_Config.m_ClLaserUnfreezeShowAttempt = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Show for me") == 0)
+                                                g_Config.m_ClFakeAimShowForMe = pTarget->on ? 1 : 0;
+                                        // Pathfinder → Score method children
+                                        else if(str_comp(pTarget->pName, "Distance reduction") == 0)
+                                                g_Config.m_ClPfScoreDist = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Flow-field alignment") == 0)
+                                                g_Config.m_ClPfScoreFlow = pTarget->on ? 1 : 0;
+                                        // Pathfinder → Penalties children
+                                        else if(str_comp(pTarget->pName, "Freeze penalty") == 0)
+                                                g_Config.m_ClPfFineFreeze = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Hook retract penalty") == 0)
+                                                g_Config.m_ClPfFineRetract = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Death penalty") == 0)
+                                                g_Config.m_ClPfFineDeath = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Wall-hit penalty") == 0)
+                                                g_Config.m_ClPfFineWall = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Air-time penalty") == 0)
+                                                g_Config.m_ClPfFineAir = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Hook-fire penalty") == 0)
+                                                g_Config.m_ClPfFineHook = pTarget->on ? 1 : 0;
+                                        // Pathfinder → Visuals children
+                                        else if(str_comp(pTarget->pName, "Show field") == 0)
+                                                g_Config.m_ClPfShowField = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Show hooks") == 0)
+                                                g_Config.m_ClPfShowHooks = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Show branches") == 0)
+                                                g_Config.m_ClPfShowBranches = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Show speed") == 0)
+                                                g_Config.m_ClPfShowSpeed = pTarget->on ? 1 : 0;
+                                        // Pathfinder top-level
+                                        else if(str_comp(pTarget->pName, "Advanced search") == 0)
+                                                g_Config.m_ClPfAdvancedSearch = pTarget->on ? 1 : 0;
+                                        // Settings → IRC/Spoofer expandables are master toggles.
+                                        else if(str_comp(pTarget->pName, "IRC") == 0)
+                                                g_Config.m_ClIrcEnabled = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Spoofer") == 0)
+                                        {
+                                                g_Config.m_ClVersionSpoof = pTarget->on ? 1 : 0;
+                                                g_Config.m_ClSpoofClientStr = pTarget->on ? 1 : 0;
+                                        }
                                         return;
                                 }
+                        }
+                        if(pTarget->type == ERowType::Button)
+                        {
+                                // Button click — dispatch by name.
+                                if(str_comp(pTarget->pName, "Pathfinding") == 0)
+                                {
+                                        CBotNet &BN = GameClient()->m_BotNet;
+                                        if(BN.m_PfState == PF_STATE_IDLE)
+                                        {
+                                                BN.m_PfState = PF_STATE_RUNNING;
+                                                BN.PfResetRun();
+                                        }
+                                        else if(BN.m_PfState == PF_STATE_RUNNING)
+                                        {
+                                                BN.m_PfState = PF_STATE_FINISHED;
+                                        }
+                                        else // PF_STATE_FINISHED
+                                        {
+                                                BN.m_PfState = PF_STATE_IDLE;
+                                                BN.m_PfVPath.clear();
+                                        }
+                                }
+                                return;
                         }
                         if(pTarget->type == ERowType::Expandable)
                         {
@@ -900,9 +1138,33 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 const float trackW = rw - 4.0f;
                                 float pct = (mousePos.x - trackX) / trackW;
                                 pct = std::clamp(pct, 0.0f, 1.0f);
-                                pTarget->value = pTarget->min + pct * (pTarget->max - pTarget->min);
+                                {
+                                        float raw = pTarget->min + pct * (pTarget->max - pTarget->min);
+                                        if(pTarget->step >= 1.0f)
+                                                pTarget->value = pTarget->min + roundf((raw - pTarget->min) / pTarget->step) * pTarget->step;
+                                        else
+                                                pTarget->value = raw;
+                                }
                                 if(str_comp(pTarget->pName, "Latency (ms)") == 0)
                                         g_Config.m_ClDummyHammerLatencyMs = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Version ID") == 0)
+                                        g_Config.m_ClVersionSpoofId = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "FOV") == 0)
+                                        g_Config.m_ClLaserUnfreezeFov = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Angles") == 0)
+                                        g_Config.m_ClLaserUnfreezeAngles = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Ticks") == 0)
+                                        g_Config.m_ClLaserUnfreezeTicks = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Trigger ticks") == 0)
+                                        g_Config.m_ClLaserUnfreezeTriggerTicks = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Chunk size") == 0)
+                                        g_Config.m_ClPfChunkSize = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Hook angles") == 0)
+                                        g_Config.m_ClPfHookAngles = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Candidates") == 0)
+                                        g_Config.m_ClPfCandidates = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Performance") == 0)
+                                        g_Config.m_ClPfPerf = (int)pTarget->value;
                                 return;
                         }
                         if(pTarget->type == ERowType::Dropdown || pTarget->type == ERowType::ToggleDropdown)
@@ -1040,6 +1302,10 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                                         target.valueIdx = o;
                                         if(str_comp(target.pName, "Aim mode") == 0)
                                                 g_Config.m_ClDummyCopyAimMode = o;
+                                        else if(str_comp(target.pName, "Client preset") == 0)
+                                                g_Config.m_ClSpoofClientPreset = o;
+                                        else if(str_comp(target.pName, "Mode") == 0)
+                                                g_Config.m_ClFakeAimMode = o;
                                         m_DropdownOpen = false;
                                         return true;
                                 }
@@ -1052,6 +1318,8 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                         for(int c = 0; c < row.childCount; ++c)
                         {
                                 SRow &child = row.pChildren[c];
+                                if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
+                                        continue;
                                 const float crh = RowHeight(child.type);
                                 if(r == m_DropdownRow && c == m_DropdownChild)
                                 {
@@ -1069,6 +1337,10 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                                                         target.valueIdx = o;
                                                         if(str_comp(target.pName, "Aim mode") == 0)
                                                                 g_Config.m_ClDummyCopyAimMode = o;
+                                                        else if(str_comp(target.pName, "Client preset") == 0)
+                                                                g_Config.m_ClSpoofClientPreset = o;
+                                                        else if(str_comp(target.pName, "Mode") == 0)
+                                                                g_Config.m_ClFakeAimMode = o;
                                                         m_DropdownOpen = false;
                                                         return true;
                                                 }
@@ -1139,6 +1411,8 @@ void CClickGui::RenderDropdownPopup(float alpha)
                         for(int c = 0; c < row.childCount; ++c)
                         {
                                 SRow &child = row.pChildren[c];
+                                if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
+                                        continue;
                                 const float crh = RowHeight(child.type);
                                 if(r == m_DropdownRow && c == m_DropdownChild)
                                 {
@@ -1382,6 +1656,8 @@ bool CClickGui::HitTestRow(vec2 mousePos, int panelIdx, int &outRow, int &outChi
                         for(int c = 0; c < row.childCount; ++c)
                         {
                                 SRow &child = row.pChildren[c];
+                                if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
+                                        continue;
                                 const float crh = RowHeight(child.type);
                                 const float crw = rw - SUB_LIST_INDENT;
                                 if(PointInRect(mousePos, bodyX + SUB_LIST_INDENT, cursorY, crw, crh))
@@ -1413,7 +1689,7 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
         // ---- Step 1: build a Yoga tree for the body and compute its height ----
         // (Skipped when collapsed — body height = 0, only header is drawn.)
         YGNodeRef bodyRoot = nullptr;
-        YGNodeRef rowNodes[32];
+        YGNodeRef rowNodes[64];
         int rowCount = 0;
         float bodyHeight = 0.0f;
 
@@ -1448,7 +1724,11 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                         if(row.type == ERowType::Expandable && row.expanded && row.pChildren)
                         {
                                 for(int c = 0; c < row.childCount; ++c)
+                                {
+                                        if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
+                                                continue;
                                         addRowNode(row.pChildren[c], true);
+                                }
                         }
                 }
 
@@ -1572,10 +1852,21 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
 
                         // Value chip.
                         char valBuf[32];
-                        if(row.pSuffix)
-                                str_format(valBuf, sizeof(valBuf), "%.2f%s", row.value, row.pSuffix);
+                        // Use integer format when step >= 1.0 (no fractional values needed).
+                        if(row.step >= 1.0f)
+                        {
+                                if(row.pSuffix)
+                                        str_format(valBuf, sizeof(valBuf), "%d%s", (int)row.value, row.pSuffix);
+                                else
+                                        str_format(valBuf, sizeof(valBuf), "%d", (int)row.value);
+                        }
                         else
-                                str_format(valBuf, sizeof(valBuf), "%.2f", row.value);
+                        {
+                                if(row.pSuffix)
+                                        str_format(valBuf, sizeof(valBuf), "%.2f%s", row.value, row.pSuffix);
+                                else
+                                        str_format(valBuf, sizeof(valBuf), "%.2f", row.value);
+                        }
                         const float valW = TextRender()->TextWidth(17.0f, valBuf) + 10.0f;
                         const float valX = rx + rw - valW - 2.0f;
                         const float valY = ry + 1.0f;
@@ -1706,6 +1997,40 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                         DrawText(rx + rw - ARROW_W - 2.0f, ry + 5.0f, 14.0f, pArrow, arrowCol);
                         break;
                 }
+                case ERowType::Button:
+                {
+                        // Button — colored rect with centered label.
+                        // Pathfinding button: green (IDLE) / red (RUNNING) / orange (FINISHED).
+                        ColorRGBA btnCol = ColorRGBA(0xff9d4edd, true).WithAlpha(alpha); // default purple
+                        const char *pLabel = row.pName;
+                        if(str_comp(row.pName, "Pathfinding") == 0)
+                        {
+                                CBotNet &BN = GameClient()->m_BotNet;
+                                if(BN.m_PfState == PF_STATE_IDLE)
+                                {
+                                        btnCol = ColorRGBA(0xff3da35a, true).WithAlpha(alpha); // green
+                                        pLabel = "Pathfinding";
+                                }
+                                else if(BN.m_PfState == PF_STATE_RUNNING)
+                                {
+                                        btnCol = ColorRGBA(0xffc43d3d, true).WithAlpha(alpha); // red
+                                        pLabel = "Stop";
+                                }
+                                else // FINISHED
+                                {
+                                        btnCol = ColorRGBA(0xffe69528, true).WithAlpha(alpha); // orange
+                                        pLabel = "Finish";
+                                }
+                        }
+                        // Button background (full row width, centered).
+                        DrawRoundedRect(rx + 2.0f, ry + 2.0f, rw - 4.0f, rh - 4.0f, 4.0f,
+                                IGraphics::CORNER_ALL, btnCol);
+                        // Centered label.
+                        const float labelW = TextRender()->TextWidth(16.0f, pLabel);
+                        DrawText(rx + (rw - labelW) * 0.5f, ry + 8.0f, 16.0f, pLabel,
+                                ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                        break;
+                }
                 }
 
                 // Render expanded children (already added as rowNodes after the parent).
@@ -1714,6 +2039,8 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                         for(int c = 0; c < row.childCount; ++c)
                         {
                                 SRow &child = row.pChildren[c];
+                                if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
+                                        continue;
                                 const YGNodeRef cnode = rowNodes[rowIdx];
                                 const float crx = bodyX + YGNodeLayoutGetLeft(cnode);
                                 const float cry = bodyY + YGNodeLayoutGetTop(cnode);
@@ -1742,10 +2069,20 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                 {
                                         DrawText(crx + 2.0f, cry + 5.0f, 17.0f, child.pName, cText);
                                         char vbuf[32];
-                                        if(child.pSuffix)
-                                                str_format(vbuf, sizeof(vbuf), "%.2f%s", child.value, child.pSuffix);
+                                        if(child.step >= 1.0f)
+                                        {
+                                                if(child.pSuffix)
+                                                        str_format(vbuf, sizeof(vbuf), "%d%s", (int)child.value, child.pSuffix);
+                                                else
+                                                        str_format(vbuf, sizeof(vbuf), "%d", (int)child.value);
+                                        }
                                         else
-                                                str_format(vbuf, sizeof(vbuf), "%.2f", child.value);
+                                        {
+                                                if(child.pSuffix)
+                                                        str_format(vbuf, sizeof(vbuf), "%.2f%s", child.value, child.pSuffix);
+                                                else
+                                                        str_format(vbuf, sizeof(vbuf), "%.2f", child.value);
+                                        }
                                         const float vw = TextRender()->TextWidth(17.0f, vbuf) + 10.0f;
                                         const float vx = crx + crw - vw - 2.0f;
                                         DrawRoundedRect(vx, cry + 1.0f, vw, 18.0f, 2.0f,

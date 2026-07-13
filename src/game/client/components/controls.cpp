@@ -7,10 +7,13 @@
 #include <base/mem.h>
 #include <base/time.h>
 #include <base/vmath.h>
+#include <cstdlib>
 
 #include <engine/client.h>
 #include <engine/shared/config.h>
 
+#include <game/client/prediction/entities/character.h>
+#include <game/client/prediction/gameworld.h>
 #include <generated/protocol.h>
 
 #include <game/client/components/camera.h>
@@ -535,8 +538,161 @@ int CControls::SnapInput(int *pData)
         if(!Send)
                 return 0;
 
+        // Laser unfreeze silent aim — highest priority.
+        bool laserAimActive = m_LaserUnfreezeAimActive;
+        if(laserAimActive)
+        {
+                m_aInputData[g_Config.m_ClDummy].m_TargetX = (int)m_LaserUnfreezeAimOffset.x;
+                m_aInputData[g_Config.m_ClDummy].m_TargetY = (int)m_LaserUnfreezeAimOffset.y;
+                m_LaserUnfreezeAimActive = false;
+        }
+
+        // ── Fake Aim ──────────────────────────────────────────────
+        m_FakeAimRenderActive = false;
+        bool fakeActive = false;
+        vec2 fakeOffset(0, 0);
+        bool fakeShowForMe = false;
+
+        // Fire/hook detection + robot update — ALWAYS runs (even when laser unfreeze active)
+        bool willFire = false;
+        bool hookPress = false;
+        vec2 realAim = m_aMousePos[g_Config.m_ClDummy];
+
+        // Robot frozen aim — declared OUTSIDE if block so generation can access it
+        static vec2 s_RobotAim = vec2(0, 0);
+        static bool s_RobotInit = false;
+
+        if(g_Config.m_ClFakeAim)
+        {
+                // Detect weapon fire via 1-tick prediction
+                CGameClient *pGC = GameClient();
+                if(pGC && pGC->m_Snap.m_pLocalInfo)
+                {
+                        int LocalID = pGC->m_Snap.m_LocalClientId;
+                        CCharacter *pChar = pGC->m_PredictedWorld.GetCharacterById(LocalID);
+                        if(pChar)
+                        {
+                                int tickBefore = pChar->GetAttackTick();
+                                CGameWorld FutureWorld;
+                                FutureWorld.CopyWorld(&pGC->m_PredictedWorld);
+                                CCharacter *pFuture = FutureWorld.GetCharacterById(LocalID);
+                                if(pFuture)
+                                {
+                                        CNetObj_PlayerInput FutureInput = m_aInputData[g_Config.m_ClDummy];
+                                        pFuture->OnDirectInput(&FutureInput);
+                                        FutureWorld.m_GameTick = FutureWorld.GameTick() + 1;
+                                        pFuture->OnPredictedInput(&FutureInput);
+                                        FutureWorld.Tick();
+                                        if(CCharacter *pAfter = FutureWorld.GetCharacterById(LocalID))
+                                        {
+                                                if(pAfter->GetAttackTick() != tickBefore)
+                                                        willFire = true;
+                                        }
+                                }
+                        }
+                }
+
+                // Hook press edge
+                static int s_LastHook = 0;
+                hookPress = (m_aInputData[g_Config.m_ClDummy].m_Hook != 0 && s_LastHook == 0);
+                s_LastHook = m_aInputData[g_Config.m_ClDummy].m_Hook;
+
+                // Robot: always remember last aim state
+                if(!s_RobotInit)
+                {
+                        s_RobotAim = realAim;
+                        s_RobotInit = true;
+                }
+                if(willFire || hookPress)
+                        s_RobotAim = realAim;
+        }
+
+        // Fake aim generation — skipped when laser unfreeze active (laser has priority)
+        if(g_Config.m_ClFakeAim && !laserAimActive)
+        {
+                // Decide: real or fake
+                if(willFire || hookPress)
+                {
+                        fakeActive = true;
+                        fakeOffset = realAim;
+                        fakeShowForMe = true;
+                }
+                else
+                {
+                        int mode = g_Config.m_ClFakeAimMode;
+                        int speed = g_Config.m_ClFakeAimSpeed;
+                        if(speed < 1) speed = 1;
+                        if(speed > 100) speed = 100;
+                        constexpr float AIM_DIST = 200.0f;
+
+                        if(mode == 0) // Random
+                        {
+                                static int s_TickCounter = 0;
+                                static float s_RandAngle = 0.0f;
+                                s_TickCounter++;
+                                if(s_TickCounter >= speed)
+                                {
+                                        s_RandAngle = ((float)rand() / (float)RAND_MAX) * pi * 2.0f;
+                                        s_TickCounter = 0;
+                                }
+                                fakeOffset = vec2(cosf(s_RandAngle), sinf(s_RandAngle)) * AIM_DIST;
+                        }
+                        else if(mode == 1) // Robot
+                        {
+                                fakeOffset = s_RobotAim;
+                        }
+                        else if(mode == 3) // Lag
+                        {
+                                static int s_LagCounter = 0;
+                                s_LagCounter++;
+                                if(s_LagCounter >= speed)
+                                {
+                                        s_RobotAim = realAim;
+                                        s_LagCounter = 0;
+                                }
+                                fakeOffset = s_RobotAim;
+                        }
+                        else // Spin
+                        {
+                                static float s_SpinAngle = 0.0f;
+                                s_SpinAngle += (speed / 100.0f) * 0.5f;
+                                fakeOffset = vec2(cosf(s_SpinAngle), sinf(s_SpinAngle)) * AIM_DIST;
+                        }
+
+                        fakeActive = true;
+                        fakeShowForMe = g_Config.m_ClFakeAimShowForMe != 0;
+                }
+        }
+
+        // ── Apply fake aim override (lower priority than laser unfreeze) ──
+        if(fakeActive)
+        {
+                // Render data for players.cpp
+                m_FakeAimRenderActive = true;
+                m_FakeAimRenderOffset = fakeOffset;
+
+                if(fakeShowForMe)
+                {
+                        // Show for me ON: set in m_aInputData (server + prediction)
+                        m_aInputData[g_Config.m_ClDummy].m_TargetX = (int)fakeOffset.x;
+                        m_aInputData[g_Config.m_ClDummy].m_TargetY = (int)fakeOffset.y;
+                }
+                // else: don't touch m_aInputData — prediction keeps real aim.
+                //       pData modified after mem_copy for server-only fake.
+        }
+
         m_LastSendTime = time_get();
         mem_copy(pData, &m_aInputData[g_Config.m_ClDummy], sizeof(m_aInputData[0]));
+
+        // Fake Aim show for me = OFF: modify pData AFTER mem_copy.
+        // Server gets fake, local prediction keeps real aim.
+        if(fakeActive && !fakeShowForMe)
+        {
+                CNetObj_PlayerInput *pSend = (CNetObj_PlayerInput *)pData;
+                pSend->m_TargetX = (int)fakeOffset.x;
+                pSend->m_TargetY = (int)fakeOffset.y;
+        }
+
         return sizeof(m_aInputData[0]);
 }
 

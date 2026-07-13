@@ -301,6 +301,22 @@ MACRO_CONFIG_INT(ClTrajectoryLineSize, cl_trajectory_line_size, 1, 0, 20, CFGFLA
 MACRO_CONFIG_COL(ClTrajectoryColor, cl_trajectory_color, 65471, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Trajectory line color")
 MACRO_CONFIG_INT(ClTrajectoryAlpha, cl_trajectory_alpha, 80, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Trajectory line opacity (0-100)")
 
+// Laser unfreeze — predictive laser self-unfreeze
+MACRO_CONFIG_INT(ClLaserUnfreeze, cl_laser_unfreeze, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Laser unfreeze: predict freeze and auto-fire laser to unfreeze self")
+MACRO_CONFIG_INT(ClLaserUnfreezeAuto, cl_laser_unfreeze_auto, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Laser unfreeze: auto switch to laser weapon before firing")
+MACRO_CONFIG_INT(ClLaserUnfreezeFov, cl_laser_unfreeze_fov, 90, 5, 360, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Laser unfreeze: field of view in degrees (5-360)")
+MACRO_CONFIG_INT(ClLaserUnfreezeAngles, cl_laser_unfreeze_angles, 9, 1, 144, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Laser unfreeze: number of raycast angles to test (1-144)")
+MACRO_CONFIG_INT(ClLaserUnfreezeTicks, cl_laser_unfreeze_ticks, 10, 1, 50, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Laser unfreeze: ticks to predict for raycast simulation (1-50)")
+MACRO_CONFIG_INT(ClLaserUnfreezeTriggerTicks, cl_laser_unfreeze_trigger_ticks, 3, 1, 5, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Laser unfreeze: ticks to predict for freeze trigger (1-5)")
+MACRO_CONFIG_INT(ClLaserUnfreezeSilent, cl_laser_unfreeze_silent, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Laser unfreeze: silent mode — don't change player's crosshair, only send aim to server")
+MACRO_CONFIG_INT(ClLaserUnfreezeShowAttempt, cl_laser_unfreeze_show_attempt, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Laser unfreeze: render successful laser path as blue line with 5s fade")
+
+// Fake Aim — send fake aim to server for fun (Random/Robot/Spin)
+MACRO_CONFIG_INT(ClFakeAim, cl_fake_aim, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Fake Aim: send fake aim coordinates to server")
+MACRO_CONFIG_INT(ClFakeAimMode, cl_fake_aim_mode, 0, 0, 3, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Fake Aim mode: 0=Random 1=Robot 2=Spin 3=Lag")
+MACRO_CONFIG_INT(ClFakeAimSpeed, cl_fake_aim_speed, 10, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Fake Aim: speed (how often to change for Random, rotation speed for Spin)")
+MACRO_CONFIG_INT(ClFakeAimShowForMe, cl_fake_aim_show_for_me, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Fake Aim: show fake aim on player character (not just server)")
+
 // Pathfinder parameter bounds — single source of truth for config limits + dynamic formulas.
 // Keep PF_CHUNK_SIZE_MAX / PF_HOOK_ANGLES_MAX in sync with the literals in the
 // ClPfHookAngles (4-32) macro below.

@@ -5131,6 +5131,130 @@ void CMenus::RenderSettingsAdvanced(CUIRect MainView)
 
                 MainView.HSplitTop(PanelGap, nullptr, &MainView);
 
+                // === Laser Unfreeze Panel ===
+                {
+                        float SectionH = PanelPad + 25.0f + 5.0f; // header
+                        SectionH += 20.0f + RowGap; // Laser unfreeze toggle
+                        if(g_Config.m_ClLaserUnfreeze)
+                        {
+                                SectionH += 20.0f + RowGap; // Auto laser
+                                SectionH += 20.0f + RowGap; // FOV
+                                SectionH += 20.0f + RowGap; // Angles
+                                SectionH += 20.0f + RowGap; // Ticks
+                                SectionH += 20.0f + RowGap; // Trigger ticks
+                                SectionH += 20.0f + RowGap; // Silent
+                                SectionH += 20.0f + RowGap; // Show attempt
+                        }
+                        SectionH += PanelPad;
+                        MainView.HSplitTop(SectionH, &PanelBg, &MainView);
+                        PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
+                        s_AdvancedScrollRegion.AddRect(PanelBg);
+                        PanelBg.Margin(PanelPad, &Panel);
+
+                        Panel.HSplitTop(25.0f, &Label, &Panel);
+                        Ui()->DoLabel(&Label, Localize("Laser unfreeze"), 16.0f, TEXTALIGN_ML);
+                        Panel.HSplitTop(5.0f, nullptr, &Panel);
+
+                        Panel.HSplitTop(20.0f, &Row, &Panel);
+                        if(DoButton_CheckBox(&g_Config.m_ClLaserUnfreeze, Localize("Laser unfreeze"), g_Config.m_ClLaserUnfreeze, &Row))
+                                g_Config.m_ClLaserUnfreeze ^= 1;
+                        GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClLaserUnfreeze, &Row, Localize("Predict freeze and auto-fire laser to unfreeze self"));
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
+
+                        if(g_Config.m_ClLaserUnfreeze)
+                        {
+                                Panel.HSplitTop(20.0f, &Row, &Panel);
+                                if(DoButton_CheckBox(&g_Config.m_ClLaserUnfreezeAuto, Localize("Auto laser"), g_Config.m_ClLaserUnfreezeAuto, &Row))
+                                        g_Config.m_ClLaserUnfreezeAuto ^= 1;
+                                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClLaserUnfreezeAuto, &Row, Localize("Auto switch to laser weapon before firing"));
+                                Panel.HSplitTop(RowGap, nullptr, &Panel);
+
+                                Panel.HSplitTop(20.0f, &Row, &Panel);
+                                Ui()->DoScrollbarOption(&g_Config.m_ClLaserUnfreezeFov, &g_Config.m_ClLaserUnfreezeFov, &Row, Localize("FOV"), 5, 360);
+                                Panel.HSplitTop(RowGap, nullptr, &Panel);
+
+                                Panel.HSplitTop(20.0f, &Row, &Panel);
+                                Ui()->DoScrollbarOption(&g_Config.m_ClLaserUnfreezeAngles, &g_Config.m_ClLaserUnfreezeAngles, &Row, Localize("Angles"), 1, 144);
+                                Panel.HSplitTop(RowGap, nullptr, &Panel);
+
+                                Panel.HSplitTop(20.0f, &Row, &Panel);
+                                Ui()->DoScrollbarOption(&g_Config.m_ClLaserUnfreezeTicks, &g_Config.m_ClLaserUnfreezeTicks, &Row, Localize("Ticks"), 1, 50);
+                                Panel.HSplitTop(RowGap, nullptr, &Panel);
+
+                                Panel.HSplitTop(20.0f, &Row, &Panel);
+                                Ui()->DoScrollbarOption(&g_Config.m_ClLaserUnfreezeTriggerTicks, &g_Config.m_ClLaserUnfreezeTriggerTicks, &Row, Localize("Trigger ticks"), 1, 5);
+                                Panel.HSplitTop(RowGap, nullptr, &Panel);
+
+                                Panel.HSplitTop(20.0f, &Row, &Panel);
+                                if(DoButton_CheckBox(&g_Config.m_ClLaserUnfreezeSilent, Localize("Silent"), g_Config.m_ClLaserUnfreezeSilent, &Row))
+                                        g_Config.m_ClLaserUnfreezeSilent ^= 1;
+                                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClLaserUnfreezeSilent, &Row, Localize("Don't change crosshair — only send aim to server"));
+                                Panel.HSplitTop(RowGap, nullptr, &Panel);
+
+                                Panel.HSplitTop(20.0f, &Row, &Panel);
+                                if(DoButton_CheckBox(&g_Config.m_ClLaserUnfreezeShowAttempt, Localize("Show attempt"), g_Config.m_ClLaserUnfreezeShowAttempt, &Row))
+                                        g_Config.m_ClLaserUnfreezeShowAttempt ^= 1;
+                                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClLaserUnfreezeShowAttempt, &Row, Localize("Render successful laser path as blue line with 5s fade"));
+                                Panel.HSplitTop(RowGap, nullptr, &Panel);
+                        }
+                }
+
+                MainView.HSplitTop(PanelGap, nullptr, &MainView);
+
+                // === Fake Aim Panel ===
+                {
+                        float SectionH = PanelPad + 25.0f + 5.0f;
+                        SectionH += 20.0f + RowGap; // Fake Aim toggle
+                        if(g_Config.m_ClFakeAim)
+                        {
+                                SectionH += 20.0f + RowGap; // Mode
+                                SectionH += 20.0f + RowGap; // Speed
+                                SectionH += 20.0f + RowGap; // Show for me
+                        }
+                        SectionH += PanelPad;
+                        MainView.HSplitTop(SectionH, &PanelBg, &MainView);
+                        PanelBg.Draw(PanelBgColor, IGraphics::CORNER_ALL, 5.0f);
+                        s_AdvancedScrollRegion.AddRect(PanelBg);
+                        PanelBg.Margin(PanelPad, &Panel);
+
+                        Panel.HSplitTop(25.0f, &Label, &Panel);
+                        Ui()->DoLabel(&Label, Localize("Fake Aim"), 16.0f, TEXTALIGN_ML);
+                        Panel.HSplitTop(5.0f, nullptr, &Panel);
+
+                        Panel.HSplitTop(20.0f, &Row, &Panel);
+                        if(DoButton_CheckBox(&g_Config.m_ClFakeAim, Localize("Fake Aim"), g_Config.m_ClFakeAim, &Row))
+                                g_Config.m_ClFakeAim ^= 1;
+                        GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClFakeAim, &Row, Localize("Send fake aim to server for fun"));
+                        Panel.HSplitTop(RowGap, nullptr, &Panel);
+
+                        if(g_Config.m_ClFakeAim)
+                        {
+                                Panel.HSplitTop(20.0f, &Row, &Panel);
+                                {
+                                        CUIRect LabelRect, ButtonRect;
+                                        Row.VSplitLeft(200.0f, &LabelRect, &ButtonRect);
+                                        Ui()->DoLabel(&LabelRect, Localize("Mode"), 13.0f, TEXTALIGN_ML);
+                                        static const char *s_apFakeAimModeNames[] = {"Random", "Robot", "Spin"};
+                                        static CButtonContainer s_FakeAimModeButton;
+                                        if(DoButton_MenuTab(&s_FakeAimModeButton, s_apFakeAimModeNames[g_Config.m_ClFakeAimMode], 0, &ButtonRect, IGraphics::CORNER_ALL))
+                                                g_Config.m_ClFakeAimMode = (g_Config.m_ClFakeAimMode + 1) % 3;
+                                }
+                                Panel.HSplitTop(RowGap, nullptr, &Panel);
+
+                                Panel.HSplitTop(20.0f, &Row, &Panel);
+                                Ui()->DoScrollbarOption(&g_Config.m_ClFakeAimSpeed, &g_Config.m_ClFakeAimSpeed, &Row, Localize("Speed"), 1, 100);
+                                Panel.HSplitTop(RowGap, nullptr, &Panel);
+
+                                Panel.HSplitTop(20.0f, &Row, &Panel);
+                                if(DoButton_CheckBox(&g_Config.m_ClFakeAimShowForMe, Localize("Show for me"), g_Config.m_ClFakeAimShowForMe, &Row))
+                                        g_Config.m_ClFakeAimShowForMe ^= 1;
+                                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClFakeAimShowForMe, &Row, Localize("Show fake aim on player's crosshair"));
+                                Panel.HSplitTop(RowGap, nullptr, &Panel);
+                        }
+                }
+
+                MainView.HSplitTop(PanelGap, nullptr, &MainView);
+
                 // === Macro Panel ===
                 {
                         CBotNet &BN = GameClient()->m_BotNet;

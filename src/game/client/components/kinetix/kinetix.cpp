@@ -190,6 +190,10 @@ void CBotNet::OnUpdate()
         // tab only simulates + renders; it does NOT write inputs to any dummy).
         UpdatePathfinder();
 
+        // Laser unfreeze: predict freeze and auto-fire laser to unfreeze self.
+        // Runs on the active player's input (not dummies).
+        UpdateLaserUnfreeze();
+
         CGameClient *pGame = GameClient();
         if(!pGame->m_Snap.m_pLocalInfo)
                 return;
@@ -281,6 +285,9 @@ void CBotNet::OnRender()
         // of m_KinodynamicEnabled so the tab works even when kinodynamic A* is off.
         if(m_PfState != PF_STATE_IDLE)
                 RenderPathfinderPath();
+
+        // Laser unfreeze: render successful laser path (Show attempt)
+        RenderLaserUnfreezePath();
 
         if(!m_KinodynamicEnabled)
                 return;
