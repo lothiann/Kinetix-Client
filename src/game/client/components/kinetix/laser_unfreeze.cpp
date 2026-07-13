@@ -33,6 +33,12 @@
 void CBotNet::UpdateLaserUnfreeze()
 {
     static bool s_WasFiring = false;
+    // Throttle: Phase 1 (trigger prediction) is expensive (full CopyWorld).
+    // Run it only every Nth tick instead of every tick. Predicting 1-5 ticks
+    // ahead every 5 ticks still catches freeze well before it happens.
+    // This cuts the per-tick CopyWorld cost by ~5x and avoids the previous
+    // 50x/sec full-world-clone that caused the FPS collapse.
+    static int s_ThrottleCounter = 0;
 
     if(!g_Config.m_ClLaserUnfreeze)
     {
@@ -47,7 +53,42 @@ void CBotNet::UpdateLaserUnfreeze()
             }
             s_WasFiring = false;
         }
+        s_ThrottleCounter = 0;
         return;
+    }
+
+    // Throttle Phase 1: only run trigger prediction every 5 ticks.
+    // On off-ticks we keep the last willFreeze decision (held in static).
+    // Phase 2 (raycast) only runs when willFreeze is true, so it is naturally
+    // rare and does not need its own throttle.
+    constexpr int THROTTLE_PHASE1 = 5;
+    static bool s_HeldWillFreeze = false;
+
+    s_ThrottleCounter++;
+    if(s_ThrottleCounter < THROTTLE_PHASE1)
+    {
+        // Reuse last decision on off-ticks. Still must release fire if we
+        // were firing but the held decision flipped to false.
+        if(!s_HeldWillFreeze && s_WasFiring)
+        {
+            CGameClient *pGame = GameClient();
+            if(pGame)
+            {
+                CNetObj_PlayerInput *pInput = &pGame->m_Controls.m_aInputData[g_Config.m_ClDummy];
+                if((pInput->m_Fire & 1) != 0)
+                    pInput->m_Fire = (pInput->m_Fire + 1) & ~1;
+            }
+            s_WasFiring = false;
+        }
+        // If held willFreeze is true, fall through to Phase 2 on every tick
+        // (cheap relative to Phase 1, and only fires while about to freeze).
+        if(!s_HeldWillFreeze)
+            return;
+    }
+    else
+    {
+        s_ThrottleCounter = 0; // reset for next window
+        // fall through to run Phase 1 this tick
     }
 
     CGameClient *pGame = GameClient();
@@ -72,51 +113,64 @@ void CBotNet::UpdateLaserUnfreeze()
                 pInput->m_Fire = (pInput->m_Fire + 1) & ~1;
             s_WasFiring = false;
         }
+        s_HeldWillFreeze = false;
         return;
     }
 
-    // ── PHASE 1: trigger prediction ──────────────────────────────
-    int triggerTicks = g_Config.m_ClLaserUnfreezeTriggerTicks;
-    if(triggerTicks < 1) triggerTicks = 1;
-    if(triggerTicks > 5) triggerTicks = 5;
-
-    bool willFreeze = false;
-
+    // ── PHASE 1: trigger prediction (throttled — runs every 5 ticks) ─
+    bool willFreeze = s_HeldWillFreeze; // keep last if skipping Phase 1
+    if(s_ThrottleCounter == 0) // we just reset it above => this is a Phase 1 tick
     {
-        CGameWorld TriggerWorld;
-        TriggerWorld.CopyWorld(&pGame->m_PredictedWorld);
+        int triggerTicks = g_Config.m_ClLaserUnfreezeTriggerTicks;
+        if(triggerTicks < 1) triggerTicks = 1;
+        if(triggerTicks > 5) triggerTicks = 5;
 
-        for(int i = 0; i < MAX_CLIENTS; i++)
+        willFreeze = false;
+
         {
-            if(i == LocalID)
-                continue;
-            if(CCharacter *pChar = TriggerWorld.GetCharacterById(i))
-                TriggerWorld.RemoveEntity(pChar);
-        }
+            CGameWorld TriggerWorld;
+            TriggerWorld.CopyWorld(&pGame->m_PredictedWorld);
 
-        CCharacter *pTriggerChar = TriggerWorld.GetCharacterById(LocalID);
-        if(!pTriggerChar)
-            return;
-
-        CNetObj_PlayerInput TriggerInput = pTriggerChar->Core()->m_Input;
-        int StartTick = TriggerWorld.GameTick();
-
-        for(int t = 0; t < triggerTicks; t++)
-        {
-            pTriggerChar->OnDirectInput(&TriggerInput);
-            TriggerWorld.m_GameTick = StartTick + t + 1;
-            pTriggerChar->OnPredictedInput(&TriggerInput);
-            TriggerWorld.Tick();
-
-            if(!TriggerWorld.GetCharacterById(LocalID))
-                break;
-
-            if(pTriggerChar->m_FreezeTime > 0)
+            // IMPORTANT: use `delete` (not RemoveEntity) for characters we
+            // don't want. CopyWorld allocates them with `new`, but
+            // RemoveEntity only unlinks from the list — it does NOT free the
+            // object. Using RemoveEntity here leaked up to MAX_CLIENTS-1
+            // CCharacter objects every tick (thousands/sec), which was the
+            // root cause of the FPS collapse. `delete` runs the destructor
+            // which itself calls RemoveEntity, then frees the memory.
+            for(int i = 0; i < MAX_CLIENTS; i++)
             {
-                willFreeze = true;
-                break;
+                if(i == LocalID)
+                    continue;
+                if(CCharacter *pChar = TriggerWorld.GetCharacterById(i))
+                    delete pChar;
+            }
+
+            CCharacter *pTriggerChar = TriggerWorld.GetCharacterById(LocalID);
+            if(!pTriggerChar)
+                return;
+
+            CNetObj_PlayerInput TriggerInput = pTriggerChar->Core()->m_Input;
+            int StartTick = TriggerWorld.GameTick();
+
+            for(int t = 0; t < triggerTicks; t++)
+            {
+                pTriggerChar->OnDirectInput(&TriggerInput);
+                TriggerWorld.m_GameTick = StartTick + t + 1;
+                pTriggerChar->OnPredictedInput(&TriggerInput);
+                TriggerWorld.Tick();
+
+                if(!TriggerWorld.GetCharacterById(LocalID))
+                    break;
+
+                if(pTriggerChar->m_FreezeTime > 0)
+                {
+                    willFreeze = true;
+                    break;
+                }
             }
         }
+        s_HeldWillFreeze = willFreeze;
     }
 
     if(!willFreeze)
@@ -171,12 +225,14 @@ void CBotNet::UpdateLaserUnfreeze()
         CGameWorld RayWorld;
         RayWorld.CopyWorld(&pGame->m_PredictedWorld);
 
+        // `delete` (not RemoveEntity) — see Phase 1 comment above.
+        // RemoveEntity only unlinks and leaks the new'd object.
         for(int i = 0; i < MAX_CLIENTS; i++)
         {
             if(i == LocalID)
                 continue;
             if(CCharacter *pChar = RayWorld.GetCharacterById(i))
-                RayWorld.RemoveEntity(pChar);
+                delete pChar;
         }
 
         CCharacter *pRayChar = RayWorld.GetCharacterById(LocalID);

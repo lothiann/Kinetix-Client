@@ -12,8 +12,6 @@
 #include <engine/client.h>
 #include <engine/shared/config.h>
 
-#include <game/client/prediction/entities/character.h>
-#include <game/client/prediction/gameworld.h>
 #include <generated/protocol.h>
 
 #include <game/client/components/camera.h>
@@ -564,33 +562,17 @@ int CControls::SnapInput(int *pData)
 
         if(g_Config.m_ClFakeAim)
         {
-                // Detect weapon fire via 1-tick prediction
-                CGameClient *pGC = GameClient();
-                if(pGC && pGC->m_Snap.m_pLocalInfo)
-                {
-                        int LocalID = pGC->m_Snap.m_LocalClientId;
-                        CCharacter *pChar = pGC->m_PredictedWorld.GetCharacterById(LocalID);
-                        if(pChar)
-                        {
-                                int tickBefore = pChar->GetAttackTick();
-                                CGameWorld FutureWorld;
-                                FutureWorld.CopyWorld(&pGC->m_PredictedWorld);
-                                CCharacter *pFuture = FutureWorld.GetCharacterById(LocalID);
-                                if(pFuture)
-                                {
-                                        CNetObj_PlayerInput FutureInput = m_aInputData[g_Config.m_ClDummy];
-                                        pFuture->OnDirectInput(&FutureInput);
-                                        FutureWorld.m_GameTick = FutureWorld.GameTick() + 1;
-                                        pFuture->OnPredictedInput(&FutureInput);
-                                        FutureWorld.Tick();
-                                        if(CCharacter *pAfter = FutureWorld.GetCharacterById(LocalID))
-                                        {
-                                                if(pAfter->GetAttackTick() != tickBefore)
-                                                        willFire = true;
-                                        }
-                                }
-                        }
-                }
+                // Detect weapon fire via m_Fire parity rising edge.
+                // NOTE: previously this used a full CGameWorld CopyWorld +
+                // 1-tick prediction every SnapInput call (~50/sec) just to
+                // detect fire — that was a major cause of the FPS collapse.
+                // m_aLastData holds the PREVIOUS input state (it is updated
+                // at the very end of SnapInput, after this block), so a
+                // rising edge on the fire bit means the player started
+                // firing this tick. This matches what the server sees.
+                int CurFire = m_aInputData[g_Config.m_ClDummy].m_Fire;
+                int PrevFire = m_aLastData[g_Config.m_ClDummy].m_Fire;
+                willFire = ((CurFire & 1) != 0) && ((PrevFire & 1) == 0);
 
                 // Hook press edge
                 static int s_LastHook = 0;
