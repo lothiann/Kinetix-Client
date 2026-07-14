@@ -1960,11 +1960,11 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                 case ERowType::Toggle:
                 {
                         // [✓ or empty] [name]
-                        DrawRoundedRect(rx + 1.0f, ry + 5.0f, CHECK_W, CHECK_W, 3.0f,
+                        DrawRoundedRect(rx + 1.0f, ry + 3.0f, CHECK_W, CHECK_W, 3.0f,
                                 IGraphics::CORNER_ALL,
                                 ColorRGBA(COL_CHECK_SQUARE, true).WithAlpha(alpha));
                         if(row.on)
-                                DrawText(rx + 1.0f + CHECK_W * 0.5f, ry + 5.0f - 2.0f, 24.0f, "\xe2\x9c\x93" /* ✓ */,
+                                DrawText(rx + 1.0f + CHECK_W * 0.5f, ry + 3.0f - 2.0f, 24.0f, "\xe2\x9c\x93" /* ✓ */,
                                         ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha), TEXTALIGN_CENTER);
                         DrawText(rx + CHECK_W + 4.0f, ry + 5.0f, 18.0f, row.pName, textCol);
                         break;
@@ -1972,11 +1972,11 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                 case ERowType::ToggleDropdown:
                 {
                         // [✓ or empty] [name] [select box]
-                        DrawRoundedRect(rx + 1.0f, ry + 5.0f, CHECK_W, CHECK_W, 3.0f,
+                        DrawRoundedRect(rx + 1.0f, ry + 3.0f, CHECK_W, CHECK_W, 3.0f,
                                 IGraphics::CORNER_ALL,
                                 ColorRGBA(COL_CHECK_SQUARE, true).WithAlpha(alpha));
                         if(row.on)
-                                DrawText(rx + 1.0f + CHECK_W * 0.5f, ry + 5.0f - 2.0f, 24.0f, "\xe2\x9c\x93",
+                                DrawText(rx + 1.0f + CHECK_W * 0.5f, ry + 3.0f - 2.0f, 24.0f, "\xe2\x9c\x93",
                                         ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha), TEXTALIGN_CENTER);
                         DrawText(rx + CHECK_W + 4.0f, ry + 5.0f, 18.0f, row.pName, textCol);
 
@@ -2132,11 +2132,11 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                 case ERowType::Expandable:
                 {
                         // [✓ or empty] [name] [▶ or ▼]
-                        DrawRoundedRect(rx + 1.0f, ry + 5.0f, CHECK_W, CHECK_W, 3.0f,
+                        DrawRoundedRect(rx + 1.0f, ry + 3.0f, CHECK_W, CHECK_W, 3.0f,
                                 IGraphics::CORNER_ALL,
                                 ColorRGBA(COL_CHECK_SQUARE, true).WithAlpha(alpha));
                         if(row.on)
-                                DrawText(rx + 1.0f + CHECK_W * 0.5f, ry + 5.0f - 2.0f, 24.0f, "\xe2\x9c\x93",
+                                DrawText(rx + 1.0f + CHECK_W * 0.5f, ry + 3.0f - 2.0f, 24.0f, "\xe2\x9c\x93",
                                         ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha), TEXTALIGN_CENTER);
                         DrawText(rx + CHECK_W + 4.0f, ry + 5.0f, 18.0f, row.pName,
                                 row.on ? ColorRGBA(COL_ROW_TEXT_ON, true).WithAlpha(alpha) : textCol);
@@ -2242,11 +2242,11 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                 switch(child.type)
                                 {
                                 case ERowType::Toggle:
-                                        DrawRoundedRect(crx + 1.0f, cry + 5.0f, CHECK_W, CHECK_W, 3.0f,
+                                        DrawRoundedRect(crx + 1.0f, cry + 3.0f, CHECK_W, CHECK_W, 3.0f,
                                                 IGraphics::CORNER_ALL,
                                                 ColorRGBA(COL_CHECK_SQUARE, true).WithAlpha(alpha));
                                         if(child.on)
-                                                DrawText(crx + 1.0f + CHECK_W * 0.5f, cry + 5.0f - 2.0f, 22.0f, "\xe2\x9c\x93",
+                                                DrawText(crx + 1.0f + CHECK_W * 0.5f, cry + 3.0f - 2.0f, 22.0f, "\xe2\x9c\x93",
                                                                                         ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha), TEXTALIGN_CENTER);
                                         DrawText(crx + CHECK_W + 4.0f, cry + 5.0f, 17.0f, child.pName, cText);
                                         break;
@@ -2363,11 +2363,11 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                 {
                                         // v1.56.60: vector checkbox with draw animation (only ToggleDropdown has a check).
                                         if(child.type == ERowType::ToggleDropdown)
-                                                DrawRoundedRect(crx + 1.0f, cry + 5.0f, CHECK_W, CHECK_W, 3.0f,
+                                                DrawRoundedRect(crx + 1.0f, cry + 3.0f, CHECK_W, CHECK_W, 3.0f,
                                                         IGraphics::CORNER_ALL,
                                                         ColorRGBA(COL_CHECK_SQUARE, true).WithAlpha(alpha));
                                                 if(child.on)
-                                                        DrawText(crx + 1.0f + CHECK_W * 0.5f, cry + 5.0f - 2.0f, 22.0f, "\xe2\x9c\x93",
+                                                        DrawText(crx + 1.0f + CHECK_W * 0.5f, cry + 3.0f - 2.0f, 22.0f, "\xe2\x9c\x93",
                                                                                                 ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha), TEXTALIGN_CENTER);
                                         DrawText(crx + CHECK_W + 4.0f, cry + 5.0f, 17.0f, child.pName, cText);
                                         const float ddx = crx + crw - DROPDOWN_W - 2.0f;
@@ -2383,11 +2383,11 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                 }
                                 case ERowType::Expandable:
                                         // Nested expandables not in the data model; render as a plain toggle.
-                                        DrawRoundedRect(crx + 1.0f, cry + 5.0f, CHECK_W, CHECK_W, 3.0f,
+                                        DrawRoundedRect(crx + 1.0f, cry + 3.0f, CHECK_W, CHECK_W, 3.0f,
                                                 IGraphics::CORNER_ALL,
                                                 ColorRGBA(COL_CHECK_SQUARE, true).WithAlpha(alpha));
                                         if(child.on)
-                                                DrawText(crx + 1.0f + CHECK_W * 0.5f, cry + 5.0f - 2.0f, 22.0f, "\xe2\x9c\x93",
+                                                DrawText(crx + 1.0f + CHECK_W * 0.5f, cry + 3.0f - 2.0f, 22.0f, "\xe2\x9c\x93",
                                                                                         ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha), TEXTALIGN_CENTER);
                                         DrawText(crx + CHECK_W + 4.0f, cry + 5.0f, 17.0f, child.pName, cText);
                                         break;
