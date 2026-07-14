@@ -1843,7 +1843,38 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
         const float visibilityRaw = 1.0f - collapseAnim;
         const float visibilityTarget = collapsed ? 0.0f : 1.0f;
         const float easedVisibility = EaseBothDirections(visibilityRaw, visibilityTarget);
-        const float bodyHeight = bodyHeightFull * easedVisibility;
+
+        // v1.56.66: subtract the un-revealed portion of each expandable's children
+        // block so the panel height grows/shrinks dynamically as expandables open.
+        // bodyHeightFull already includes all children (they're in the Yoga tree while
+        // m_AnimExpand > 0). For each expandable, the children block is (1-expandProgress)
+        // hidden — we subtract that from bodyHeight so the panel matches the visible clip.
+        float hiddenChildrenHeight = 0.0f;
+        for(int r = 0; r < panel.rowCount; ++r)
+        {
+                SRow &row = panel.pRows[r];
+                if(str_comp(panel.pTitle, "Functions") == 0 && !FunctionsRowVisible(panel.pRows, panel.rowCount, r))
+                        continue;
+                if(row.type == ERowType::Expandable && row.pChildren && row.m_AnimExpand > 0.0f && row.m_AnimExpand < 1.0f)
+                {
+                        const float expandProgress = EaseBothDirections(row.m_AnimExpand, row.expanded ? 1.0f : 0.0f);
+                        // Children block height = sum of child row heights + gaps between them.
+                        float childrenBlockH = 0.0f;
+                        int visibleCount = 0;
+                        for(int c = 0; c < row.childCount; ++c)
+                        {
+                                if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
+                                        continue;
+                                childrenBlockH += RowHeight(row.pChildren[c].type);
+                                visibleCount++;
+                        }
+                        if(visibleCount > 1)
+                                childrenBlockH += ROW_GAP * (visibleCount - 1);
+                        hiddenChildrenHeight += childrenBlockH * (1.0f - expandProgress);
+                }
+        }
+
+        const float bodyHeight = (bodyHeightFull - hiddenChildrenHeight) * easedVisibility;
 
         // ---- Step 2: panel geometry ----
         const float panelH = HEADER_HEIGHT + bodyHeight;
