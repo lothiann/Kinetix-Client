@@ -562,7 +562,12 @@ void CClickGui::OnReset()
                 m_aPanelPosValid[i] = false;
                 m_aPanelCollapsed[i] = false;
                 m_aZOrder[i] = i;
-                // v1.56.72: invalidate Yoga layout cache on reset.
+                // v1.56.72: free + invalidate Yoga layout cache on reset.
+                if(m_aLayoutCache[i].pRoot)
+                        YGNodeFreeRecursive(m_aLayoutCache[i].pRoot);
+                m_aLayoutCache[i].pRoot = nullptr;
+                m_aLayoutCache[i].rowCount = 0;
+                m_aLayoutCache[i].signature = 0;
                 m_aLayoutCacheDirty[i] = true;
         }
 }
@@ -2457,8 +2462,9 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                 Graphics()->ClipDisable();
         } // end if(!collapsed)
 
-        // Free the Yoga tree (root + children are freed by YGNodeFreeRecursive).
-        // Safe to call with nullptr (collapsed case) — YGNodeFreeRecursive handles it.
-        if(bodyRoot)
-                YGNodeFreeRecursive(bodyRoot);
+        // v1.56.72: do NOT free bodyRoot here — the Yoga tree is now cached in
+        // m_aLayoutCache[panelIdx].pRoot and reused across frames. It is freed
+        // only when the cache is rebuilt (see YGNodeFreeRecursive above) or on
+        // component destruction. Previously this freed the cached tree every
+        // frame, causing a use-after-free crash on the next frame.
 }
