@@ -2214,11 +2214,11 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                         if(visibleCount > 0)
                                 childrenBlockH += ROW_GAP;
 
-                        // v1.56.69: clipHeight also scales with easedVisibility so that
-                        // children shrink together with the panel body during panel
-                        // close/open. Without this, children stayed full-size while the
-                        // panel border shrank, causing a visual mismatch.
-                        const float clipHeight = childrenBlockH * expandProgress * easedVisibility;
+                        // v1.56.70: clipHeight uses ONLY expandProgress — the body clip
+                        // (ClipEnable on bodyHeight) already handles the panel close/open
+                        // animation. Multiplying by easedVisibility here caused children
+                        // to have a separate (double) animation during panel collapse.
+                        const float clipHeight = childrenBlockH * expandProgress;
                         // Children start just below the parent row.
                         const float childrenTop = ry + rh;
 
