@@ -1799,66 +1799,52 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                 YGNodeStyleSetOverflow(bodyRoot, YGOverflowHidden);
 
                 constexpr int MAX_ROWS = 32;
-                auto addRowNode = [&](const SRow &row, bool isChild) {
+                auto addRowNode = [&](const SRow &row) {
                         if(rowCount >= MAX_ROWS)
                                 return;
                         YGNodeRef n = YGNodeNew();
                         YGNodeStyleSetHeight(n, RowHeight(row.type));
-                        if(isChild)
-                                YGNodeStyleSetMargin(n, YGEdgeLeft, SUB_LIST_INDENT);
                         YGNodeInsertChild(bodyRoot, n, (size_t)rowCount);
                         rowNodes[rowCount++] = n;
                 };
 
+                // v1.56.68: ONLY parent rows go into Yoga. Children of expandables
+                // are rendered separately as a "sub-panel" with their own clip —
+                // this avoids the layout jump when an expandable opens/closes and
+                // makes the animation perfectly sync with bodyHeight.
                 for(int r = 0; r < panel.rowCount; ++r)
                 {
                         SRow &row = panel.pRows[r];
-                        // Conditional visibility: skip hidden rows in Functions panel.
                         if(str_comp(panel.pTitle, "Functions") == 0 && !FunctionsRowVisible(panel.pRows, panel.rowCount, r))
                                 continue;
-                        addRowNode(row, false);
-                        // v1.56.60: include children in layout while expand animation
-                        // is playing (m_AnimExpand > 0) even if just collapsed, so the
-                        // Yoga tree keeps the full height during the slide-out.
-                        if(row.type == ERowType::Expandable && row.pChildren && row.m_AnimExpand > 0.0f)
-                        {
-                                for(int c = 0; c < row.childCount; ++c)
-                                {
-                                        if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
-                                                continue;
-                                        addRowNode(row.pChildren[c], true);
-                                }
-                        }
+                        addRowNode(row);
                 }
 
                 YGNodeCalculateLayout(bodyRoot, PANEL_WIDTH, YGUndefined, YGDirectionLTR);
                 bodyHeightFull = YGNodeLayoutGetHeight(bodyRoot);
         }
 
-        // v1.56.61: scale body height by the EASED visibility (not raw collapseAnim)
-        // so the panel slide has finish-easing in both expand and collapse directions.
-        // visibility raw = 1 - collapseAnim (0 = hidden, 1 = shown).
-        // target = !collapsed ? 1 : 0 (1 = expanding toward visible, 0 = collapsing toward hidden).
-        // EaseBothDirections applies finish-easing (fast-start, slow-end) regardless of direction.
+        // v1.56.61: scale body height by the EASED visibility (panel open/close).
         const float visibilityRaw = 1.0f - collapseAnim;
         const float visibilityTarget = collapsed ? 0.0f : 1.0f;
         const float easedVisibility = EaseBothDirections(visibilityRaw, visibilityTarget);
 
-        // v1.56.66: subtract the un-revealed portion of each expandable's children
-        // block so the panel height grows/shrinks dynamically as expandables open.
-        // bodyHeightFull already includes all children (they're in the Yoga tree while
-        // m_AnimExpand > 0). For each expandable, the children block is (1-expandProgress)
-        // hidden — we subtract that from bodyHeight so the panel matches the visible clip.
-        float hiddenChildrenHeight = 0.0f;
+        // v1.56.68: add the VISIBLE portion of each expandable's children to
+        // bodyHeight. Children are NOT in Yoga anymore — we compute their block
+        // height manually (sum of RowHeight + ROW_GAPs) and add
+        // (blockHeight * expandProgress) to bodyHeight so the panel grows/shrinks
+        // dynamically. This is the ONLY mechanism now — no hiddenChildrenHeight
+        // subtraction, no rowYOffset hack. expandProgress drives clip, bodyHeight,
+        // and lower-row positions all from the same value.
+        float visibleChildrenHeight = 0.0f;
         for(int r = 0; r < panel.rowCount; ++r)
         {
                 SRow &row = panel.pRows[r];
                 if(str_comp(panel.pTitle, "Functions") == 0 && !FunctionsRowVisible(panel.pRows, panel.rowCount, r))
                         continue;
-                if(row.type == ERowType::Expandable && row.pChildren && row.m_AnimExpand > 0.0f && row.m_AnimExpand < 1.0f)
+                if(row.type == ERowType::Expandable && row.pChildren && row.m_AnimExpand > 0.0f)
                 {
                         const float expandProgress = EaseBothDirections(row.m_AnimExpand, row.expanded ? 1.0f : 0.0f);
-                        // Children block height = sum of child row heights + gaps between them.
                         float childrenBlockH = 0.0f;
                         int visibleCount = 0;
                         for(int c = 0; c < row.childCount; ++c)
@@ -1870,11 +1856,14 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                         }
                         if(visibleCount > 1)
                                 childrenBlockH += ROW_GAP * (visibleCount - 1);
-                        hiddenChildrenHeight += childrenBlockH * (1.0f - expandProgress);
+                        // Also account for the gap between the expandable row and its first child.
+                        if(visibleCount > 0)
+                                childrenBlockH += ROW_GAP;
+                        visibleChildrenHeight += childrenBlockH * expandProgress;
                 }
         }
 
-        const float bodyHeight = (bodyHeightFull - hiddenChildrenHeight) * easedVisibility;
+        const float bodyHeight = (bodyHeightFull + visibleChildrenHeight) * easedVisibility;
 
         // ---- Step 2: panel geometry ----
         const float panelH = HEADER_HEIGHT + bodyHeight;
@@ -1933,6 +1922,12 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                 Graphics()->ClipEnable((int)bodyX, (int)bodyY, (int)bodyW, (int)bodyH_safe(bodyHeight));
 
         // ---- Step 5: draw each row using its Yoga-computed rectangle ----
+        // v1.56.68: rows below an open expandable shift DOWN by the expandable's
+        // visible children height. We accumulate `rowExpandOffset` (positive =
+        // shift down) as we walk down the row list. This matches bodyHeight
+        // (which adds visibleChildrenHeight) exactly — same expandProgress drives
+        // both, so rows, panel border, and clip all stay in sync.
+        float rowExpandOffset = 0.0f;
         int rowIdx = 0;
         for(int r = 0; r < panel.rowCount; ++r)
         {
@@ -1946,7 +1941,7 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                 const float rw = YGNodeLayoutGetWidth(node);
                 const float rh = YGNodeLayoutGetHeight(node);
                 const float rx = bodyX + rxLocal;
-                const float ry = bodyY + ryLocal;
+                const float ry = bodyY + ryLocal + rowExpandOffset;
                 ++rowIdx;
 
                 // Common text color: brighter when "on".
@@ -2184,51 +2179,52 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                 }
                 }
 
-                // Render expanded children (already added as rowNodes after the parent).
-                // v1.56.65: match the panel collapse animation style — clip the children
-                // block to (childBlockHeight * expandProgress) instead of sliding+fading.
-                // This makes expandable feel identical to panel body collapse: content
-                // reveals from top down as the clip height grows.
+                // v1.56.68: render expandable children as a "sub-panel" — positions
+                // computed MANUALLY (no Yoga for children), clip to growing height.
+                // This is the ONLY mechanism: expandProgress drives clip, bodyHeight
+                // (via visibleChildrenHeight), and rowExpandOffset for lower rows —
+                // all from the same value, so everything stays perfectly in sync.
                 if(row.type == ERowType::Expandable && row.pChildren && row.m_AnimExpand > 0.0f)
                 {
-                        // Eased expand progress (0 = fully collapsed, 1 = fully expanded).
                         const float expandProgress = EaseBothDirections(row.m_AnimExpand, row.expanded ? 1.0f : 0.0f);
 
-                        // First pass: measure the children block height (first child top →
-                        // last child bottom) so we can clip to a growing region.
-                        float firstChildTop = 0.0f, lastChildBottom = 0.0f;
-                        bool firstFound = false;
-                        int measureIdx = rowIdx;
+                        // Measure children block height (sum of row heights + gaps).
+                        float childrenBlockH = 0.0f;
+                        int visibleCount = 0;
                         for(int c = 0; c < row.childCount; ++c)
                         {
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;
-                                const YGNodeRef cnode = rowNodes[measureIdx];
-                                float top = bodyY + YGNodeLayoutGetTop(cnode);
-                                float bottom = top + YGNodeLayoutGetHeight(cnode);
-                                if(!firstFound) { firstChildTop = top; firstFound = true; }
-                                lastChildBottom = bottom;
-                                ++measureIdx;
+                                childrenBlockH += RowHeight(row.pChildren[c].type);
+                                visibleCount++;
                         }
-                        const float childBlockHeight = firstFound ? (lastChildBottom - firstChildTop) : 0.0f;
-                        const float clipHeight = childBlockHeight * expandProgress;
+                        if(visibleCount > 1)
+                                childrenBlockH += ROW_GAP * (visibleCount - 1);
+                        // Gap between parent row and first child.
+                        if(visibleCount > 0)
+                                childrenBlockH += ROW_GAP;
 
-                        // Clip the children region to the growing height (like panel body).
-                        // Children stay at their normal Yoga positions — no slide, no fade.
+                        const float clipHeight = childrenBlockH * expandProgress;
+                        // Children start just below the parent row.
+                        const float childrenTop = ry + rh;
+
+                        // Clip the children region to the growing height.
                         if(clipHeight > 0.5f)
-                                Graphics()->ClipEnable((int)bodyX, (int)firstChildTop, (int)bodyW, (int)bodyH_safe(clipHeight));
+                                Graphics()->ClipEnable((int)bodyX, (int)childrenTop, (int)bodyW, (int)bodyH_safe(clipHeight));
 
+                        // Render children at manually-computed positions.
+                        float childY = childrenTop + ROW_GAP; // first child top (after the gap)
                         for(int c = 0; c < row.childCount; ++c)
                         {
                                 SRow &child = row.pChildren[c];
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;
-                                const YGNodeRef cnode = rowNodes[rowIdx];
-                                const float crx = bodyX + YGNodeLayoutGetLeft(cnode);
-                                const float cry = bodyY + YGNodeLayoutGetTop(cnode);
-                                const float crw = YGNodeLayoutGetWidth(cnode);
-                                const float crh = YGNodeLayoutGetHeight(cnode);
-                                ++rowIdx;
+
+                                const float crx = bodyX + BODY_PADDING + SUB_LIST_INDENT;
+                                const float cry = childY;
+                                const float crw = bodyW - BODY_PADDING * 2 - SUB_LIST_INDENT;
+                                const float crh = RowHeight(child.type);
+                                childY += crh + ROW_GAP;
 
                                 const ColorRGBA cText = child.on
                                         ? ColorRGBA(COL_ROW_TEXT_ON, true).WithAlpha(alpha)
@@ -2361,14 +2357,15 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                 case ERowType::Dropdown:
                                 case ERowType::ToggleDropdown:
                                 {
-                                        // v1.56.60: vector checkbox with draw animation (only ToggleDropdown has a check).
                                         if(child.type == ERowType::ToggleDropdown)
+                                        {
                                                 DrawRoundedRect(crx + 1.0f, cry + 3.0f, CHECK_W, CHECK_W, 3.0f,
                                                         IGraphics::CORNER_ALL,
                                                         ColorRGBA(COL_CHECK_SQUARE, true).WithAlpha(alpha));
                                                 if(child.on)
                                                         DrawText(crx + 1.0f + CHECK_W * 0.5f, cry + 3.0f - 2.0f, 22.0f, "\xe2\x9c\x93",
                                                                                                 ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha), TEXTALIGN_CENTER);
+                                        }
                                         DrawText(crx + CHECK_W + 4.0f, cry + 5.0f, 17.0f, child.pName, cText);
                                         const float ddx = crx + crw - DROPDOWN_W - 2.0f;
                                         const float ddy = cry + (crh - DROPDOWN_H) * 0.5f;
@@ -2394,9 +2391,13 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                 }
                         }
 
-                        // Restore the body clip for subsequent rows (the children
-                        // clip above replaced it).
+                        // Restore the body clip for subsequent rows.
                         Graphics()->ClipEnable((int)bodyX, (int)bodyY, (int)bodyW, (int)bodyH_safe(bodyHeight));
+
+                        // v1.56.68: accumulate the VISIBLE children height so all
+                        // subsequent rows shift down by the same amount. This matches
+                        // bodyHeight (which adds visibleChildrenHeight) exactly.
+                        rowExpandOffset += childrenBlockH * expandProgress;
                 }
         }
 
