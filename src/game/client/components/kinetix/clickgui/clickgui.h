@@ -28,6 +28,8 @@
 #include <base/color.h>
 #include <base/vmath.h>
 
+#include <yoga/Yoga.h>
+
 #include <game/client/component.h>
 
 class CClickGui : public CComponent
@@ -115,6 +117,28 @@ private:
         // Lerps toward (m_aPanelCollapsed[i] ? 1.0 : 0.0) each frame. Used to slide
         // the panel body up/down with the same easing as expandable rows.
         float m_aPanelCollapseAnim[NUM_PANELS] = {};
+
+        // v1.56.72: Yoga layout cache. Yoga tree is rebuilt + recalculated every
+        // frame in the original code (4 panels × 60fps = 240 layouts/sec) even when
+        // nothing changed. We cache the layout per panel and only rebuild when the
+        // "row membership" changes — i.e. when an expandable's m_AnimExpand crosses
+        // 0 (added/removed from layout). The cache stores: the YGNodeRef root, the
+        // per-row YGNodeRef array, the row count, and bodyHeightFull. The cache is
+        // invalidated by setting m_aLayoutCacheValid[i] = false whenever a row's
+        // expanded/m_AnimExpand>0 state changes between frames.
+        struct SLayoutCache
+        {
+                YGNodeRef pRoot = nullptr;
+                YGNodeRef aRowNodes[32] = {};
+                int rowCount = 0;
+                float bodyHeightFull = 0.0f;
+                // Signature: a compact hash of which rows + children are in the layout.
+                // We rebuild only when this changes. Uses a simple running hash of
+                // (row index, child included?) bits.
+                unsigned signature = 0;
+        };
+        SLayoutCache m_aLayoutCache[NUM_PANELS];
+        bool m_aLayoutCacheDirty[NUM_PANELS] = {true, true, true, true};
 
         // v1.56.60: advance all per-row / per-panel animations toward their targets.
         // Called once per frame from OnRender before any drawing.

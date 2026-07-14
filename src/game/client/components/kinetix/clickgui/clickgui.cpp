@@ -517,7 +517,14 @@ void CClickGui::UpdateAnimations(float dt)
                 {
                         SRow &row = panel.pRows[r];
                         if(row.type == ERowType::Expandable)
+                        {
+                                const bool wasInLayout = (row.m_AnimExpand > 0.0f);
                                 lerpToward(row.m_AnimExpand, row.expanded ? 1.0f : 0.0f, expandSpeed);
+                                // v1.56.72: invalidate Yoga cache when row crosses the
+                                // 0 boundary (children added/removed from layout).
+                                if(wasInLayout != (row.m_AnimExpand > 0.0f))
+                                        m_aLayoutCacheDirty[p] = true;
+                        }
 
                         // Children of expandable rows may themselves be expandable.
                         if(row.pChildren)
@@ -555,6 +562,8 @@ void CClickGui::OnReset()
                 m_aPanelPosValid[i] = false;
                 m_aPanelCollapsed[i] = false;
                 m_aZOrder[i] = i;
+                // v1.56.72: invalidate Yoga layout cache on reset.
+                m_aLayoutCacheDirty[i] = true;
         }
 }
 
@@ -1086,6 +1095,7 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         {
                                                 // Visual expandable: only expand/collapse, no toggle.
                                                 pTarget->expanded = !pTarget->expanded;
+                                                m_aLayoutCacheDirty[i] = true; // v1.56.72: invalidate Yoga cache
                                                 return;
                                         }
                                         pTarget->on = !pTarget->on;
@@ -1216,6 +1226,7 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 if(mousePos.x >= rx + rw - ARROW_W - 4.0f)
                                 {
                                         pTarget->expanded = !pTarget->expanded;
+                                        m_aLayoutCacheDirty[i] = true; // v1.56.72: invalidate Yoga cache
                                         return;
                                 }
                         }
@@ -1782,8 +1793,35 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
 
         // ---- Step 1: build a Yoga tree for the body and compute its FULL height ----
         // (Skipped only when fully collapsed AND animation finished — body height = 0.)
-        // We always use the full expanded height from Yoga and then scale it by
-        // (1 - collapseAnim) so the panel shrinks smoothly during collapse.
+        // v1.56.72: optimized — Yoga layout cached per panel, rebuilt only when
+        // the row membership signature changes (expandable opened/closed).
+        // Previously: YGNodeNew + YGNodeCalculateLayout every frame (240/sec).
+        // Now: only on actual layout changes.
+        const bool isFunctionsPanel = (str_comp(panel.pTitle, "Functions") == 0);
+
+        // Build the layout signature: hash of (row index, child included?) bits.
+        // Children are included when m_AnimExpand > 0 (covers expanded + animating).
+        unsigned sig = 0;
+        for(int r = 0; r < panel.rowCount; ++r)
+        {
+                const SRow &row = panel.pRows[r];
+                if(isFunctionsPanel && !FunctionsRowVisible(panel.pRows, panel.rowCount, r))
+                        continue;
+                sig = sig * 31u + (unsigned)r + 1u;
+                if(row.type == ERowType::Expandable && row.pChildren && row.m_AnimExpand > 0.0f)
+                {
+                        for(int c = 0; c < row.childCount; ++c)
+                        {
+                                if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
+                                        continue;
+                                sig = sig * 31u + (unsigned)(c + 100);
+                        }
+                }
+        }
+
+        SLayoutCache &cache = m_aLayoutCache[panelIdx];
+        const bool needRebuild = m_aLayoutCacheDirty[panelIdx] || cache.signature != sig;
+
         YGNodeRef bodyRoot = nullptr;
         YGNodeRef rowNodes[64];
         int rowCount = 0;
@@ -1791,50 +1829,63 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
 
         if(collapseAnim < 1.0f || !collapsed)
         {
-                bodyRoot = YGNodeNew();
-                YGNodeStyleSetWidth(bodyRoot, PANEL_WIDTH);
-                YGNodeStyleSetPadding(bodyRoot, YGEdgeAll, BODY_PADDING);
-                YGNodeStyleSetFlexDirection(bodyRoot, YGFlexDirectionColumn);
-                YGNodeStyleSetGap(bodyRoot, YGGutterAll, ROW_GAP);
-                YGNodeStyleSetOverflow(bodyRoot, YGOverflowHidden);
-
-                constexpr int MAX_ROWS = 32;
-                auto addRowNode = [&](const SRow &row, bool isChild) {
-                        if(rowCount >= MAX_ROWS)
-                                return;
-                        YGNodeRef n = YGNodeNew();
-                        YGNodeStyleSetHeight(n, RowHeight(row.type));
-                        if(isChild)
-                                YGNodeStyleSetMargin(n, YGEdgeLeft, SUB_LIST_INDENT);
-                        YGNodeInsertChild(bodyRoot, n, (size_t)rowCount);
-                        rowNodes[rowCount++] = n;
-                };
-
-                // v1.56.71: children ARE in Yoga (like normal rows) — added when
-                // m_AnimExpand > 0 (covers both expanded and animating). This keeps
-                // the layout stable during expand/collapse animation — no jumps.
-                // bodyHeight is reduced by the hidden portion of children via
-                // hiddenChildrenHeight, and lower rows shift up via rowYOffset.
-                // ONE body clip handles everything (panel close + expandable anim).
-                for(int r = 0; r < panel.rowCount; ++r)
+                if(needRebuild)
                 {
-                        SRow &row = panel.pRows[r];
-                        if(str_comp(panel.pTitle, "Functions") == 0 && !FunctionsRowVisible(panel.pRows, panel.rowCount, r))
-                                continue;
-                        addRowNode(row, false);
-                        if(row.type == ERowType::Expandable && row.pChildren && row.m_AnimExpand > 0.0f)
+                        // Free old cached tree.
+                        if(cache.pRoot)
+                                YGNodeFreeRecursive(cache.pRoot);
+                        cache.pRoot = YGNodeNew();
+                        cache.rowCount = 0;
+                        bodyRoot = cache.pRoot;
+                        YGNodeStyleSetWidth(bodyRoot, PANEL_WIDTH);
+                        YGNodeStyleSetPadding(bodyRoot, YGEdgeAll, BODY_PADDING);
+                        YGNodeStyleSetFlexDirection(bodyRoot, YGFlexDirectionColumn);
+                        YGNodeStyleSetGap(bodyRoot, YGGutterAll, ROW_GAP);
+                        YGNodeStyleSetOverflow(bodyRoot, YGOverflowHidden);
+
+                        constexpr int MAX_ROWS = 32;
+                        auto addRowNode = [&](const SRow &row, bool isChild) {
+                                if(cache.rowCount >= MAX_ROWS)
+                                        return;
+                                YGNodeRef n = YGNodeNew();
+                                YGNodeStyleSetHeight(n, RowHeight(row.type));
+                                if(isChild)
+                                        YGNodeStyleSetMargin(n, YGEdgeLeft, SUB_LIST_INDENT);
+                                YGNodeInsertChild(bodyRoot, n, (size_t)cache.rowCount);
+                                cache.aRowNodes[cache.rowCount++] = n;
+                        };
+
+                        for(int r = 0; r < panel.rowCount; ++r)
                         {
-                                for(int c = 0; c < row.childCount; ++c)
+                                SRow &row = panel.pRows[r];
+                                if(isFunctionsPanel && !FunctionsRowVisible(panel.pRows, panel.rowCount, r))
+                                        continue;
+                                addRowNode(row, false);
+                                if(row.type == ERowType::Expandable && row.pChildren && row.m_AnimExpand > 0.0f)
                                 {
-                                        if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
-                                                continue;
-                                        addRowNode(row.pChildren[c], true);
+                                        for(int c = 0; c < row.childCount; ++c)
+                                        {
+                                                if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
+                                                        continue;
+                                                addRowNode(row.pChildren[c], true);
+                                        }
                                 }
                         }
-                }
 
-                YGNodeCalculateLayout(bodyRoot, PANEL_WIDTH, YGUndefined, YGDirectionLTR);
-                bodyHeightFull = YGNodeLayoutGetHeight(bodyRoot);
+                        YGNodeCalculateLayout(bodyRoot, PANEL_WIDTH, YGUndefined, YGDirectionLTR);
+                        cache.bodyHeightFull = YGNodeLayoutGetHeight(bodyRoot);
+                        cache.signature = sig;
+                        m_aLayoutCacheDirty[panelIdx] = false;
+                }
+                else
+                {
+                        bodyRoot = cache.pRoot;
+                }
+                // Copy cached data to local vars for the render code below.
+                rowCount = cache.rowCount;
+                bodyHeightFull = cache.bodyHeightFull;
+                for(int i = 0; i < rowCount; ++i)
+                        rowNodes[i] = cache.aRowNodes[i];
         }
 
         // v1.56.61: scale body height by the EASED visibility (panel open/close).
@@ -1842,15 +1893,28 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
         const float visibilityTarget = collapsed ? 0.0f : 1.0f;
         const float easedVisibility = EaseBothDirections(visibilityRaw, visibilityTarget);
 
-        // v1.56.71: children are in Yoga (full height), so bodyHeightFull includes
-        // them. For each expandable with 0 < m_AnimExpand < 1, subtract the hidden
-        // portion (childrenBlockH * (1 - expandProgress)) so the panel shrinks
-        // smoothly during expand/collapse. ONE body clip crops everything.
+        // v1.56.72: single pass — compute expandProgress + childrenBlockH for each
+        // expandable ONCE, store in a small map keyed by row index, reuse in the
+        // render loop (avoids double EaseBothDirections + double block-height sum).
+        struct ExpandAnimInfo
+        {
+                float expandProgress;
+                float childrenBlockH;
+                float hiddenH; // childrenBlockH * (1 - expandProgress)
+        };
+        ExpandAnimInfo expandInfo[16]; // max 16 expandables per panel
+        int expandInfoCount = 0;
+        // Map row index → expandInfo slot (for O(1) lookup in render loop).
+        // Simple linear array indexed by row r; -1 = not an animating expandable.
+        int rowToExpandSlot[64];
+        for(int i = 0; i < 64; ++i)
+                rowToExpandSlot[i] = -1;
+
         float hiddenChildrenHeight = 0.0f;
         for(int r = 0; r < panel.rowCount; ++r)
         {
                 SRow &row = panel.pRows[r];
-                if(str_comp(panel.pTitle, "Functions") == 0 && !FunctionsRowVisible(panel.pRows, panel.rowCount, r))
+                if(isFunctionsPanel && !FunctionsRowVisible(panel.pRows, panel.rowCount, r))
                         continue;
                 if(row.type == ERowType::Expandable && row.pChildren && row.m_AnimExpand > 0.0f && row.m_AnimExpand < 1.0f)
                 {
@@ -1867,8 +1931,15 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                         if(visibleCount > 1)
                                 childrenBlockH += ROW_GAP * (visibleCount - 1);
                         if(visibleCount > 0)
-                                childrenBlockH += ROW_GAP; // gap between parent and first child
-                        hiddenChildrenHeight += childrenBlockH * (1.0f - expandProgress);
+                                childrenBlockH += ROW_GAP;
+                        const float hiddenH = childrenBlockH * (1.0f - expandProgress);
+                        hiddenChildrenHeight += hiddenH;
+
+                        if(expandInfoCount < 16 && r < 64)
+                        {
+                                rowToExpandSlot[r] = expandInfoCount;
+                                expandInfo[expandInfoCount++] = {expandProgress, childrenBlockH, hiddenH};
+                        }
                 }
         }
 
@@ -2371,27 +2442,14 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                 }
                         }
 
-                        // v1.56.71: accumulate the hidden children height so all
-                        // subsequent rows (including other expandables) shift up
-                        // to match the shrinking bodyHeight. Same expandProgress
-                        // as used in hiddenChildrenHeight above.
-                        if(row.m_AnimExpand < 1.0f)
+                        // v1.56.72: use precomputed expandInfo (avoids re-calling
+                        // EaseBothDirections and re-summing childrenBlockH here).
+                        // rowToExpandSlot[r] gives the slot in expandInfo, or -1
+                        // if this expandable is fully expanded (no hidden height).
+                        if(r < 64 && rowToExpandSlot[r] >= 0)
                         {
-                                const float expandProgress = EaseBothDirections(row.m_AnimExpand, row.expanded ? 1.0f : 0.0f);
-                                float childrenBlockH = 0.0f;
-                                int visibleCount = 0;
-                                for(int c = 0; c < row.childCount; ++c)
-                                {
-                                        if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
-                                                continue;
-                                        childrenBlockH += RowHeight(row.pChildren[c].type);
-                                        visibleCount++;
-                                }
-                                if(visibleCount > 1)
-                                        childrenBlockH += ROW_GAP * (visibleCount - 1);
-                                if(visibleCount > 0)
-                                        childrenBlockH += ROW_GAP;
-                                rowYOffset -= childrenBlockH * (1.0f - expandProgress);
+                                const ExpandAnimInfo &info = expandInfo[rowToExpandSlot[r]];
+                                rowYOffset -= info.hiddenH;
                         }
                 }
         }
