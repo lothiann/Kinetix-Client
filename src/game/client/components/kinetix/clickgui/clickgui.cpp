@@ -2188,6 +2188,16 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                 {
                         const float expandProgress = EaseBothDirections(row.m_AnimExpand, row.expanded ? 1.0f : 0.0f);
 
+                        // v1.56.69: skip rendering entirely when expandProgress is ~0
+                        // (fixes the 1-frame flicker at the end of collapse — children
+                        // were rendered for one frame with clipHeight≈0 but still drew
+                        // their quads before being clipped).
+                        if(expandProgress <= 0.0f)
+                        {
+                                // Still need to NOT accumulate rowExpandOffset since nothing is visible.
+                                continue;
+                        }
+
                         // Measure children block height (sum of row heights + gaps).
                         float childrenBlockH = 0.0f;
                         int visibleCount = 0;
@@ -2204,13 +2214,23 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                         if(visibleCount > 0)
                                 childrenBlockH += ROW_GAP;
 
-                        const float clipHeight = childrenBlockH * expandProgress;
+                        // v1.56.69: clipHeight also scales with easedVisibility so that
+                        // children shrink together with the panel body during panel
+                        // close/open. Without this, children stayed full-size while the
+                        // panel border shrank, causing a visual mismatch.
+                        const float clipHeight = childrenBlockH * expandProgress * easedVisibility;
                         // Children start just below the parent row.
                         const float childrenTop = ry + rh;
 
                         // Clip the children region to the growing height.
                         if(clipHeight > 0.5f)
                                 Graphics()->ClipEnable((int)bodyX, (int)childrenTop, (int)bodyW, (int)bodyH_safe(clipHeight));
+                        else
+                        {
+                                // Nothing visible — skip the children render loop entirely.
+                                rowExpandOffset += childrenBlockH * expandProgress;
+                                continue;
+                        }
 
                         // Render children at manually-computed positions.
                         float childY = childrenTop + ROW_GAP; // first child top (after the gap)
