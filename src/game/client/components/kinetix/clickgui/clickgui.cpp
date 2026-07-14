@@ -2154,19 +2154,38 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                 }
 
                 // Render expanded children (already added as rowNodes after the parent).
-                // v1.56.60: render while m_AnimExpand > 0 (covers both expand and
-                // collapse animations). Children slide up/down + fade with CubicBezierEase.
+                // v1.56.65: match the panel collapse animation style — clip the children
+                // block to (childBlockHeight * expandProgress) instead of sliding+fading.
+                // This makes expandable feel identical to panel body collapse: content
+                // reveals from top down as the clip height grows.
                 if(row.type == ERowType::Expandable && row.pChildren && row.m_AnimExpand > 0.0f)
                 {
                         // Eased expand progress (0 = fully collapsed, 1 = fully expanded).
-                        // v1.56.61: EaseBothDirections for finish-easing in both expand and collapse.
                         const float expandProgress = EaseBothDirections(row.m_AnimExpand, row.expanded ? 1.0f : 0.0f);
-                        // Slide offset: children enter from above (negative Y) when expanding,
-                        // exit upward when collapsing. Magnitude = a fraction of one row height
-                        // so the motion is visible but never overshoots the parent row.
-                        const float slideOffset = -(1.0f - expandProgress) * (rh + ROW_GAP);
-                        // Child alpha fades in/out with the same progress.
-                        const float childAlpha = alpha * expandProgress;
+
+                        // First pass: measure the children block height (first child top →
+                        // last child bottom) so we can clip to a growing region.
+                        float firstChildTop = 0.0f, lastChildBottom = 0.0f;
+                        bool firstFound = false;
+                        int measureIdx = rowIdx;
+                        for(int c = 0; c < row.childCount; ++c)
+                        {
+                                if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
+                                        continue;
+                                const YGNodeRef cnode = rowNodes[measureIdx];
+                                float top = bodyY + YGNodeLayoutGetTop(cnode);
+                                float bottom = top + YGNodeLayoutGetHeight(cnode);
+                                if(!firstFound) { firstChildTop = top; firstFound = true; }
+                                lastChildBottom = bottom;
+                                ++measureIdx;
+                        }
+                        const float childBlockHeight = firstFound ? (lastChildBottom - firstChildTop) : 0.0f;
+                        const float clipHeight = childBlockHeight * expandProgress;
+
+                        // Clip the children region to the growing height (like panel body).
+                        // Children stay at their normal Yoga positions — no slide, no fade.
+                        if(clipHeight > 0.5f)
+                                Graphics()->ClipEnable((int)bodyX, (int)firstChildTop, (int)bodyW, (int)bodyH_safe(clipHeight));
 
                         for(int c = 0; c < row.childCount; ++c)
                         {
@@ -2175,29 +2194,29 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                         continue;
                                 const YGNodeRef cnode = rowNodes[rowIdx];
                                 const float crx = bodyX + YGNodeLayoutGetLeft(cnode);
-                                const float cry = bodyY + YGNodeLayoutGetTop(cnode) + slideOffset;
+                                const float cry = bodyY + YGNodeLayoutGetTop(cnode);
                                 const float crw = YGNodeLayoutGetWidth(cnode);
                                 const float crh = YGNodeLayoutGetHeight(cnode);
                                 ++rowIdx;
 
                                 const ColorRGBA cText = child.on
-                                        ? ColorRGBA(COL_ROW_TEXT_ON, true).WithAlpha(childAlpha)
-                                        : ColorRGBA(0xffb0b0d0, true).WithAlpha(childAlpha);
+                                        ? ColorRGBA(COL_ROW_TEXT_ON, true).WithAlpha(alpha)
+                                        : ColorRGBA(0xffb0b0d0, true).WithAlpha(alpha);
 
                                 // Faint sub-list background band under each child.
                                 DrawRoundedRect(crx - 2.0f, cry - 1.0f, crw + 4.0f, crh + 1.0f,
                                         0.0f, IGraphics::CORNER_NONE,
-                                        ColorRGBA(COL_SUB_LIST_BG, true).WithAlpha(childAlpha * 0.6f));
+                                        ColorRGBA(COL_SUB_LIST_BG, true).WithAlpha(alpha * 0.6f));
 
                                 switch(child.type)
                                 {
                                 case ERowType::Toggle:
                                         DrawRoundedRect(crx + 1.0f, cry + 5.0f, CHECK_W, CHECK_W, 3.0f,
                                                 IGraphics::CORNER_ALL,
-                                                ColorRGBA(COL_CHECK_SQUARE, true).WithAlpha(childAlpha));
+                                                ColorRGBA(COL_CHECK_SQUARE, true).WithAlpha(alpha));
                                         if(child.on)
                                                 DrawText(crx + 1.0f + CHECK_W * 0.5f, cry + 5.0f - 2.0f, 22.0f, "\xe2\x9c\x93",
-                                                                                        ColorRGBA(COL_CHECK_ON, true).WithAlpha(childAlpha), TEXTALIGN_CENTER);
+                                                                                        ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha), TEXTALIGN_CENTER);
                                         DrawText(crx + CHECK_W + 4.0f, cry + 5.0f, 17.0f, child.pName, cText);
                                         break;
                                 case ERowType::Slider:
@@ -2222,14 +2241,14 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                         const float vx = crx + crw - vw - 2.0f;
                                         DrawRoundedRect(vx, cry + 1.0f, vw, 18.0f, 2.0f,
                                                 IGraphics::CORNER_ALL,
-                                                ColorRGBA(COL_VALUE_BG, true).WithAlpha(childAlpha));
+                                                ColorRGBA(COL_VALUE_BG, true).WithAlpha(alpha));
                                         DrawText(vx + 6.0f, cry + 2.0f, 17.0f, vbuf, cText);
                                         const float trx = crx + 2.0f;
                                         const float trY = cry + crh - SLIDER_TRACK_H - 4.0f;
                                         const float trW = crw - 4.0f;
                                         DrawRoundedRect(trx, trY, trW, SLIDER_TRACK_H, 2.0f,
                                                 IGraphics::CORNER_ALL,
-                                                ColorRGBA(COL_SLIDER_TRACK, true).WithAlpha(childAlpha));
+                                                ColorRGBA(COL_SLIDER_TRACK, true).WithAlpha(alpha));
                                         float cpct = 0.0f;
                                         if(child.max > child.min)
                                                 cpct = (child.value - child.min) / (child.max - child.min);
@@ -2238,7 +2257,7 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                         const float thY = trY + SLIDER_TRACK_H * 0.5f;
                                         Graphics()->TextureClear();
                                         Graphics()->QuadsBegin();
-                                        Graphics()->SetColor(ColorRGBA(COL_SLIDER_THUMB, true).WithAlpha(childAlpha));
+                                        Graphics()->SetColor(ColorRGBA(COL_SLIDER_THUMB, true).WithAlpha(alpha));
                                         Graphics()->DrawCircle(thX, thY, SLIDER_THUMB_R, 12);
                                         Graphics()->QuadsEnd();
                                         break;
@@ -2261,10 +2280,10 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                         const bool editingChild = (m_InputEditing && m_InputPanel == panelIdx && m_InputRow == r && m_InputChild == c);
                                         DrawRoundedRect(ix, iy, iw, ih, 2.0f,
                                                 IGraphics::CORNER_ALL,
-                                                ColorRGBA(COL_INPUT_BG, true).WithAlpha(childAlpha));
+                                                ColorRGBA(COL_INPUT_BG, true).WithAlpha(alpha));
                                         DrawRoundedRect(ix - 1.0f, iy - 1.0f, iw + 2.0f, ih + 2.0f, 2.0f,
                                                 IGraphics::CORNER_ALL,
-                                                editingChild ? ColorRGBA(0xff9d4edd, true).WithAlpha(childAlpha) : ColorRGBA(COL_INPUT_BORDER, true).WithAlpha(alpha * 0.5f));
+                                                editingChild ? ColorRGBA(0xff9d4edd, true).WithAlpha(alpha) : ColorRGBA(COL_INPUT_BORDER, true).WithAlpha(alpha * 0.5f));
                                         const char *pT;
                                         ColorRGBA ic;
                                         if(editingChild)
@@ -2277,7 +2296,7 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                                 pT = (child.m_aInputBuf[0]) ? child.m_aInputBuf : child.pPlaceholder;
                                                 ic = (child.m_aInputBuf[0])
                                                         ? cText
-                                                        : ColorRGBA(0xff8a8aa8, true).WithAlpha(childAlpha);
+                                                        : ColorRGBA(0xff8a8aa8, true).WithAlpha(alpha);
                                         }
                                         // Selection highlight.
                                         if(editingChild && m_InputSelStart >= 0 && m_InputSelEnd > m_InputSelStart)
@@ -2315,16 +2334,16 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                         if(child.type == ERowType::ToggleDropdown)
                                                 DrawRoundedRect(crx + 1.0f, cry + 5.0f, CHECK_W, CHECK_W, 3.0f,
                                                         IGraphics::CORNER_ALL,
-                                                        ColorRGBA(COL_CHECK_SQUARE, true).WithAlpha(childAlpha));
+                                                        ColorRGBA(COL_CHECK_SQUARE, true).WithAlpha(alpha));
                                                 if(child.on)
                                                         DrawText(crx + 1.0f + CHECK_W * 0.5f, cry + 5.0f - 2.0f, 22.0f, "\xe2\x9c\x93",
-                                                                                                ColorRGBA(COL_CHECK_ON, true).WithAlpha(childAlpha), TEXTALIGN_CENTER);
+                                                                                                ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha), TEXTALIGN_CENTER);
                                         DrawText(crx + CHECK_W + 4.0f, cry + 5.0f, 17.0f, child.pName, cText);
                                         const float ddx = crx + crw - DROPDOWN_W - 2.0f;
                                         const float ddy = cry + (crh - DROPDOWN_H) * 0.5f;
                                         DrawRoundedRect(ddx, ddy, DROPDOWN_W, DROPDOWN_H, 2.0f,
                                                 IGraphics::CORNER_ALL,
-                                                ColorRGBA(COL_INPUT_BG, true).WithAlpha(childAlpha));
+                                                ColorRGBA(COL_INPUT_BG, true).WithAlpha(alpha));
                                         const char *pV = (child.optionCount > 0 && child.valueIdx >= 0 && child.valueIdx < child.optionCount)
                                                 ? child.pOptions[child.valueIdx]
                                                 : "";
@@ -2335,14 +2354,18 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                         // Nested expandables not in the data model; render as a plain toggle.
                                         DrawRoundedRect(crx + 1.0f, cry + 5.0f, CHECK_W, CHECK_W, 3.0f,
                                                 IGraphics::CORNER_ALL,
-                                                ColorRGBA(COL_CHECK_SQUARE, true).WithAlpha(childAlpha));
+                                                ColorRGBA(COL_CHECK_SQUARE, true).WithAlpha(alpha));
                                         if(child.on)
                                                 DrawText(crx + 1.0f + CHECK_W * 0.5f, cry + 5.0f - 2.0f, 22.0f, "\xe2\x9c\x93",
-                                                                                        ColorRGBA(COL_CHECK_ON, true).WithAlpha(childAlpha), TEXTALIGN_CENTER);
+                                                                                        ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha), TEXTALIGN_CENTER);
                                         DrawText(crx + CHECK_W + 4.0f, cry + 5.0f, 17.0f, child.pName, cText);
                                         break;
                                 }
                         }
+
+                        // Restore the body clip for subsequent rows (the children
+                        // clip above replaced it).
+                        Graphics()->ClipEnable((int)bodyX, (int)bodyY, (int)bodyW, (int)bodyH_safe(bodyHeight));
                 }
         }
 
