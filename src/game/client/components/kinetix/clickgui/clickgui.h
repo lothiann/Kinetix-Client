@@ -106,6 +106,19 @@ private:
         // Animation timing. ANIM_DURATION matches the HTML transition:
         // `transition: left/top 0.55s cubic-bezier(0.16, 1, 0.3, 1)`.
         static constexpr float ANIM_DURATION = 0.55f;
+        // v1.56.60: per-element animation duration (seconds).
+        // EXPAND_ANIM_DURATION — expandable children slide + panel collapse slide.
+        // Uses EaseBothDirections for finish-easing in both expand and collapse.
+        static constexpr float EXPAND_ANIM_DURATION = 0.28f;
+
+        // v1.56.60: per-panel collapse animation progress (0 = expanded, 1 = collapsed).
+        // Lerps toward (m_aPanelCollapsed[i] ? 1.0 : 0.0) each frame. Used to slide
+        // the panel body up/down with the same easing as expandable rows.
+        float m_aPanelCollapseAnim[NUM_PANELS] = {};
+
+        // v1.56.60: advance all per-row / per-panel animations toward their targets.
+        // Called once per frame from OnRender before any drawing.
+        void UpdateAnimations(float dt);
 
         // Panel geometry — scaled up again 1.2x in v1.56.39 for readability.
         static constexpr float PANEL_WIDTH = 300.0f;
@@ -121,6 +134,17 @@ private:
 
         // Cubic-bezier easing exactly matching CSS cubic-bezier(0.16, 1, 0.3, 1).
         static float CubicBezierEase(float t);
+
+        // v1.56.61: Direction-aware finish-easing. Applies CubicBezierEase (fast-start,
+        // slow-end) regardless of whether the animation is opening or closing — so
+        // BOTH directions feel like "finish-easing" (element lands/settles at the end
+        // of its motion).
+        //   rawProgress: current animation value (0..1)
+        //   target: where it's heading (0.0 = closing/collapsing, 1.0 = opening/expanding)
+        // When opening (target=1): returns CubicBezierEase(rawProgress) — fast start, slow end.
+        // When closing (target=0): returns 1 - CubicBezierEase(1 - rawProgress) — same curve
+        //   mirrored, so the element quickly starts vanishing then slowly finishes vanishing.
+        static float EaseBothDirections(float rawProgress, float target);
 
         // Pick a random offscreen position for a panel (one of 4 sides: L/R/T/B).
         vec2 PickRandomOffscreenPos(int panelIdx, float screenW, float screenH) const;
