@@ -352,6 +352,7 @@ MACRO_CONFIG_INT(ClPfFineDeath, cl_pf_fine_death, 1, 0, 1, CFGFLAG_CLIENT | CFGF
 MACRO_CONFIG_INT(ClPfFineWall, cl_pf_fine_wall, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Fine: wall-hit penalty (per collision during chunk)")
 MACRO_CONFIG_INT(ClPfFineAir, cl_pf_fine_air, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Fine: air-time penalty (per tick airborne)")
 MACRO_CONFIG_INT(ClPfFineHook, cl_pf_fine_hook, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Fine: hook-fire penalty (per hook fire — discourage hook spam)")
+MACRO_CONFIG_INT(ClPfFineStuck, cl_pf_fine_stuck, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Fine: stuck penalty — large cost added to A* node G when a chunk's end position is within 2 pixels of its start (bot didn't move). Discourages stall branches.")
 
 // Visuals (Pathfinder tab)
 MACRO_CONFIG_INT(ClPfShowField, cl_pf_show_field, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: show flow field")

@@ -170,6 +170,7 @@ static SRow g_PenaltiesChildren[] = {
         {ERowType::Toggle, "Wall-hit penalty", false, false, 0, 0, 0,0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Air-time penalty", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Hook-fire penalty", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Stuck penalty", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 // "Visuals" visual expandable.
 static SRow g_VisualsChildren[] = {
@@ -185,7 +186,7 @@ static SRow g_PathfinderRows[] = {
         {ERowType::Slider, "Performance", false, false, 1.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Advanced search", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Expandable, "Score method", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ScoreMethodChildren, 2},
-        {ERowType::Expandable, "Penalties", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_PenaltiesChildren, 6},
+        {ERowType::Expandable, "Penalties", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_PenaltiesChildren, 7},
         {ERowType::Expandable, "Visuals", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_VisualsChildren, 4},
         {ERowType::Button, "Pathfinding", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
@@ -623,6 +624,8 @@ void CClickGui::OnRender()
                                                 child.on = g_Config.m_ClPfFineAir != 0;
                                         else if(str_comp(child.pName, "Hook-fire penalty") == 0)
                                                 child.on = g_Config.m_ClPfFineHook != 0;
+                                        else if(str_comp(child.pName, "Stuck penalty") == 0)
+                                                child.on = g_Config.m_ClPfFineStuck != 0;
                                         // Pathfinder → Visuals children
                                         else if(str_comp(child.pName, "Show field") == 0)
                                                 child.on = g_Config.m_ClPfShowField != 0;
@@ -1073,6 +1076,8 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 g_Config.m_ClPfFineAir = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Hook-fire penalty") == 0)
                                                 g_Config.m_ClPfFineHook = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Stuck penalty") == 0)
+                                                g_Config.m_ClPfFineStuck = pTarget->on ? 1 : 0;
                                         // Pathfinder → Visuals children
                                         else if(str_comp(pTarget->pName, "Show field") == 0)
                                                 g_Config.m_ClPfShowField = pTarget->on ? 1 : 0;

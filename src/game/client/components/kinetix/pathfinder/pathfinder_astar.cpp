@@ -53,6 +53,21 @@ static int PfAStarHeapPop(std::vector<int> &heap, const std::vector<CBotNet::ASt
         return top;
 }
 
+// Stuck penalty (v1.56.59): mirrors the legacy PfScoreChunk stall rule — when a
+// chunk's end position is within 2 pixels of its start (bot effectively did not
+// move during ChunkSize ticks), add a large fixed cost (500) to the child's G.
+// This makes stall branches expensive in the A* open-set so the search prefers
+// nodes that actually make progress. Gated by ClPfFineStuck (default off, same
+// opt-in pattern as the other ClPfFine* penalties).
+static float PfAStarStuckPenalty(const vec2 &startPos, const vec2 &endPos)
+{
+        if(!g_Config.m_ClPfFineStuck)
+                return 0.0f;
+        if(distance(endPos, startPos) < 2.0f)
+                return 500.0f;
+        return 0.0f;
+}
+
 float CBotNet::PfAStarHeuristic(const vec2 &pos, const vec2 &endPos)
 {
         // Heuristic is gated by the same Score Method checkboxes as PfScoreChunk:
@@ -266,7 +281,7 @@ int CBotNet::PfAStarStep()
                 bool endGrounded = pColl->IsOnGround(res.endPos, CCharacterCore::PhysicalSize());
 
                 uint64_t newKey = PfAStarKey(endCore, res.endFreezeTime, endGrounded);
-                float newG = cur.G + (float)ft;
+                float newG = cur.G + (float)ft + PfAStarStuckPenalty(cur.Pos, res.endPos);
                 auto it = m_PfABestG.find(newKey);
                 if(it != m_PfABestG.end() && it->second <= newG)
                         return 0;
@@ -355,7 +370,7 @@ int CBotNet::PfAStarStep()
                         bool endGrounded = pColl->IsOnGround(res.endPos, CCharacterCore::PhysicalSize());
 
                         uint64_t newKey = PfAStarKey(endCore, res.endFreezeTime, endGrounded);
-                        float newG = cur.G + (float)ChunkSize;
+                        float newG = cur.G + (float)ChunkSize + PfAStarStuckPenalty(cur.Pos, res.endPos);
                         auto it = m_PfABestG.find(newKey);
                         if(it != m_PfABestG.end() && it->second <= newG)
                                 return;
@@ -494,7 +509,7 @@ int CBotNet::PfAStarStep()
                                                 bool endGrounded = pColl->IsOnGround(res.endPos, CCharacterCore::PhysicalSize());
 
                                                 uint64_t newKey = PfAStarKey(endCore, res.endFreezeTime, endGrounded);
-                                                float newG = cur.G + (float)ChunkSize;
+                                                float newG = cur.G + (float)ChunkSize + PfAStarStuckPenalty(cur.Pos, res.endPos);
                                                 auto it = m_PfABestG.find(newKey);
                                                 if(it != m_PfABestG.end() && it->second <= newG)
                                                         continue;
@@ -555,7 +570,7 @@ int CBotNet::PfAStarStep()
                                         bool endGrounded = pColl->IsOnGround(res.endPos, CCharacterCore::PhysicalSize());
 
                                         uint64_t newKey = PfAStarKey(endCore, res.endFreezeTime, endGrounded);
-                                        float newG = cur.G + (float)ChunkSize;
+                                        float newG = cur.G + (float)ChunkSize + PfAStarStuckPenalty(cur.Pos, res.endPos);
                                         auto it = m_PfABestG.find(newKey);
                                         if(it != m_PfABestG.end() && it->second <= newG)
                                                 continue;
@@ -613,7 +628,7 @@ int CBotNet::PfAStarStep()
                                         bool endGrounded = pColl->IsOnGround(res.endPos, CCharacterCore::PhysicalSize());
 
                                         uint64_t newKey = PfAStarKey(endCore, res.endFreezeTime, endGrounded);
-                                        float newG = cur.G + (float)ChunkSize;
+                                        float newG = cur.G + (float)ChunkSize + PfAStarStuckPenalty(cur.Pos, res.endPos);
                                         auto it = m_PfABestG.find(newKey);
                                         if(it != m_PfABestG.end() && it->second <= newG)
                                                 continue;
