@@ -1933,8 +1933,8 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                 IGraphics::CORNER_ALL,
                                 ColorRGBA(COL_CHECK_SQUARE, true).WithAlpha(alpha));
                         if(row.on)
-                                DrawText(rx + 1.0f, ry + 5.0f, 18.0f, "\xe2\x9c\x93" /* ✓ */,
-                                        ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha));
+                                DrawText(rx + 1.0f + CHECK_W * 0.5f, ry + 5.0f + 3.0f, 18.0f, "\xe2\x9c\x93" /* ✓ */,
+                                        ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha), TEXTALIGN_CENTER);
                         DrawText(rx + CHECK_W + 4.0f, ry + 5.0f, 18.0f, row.pName, textCol);
                         break;
                 }
@@ -1945,8 +1945,8 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                 IGraphics::CORNER_ALL,
                                 ColorRGBA(COL_CHECK_SQUARE, true).WithAlpha(alpha));
                         if(row.on)
-                                DrawText(rx + 1.0f, ry + 5.0f, 18.0f, "\xe2\x9c\x93",
-                                        ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha));
+                                DrawText(rx + 1.0f + CHECK_W * 0.5f, ry + 5.0f + 3.0f, 18.0f, "\xe2\x9c\x93",
+                                        ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha), TEXTALIGN_CENTER);
                         DrawText(rx + CHECK_W + 4.0f, ry + 5.0f, 18.0f, row.pName, textCol);
 
                         // Dropdown box on the right.
@@ -2105,8 +2105,8 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                 IGraphics::CORNER_ALL,
                                 ColorRGBA(COL_CHECK_SQUARE, true).WithAlpha(alpha));
                         if(row.on)
-                                DrawText(rx + 1.0f, ry + 5.0f, 18.0f, "\xe2\x9c\x93",
-                                        ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha));
+                                DrawText(rx + 1.0f + CHECK_W * 0.5f, ry + 5.0f + 3.0f, 18.0f, "\xe2\x9c\x93",
+                                        ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha), TEXTALIGN_CENTER);
                         DrawText(rx + CHECK_W + 4.0f, ry + 5.0f, 18.0f, row.pName,
                                 row.on ? ColorRGBA(COL_ROW_TEXT_ON, true).WithAlpha(alpha) : textCol);
                         // Arrow on the right (▶ collapsed, ▼ expanded).
@@ -2196,8 +2196,8 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                                 IGraphics::CORNER_ALL,
                                                 ColorRGBA(COL_CHECK_SQUARE, true).WithAlpha(childAlpha));
                                         if(child.on)
-                                                DrawText(crx + 1.0f, cry + 5.0f, 17.0f, "\xe2\x9c\x93",
-                                                                                        ColorRGBA(COL_CHECK_ON, true).WithAlpha(childAlpha));
+                                                DrawText(crx + 1.0f + CHECK_W * 0.5f, cry + 5.0f + 3.0f, 17.0f, "\xe2\x9c\x93",
+                                                                                        ColorRGBA(COL_CHECK_ON, true).WithAlpha(childAlpha), TEXTALIGN_CENTER);
                                         DrawText(crx + CHECK_W + 4.0f, cry + 5.0f, 17.0f, child.pName, cText);
                                         break;
                                 case ERowType::Slider:
@@ -2317,8 +2317,8 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                                         IGraphics::CORNER_ALL,
                                                         ColorRGBA(COL_CHECK_SQUARE, true).WithAlpha(childAlpha));
                                                 if(child.on)
-                                                        DrawText(crx + 1.0f, cry + 5.0f, 17.0f, "\xe2\x9c\x93",
-                                                                                                ColorRGBA(COL_CHECK_ON, true).WithAlpha(childAlpha));
+                                                        DrawText(crx + 1.0f + CHECK_W * 0.5f, cry + 5.0f + 3.0f, 17.0f, "\xe2\x9c\x93",
+                                                                                                ColorRGBA(COL_CHECK_ON, true).WithAlpha(childAlpha), TEXTALIGN_CENTER);
                                         DrawText(crx + CHECK_W + 4.0f, cry + 5.0f, 17.0f, child.pName, cText);
                                         const float ddx = crx + crw - DROPDOWN_W - 2.0f;
                                         const float ddy = cry + (crh - DROPDOWN_H) * 0.5f;
@@ -2337,8 +2337,8 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                                 IGraphics::CORNER_ALL,
                                                 ColorRGBA(COL_CHECK_SQUARE, true).WithAlpha(childAlpha));
                                         if(child.on)
-                                                DrawText(crx + 1.0f, cry + 5.0f, 17.0f, "\xe2\x9c\x93",
-                                                                                        ColorRGBA(COL_CHECK_ON, true).WithAlpha(childAlpha));
+                                                DrawText(crx + 1.0f + CHECK_W * 0.5f, cry + 5.0f + 3.0f, 17.0f, "\xe2\x9c\x93",
+                                                                                        ColorRGBA(COL_CHECK_ON, true).WithAlpha(childAlpha), TEXTALIGN_CENTER);
                                         DrawText(crx + CHECK_W + 4.0f, cry + 5.0f, 17.0f, child.pName, cText);
                                         break;
                                 }
