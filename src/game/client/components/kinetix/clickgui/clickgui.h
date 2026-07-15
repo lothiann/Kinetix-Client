@@ -51,6 +51,16 @@ private:
         // Animation state: 0.0 = fully closed, 1.0 = fully open.
         float m_AnimProgress = 0.0f;
 
+        // v1.56.77: dynamic ClickGUI accent color (replaces hardcoded 0xff9d4edd).
+        // Mutable so the user can change it via the HEX input in Settings.
+        // m_AccentColorRGBA = packed 0xAARRGGBB. Default = vivid purple.
+        unsigned m_AccentColorRGBA = 0xff9d4edd;
+        // Rainbow mode: when enabled, m_AccentColorRGBA is overwritten each frame
+        // with a hue-rotating color. m_RainbowHue = 0..360 degrees.
+        bool m_RainbowEnabled = false;
+        float m_RainbowHue = 0.0f;
+        float m_RainbowSpeed = 1.0f; // hue degrees per second
+
         // Per-panel offscreen target (randomized each time ClickGUI closes).
         vec2 m_aOffscreenPos[NUM_PANELS] = {};
         bool m_aOffscreenValid[NUM_PANELS] = {};

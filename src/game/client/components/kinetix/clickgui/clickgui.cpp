@@ -156,7 +156,13 @@ static SRow g_SpooferChildren[] = {
         {ERowType::Dropdown, "Client preset", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ClientPresetOpts, 4, 0, nullptr, 0},
         {ERowType::Input, "Client version", false, false, 0, 0, 0, 0, nullptr, "10.8.7", "version...", nullptr, 0, 0, nullptr, 0},
 };
+// v1.56.77: "Rainbow color" expandable: toggle + speed slider.
+static SRow g_RainbowChildren[] = {
+        {ERowType::Slider, "Speed", false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
 static SRow g_SettingsRows[] = {
+        {ERowType::Input, "ClickGUI Color", false, false, 0, 0, 0, 0, nullptr, "9d4edd", "hex...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Expandable, "Rainbow color", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowChildren, 1},
         {ERowType::Expandable, "IRC", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_IrcChildren, 2},
         {ERowType::Expandable, "Spoofer", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_SpooferChildren, 3},
 };
@@ -734,6 +740,35 @@ void CClickGui::OnRender()
                         }
                 }
         }
+        // v1.56.77: sync ClickGUI Color input + Rainbow state from m_AccentColorRGBA.
+        for(int p = 0; p < NUM_PANELS; ++p)
+        {
+                for(int r = 0; r < g_Panels[p].rowCount; ++r)
+                {
+                        SRow &row = g_Panels[p].pRows[r];
+                        if(str_comp(row.pName, "ClickGUI Color") == 0 && row.type == ERowType::Input)
+                        {
+                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r)
+                                {
+                                        char hex[8];
+                                        str_format(hex, sizeof(hex), "%06x", m_AccentColorRGBA & 0xffffff);
+                                        str_copy(row.m_aInputBuf, hex, sizeof(row.m_aInputBuf));
+                                        row.m_InputInitialized = true;
+                                }
+                        }
+                        else if(str_comp(row.pName, "Rainbow color") == 0 && row.type == ERowType::Expandable)
+                        {
+                                row.on = m_RainbowEnabled;
+                                row.expanded = m_RainbowEnabled;
+                                for(int c = 0; c < row.childCount; ++c)
+                                {
+                                        SRow &child = row.pChildren[c];
+                                        if(str_comp(child.pName, "Speed") == 0)
+                                                child.value = m_RainbowSpeed;
+                                }
+                        }
+                }
+        }
         // v1.56.76: capture the open→closed transition BEFORE updating m_WasOpen
         // so we can hide the cursor instantly when ClickGUI starts closing.
         const bool wasOpenThisFrame = m_WasOpen;
@@ -768,6 +803,30 @@ void CClickGui::OnRender()
         // collapse animations. Runs every frame regardless of open state so
         // the next open shows consistent mid-animation values.
         UpdateAnimations(dt);
+
+        // v1.56.77: rainbow color rotation. When enabled, overwrite m_AccentColorRGBA
+        // each frame with a hue-rotating color. HSV→RGB conversion inline.
+        if(m_RainbowEnabled)
+        {
+                m_RainbowHue += dt * m_RainbowSpeed * 60.0f; // 60 deg/sec at speed=1
+                if(m_RainbowHue >= 360.0f)
+                        m_RainbowHue -= 360.0f;
+                // HSV(hue, 1.0, 1.0) → RGB
+                const float h = m_RainbowHue / 60.0f;
+                const float c = 1.0f; // chroma (v=1, s=1)
+                const float x = c * (1.0f - std::abs(std::fmod(h, 2.0f) - 1.0f));
+                float r = 0, g = 0, b = 0;
+                if(h < 1) { r = c; g = x; b = 0; }
+                else if(h < 2) { r = x; g = c; b = 0; }
+                else if(h < 3) { r = 0; g = c; b = x; }
+                else if(h < 4) { r = 0; g = x; b = c; }
+                else if(h < 5) { r = x; g = 0; b = c; }
+                else { r = c; g = 0; b = x; }
+                const unsigned ur = (unsigned)(r * 255.0f);
+                const unsigned ug = (unsigned)(g * 255.0f);
+                const unsigned ub = (unsigned)(b * 255.0f);
+                m_AccentColorRGBA = 0xff000000u | (ur << 16) | (ug << 8) | ub;
+        }
 
         // When fully closed, restore relative mouse mode (hide cursor) and bail.
         // Don't touch mouse mode if game console (F1/F2) is open — it manages
@@ -835,7 +894,25 @@ void CClickGui::OnRender()
                         else if(str_comp(pTarget->pName, "Trigger ticks") == 0)
                                 g_Config.m_ClLaserUnfreezeTriggerTicks = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Speed") == 0)
-                                g_Config.m_ClFakeAimSpeed = (int)pTarget->value;
+                        {
+                                // v1.56.77: "Speed" is used by both Fake Aim and Rainbow.
+                                // Disambiguate by checking which panel the slider is in.
+                                bool isRainbow = false;
+                                if(m_DragSliderChild >= 0 && m_DragSliderPanel >= 0)
+                                {
+                                        SPanel &dragPanel = g_Panels[m_DragSliderPanel];
+                                        if(m_DragSliderRow >= 0 && m_DragSliderRow < dragPanel.rowCount)
+                                        {
+                                                SRow &parentRow = dragPanel.pRows[m_DragSliderRow];
+                                                if(str_comp(parentRow.pName, "Rainbow color") == 0)
+                                                        isRainbow = true;
+                                        }
+                                }
+                                if(isRainbow)
+                                        m_RainbowSpeed = pTarget->value;
+                                else
+                                        g_Config.m_ClFakeAimSpeed = (int)pTarget->value;
+                        }
                         else if(str_comp(pTarget->pName, "Chunk size") == 0)
                                 g_Config.m_ClPfChunkSize = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Hook angles") == 0)
@@ -1038,6 +1115,16 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 pRow->m_InputInitialized = true;
                         }
                         mem_copy(pRow->m_aInputBuf, m_InputBuf, m_InputLen + 1);
+                        // v1.56.77: parse HEX color for "ClickGUI Color" input.
+                        if(str_comp(pRow->pName, "ClickGUI Color") == 0)
+                        {
+                                unsigned hex = 0;
+                                if(sscanf(pRow->m_aInputBuf, "%6x", &hex) == 1)
+                                {
+                                        m_AccentColorRGBA = 0xff000000u | (hex & 0xffffff);
+                                        m_RainbowEnabled = false; // manual color disables rainbow
+                                }
+                        }
                 }
                 m_InputEditing = false; Input()->StopTextInput();
         }
@@ -1209,6 +1296,10 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         {
                                                 g_Config.m_ClVersionSpoof = pTarget->on ? 1 : 0;
                                                 g_Config.m_ClSpoofClientStr = pTarget->on ? 1 : 0;
+                                        }
+                                        else if(str_comp(pTarget->pName, "Rainbow color") == 0)
+                                        {
+                                                m_RainbowEnabled = pTarget->on;
                                         }
                                         return;
                                 }
@@ -1514,7 +1605,7 @@ void CClickGui::RenderDropdownPopup(float alpha)
                                 {
                                         DrawRoundedRect(ddX, itemY, DROPDOWN_W, DROPDOWN_H, 2.0f,
                                                 IGraphics::CORNER_ALL,
-                                                ColorRGBA(0xff9d4edd, true).WithAlpha(alpha * 0.5f));
+                                                ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha * 0.5f));
                                 }
                                 const ColorRGBA optCol = (o == target.valueIdx)
                                         ? ColorRGBA(0xffff9d4e, true).WithAlpha(alpha) // highlight selected
@@ -1551,7 +1642,7 @@ void CClickGui::RenderDropdownPopup(float alpha)
                                                 {
                                                         DrawRoundedRect(ddX, itemY, DROPDOWN_W, DROPDOWN_H, 2.0f,
                                                                 IGraphics::CORNER_ALL,
-                                                                ColorRGBA(0xff9d4edd, true).WithAlpha(alpha * 0.5f));
+                                                                ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha * 0.5f));
                                                 }
                                                 const ColorRGBA optCol = (o == target.valueIdx)
                                                         ? ColorRGBA(0xffff9d4e, true).WithAlpha(alpha)
@@ -1585,6 +1676,16 @@ void CClickGui::HandleTextInput(const IInput::CEvent &Event)
                         pRow->m_InputInitialized = true;
                 }
                 mem_copy(pRow->m_aInputBuf, m_InputBuf, m_InputLen + 1);
+                // v1.56.77: parse HEX color for "ClickGUI Color" input.
+                if(str_comp(pRow->pName, "ClickGUI Color") == 0)
+                {
+                        unsigned hex = 0;
+                        if(sscanf(pRow->m_aInputBuf, "%6x", &hex) == 1)
+                        {
+                                m_AccentColorRGBA = 0xff000000u | (hex & 0xffffff);
+                                m_RainbowEnabled = false;
+                        }
+                }
         };
 
         // Helper: delete the current selection (if any). Returns true if deleted.
@@ -1983,7 +2084,7 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
         // blends with the body below.
         DrawRoundedRect(px, py, PANEL_WIDTH, HEADER_HEIGHT,
                 5.0f, IGraphics::CORNER_T,
-                ColorRGBA(COL_HEADER_BG, true).WithAlpha(alpha));
+                ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha));
 
         // ▼/▶ collapse arrow (left side of header) — ▼ when expanded, ▶ when collapsed.
         {
@@ -2132,7 +2233,7 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                         const float thumbY = trackY + SLIDER_TRACK_H * 0.5f;
                         Graphics()->TextureClear();
                         Graphics()->QuadsBegin();
-                        Graphics()->SetColor(ColorRGBA(COL_SLIDER_THUMB, true).WithAlpha(alpha));
+                        Graphics()->SetColor(ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha));
                         Graphics()->DrawCircle(thumbX, thumbY, SLIDER_THUMB_R, 12);
                         Graphics()->QuadsEnd();
                         break;
@@ -2153,7 +2254,7 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                 ColorRGBA(COL_INPUT_BG, true).WithAlpha(alpha));
                         DrawRoundedRect(inX - 1.0f, inY - 1.0f, inW + 2.0f, inH + 2.0f, 2.0f,
                                 IGraphics::CORNER_ALL,
-                                editingThis ? ColorRGBA(0xff9d4edd, true).WithAlpha(alpha) : ColorRGBA(COL_INPUT_BORDER, true).WithAlpha(alpha * 0.5f));
+                                editingThis ? ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha) : ColorRGBA(COL_INPUT_BORDER, true).WithAlpha(alpha * 0.5f));
                         // Lazy-init the row's mutable buffer.
                         if(!row.m_InputInitialized)
                         {
@@ -2189,7 +2290,7 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                 float selEndX = inX + 4.0f + TextRender()->TextWidth(17.0f, tmp);
                                 DrawRoundedRect(selStartX, inY + 3.0f, selEndX - selStartX, inH - 6.0f, 1.0f,
                                         IGraphics::CORNER_NONE,
-                                        ColorRGBA(0xff9d4edd, true).WithAlpha(alpha * 0.5f));
+                                        ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha * 0.5f));
                         }
                         if(pText)
                                 DrawText(inX + 4.0f, inY + 4.0f, 17.0f, pText, inCol);
@@ -2244,7 +2345,7 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                 {
                         // Button — colored rect with centered label.
                         // Pathfinding button: green (IDLE) / red (RUNNING) / orange (FINISHED).
-                        ColorRGBA btnCol = ColorRGBA(0xff9d4edd, true).WithAlpha(alpha); // default purple
+                        ColorRGBA btnCol = ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha); // default purple
                         const char *pLabel = row.pName;
                         if(str_comp(row.pName, "Pathfinding") == 0)
                         {
@@ -2398,7 +2499,7 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                         const float thY = trY + SLIDER_TRACK_H * 0.5f;
                                         Graphics()->TextureClear();
                                         Graphics()->QuadsBegin();
-                                        Graphics()->SetColor(ColorRGBA(COL_SLIDER_THUMB, true).WithAlpha(alpha));
+                                        Graphics()->SetColor(ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha));
                                         Graphics()->DrawCircle(thX, thY, SLIDER_THUMB_R, 12);
                                         Graphics()->QuadsEnd();
                                         break;
@@ -2423,7 +2524,7 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                                 ColorRGBA(COL_INPUT_BG, true).WithAlpha(alpha));
                                         DrawRoundedRect(ix - 1.0f, iy - 1.0f, iw + 2.0f, ih + 2.0f, 2.0f,
                                                 IGraphics::CORNER_ALL,
-                                                editingChild ? ColorRGBA(0xff9d4edd, true).WithAlpha(alpha) : ColorRGBA(COL_INPUT_BORDER, true).WithAlpha(alpha * 0.5f));
+                                                editingChild ? ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha) : ColorRGBA(COL_INPUT_BORDER, true).WithAlpha(alpha * 0.5f));
                                         const char *pT;
                                         ColorRGBA ic;
                                         if(editingChild)
@@ -2449,7 +2550,7 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                                 float selEndX = ix + 4.0f + TextRender()->TextWidth(17.0f, tmp);
                                                 DrawRoundedRect(selStartX, iy + 3.0f, selEndX - selStartX, ih - 6.0f, 1.0f,
                                                         IGraphics::CORNER_NONE,
-                                                        ColorRGBA(0xff9d4edd, true).WithAlpha(alpha * 0.5f));
+                                                        ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha * 0.5f));
                                         }
                                         if(pT)
                                                 DrawText(ix + 4.0f, iy + 3.0f, 17.0f, pT, ic);
