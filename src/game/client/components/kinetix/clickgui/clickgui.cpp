@@ -2265,14 +2265,34 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                 }
                 }
 
-                // v1.56.71: render expanded children as normal Yoga-positioned rows.
-                // Children are in the Yoga tree (added above when m_AnimExpand > 0)
-                // and read back via rowNodes[rowIdx] — same as parent rows. The
-                // single body clip (ClipEnable on bodyHeight) handles both the
-                // panel close animation AND the expandable expand/collapse
-                // animation (via hiddenChildrenHeight reducing bodyHeight).
+                // v1.56.74: render expanded children — CLIP the children block to
+                // (childrenBlockH * expandProgress) so children are CROPPED from the
+                // bottom (like the panel close animation), NOT shifted up. Lower rows
+                // still shift up via rowYOffset (so they don't leave a gap), but the
+                // children themselves stay at their Yoga positions and get clipped.
+                // This gives the smooth "crop" feel instead of "slide up + disappear".
                 if(row.type == ERowType::Expandable && row.pChildren && row.m_AnimExpand > 0.0f)
                 {
+                        // Compute the clip rect for this expandable's children block.
+                        float childrenClipH = 0.0f;
+                        if(r < 64 && rowToExpandSlot[r] >= 0)
+                        {
+                                const ExpandAnimInfo &info = expandInfo[rowToExpandSlot[r]];
+                                childrenClipH = info.childrenBlockH * info.expandProgress;
+                        }
+                        else if(row.m_AnimExpand >= 1.0f)
+                        {
+                                // Fully expanded — no clip, full block visible.
+                                childrenClipH = 99999.0f; // effectively no clip
+                        }
+
+                        const float childrenTop = ry + rh;
+                        const bool useChildClip = (childrenClipH < 99999.0f && childrenClipH > 0.5f);
+
+                        // Save current clip, set children clip (intersect with body clip).
+                        if(useChildClip)
+                                Graphics()->ClipEnable((int)bodyX, (int)childrenTop, (int)bodyW, (int)bodyH_safe(childrenClipH));
+
                         for(int c = 0; c < row.childCount; ++c)
                         {
                                 SRow &child = row.pChildren[c];
@@ -2446,6 +2466,10 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                         break;
                                 }
                         }
+
+                        // Restore the body clip for subsequent rows.
+                        if(useChildClip)
+                                Graphics()->ClipEnable((int)bodyX, (int)bodyY, (int)bodyW, (int)bodyH_safe(bodyHeight));
 
                         // v1.56.72: use precomputed expandInfo (avoids re-calling
                         // EaseBothDirections and re-summing childrenBlockH here).
