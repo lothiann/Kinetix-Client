@@ -734,7 +734,18 @@ void CClickGui::OnRender()
                         }
                 }
         }
+        // v1.56.76: capture the open→closed transition BEFORE updating m_WasOpen
+        // so we can hide the cursor instantly when ClickGUI starts closing.
+        const bool wasOpenThisFrame = m_WasOpen;
         m_WasOpen = isOpen;
+
+        // v1.56.76: hide the Windows cursor INSTANTLY when cl_clickgui goes 1→0
+        // (transition open→closed), not after the close animation finishes. The
+        // close animation still plays (m_AnimProgress keeps decreasing toward 0),
+        // only the cursor disappears immediately. Symmetric with opening, where
+        // MouseModeAbsolute is called instantly on open.
+        if(!isOpen && wasOpenThisFrame && !GameClient()->m_GameConsole.IsActive())
+                Input()->MouseModeRelative();
 
         // Drive animation toward the current cl_clickgui target (0 or 1).
         const float target = isOpen ? 1.0f : 0.0f;
