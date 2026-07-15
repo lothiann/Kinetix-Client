@@ -2289,6 +2289,30 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                         const float childrenTop = ry + rh;
                         const bool useChildClip = (childrenClipH < 99999.0f && childrenClipH > 0.5f);
 
+                        // v1.56.75: if the expandable is animating but the clip height
+                        // is ~0 (end of collapse), skip rendering children entirely.
+                        // Otherwise they'd render for one frame without a clip and
+                        // flicker before m_AnimExpand reaches 0 and removes them from
+                        // the layout.
+                        if(row.m_AnimExpand < 1.0f && !useChildClip)
+                        {
+                                // Still need to advance rowIdx past these children so
+                                // subsequent rows read the correct Yoga nodes.
+                                for(int c = 0; c < row.childCount; ++c)
+                                {
+                                        if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
+                                                continue;
+                                        ++rowIdx;
+                                }
+                                // Update rowYOffset for lower rows (children are hidden).
+                                if(r < 64 && rowToExpandSlot[r] >= 0)
+                                {
+                                        const ExpandAnimInfo &info = expandInfo[rowToExpandSlot[r]];
+                                        rowYOffset -= info.hiddenH;
+                                }
+                                continue;
+                        }
+
                         // Save current clip, set children clip (intersect with body clip).
                         if(useChildClip)
                                 Graphics()->ClipEnable((int)bodyX, (int)childrenTop, (int)bodyW, (int)bodyH_safe(childrenClipH));
