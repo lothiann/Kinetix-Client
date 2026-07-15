@@ -759,7 +759,9 @@ void CClickGui::OnRender()
                         else if(str_comp(row.pName, "Rainbow color") == 0 && row.type == ERowType::Expandable)
                         {
                                 row.on = m_RainbowEnabled;
-                                row.expanded = m_RainbowEnabled;
+                                // v1.56.78: do NOT force row.expanded — let the user
+                                // expand/collapse independently of the toggle state,
+                                // like every other expandable.
                                 for(int c = 0; c < row.childCount; ++c)
                                 {
                                         SRow &child = row.pChildren[c];
@@ -1123,6 +1125,8 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 {
                                         m_AccentColorRGBA = 0xff000000u | (hex & 0xffffff);
                                         m_RainbowEnabled = false; // manual color disables rainbow
+                                        // v1.56.78: color already set from HEX above, update saved too.
+                                        m_SavedAccentColorRGBA = m_AccentColorRGBA;
                                 }
                         }
                 }
@@ -1299,6 +1303,12 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         }
                                         else if(str_comp(pTarget->pName, "Rainbow color") == 0)
                                         {
+                                                // v1.56.78: save color before enabling rainbow,
+                                                // restore it when disabling.
+                                                if(pTarget->on && !m_RainbowEnabled)
+                                                        m_SavedAccentColorRGBA = m_AccentColorRGBA;
+                                                else if(!pTarget->on && m_RainbowEnabled)
+                                                        m_AccentColorRGBA = m_SavedAccentColorRGBA;
                                                 m_RainbowEnabled = pTarget->on;
                                         }
                                         return;
@@ -1684,6 +1694,7 @@ void CClickGui::HandleTextInput(const IInput::CEvent &Event)
                         {
                                 m_AccentColorRGBA = 0xff000000u | (hex & 0xffffff);
                                 m_RainbowEnabled = false;
+                                m_SavedAccentColorRGBA = m_AccentColorRGBA; // v1.56.78
                         }
                 }
         };

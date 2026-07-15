@@ -60,6 +60,9 @@ private:
         bool m_RainbowEnabled = false;
         float m_RainbowHue = 0.0f;
         float m_RainbowSpeed = 1.0f; // hue degrees per second
+        // v1.56.78: saved accent color before rainbow was enabled. Restored when
+        // rainbow is disabled so the manual HEX color comes back.
+        unsigned m_SavedAccentColorRGBA = 0xff9d4edd;
 
         // Per-panel offscreen target (randomized each time ClickGUI closes).
         vec2 m_aOffscreenPos[NUM_PANELS] = {};
