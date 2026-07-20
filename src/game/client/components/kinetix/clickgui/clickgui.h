@@ -162,6 +162,16 @@ private:
         static constexpr float HEADER_HEIGHT = 38.0f;
         static constexpr float BODY_PADDING = 6.0f;
         static constexpr float ROW_GAP = 4.0f;
+        // Maximum visible body height. When content exceeds this, the body becomes
+        // scrollable via mouse wheel. Fits ~10 toggle rows (30px each + gaps).
+        static constexpr float MAX_BODY_HEIGHT = 400.0f;
+        // Scroll step per wheel notch (px) — roughly one toggle row + gap.
+        static constexpr float SCROLL_STEP = 34.0f;
+        // Per-panel scroll offset (px, 0 = top). 'stored' preserves the user's
+        // scroll across panel collapse/expand; 'working' is the clamped value
+        // used for rendering (copied from stored each frame when scrollable).
+        float m_aPanelScroll[NUM_PANELS] = {};
+        float m_aPanelScrollStored[NUM_PANELS] = {};
 
         // Background dimming: black overlay at this alpha when fully open.
         static constexpr float BG_DIM_ALPHA = 0.30f;

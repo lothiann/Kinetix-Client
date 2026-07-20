@@ -567,6 +567,8 @@ void CClickGui::OnReset()
                 m_aOffscreenValid[i] = false;
                 m_aPanelPosValid[i] = false;
                 m_aPanelCollapsed[i] = false;
+                m_aPanelScroll[i] = 0.0f;
+                m_aPanelScrollStored[i] = 0.0f;
                 m_aZOrder[i] = i;
                 // v1.56.72: free + invalidate Yoga layout cache on reset.
                 if(m_aLayoutCache[i].pRoot)
@@ -1043,6 +1045,43 @@ bool CClickGui::OnInput(const IInput::CEvent &Event)
         {
                 HandleMouseUp(m_MousePos);
                 return true;
+        }
+
+        // Mouse wheel — scroll the panel under the cursor.
+        if(Event.m_Flags & IInput::FLAG_PRESS &&
+                (Event.m_Key == KEY_MOUSE_WHEEL_UP || Event.m_Key == KEY_MOUSE_WHEEL_DOWN))
+        {
+                const vec2 mp = m_MousePos;
+                // Iterate panels top-to-bottom (high z first).
+                int order[NUM_PANELS];
+                for(int i = 0; i < NUM_PANELS; ++i)
+                        order[i] = i;
+                for(int a = 0; a < NUM_PANELS; ++a)
+                        for(int b = a + 1; b < NUM_PANELS; ++b)
+                                if(m_aZOrder[order[b]] > m_aZOrder[order[a]])
+                                {
+                                        int tmp = order[a];
+                                        order[a] = order[b];
+                                        order[b] = tmp;
+                                }
+                for(int idx = 0; idx < NUM_PANELS; ++idx)
+                {
+                        const int i = order[idx];
+                        if(!m_aPanelPosValid[i])
+                                continue;
+                        const vec2 p = m_aPanelPos[i];
+                        const float bodyTop = p.y + HEADER_HEIGHT;
+                        const float bodyBottom = p.y + HEADER_HEIGHT + MAX_BODY_HEIGHT + 50.0f;
+                        if(mp.x >= p.x && mp.x < p.x + PANEL_WIDTH && mp.y >= bodyTop && mp.y < bodyBottom)
+                        {
+                                const float dir = (Event.m_Key == KEY_MOUSE_WHEEL_UP) ? -SCROLL_STEP : SCROLL_STEP;
+                                // Write to stored so the value survives panel collapse/expand.
+                                m_aPanelScrollStored[i] += dir;
+                                if(m_aPanelScrollStored[i] < 0.0f)
+                                        m_aPanelScrollStored[i] = 0.0f;
+                                return true;
+                        }
+                }
         }
 
         // If editing an input field, route keyboard events to text editing.
@@ -1851,10 +1890,11 @@ void CClickGui::HandleTextInput(const IInput::CEvent &Event)
 bool CClickGui::HitTestRow(vec2 mousePos, int panelIdx, int &outRow, int &outChild, float &outRowX, float &outRowY, float &outRowW, float &outRowH)
 {
         // Walk all rows (incl. expanded children) and check rect hits.
-        // Uses the same geometry constants as RenderPanel for consistency.
+        // Applies the per-panel scroll offset so hit-testing matches the
+        // shifted row positions in the render loop.
         const vec2 ppos = m_aPanelPosValid[panelIdx] ? m_aPanelPos[panelIdx] : PanelHomePos(panelIdx);
         const float bodyX = ppos.x + BODY_PADDING;
-        float cursorY = ppos.y + HEADER_HEIGHT + BODY_PADDING;
+        float cursorY = ppos.y + HEADER_HEIGHT + BODY_PADDING - m_aPanelScroll[panelIdx];
 
         for(int r = 0; r < g_Panels[panelIdx].rowCount; ++r)
         {
@@ -2071,10 +2111,42 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                 }
         }
 
-        const float bodyHeight = (bodyHeightFull - hiddenChildrenHeight) * easedVisibility;
+        // v1.56.72: single pass — compute expandProgress + childrenBlockH for each
+        // expandable ONCE, store in a small map keyed by row index, reuse in the
+        // render loop (avoids double EaseBothDirections + double block-height sum).
+        const float contentHeightFull = bodyHeightFull - hiddenChildrenHeight;
+        const bool scrollable = contentHeightFull > MAX_BODY_HEIGHT;
+
+        // Scale body height by the EASED visibility (panel open/close).
+        // For scrollable panels, animate the VISIBLE height (MAX → 0) instead of
+        // the full content height — otherwise the visible box stays at MAX for the
+        // first half of the collapse animation, then snaps shut abruptly.
+        const float animBase = scrollable ? MAX_BODY_HEIGHT : contentHeightFull;
+        const float bodyHeight = animBase * easedVisibility;
+
+        // Cap the visible body height at MAX_BODY_HEIGHT. The existing ClipEnable
+        // call clips rows outside this rect, so scrolled-away rows are GPU-clipped.
+        const float visibleBodyHeight = scrollable ? std::min(bodyHeight, MAX_BODY_HEIGHT) : bodyHeight;
+
+        // Clamp the per-panel scroll offset. 'scrollable' is based on the full
+        // content height (not the animated bodyHeight), so it stays stable across
+        // the whole collapse/expand animation — the scroll state isn't reset
+        // mid-animation. When not scrollable, stored is left untouched so the
+        // user's last scroll position survives until content comes back.
+        const float maxScroll = scrollable ? (contentHeightFull - MAX_BODY_HEIGHT) : 0.0f;
+        if(scrollable)
+                m_aPanelScroll[panelIdx] = m_aPanelScrollStored[panelIdx];
+        float &scrollRef = m_aPanelScroll[panelIdx];
+        if(scrollRef < 0.0f)
+                scrollRef = 0.0f;
+        if(scrollRef > maxScroll)
+                scrollRef = maxScroll;
+        if(scrollable)
+                m_aPanelScrollStored[panelIdx] = scrollRef;
+        const float scrollOffset = scrollable ? scrollRef : 0.0f;
 
         // ---- Step 2: panel geometry ----
-        const float panelH = HEADER_HEIGHT + bodyHeight;
+        const float panelH = HEADER_HEIGHT + visibleBodyHeight;
         const float px = pos.x;
         const float py = pos.y;
 
@@ -2123,11 +2195,11 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
 
                 // Subtle sub-list backdrop tint (the HTML has rgba(0,0,0,0.18) under
                 // expandable children; we tint the whole body faintly for visual depth).
-                DrawRoundedRect(bodyX, bodyY, bodyW, bodyHeight,
+                DrawRoundedRect(bodyX, bodyY, bodyW, visibleBodyHeight,
                         0.0f, IGraphics::CORNER_NONE,
                         ColorRGBA(COL_SUB_LIST_BG, true).WithAlpha(alpha * 0.5f));
 
-                Graphics()->ClipEnable((int)bodyX, (int)bodyY, (int)bodyW, (int)bodyH_safe(bodyHeight));
+                Graphics()->ClipEnable((int)bodyX, (int)bodyY, (int)bodyW, (int)bodyH_safe(visibleBodyHeight));
 
         // ---- Step 5: draw each row using its Yoga-computed rectangle ----
         // v1.56.71: rows below an animating expandable shift UP by that
@@ -2136,7 +2208,10 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
         // subtracts hiddenChildrenHeight) so rows, panel border, and the single
         // body clip all stay in sync. Children are in Yoga (rowNodes) and render
         // at their Yoga positions — no separate clip, no sub-panel.
-        float rowYOffset = 0.0f;
+        // rowYOffset starts at -scrollOffset so the content shifts up when the
+        // user scrolls down. Rows above the visible window are clipped by the
+        // body ClipEnable above.
+        float rowYOffset = -scrollOffset;
         int rowIdx = 0;
         for(int r = 0; r < panel.rowCount; ++r)
         {
@@ -2409,8 +2484,28 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                 childrenClipH = 99999.0f; // effectively no clip
                         }
 
-                        const float childrenTop = ry + rh;
+                        const float childrenTopRaw = ry + rh;
                         const bool useChildClip = (childrenClipH < 99999.0f && childrenClipH > 0.5f);
+
+                        // Intersect the children clip rect with the visible body rect
+                        // so children don't paint outside the scroll window when the
+                        // panel is scrollable. Visible body Y range: [bodyY, bodyY + visibleBodyHeight].
+                        const float visBodyBottom = bodyY + visibleBodyHeight;
+                        float childClipY = childrenTopRaw;
+                        float childClipH = childrenClipH;
+                        if(useChildClip)
+                        {
+                                if(childClipY < bodyY)
+                                {
+                                        const float cut = bodyY - childClipY;
+                                        childClipY = bodyY;
+                                        childClipH -= cut;
+                                }
+                                if(childClipY + childClipH > visBodyBottom)
+                                        childClipH = visBodyBottom - childClipY;
+                                if(childClipH < 0.5f)
+                                        childClipH = 0.0f; // fully outside — skip clip+render
+                        }
 
                         // v1.56.75: if the expandable is animating but the clip height
                         // is ~0 (end of collapse), skip rendering children entirely.
@@ -2436,9 +2531,12 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                 continue;
                         }
 
-                        // Save current clip, set children clip (intersect with body clip).
-                        if(useChildClip)
-                                Graphics()->ClipEnable((int)bodyX, (int)childrenTop, (int)bodyW, (int)bodyH_safe(childrenClipH));
+                        // Apply the intersected children clip rect. When fully expanded
+                        // (childrenClipH = 99999), useChildClip is false and we rely on
+                        // the body clip. For animating expand/collapse, childClipH is the
+                        // visible portion of the children block (intersected with the body).
+                        if(useChildClip && childClipH > 0.5f)
+                                Graphics()->ClipEnable((int)bodyX, (int)childClipY, (int)bodyW, (int)bodyH_safe(childClipH));
 
                         for(int c = 0; c < row.childCount; ++c)
                         {
@@ -2616,7 +2714,7 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
 
                         // Restore the body clip for subsequent rows.
                         if(useChildClip)
-                                Graphics()->ClipEnable((int)bodyX, (int)bodyY, (int)bodyW, (int)bodyH_safe(bodyHeight));
+                                Graphics()->ClipEnable((int)bodyX, (int)bodyY, (int)bodyW, (int)bodyH_safe(visibleBodyHeight));
 
                         // v1.56.72: use precomputed expandInfo (avoids re-calling
                         // EaseBothDirections and re-summing childrenBlockH here).
