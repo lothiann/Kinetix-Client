@@ -2817,7 +2817,7 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
         const bool needRebuild = m_aLayoutCacheDirty[panelIdx] || cache.signature != sig;
 
         YGNodeRef bodyRoot = nullptr;
-        YGNodeRef rowNodes[64];
+        YGNodeRef rowNodes[256];
         int rowCount = 0;
         float bodyHeightFull = 0.0f;
 
@@ -2901,9 +2901,8 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
         ExpandAnimInfo expandInfo[16]; // max 16 expandables per panel
         int expandInfoCount = 0;
         // Map row index → expandInfo slot (for O(1) lookup in render loop).
-        // Simple linear array indexed by row r; -1 = not an animating expandable.
-        int rowToExpandSlot[64];
-        for(int i = 0; i < 64; ++i)
+        int rowToExpandSlot[256];
+        for(int i = 0; i < 256; ++i)
                 rowToExpandSlot[i] = -1;
 
         float hiddenChildrenHeight = 0.0f;
@@ -2933,7 +2932,7 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                         const float hiddenH = childrenBlockH * (1.0f - expandProgress);
                         hiddenChildrenHeight += hiddenH;
 
-                        if(expandInfoCount < 16 && r < 64)
+                        if(expandInfoCount < 16 && r < 256)
                         {
                                 rowToExpandSlot[r] = expandInfoCount;
                                 expandInfo[expandInfoCount++] = {expandProgress, childrenBlockH, hiddenH};
@@ -3303,7 +3302,7 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                 {
                         // Compute the clip rect for this expandable's children block.
                         float childrenClipH = 0.0f;
-                        if(r < 64 && rowToExpandSlot[r] >= 0)
+                        if(r < 256 && rowToExpandSlot[r] >= 0)
                         {
                                 const ExpandAnimInfo &info = expandInfo[rowToExpandSlot[r]];
                                 childrenClipH = info.childrenBlockH * info.expandProgress;
@@ -3355,7 +3354,7 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                                         ++rowIdx;
                                 }
                                 // Update rowYOffset for lower rows (children are hidden).
-                                if(r < 64 && rowToExpandSlot[r] >= 0)
+                                if(r < 256 && rowToExpandSlot[r] >= 0)
                                 {
                                         const ExpandAnimInfo &info = expandInfo[rowToExpandSlot[r]];
                                         rowYOffset -= info.hiddenH;
@@ -3619,7 +3618,7 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                         // EaseBothDirections and re-summing childrenBlockH here).
                         // rowToExpandSlot[r] gives the slot in expandInfo, or -1
                         // if this expandable is fully expanded (no hidden height).
-                        if(r < 64 && rowToExpandSlot[r] >= 0)
+                        if(r < 256 && rowToExpandSlot[r] >= 0)
                         {
                                 const ExpandAnimInfo &info = expandInfo[rowToExpandSlot[r]];
                                 rowYOffset -= info.hiddenH;
