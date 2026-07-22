@@ -399,7 +399,16 @@ static bool FakeAimChildVisible(const SRow *pChildren, int childCount, int idx)
         return true;
 }
 
-// ============================================================================
+// v1.56.90: Dummies — "Switch to Main" hidden when already on main player.
+static bool DummiesChildVisible(const SRow *pChildren, int childCount, int idx)
+{
+        if(idx < 0 || idx >= childCount)
+                return false;
+        const SRow &row = pChildren[idx];
+        if(str_comp(row.pName, "Switch to Main") == 0)
+                return g_Config.m_ClDummy != 0; // visible only when on a dummy
+        return true;
+}
 // Constants — colors and geometry from clickgui.html (box-shadow/blur dropped
 // per the spec; everything else matches the HTML aesthetic).
 // ============================================================================
@@ -832,6 +841,8 @@ void CClickGui::OnRender()
                                         SRow &child = row.pChildren[c];
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;
+if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
+        continue;
                                         if(str_comp(child.pName, "Latency (ms)") == 0)
                                                 child.value = (float)g_Config.m_KxDummyHammerLatencyMs;
                                         else if(str_comp(child.pName, "Filter: Jump") == 0)
@@ -2329,6 +2340,8 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                                 SRow &child = row.pChildren[c];
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;
+if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
+        continue;
                                 const float crh = RowHeight(child.type);
                                 if(r == m_DropdownRow && c == m_DropdownChild)
                                 {
@@ -2478,6 +2491,8 @@ void CClickGui::RenderDropdownPopup(float alpha)
                                 SRow &child = row.pChildren[c];
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;
+if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
+        continue;
                                 const float crh = RowHeight(child.type);
                                 if(r == m_DropdownRow && c == m_DropdownChild)
                                 {
@@ -2735,6 +2750,8 @@ bool CClickGui::HitTestRow(vec2 mousePos, int panelIdx, int &outRow, int &outChi
                                 SRow &child = row.pChildren[c];
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;
+if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
+        continue;
                                 const float crh = RowHeight(child.type);
                                 const float crw = rw - SUB_LIST_INDENT;
                                 if(PointInRect(mousePos, bodyX + SUB_LIST_INDENT, cursorY, crw, crh))
@@ -2789,6 +2806,8 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                         {
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;
+if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
+        continue;
                                 sig = sig * 31u + (unsigned)(c + 100);
                         }
                 }
@@ -2842,6 +2861,8 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                         {
                                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                                         continue;
+if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
+        continue;
                                                 addRowNode(row.pChildren[c], true);
                                         }
                                 }
@@ -2900,6 +2921,8 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                         {
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;
+if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
+        continue;
                                 childrenBlockH += RowHeight(row.pChildren[c].type);
                                 visibleCount++;
                         }
@@ -3327,6 +3350,8 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                 {
                                         if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                                 continue;
+if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
+        continue;
                                         ++rowIdx;
                                 }
                                 // Update rowYOffset for lower rows (children are hidden).
@@ -3350,6 +3375,8 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                 SRow &child = row.pChildren[c];
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;
+if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
+        continue;
                                 const YGNodeRef cnode = rowNodes[rowIdx];
                                 const float crx = bodyX + YGNodeLayoutGetLeft(cnode);
                                 const float cry = bodyY + YGNodeLayoutGetTop(cnode) + rowYOffset;
@@ -3532,9 +3559,6 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                                         btnCol = ColorRGBA(0xff3da35a, true).WithAlpha(alpha); // green
                                                 }
                                         }
-                                        // v1.56.90: "Switch to Main" — hide if already on main (don't render).
-                                        if(str_comp(child.pName, "Switch to Main") == 0 && g_Config.m_ClDummy == 0)
-                                                break; // skip render — not on dummy
                                         // Connected/active state → green tint.
                                         if(child.on)
                                                 btnCol = ColorRGBA(0xff3da35a, true).WithAlpha(alpha);
