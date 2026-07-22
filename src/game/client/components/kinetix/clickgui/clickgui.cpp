@@ -3409,6 +3409,21 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                                                                         ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha), TEXTALIGN_CENTER);
                                         DrawText(crx + CHECK_W + 4.0f, cry + 5.0f, 17.0f, child.pName, cText);
                                         break;
+                                case ERowType::Button:
+                                {
+                                        // v1.56.90: Button child — colored rect with centered label (Dummies).
+                                        ColorRGBA btnCol = ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha);
+                                        const char *pLabel = child.pName;
+                                        // Connected/active state → green tint.
+                                        if(child.on)
+                                                btnCol = ColorRGBA(0xff3da35a, true).WithAlpha(alpha);
+                                        DrawRoundedRect(crx + 2.0f, cry + 2.0f, crw - 4.0f, crh - 4.0f, 4.0f,
+                                                IGraphics::CORNER_ALL, btnCol);
+                                        const float labelW = TextRender()->TextWidth(15.0f, pLabel);
+                                        DrawText(crx + (crw - labelW) * 0.5f, cry + 7.0f, 15.0f, pLabel,
+                                                ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                                        break;
+                                }
                                 }
                         }
 
