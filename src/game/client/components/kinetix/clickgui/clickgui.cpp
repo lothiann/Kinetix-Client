@@ -102,9 +102,59 @@ static SRow g_CopyMovesFilterChildren[] = {
 };
 // Aim mode dropdown options.
 static const char *const g_AimModeOpts[] = {"Smart", "Mirror"};
+// v1.56.83: AimBot/TriggerBot dropdown options (unique prefix AB/TB to avoid collisions).
+static const char *const g_ABWeaponOpts[] = {"Hammer", "Pistol", "Shotgun", "Grenade", "Laser", "Ninja", "Hook"};
+static const char *const g_ABWeaponOptsNoHook[] = {"Hammer", "Pistol", "Shotgun", "Grenade", "Laser", "Ninja"};
+static const char *const g_ABTriggerOpts[] = {"Fire", "Hook"};
+static const char *const g_ABAimModeOpts[] = {"Silent", "Trigger", "Always"};
+static const char *const g_ABTeamOpts[] = {"Both", "War", "My"};
+static const char *const g_ABFriendOpts[] = {"Both", "Ignore"};
+static const char *const g_ABDummyOpts[] = {"Both", "Ignore"};
+static const char *const g_ABFreezeOpts[] = {"Both", "Freeze", "No freeze"};
+static const char *const g_ABPriorityOpts[] = {"Nearest FOV", "Nearest Aim", "Nearest to me"};
+// v1.56.83: AimBot expandable — 15 children.
+static SRow g_AimBotChildren[] = {
+        {ERowType::Dropdown, "AB Weapon", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABWeaponOpts, 7, 0, nullptr, 0},
+        {ERowType::Toggle, "AB Enable", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "AB FOV", false, false, 1.0f, 360.0f, 1.0f, 90.0f, "\xc2\xb0", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "AB Radius", false, false, 1.0f, 2000.0f, 1.0f, 300.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Show FOV", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Show Radius", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Use raycast (show)", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "AB Raycast (aim)", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "AB Angles", false, false, 1.0f, 64.0f, 1.0f, 16.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "AB Aim Mode", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABAimModeOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "AB Team", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTeamOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "AB Friend", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 2, 0, nullptr, 0},
+        {ERowType::Dropdown, "AB Dummy", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 2, 0, nullptr, 0},
+        {ERowType::Dropdown, "AB Freeze", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "AB Priority", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABPriorityOpts, 3, 0, nullptr, 0},
+};
+// v1.56.83: TriggerBot expandable — 16 children (no Hook, has Trigger + Latency).
+static SRow g_TriggerBotChildren[] = {
+        {ERowType::Dropdown, "TB Weapon", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABWeaponOptsNoHook, 6, 0, nullptr, 0},
+        {ERowType::Toggle, "TB Enable", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "TB Trigger", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTriggerOpts, 2, 0, nullptr, 0},
+        {ERowType::Slider, "TB FOV", false, false, 1.0f, 360.0f, 1.0f, 90.0f, "\xc2\xb0", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "TB Radius", false, false, 1.0f, 2000.0f, 1.0f, 300.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "TB Show FOV", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "TB Show Radius", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "TB Use raycast (show)", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "TB Raycast (trigger)", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "TB Angles", false, false, 1.0f, 64.0f, 1.0f, 16.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "TB Latency", false, false, 0.0f, 10.0f, 1.0f, 0.0f, " ticks", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "TB Team", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTeamOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "TB Friend", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 2, 0, nullptr, 0},
+        {ERowType::Dropdown, "TB Dummy", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 2, 0, nullptr, 0},
+        {ERowType::Dropdown, "TB Freeze", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "TB Priority", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABPriorityOpts, 3, 0, nullptr, 0},
+};
 static SRow g_FunctionsRows[] = {
         {ERowType::Toggle, "Block", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Random Aim", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        // v1.56.83: AimBot + TriggerBot expandables
+        {ERowType::Expandable, "AimBot", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AimBotChildren, 15},
+        {ERowType::Expandable, "TriggerBot", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TriggerBotChildren, 16},
         // Fly sub-section
         {ERowType::Toggle, "Preserve input", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Expandable, "Custom latency", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CustomLatencyChildren, 1},
@@ -742,6 +792,114 @@ void CClickGui::OnRender()
                         }
                 }
         }
+        // v1.56.83: per-frame sync of AimBot/TriggerBot UI from real state.
+        // Runs every frame while open (not just on open) so switching the Weapon dropdown
+        // immediately updates all per-weapon fields (Enable/FOV/Radius/filters/etc.).
+        if(isOpen)
+        {
+                CAimBot &aimbot = GameClient()->m_AimBot;
+                for(int p = 0; p < NUM_PANELS; ++p)
+                {
+                        for(int r = 0; r < g_Panels[p].rowCount; ++r)
+                        {
+                                SRow &row = g_Panels[p].pRows[r];
+                                if(row.type != ERowType::Expandable)
+                                continue;
+                                if(str_comp(row.pName, "AimBot") == 0)
+                                {
+                                        row.on = aimbot.m_AimBotEnabled;
+                                        int w = aimbot.m_AimBotSelectedWeapon;
+                                        if(w < 0 || w >= CAimBot::NUM_WEAPONS_AIM)
+                                                w = 0;
+                                        const auto &s = aimbot.m_AimBotWeapons[w];
+                                        for(int c = 0; c < row.childCount; ++c)
+                                        {
+                                                SRow &ch = row.pChildren[c];
+                                                if(str_comp(ch.pName, "AB Weapon") == 0)
+                                                        ch.valueIdx = w;
+                                                else if(str_comp(ch.pName, "AB Enable") == 0)
+                                                        ch.on = s.m_Enabled;
+                                                else if(str_comp(ch.pName, "AB FOV") == 0)
+                                                        ch.value = s.m_Fov;
+                                                else if(str_comp(ch.pName, "AB Radius") == 0)
+                                                {
+                                                        ch.max = aimbot.GetWeaponRadius(w);
+                                                        ch.value = s.m_Radius;
+                                                }
+                                                else if(str_comp(ch.pName, "Show FOV") == 0)
+                                                        ch.on = aimbot.m_AimBotShowFov;
+                                                else if(str_comp(ch.pName, "Show Radius") == 0)
+                                                        ch.on = aimbot.m_AimBotShowRadius;
+                                                else if(str_comp(ch.pName, "Use raycast (show)") == 0)
+                                                        ch.on = aimbot.m_AimBotUseRaycastShow;
+                                                else if(str_comp(ch.pName, "AB Raycast (aim)") == 0)
+                                                        ch.on = s.m_UseRaycast;
+                                                else if(str_comp(ch.pName, "AB Angles") == 0)
+                                                        ch.value = (float)s.m_RaycastAngles;
+                                                else if(str_comp(ch.pName, "AB Aim Mode") == 0)
+                                                        ch.valueIdx = s.m_AimMode;
+                                                else if(str_comp(ch.pName, "AB Team") == 0)
+                                                        ch.valueIdx = s.m_TeamFilter;
+                                                else if(str_comp(ch.pName, "AB Friend") == 0)
+                                                        ch.valueIdx = s.m_FriendFilter;
+                                                else if(str_comp(ch.pName, "AB Dummy") == 0)
+                                                        ch.valueIdx = s.m_DummyFilter;
+                                                else if(str_comp(ch.pName, "AB Freeze") == 0)
+                                                        ch.valueIdx = s.m_FreezeFilter;
+                                                else if(str_comp(ch.pName, "AB Priority") == 0)
+                                                        ch.valueIdx = s.m_Priority;
+                                        }
+                                }
+                                else if(str_comp(row.pName, "TriggerBot") == 0)
+                                {
+                                        row.on = aimbot.m_TriggerBotEnabled;
+                                        int w = aimbot.m_TriggerBotSelectedWeapon;
+                                        if(w < 0 || w >= CAimBot::NUM_WEAPONS_TRIGGER)
+                                                w = 0;
+                                        const auto &s = aimbot.m_TriggerBotWeapons[w];
+                                        for(int c = 0; c < row.childCount; ++c)
+                                        {
+                                                SRow &ch = row.pChildren[c];
+                                                if(str_comp(ch.pName, "TB Weapon") == 0)
+                                                        ch.valueIdx = w;
+                                                else if(str_comp(ch.pName, "TB Enable") == 0)
+                                                        ch.on = s.m_Enabled;
+                                                else if(str_comp(ch.pName, "TB Trigger") == 0)
+                                                        ch.valueIdx = s.m_Trigger;
+                                                else if(str_comp(ch.pName, "TB FOV") == 0)
+                                                        ch.value = s.m_Fov;
+                                                else if(str_comp(ch.pName, "TB Radius") == 0)
+                                                {
+                                                        ch.max = aimbot.GetWeaponRadius(w);
+                                                        ch.value = s.m_Radius;
+                                                }
+                                                else if(str_comp(ch.pName, "TB Show FOV") == 0)
+                                                        ch.on = aimbot.m_TriggerBotShowFov;
+                                                else if(str_comp(ch.pName, "TB Show Radius") == 0)
+                                                        ch.on = aimbot.m_TriggerBotShowRadius;
+                                                else if(str_comp(ch.pName, "TB Use raycast (show)") == 0)
+                                                        ch.on = aimbot.m_TriggerBotUseRaycastShow;
+                                                else if(str_comp(ch.pName, "TB Raycast (trigger)") == 0)
+                                                        ch.on = s.m_UseRaycast;
+                                                else if(str_comp(ch.pName, "TB Angles") == 0)
+                                                        ch.value = (float)s.m_RaycastAngles;
+                                                else if(str_comp(ch.pName, "TB Latency") == 0)
+                                                        ch.value = (float)s.m_RandomLatency;
+                                                else if(str_comp(ch.pName, "TB Team") == 0)
+                                                        ch.valueIdx = s.m_TeamFilter;
+                                                else if(str_comp(ch.pName, "TB Friend") == 0)
+                                                        ch.valueIdx = s.m_FriendFilter;
+                                                else if(str_comp(ch.pName, "TB Dummy") == 0)
+                                                        ch.valueIdx = s.m_DummyFilter;
+                                                else if(str_comp(ch.pName, "TB Freeze") == 0)
+                                                        ch.valueIdx = s.m_FreezeFilter;
+                                                else if(str_comp(ch.pName, "TB Priority") == 0)
+                                                        ch.valueIdx = s.m_Priority;
+                                        }
+                                }
+                        }
+                }
+        }
         // v1.56.77: sync ClickGUI Color input + Rainbow state from m_AccentColorRGBA.
         for(int p = 0; p < NUM_PANELS; ++p)
         {
@@ -925,6 +1083,46 @@ void CClickGui::OnRender()
                                 g_Config.m_KxPfCandidates = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Performance") == 0)
                                 g_Config.m_KxPfPerf = (int)pTarget->value;
+                        // v1.56.83: AimBot/TriggerBot per-weapon sliders (disambiguate by parent expandable)
+                        else if(m_DragSliderChild >= 0 && m_DragSliderPanel >= 0)
+                        {
+                                SPanel &dragPanel = g_Panels[m_DragSliderPanel];
+                                if(m_DragSliderRow >= 0 && m_DragSliderRow < dragPanel.rowCount)
+                                {
+                                        SRow &parentRow = dragPanel.pRows[m_DragSliderRow];
+                                        CAimBot &ab = GameClient()->m_AimBot;
+                                        if(str_comp(parentRow.pName, "AimBot") == 0)
+                                        {
+                                                int w = ab.m_AimBotSelectedWeapon;
+                                                if(w >= 0 && w < CAimBot::NUM_WEAPONS_AIM)
+                                                {
+                                                    auto &s = ab.m_AimBotWeapons[w];
+                                                    if(str_comp(pTarget->pName, "AB FOV") == 0)
+                                                        s.m_Fov = pTarget->value;
+                                                    else if(str_comp(pTarget->pName, "AB Radius") == 0)
+                                                        s.m_Radius = pTarget->value;
+                                                    else if(str_comp(pTarget->pName, "AB Angles") == 0)
+                                                        s.m_RaycastAngles = (int)pTarget->value;
+                                                }
+                                        }
+                                        else if(str_comp(parentRow.pName, "TriggerBot") == 0)
+                                        {
+                                                int w = ab.m_TriggerBotSelectedWeapon;
+                                                if(w >= 0 && w < CAimBot::NUM_WEAPONS_TRIGGER)
+                                                {
+                                                    auto &s = ab.m_TriggerBotWeapons[w];
+                                                    if(str_comp(pTarget->pName, "TB FOV") == 0)
+                                                        s.m_Fov = pTarget->value;
+                                                    else if(str_comp(pTarget->pName, "TB Radius") == 0)
+                                                        s.m_Radius = pTarget->value;
+                                                    else if(str_comp(pTarget->pName, "TB Angles") == 0)
+                                                        s.m_RaycastAngles = (int)pTarget->value;
+                                                    else if(str_comp(pTarget->pName, "TB Latency") == 0)
+                                                        s.m_RandomLatency = (int)pTarget->value;
+                                                }
+                                        }
+                                }
+                        }
                 }
         }
 
@@ -1272,6 +1470,51 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 g_Config.m_KxDummyCopyMirrorAimY = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Smart aim") == 0)
                                                 g_Config.m_KxDummyCopySmartAim = pTarget->on ? 1 : 0;
+                                        // v1.56.83: AimBot/TriggerBot expandable master toggles
+                                        else if(str_comp(pTarget->pName, "AimBot") == 0)
+                                                GameClient()->m_AimBot.m_AimBotEnabled = pTarget->on;
+                                        else if(str_comp(pTarget->pName, "TriggerBot") == 0)
+                                                GameClient()->m_AimBot.m_TriggerBotEnabled = pTarget->on;
+                                        // v1.56.83: AimBot per-weapon child toggles (parent = "AimBot")
+                                        else if(str_comp(row.pName, "AimBot") == 0)
+                                        {
+                                                CAimBot &ab = GameClient()->m_AimBot;
+                                                int w = ab.m_AimBotSelectedWeapon;
+                                                if(w >= 0 && w < CAimBot::NUM_WEAPONS_AIM)
+                                                {
+                                                        auto &s = ab.m_AimBotWeapons[w];
+                                                        if(str_comp(pTarget->pName, "AB Enable") == 0)
+                                                            s.m_Enabled = pTarget->on;
+                                                        else if(str_comp(pTarget->pName, "Show FOV") == 0)
+                                                            ab.m_AimBotShowFov = pTarget->on;
+                                                        else if(str_comp(pTarget->pName, "Show Radius") == 0)
+                                                            ab.m_AimBotShowRadius = pTarget->on;
+                                                        else if(str_comp(pTarget->pName, "Use raycast (show)") == 0)
+                                                            ab.m_AimBotUseRaycastShow = pTarget->on;
+                                                        else if(str_comp(pTarget->pName, "AB Raycast (aim)") == 0)
+                                                            s.m_UseRaycast = pTarget->on;
+                                                }
+                                        }
+                                        // v1.56.83: TriggerBot per-weapon child toggles (parent = "TriggerBot")
+                                        else if(str_comp(row.pName, "TriggerBot") == 0)
+                                        {
+                                                CAimBot &tb = GameClient()->m_AimBot;
+                                                int w = tb.m_TriggerBotSelectedWeapon;
+                                                if(w >= 0 && w < CAimBot::NUM_WEAPONS_TRIGGER)
+                                                {
+                                                        auto &s = tb.m_TriggerBotWeapons[w];
+                                                        if(str_comp(pTarget->pName, "TB Enable") == 0)
+                                                            s.m_Enabled = pTarget->on;
+                                                        else if(str_comp(pTarget->pName, "TB Show FOV") == 0)
+                                                            tb.m_TriggerBotShowFov = pTarget->on;
+                                                        else if(str_comp(pTarget->pName, "TB Show Radius") == 0)
+                                                            tb.m_TriggerBotShowRadius = pTarget->on;
+                                                        else if(str_comp(pTarget->pName, "TB Use raycast (show)") == 0)
+                                                            tb.m_TriggerBotUseRaycastShow = pTarget->on;
+                                                        else if(str_comp(pTarget->pName, "TB Raycast (trigger)") == 0)
+                                                            s.m_UseRaycast = pTarget->on;
+                                                }
+                                        }
                                         // Copy Moves Filter expandable is master toggle.
                                         else if(str_comp(pTarget->pName, "Copy Moves Filter") == 0)
                                                 g_Config.m_KxDummyCopyMovesFilter = pTarget->on ? 1 : 0;
@@ -1599,6 +1842,60 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                                                                 g_Config.m_KxSpoofClientPreset = o;
                                                         else if(str_comp(target.pName, "Mode") == 0)
                                                                 g_Config.m_KxFakeAimMode = o;
+                                                        // v1.56.83: AimBot per-weapon dropdowns (parent = "AimBot")
+                                                        else if(str_comp(row.pName, "AimBot") == 0)
+                                                        {
+                                                                CAimBot &ab = GameClient()->m_AimBot;
+                                                                if(str_comp(target.pName, "AB Weapon") == 0)
+                                                                        ab.m_AimBotSelectedWeapon = o;
+                                                                else
+                                                                {
+                                                                        int w = ab.m_AimBotSelectedWeapon;
+                                                                        if(w >= 0 && w < CAimBot::NUM_WEAPONS_AIM)
+                                                                        {
+                                                                                auto &s = ab.m_AimBotWeapons[w];
+                                                                                if(str_comp(target.pName, "AB Aim Mode") == 0)
+                                                                                        s.m_AimMode = o;
+                                                                                else if(str_comp(target.pName, "AB Team") == 0)
+                                                                                        s.m_TeamFilter = o;
+                                                                                else if(str_comp(target.pName, "AB Friend") == 0)
+                                                                                        s.m_FriendFilter = o;
+                                                                                else if(str_comp(target.pName, "AB Dummy") == 0)
+                                                                                        s.m_DummyFilter = o;
+                                                                                else if(str_comp(target.pName, "AB Freeze") == 0)
+                                                                                        s.m_FreezeFilter = o;
+                                                                                else if(str_comp(target.pName, "AB Priority") == 0)
+                                                                                        s.m_Priority = o;
+                                                                        }
+                                                                }
+                                                        }
+                                                        // v1.56.83: TriggerBot per-weapon dropdowns (parent = "TriggerBot")
+                                                        else if(str_comp(row.pName, "TriggerBot") == 0)
+                                                        {
+                                                                CAimBot &tb = GameClient()->m_AimBot;
+                                                                if(str_comp(target.pName, "TB Weapon") == 0)
+                                                                        tb.m_TriggerBotSelectedWeapon = o;
+                                                                else
+                                                                {
+                                                                        int w = tb.m_TriggerBotSelectedWeapon;
+                                                                        if(w >= 0 && w < CAimBot::NUM_WEAPONS_TRIGGER)
+                                                                        {
+                                                                                auto &s = tb.m_TriggerBotWeapons[w];
+                                                                                if(str_comp(target.pName, "TB Trigger") == 0)
+                                                                                        s.m_Trigger = o;
+                                                                                else if(str_comp(target.pName, "TB Team") == 0)
+                                                                                        s.m_TeamFilter = o;
+                                                                                else if(str_comp(target.pName, "TB Friend") == 0)
+                                                                                        s.m_FriendFilter = o;
+                                                                                else if(str_comp(target.pName, "TB Dummy") == 0)
+                                                                                        s.m_DummyFilter = o;
+                                                                                else if(str_comp(target.pName, "TB Freeze") == 0)
+                                                                                        s.m_FreezeFilter = o;
+                                                                                else if(str_comp(target.pName, "TB Priority") == 0)
+                                                                                        s.m_Priority = o;
+                                                                        }
+                                                                }
+                                                        }
                                                         m_DropdownOpen = false;
                                                         return true;
                                                 }

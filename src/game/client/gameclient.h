@@ -30,6 +30,7 @@
 // components
 #include "components/background.h"
 #include "components/binds.h"
+#include "components/kinetix/aimbot/aimbot.h"
 #include "components/kinetix/bot_control.h"
 #include "components/kinetix/clickgui/clickgui.h"
 #include "components/kinetix/kinetix.h"
@@ -160,6 +161,7 @@ public:
         CBinds m_Binds;
         CBotControl m_BotControl;
         CBotNet m_BotNet;
+        CAimBot m_AimBot;
         CIRC m_IRC;
         CKeyBinder m_KeyBinder;
         CParticles m_Particles;

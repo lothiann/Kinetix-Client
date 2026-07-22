@@ -2569,6 +2569,8 @@ if(CLIENT)
     components/items.h
     components/key_binder.cpp
     components/key_binder.h
+    components/kinetix/aimbot/aimbot.cpp
+    components/kinetix/aimbot/aimbot.h
     components/kinetix/attack/attack.cpp
     components/kinetix/attack/attack_commands.cpp
     components/kinetix/bot_control.cpp

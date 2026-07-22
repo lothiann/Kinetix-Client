@@ -186,6 +186,7 @@ void CGameClient::OnConsoleInit()
                                               &m_Ghost,
                                               &m_Players,
                                               &m_BotNet, // moved here so world-space renders (Pathfinder, Show Path) draw ON TOP of the map
+                                              &m_AimBot, // AimBot/TriggerBot rendering (FOV/Radius circles)
                                               &m_MapLayersForeground,
                                               &m_Particles.m_RenderExplosions,
                                               &m_NamePlates,
