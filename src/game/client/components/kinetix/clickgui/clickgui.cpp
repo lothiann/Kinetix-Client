@@ -3628,7 +3628,7 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                                                         IGraphics::CORNER_ALL,
                                                         ColorRGBA(COL_CHECK_SQUARE, true).WithAlpha(alpha));
                                                 if(child.expanded) // child.expanded = send enabled
-                                                        DrawText(tx + checkSide * 0.5f, cry + 2.0f - 2.0f, 24.0f, "\xe2\x9c\x93",
+                                                        DrawText(tx + checkSide * 0.5f, cry + 2.0f - 2.0f, checkSide, "\xe2\x9c\x93",
                                                                 ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha), TEXTALIGN_CENTER);
                                         }
                                         break;
