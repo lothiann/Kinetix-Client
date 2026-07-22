@@ -33,7 +33,7 @@
 
 namespace {
 // Total number of ClickGUI panels. Must match CClickGui::NUM_PANELS in .h.
-constexpr int NUM_PANELS = 4;
+constexpr int NUM_PANELS = 5;
 
 // Coerce a body height to int for ClipEnable without truncation surprises.
 inline int bodyH_safe(float h)
@@ -273,11 +273,25 @@ struct SPanel
         int rowCount;
 };
 
+// v1.56.89: Binds panel — input fields for binding keys to toggle commands.
+// On input commit (focus lost), executes: bind <input_value> toggle <cmd> 1 0
+static SRow g_BindsRows[] = {
+        {ERowType::Input, "ClickGUI", false, false, 0, 0, 0, 0, nullptr, "tab", "bind...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "AimBot", false, false, 0, 0, 0, 0, nullptr, "x", "bind...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "TriggerBot", false, false, 0, 0, 0, 0, nullptr, "c", "bind...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Fake Aim", false, false, 0, 0, 0, 0, nullptr, "v", "bind...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Laser Unfreeze", false, false, 0, 0, 0, 0, nullptr, "b", "bind...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Copy Moves Filter", false, false, 0, 0, 0, 0, nullptr, "n", "bind...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Trajectory", false, false, 0, 0, 0, 0, nullptr, "m", "bind...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Block", false, false, 0, 0, 0, 0, nullptr, "l", "bind...", nullptr, 0, 0, nullptr, 0},
+};
+
 static SPanel g_Panels[NUM_PANELS] = {
         {"Functions", g_FunctionsRows, sizeof(g_FunctionsRows) / sizeof(g_FunctionsRows[0])},
         {"Advanced", g_AdvancedRows, sizeof(g_AdvancedRows) / sizeof(g_AdvancedRows[0])},
         {"Settings", g_SettingsRows, sizeof(g_SettingsRows) / sizeof(g_SettingsRows[0])},
         {"Pathfinder", g_PathfinderRows, sizeof(g_PathfinderRows) / sizeof(g_PathfinderRows[0])},
+        {"Binds", g_BindsRows, sizeof(g_BindsRows) / sizeof(g_BindsRows[0])},
 };
 
 // Conditional visibility for Functions panel top-level rows.
@@ -1414,6 +1428,55 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 unsigned hex = 0;
                                 if(sscanf(pRow->m_aInputBuf, "%6x", &hex) == 1)
                                         g_Config.m_KxLineRenderingColor = hex & 0xffffff;
+                        }
+                        // v1.56.89: Binds panel — execute "bind <input> toggle <cmd> 1 0"
+                        else if(str_comp(pRow->pName, "ClickGUI") == 0 && m_InputPanel == 4)
+                        {
+                                char cmd[256];
+                                str_format(cmd, sizeof(cmd), "bind \"%s\" toggle cl_clickgui 1 0", pRow->m_aInputBuf);
+                                Console()->ExecuteLine(cmd, -1, -1);
+                        }
+                        else if(str_comp(pRow->pName, "AimBot") == 0 && m_InputPanel == 4)
+                        {
+                                char cmd[256];
+                                str_format(cmd, sizeof(cmd), "bind \"%s\" toggle kx_aimbot 1 0", pRow->m_aInputBuf);
+                                Console()->ExecuteLine(cmd, -1, -1);
+                        }
+                        else if(str_comp(pRow->pName, "TriggerBot") == 0 && m_InputPanel == 4)
+                        {
+                                char cmd[256];
+                                str_format(cmd, sizeof(cmd), "bind \"%s\" toggle kx_triggerbot 1 0", pRow->m_aInputBuf);
+                                Console()->ExecuteLine(cmd, -1, -1);
+                        }
+                        else if(str_comp(pRow->pName, "Fake Aim") == 0 && m_InputPanel == 4)
+                        {
+                                char cmd[256];
+                                str_format(cmd, sizeof(cmd), "bind \"%s\" toggle kx_fake_aim 1 0", pRow->m_aInputBuf);
+                                Console()->ExecuteLine(cmd, -1, -1);
+                        }
+                        else if(str_comp(pRow->pName, "Laser Unfreeze") == 0 && m_InputPanel == 4)
+                        {
+                                char cmd[256];
+                                str_format(cmd, sizeof(cmd), "bind \"%s\" toggle kx_laser_unfreeze 1 0", pRow->m_aInputBuf);
+                                Console()->ExecuteLine(cmd, -1, -1);
+                        }
+                        else if(str_comp(pRow->pName, "Copy Moves Filter") == 0 && m_InputPanel == 4)
+                        {
+                                char cmd[256];
+                                str_format(cmd, sizeof(cmd), "bind \"%s\" toggle kx_dummy_copy_moves_filter 1 0", pRow->m_aInputBuf);
+                                Console()->ExecuteLine(cmd, -1, -1);
+                        }
+                        else if(str_comp(pRow->pName, "Trajectory") == 0 && m_InputPanel == 4)
+                        {
+                                char cmd[256];
+                                str_format(cmd, sizeof(cmd), "bind \"%s\" toggle kx_show_trajectory 1 0", pRow->m_aInputBuf);
+                                Console()->ExecuteLine(cmd, -1, -1);
+                        }
+                        else if(str_comp(pRow->pName, "Block") == 0 && m_InputPanel == 4)
+                        {
+                                char cmd[256];
+                                str_format(cmd, sizeof(cmd), "bind \"%s\" toggle kx_attack 1 0", pRow->m_aInputBuf);
+                                Console()->ExecuteLine(cmd, -1, -1);
                         }
                 }
                 m_InputEditing = false; Input()->StopTextInput();

@@ -45,7 +45,7 @@ public:
         bool OnInput(const IInput::CEvent &Event) override;
         bool OnCursorMove(float x, float y, IInput::ECursorType CursorType) override;
 
-        static constexpr int NUM_PANELS = 4;
+        static constexpr int NUM_PANELS = 5;
 
 private:
         // Animation state: 0.0 = fully closed, 1.0 = fully open.
@@ -151,7 +151,7 @@ private:
                 unsigned signature = 0;
         };
         SLayoutCache m_aLayoutCache[NUM_PANELS];
-        bool m_aLayoutCacheDirty[NUM_PANELS] = {true, true, true, true};
+        bool m_aLayoutCacheDirty[NUM_PANELS] = {true, true, true, true, true};
 
         // v1.56.60: advance all per-row / per-panel animations toward their targets.
         // Called once per frame from OnRender before any drawing.
