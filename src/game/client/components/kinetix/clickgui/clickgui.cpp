@@ -2118,16 +2118,16 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         }
                                         else
                                         {
-                                                // Connected — 3 zones: Disconnect (left) | Switch (middle) | Send toggle (right, fixed CHECK_W)
-                                                const float toggleAreaW = CHECK_W + 4.0f;
-                                                const float btnW = (rw - 6.0f - toggleAreaW) * 0.5f;
-                                                const float toggleX = rx + 2.0f + btnW + 2.0f + btnW + 2.0f;
-                                                if(mousePos.x < rx + 2.0f + btnW)
+                                                // Connected — 3 equal zones: Disconnect | Switch | Send toggle
+                                                const float btnW = (rw - 8.0f) / 3.0f;
+                                                const float zone1End = rx + 2.0f + btnW;
+                                                const float zone2End = zone1End + 2.0f + btnW;
+                                                if(mousePos.x < zone1End)
                                                 {
                                                         // Left = Disconnect
                                                         GameClient()->Client()->DummyDisconnect(d, nullptr);
                                                 }
-                                                else if(mousePos.x < toggleX)
+                                                else if(mousePos.x < zone2End)
                                                 {
                                                         // Middle = Switch
                                                         if(g_Config.m_ClDummy != d)
@@ -3602,8 +3602,8 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                                         else
                                         {
                                                 // Connected — Connect (left) + Switch (middle) + Send checkbox (right).
-                                                const float toggleAreaW = CHECK_W + 4.0f; // fixed checkbox area
-                                                const float btnW = (crw - 6.0f - toggleAreaW) * 0.5f; // split remaining between 2 buttons
+                                                // Checkbox same height as buttons (crh-4), width = button width.
+                                                const float btnW = (crw - 8.0f) / 3.0f; // 3 equal parts
                                                 // Left button (Connect/Disconnect)
                                                 DrawRoundedRect(crx + 2.0f, cry + 2.0f, btnW, crh - 4.0f, 4.0f,
                                                         IGraphics::CORNER_ALL, leftCol);
@@ -3620,13 +3620,13 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                                                 const float lw2 = TextRender()->TextWidth(13.0f, child.pName2);
                                                 DrawText(rx2 + (btnW - lw2) * 0.5f, cry + 8.0f, 13.0f, child.pName2,
                                                         ColorRGBA(0xffffffff, true).WithAlpha(alpha));
-                                                // Right checkbox (Send) — same size as regular toggle (CHECK_W × CHECK_W).
-                                                const float tx = crx + crw - CHECK_W - 2.0f;
-                                                DrawRoundedRect(tx, cry + 3.0f, CHECK_W, CHECK_W, 3.0f,
+                                                // Right checkbox (Send) — same size as buttons (btnW × crh-4).
+                                                const float tx = crx + 2.0f + (btnW + 2.0f) * 2.0f;
+                                                DrawRoundedRect(tx, cry + 2.0f, btnW, crh - 4.0f, 4.0f,
                                                         IGraphics::CORNER_ALL,
                                                         ColorRGBA(COL_CHECK_SQUARE, true).WithAlpha(alpha));
                                                 if(child.expanded) // child.expanded = send enabled
-                                                        DrawText(tx + CHECK_W * 0.5f, cry + 3.0f - 2.0f, 24.0f, "\xe2\x9c\x93",
+                                                        DrawText(tx + btnW * 0.5f, cry + 2.0f - 2.0f, 24.0f, "\xe2\x9c\x93",
                                                                 ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha), TEXTALIGN_CENTER);
                                         }
                                         break;
