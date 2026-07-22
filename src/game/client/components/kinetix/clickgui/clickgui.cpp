@@ -204,12 +204,6 @@ static SRow g_BlockChildren[] = {
         {ERowType::Slider, "Stand Dist", false, false, 0.0f, 2000.0f, 1.0f, 100.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Main Stand Dist", false, false, 0.0f, 2000.0f, 1.0f, 100.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Laser Rescue Dist", false, false, 0.0f, 2000.0f, 1.0f, 500.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Hook Delay", false, false, 0.0f, 100.0f, 1.0f, 5.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Client Delay", false, false, 0.0f, 100.0f, 1.0f, 0.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Copy Moves", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Copy Target ID", false, false, 0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Random Aim", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Random Aim Interval", false, false, 1.0f, 100.0f, 1.0f, 10.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Pathfinder Enabled", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Simulate Players", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "SPS (Push)", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
@@ -221,7 +215,7 @@ static SRow g_BlockChildren[] = {
 };
 static SRow g_FunctionsRows[] = {
         {ERowType::Expandable, "Dummies", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_DummiesChildren, 16},
-        {ERowType::Expandable, "Block", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BlockChildren, 43},
+        {ERowType::Expandable, "Block", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BlockChildren, 37},
         {ERowType::Toggle, "Random Aim", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         // v1.56.83: AimBot + TriggerBot expandables
         {ERowType::Expandable, "AimBot", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AimBotChildren, 15},
@@ -1114,20 +1108,6 @@ void CClickGui::OnRender()
                                                 else if(str_comp(ch.pName, "Stand Dist") == 0) ch.value = bn.m_StandDist;
                                                 else if(str_comp(ch.pName, "Main Stand Dist") == 0) ch.value = bn.m_MainStandDist;
                                                 else if(str_comp(ch.pName, "Laser Rescue Dist") == 0) ch.value = bn.m_LaserRescueDist;
-                                                else if(str_comp(ch.pName, "Hook Delay") == 0) ch.value = (float)bn.m_HookDelay;
-                                                else if(str_comp(ch.pName, "Client Delay") == 0) ch.value = (float)bn.m_ClientDelay;
-                                                else if(str_comp(ch.pName, "Copy Moves") == 0) ch.on = bn.m_CopyMoves;
-                                                else if(str_comp(ch.pName, "Copy Target ID") == 0)
-                                                {
-                                                        if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
-                                                        {
-                                                                char b[16]; str_format(b, sizeof(b), "%d", bn.m_CopyTargetID);
-                                                                str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
-                                                                ch.m_InputInitialized = true;
-                                                        }
-                                                }
-                                                else if(str_comp(ch.pName, "Random Aim") == 0) ch.on = bn.m_RandomAim;
-                                                else if(str_comp(ch.pName, "Random Aim Interval") == 0) ch.value = (float)bn.m_RandomAimInterval;
                                                 else if(str_comp(ch.pName, "Pathfinder Enabled") == 0) ch.on = bn.m_PathfinderEnabled;
                                                 else if(str_comp(ch.pName, "Simulate Players") == 0) ch.on = bn.m_PfSimulatePlayers;
                                                 else if(str_comp(ch.pName, "SPS (Push)") == 0) ch.on = (bn.m_PfSimulateMethod != 0);
@@ -1656,8 +1636,6 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 str_copy(GameClient()->m_BotNet.m_aTargetIDsStr, pRow->m_aInputBuf, sizeof(GameClient()->m_BotNet.m_aTargetIDsStr));
                         else if(str_comp(pRow->pName, "Rescue IDs") == 0)
                                 str_copy(GameClient()->m_BotNet.m_aRescueIDsStr, pRow->m_aInputBuf, sizeof(GameClient()->m_BotNet.m_aRescueIDsStr));
-                        else if(str_comp(pRow->pName, "Copy Target ID") == 0)
-                                GameClient()->m_BotNet.m_CopyTargetID = atoi(pRow->m_aInputBuf);
                         // v1.56.89: Binds panel — execute "bind <input> toggle <cmd> 1 0"
                         else if(str_comp(pRow->pName, "ClickGUI") == 0 && m_InputPanel == 4)
                         {
@@ -1861,7 +1839,7 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         else if(str_comp(row.pName, "Block") == 0 && pTarget != &row)
                                         {
                                                 CBotNet &bn = GameClient()->m_BotNet;
-                                                else if(str_comp(pTarget->pName, "Attack Main") == 0) bn.m_AttackMain = pTarget->on;
+                                                if(str_comp(pTarget->pName, "Attack Main") == 0) bn.m_AttackMain = pTarget->on;
                                                 else if(str_comp(pTarget->pName, "Auto Main") == 0) bn.m_AutoMain = pTarget->on;
                                                 else if(str_comp(pTarget->pName, "All Target") == 0) bn.m_AllTarget = pTarget->on;
                                                 else if(str_comp(pTarget->pName, "Auto Aim") == 0) bn.m_AutoAim = pTarget->on;
@@ -1878,8 +1856,6 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 else if(str_comp(pTarget->pName, "Kill On Freeze") == 0) bn.m_KillOnFreeze = pTarget->on;
                                                 else if(str_comp(pTarget->pName, "Avoid Freeze") == 0) bn.m_AvoidFreeze = pTarget->on;
                                                 else if(str_comp(pTarget->pName, "Laser Rescue") == 0) bn.m_LaserRescue = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Copy Moves") == 0) bn.m_CopyMoves = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Random Aim") == 0) bn.m_RandomAim = pTarget->on;
                                                 else if(str_comp(pTarget->pName, "Pathfinder Enabled") == 0) bn.m_PathfinderEnabled = pTarget->on;
                                                 else if(str_comp(pTarget->pName, "Simulate Players") == 0) bn.m_PfSimulatePlayers = pTarget->on;
                                                 else if(str_comp(pTarget->pName, "Fix Snap") == 0) bn.m_PfSnap = pTarget->on;
@@ -2080,9 +2056,6 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 else if(str_comp(pTarget->pName, "Stand Dist") == 0) GameClient()->m_BotNet.m_StandDist = pTarget->value;
                                 else if(str_comp(pTarget->pName, "Main Stand Dist") == 0) GameClient()->m_BotNet.m_MainStandDist = pTarget->value;
                                 else if(str_comp(pTarget->pName, "Laser Rescue Dist") == 0) GameClient()->m_BotNet.m_LaserRescueDist = pTarget->value;
-                                else if(str_comp(pTarget->pName, "Hook Delay") == 0) GameClient()->m_BotNet.m_HookDelay = (int)pTarget->value;
-                                else if(str_comp(pTarget->pName, "Client Delay") == 0) GameClient()->m_BotNet.m_ClientDelay = (int)pTarget->value;
-                                else if(str_comp(pTarget->pName, "Random Aim Interval") == 0) GameClient()->m_BotNet.m_RandomAimInterval = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Simulate Score") == 0) GameClient()->m_BotNet.m_PfSimulateScore = pTarget->value;
                                 else if(str_comp(pTarget->pName, "Rays") == 0) GameClient()->m_BotNet.m_PfRays = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Dist") == 0) GameClient()->m_BotNet.m_PfViewRadius = (int)pTarget->value;
