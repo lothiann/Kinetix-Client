@@ -142,7 +142,7 @@ private:
         struct SLayoutCache
         {
                 YGNodeRef pRoot = nullptr;
-                YGNodeRef aRowNodes[32] = {};
+                YGNodeRef aRowNodes[64] = {};
                 int rowCount = 0;
                 float bodyHeightFull = 0.0f;
                 // Signature: a compact hash of which rows + children are in the layout.
@@ -164,7 +164,7 @@ private:
         static constexpr float ROW_GAP = 4.0f;
         // Maximum visible body height. When content exceeds this, the body becomes
         // scrollable via mouse wheel. Fits ~10 toggle rows (30px each + gaps).
-        static constexpr float MAX_BODY_HEIGHT = 400.0f;
+        static constexpr float MAX_BODY_HEIGHT = 600.0f;
         // Scroll step per wheel notch (px) — roughly one toggle row + gap.
         static constexpr float SCROLL_STEP = 34.0f;
         // Per-panel scroll offset (px, 0 = top). 'stored' preserves the user's
