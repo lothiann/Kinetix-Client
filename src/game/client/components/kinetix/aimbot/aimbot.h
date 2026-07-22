@@ -27,6 +27,7 @@ public:
         {
                 bool m_Enabled = false;
                 int m_Trigger = 0; // 0=fire 1=hook (TriggerBot only)
+                int m_TriggerMode = 0; // 0=one_tick 1=hold 2=every_tick (TriggerBot only)
                 float m_Fov = 90.0f;
                 float m_Radius = 300.0f;
                 bool m_UseRaycast = false;
@@ -61,6 +62,7 @@ private:
         int m_LatencyCounter = 0;
         bool m_PrevFire = false;
         bool m_PrevHook = false;
+        bool m_TriggerBotWasActive = false; // edge detection for TriggerBot one_tick mode
 
         void Update();
         void UpdateAimBot();

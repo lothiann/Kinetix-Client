@@ -333,26 +333,74 @@ void CAimBot::UpdateTriggerBot()
                 AimDir = vec2(1, 0);
 
         int target = FindTarget(s, LocalId, MyPos, AimDir, AimPos);
-        if(target >= 0)
+        bool targetInZone = (target >= 0);
+
+        // Random latency: delay the trigger reaction by a random number of ticks.
+        // Counter counts down while target is in zone; when it hits 0, trigger fires.
+        if(targetInZone && s.m_RandomLatency > 0)
         {
-                // TriggerBot does NOT aim — only fires/hooks
-                if(s.m_RandomLatency > 0)
+                if(m_LatencyCounter <= 0)
+                        m_LatencyCounter = (rand() % (s.m_RandomLatency + 1));
+                if(m_LatencyCounter > 0)
                 {
-                        if(m_LatencyCounter <= 0)
-                                m_LatencyCounter = (rand() % (s.m_RandomLatency + 1));
-                        if(m_LatencyCounter > 0)
+                        m_LatencyCounter--;
+                        // While waiting, treat as "not yet triggered" — but still mark active
+                        // so one_tick edge doesn't fire prematurely on the next tick.
+                        m_TriggerBotWasActive = true;
+                        return;
+                }
+        }
+
+        CNetObj_PlayerInput *pInput = &pGame->m_Controls.m_aInputData[g_Config.m_ClDummy];
+
+        if(targetInZone)
+        {
+                // TriggerMode:
+                // 0=one_tick  — press trigger for exactly 1 tick (only on edge: target just entered zone)
+                // 1=hold      — hold trigger while target in zone, release when it leaves (good for guns)
+                // 2=every_tick — press trigger every tick (spam edge) while target in zone (good for hammer)
+                if(s.m_TriggerMode == 0) // one_tick
+                {
+                        if(!m_TriggerBotWasActive) // edge: target just entered zone
                         {
-                                m_LatencyCounter--;
-                                return;
+                                if(s.m_Trigger == 0)
+                                        FireWeapon();
+                                else
+                                        DoHook();
                         }
                 }
-                if(s.m_Trigger == 0)
-                        FireWeapon();
-                else
-                        DoHook();
+                else if(s.m_TriggerMode == 1) // hold
+                {
+                        if(s.m_Trigger == 0)
+                                pInput->m_Fire |= 1;
+                        else
+                                pInput->m_Hook = 1;
+                }
+                else // every_tick (2) — spam: force a new edge every tick
+                {
+                        if(s.m_Trigger == 0)
+                                pInput->m_Fire = (pInput->m_Fire + 1) | 1; // increment + set bit = new edge
+                        else
+                                pInput->m_Hook = (pInput->m_Hook == 0) ? 1 : 0; // toggle for hook edge spam
+                }
+                m_TriggerBotWasActive = true;
         }
         else
         {
+                // Target left zone — release for hold/every_tick modes.
+                // one_tick already released after 1 tick (no action needed).
+                if(s.m_TriggerMode != 0)
+                {
+                        // Only release if we were active (don't clobber player's own input).
+                        if(m_TriggerBotWasActive)
+                        {
+                                if(s.m_Trigger == 0)
+                                        pInput->m_Fire &= ~1;
+                                else
+                                        pInput->m_Hook = 0;
+                        }
+                }
+                m_TriggerBotWasActive = false;
                 m_LatencyCounter = 0;
         }
 }

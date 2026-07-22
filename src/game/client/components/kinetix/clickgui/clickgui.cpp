@@ -106,6 +106,7 @@ static const char *const g_AimModeOpts[] = {"Smart", "Mirror"};
 static const char *const g_ABWeaponOpts[] = {"Hammer", "Pistol", "Shotgun", "Grenade", "Laser", "Ninja", "Hook"};
 static const char *const g_ABWeaponOptsNoHook[] = {"Hammer", "Pistol", "Shotgun", "Grenade", "Laser", "Ninja"};
 static const char *const g_ABTriggerOpts[] = {"Fire", "Hook"};
+static const char *const g_ABTriggerModeOpts[] = {"One tick", "Hold", "Every tick"};
 static const char *const g_ABAimModeOpts[] = {"Silent", "Trigger", "Always"};
 static const char *const g_ABTeamOpts[] = {"Both", "War", "My"};
 static const char *const g_ABFriendOpts[] = {"Both", "Ignore"};
@@ -130,11 +131,12 @@ static SRow g_AimBotChildren[] = {
         {ERowType::Dropdown, "AB Freeze", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "AB Priority", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABPriorityOpts, 3, 0, nullptr, 0},
 };
-// v1.56.83: TriggerBot expandable — 16 children (no Hook, has Trigger + Latency).
+// v1.56.86: TriggerBot expandable — 17 children (no Hook, has Trigger + Trigger mode + Latency).
 static SRow g_TriggerBotChildren[] = {
         {ERowType::Dropdown, "TB Weapon", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABWeaponOptsNoHook, 6, 0, nullptr, 0},
         {ERowType::Toggle, "TB Enable", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Dropdown, "TB Trigger", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTriggerOpts, 2, 0, nullptr, 0},
+        {ERowType::Dropdown, "TB Trigger mode", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTriggerModeOpts, 3, 0, nullptr, 0},
         {ERowType::Slider, "TB FOV", false, false, 1.0f, 360.0f, 1.0f, 90.0f, "\xc2\xb0", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "TB Radius", false, false, 1.0f, 2000.0f, 1.0f, 300.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "TB Show FOV", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
@@ -154,7 +156,7 @@ static SRow g_FunctionsRows[] = {
         {ERowType::Toggle, "Random Aim", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         // v1.56.83: AimBot + TriggerBot expandables
         {ERowType::Expandable, "AimBot", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AimBotChildren, 15},
-        {ERowType::Expandable, "TriggerBot", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TriggerBotChildren, 16},
+        {ERowType::Expandable, "TriggerBot", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TriggerBotChildren, 17},
         // Fly sub-section
         {ERowType::Toggle, "Preserve input", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Expandable, "Custom latency", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CustomLatencyChildren, 1},
@@ -866,6 +868,8 @@ void CClickGui::OnRender()
                                                         ch.on = s.m_Enabled;
                                                 else if(str_comp(ch.pName, "TB Trigger") == 0)
                                                         ch.valueIdx = s.m_Trigger;
+                                                else if(str_comp(ch.pName, "TB Trigger mode") == 0)
+                                                        ch.valueIdx = s.m_TriggerMode;
                                                 else if(str_comp(ch.pName, "TB FOV") == 0)
                                                         ch.value = s.m_Fov;
                                                 else if(str_comp(ch.pName, "TB Radius") == 0)
@@ -1883,6 +1887,8 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                                                                                 auto &s = tb.m_TriggerBotWeapons[w];
                                                                                 if(str_comp(target.pName, "TB Trigger") == 0)
                                                                                         s.m_Trigger = o;
+                                                                                else if(str_comp(target.pName, "TB Trigger mode") == 0)
+                                                                                        s.m_TriggerMode = o;
                                                                                 else if(str_comp(target.pName, "TB Team") == 0)
                                                                                         s.m_TeamFilter = o;
                                                                                 else if(str_comp(target.pName, "TB Friend") == 0)
