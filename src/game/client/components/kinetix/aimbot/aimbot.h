@@ -63,6 +63,7 @@ private:
         bool m_PrevFire = false;
         bool m_PrevHook = false;
         bool m_TriggerBotWasActive = false; // edge detection for TriggerBot one_tick mode
+        bool m_TriggerBotReleaseNextTick = false; // one_tick: release trigger on the tick after press
 
         void Update();
         void UpdateAimBot();

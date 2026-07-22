@@ -64,21 +64,23 @@ void CAimBot::OnUpdate()
 void CAimBot::OnRender()
 {
         // Render FOV/Radius circles for current weapon (visual only, no logic).
+        // Use m_aClients[LocalId].m_RenderPos — the SAME interpolated render position
+        // CPlayers::OnRender uses to draw the tee (see players.cpp:299). This keeps the
+        // circles glued to the visible tee during movement (no jerk from prediction lag).
         CGameClient *pGame = GameClient();
         int LocalId = pGame->m_Snap.m_LocalClientId;
-        if(LocalId < 0)
-                return;
-        CCharacter *pChar = pGame->m_PredictedWorld.GetCharacterById(LocalId);
-        if(!pChar)
+        if(LocalId < 0 || !pGame->m_Snap.m_aCharacters[LocalId].m_Active)
                 return;
 
-        vec2 MyPos = pChar->Core()->m_Pos;
+        vec2 MyPos = pGame->m_aClients[LocalId].m_RenderPos;
         vec2 LocalAim = pGame->m_Controls.m_aMousePos[g_Config.m_ClDummy];
         vec2 AimDir = normalize(LocalAim);
         if(length(AimDir) < 0.001f)
                 AimDir = vec2(1, 0);
 
-        int weapon = pChar->GetActiveWeapon();
+        // Active weapon from predicted world (snapshot doesn't expose it directly).
+        CCharacter *pChar = pGame->m_PredictedWorld.GetCharacterById(LocalId);
+        int weapon = pChar ? pChar->GetActiveWeapon() : -1;
         bool hookHeld = pGame->m_Controls.m_aInputData[g_Config.m_ClDummy].m_Hook != 0;
         Graphics()->MapScreenToInterface(pGame->m_Camera.m_Center.x, pGame->m_Camera.m_Center.y, pGame->m_Camera.m_Zoom);
 
@@ -156,9 +158,15 @@ bool CAimBot::PassesFilters(int ClientId, int LocalId, const SWeaponSettings &Se
 
 int CAimBot::FindTarget(const SWeaponSettings &Settings, int LocalId, const vec2 &MyPos, const vec2 &AimDir, const vec2 &AimPos)
 {
+        // Hitbox-aware target search (variant A): target is in FOV+Radius if ANY point of its
+        // 28×28 square hitbox (CCharacterCore::PhysicalSize = 28.0f, half = 14.0f) falls inside
+        // the FOV cone AND within Radius. We sample 5 points: center + 4 corners of the hitbox.
+        // If any sample passes FOV+Radius+raycast, the target qualifies. Score uses the best
+        // (smallest) score among passing samples so the chosen target is the closest one.
         CGameClient *pGame = GameClient();
         float myAngle = atan2f(AimDir.y, AimDir.x);
         float halfFovRad = (Settings.m_Fov * 0.5f) * (pi / 180.0f);
+        constexpr float HB_HALF = CCharacterCore::PhysicalSize() * 0.5f; // 14.0f
         int bestTarget = -1;
         float bestScore = 1e18f;
         for(int i = 0; i < MAX_CLIENTS; i++)
@@ -167,28 +175,50 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int LocalId, const vec2
                         continue;
                 if(!PassesFilters(i, LocalId, Settings))
                         continue;
-                vec2 targetPos = vec2((float)pGame->m_Snap.m_aCharacters[i].m_Cur.m_X, (float)pGame->m_Snap.m_aCharacters[i].m_Cur.m_Y);
-                vec2 toTarget = targetPos - MyPos;
-                float dist = length(toTarget);
-                if(dist > Settings.m_Radius || dist < 1.0f)
-                        continue;
-                vec2 dir = normalize(toTarget);
-                float targetAngle = atan2f(dir.y, dir.x);
-                float angleDiff = fabsf(atan2f(sinf(myAngle - targetAngle), cosf(myAngle - targetAngle)));
-                if(angleDiff > halfFovRad)
-                        continue;
-                if(Settings.m_UseRaycast && !IsVisible(MyPos, targetPos))
-                        continue;
-                float score;
-                if(Settings.m_Priority == 0)
-                        score = angleDiff; // nearest FOV: smallest angle from aim direction
-                else if(Settings.m_Priority == 1)
-                        score = length(targetPos - AimPos); // nearest aim: closest to crosshair coordinates
-                else
-                        score = dist; // nearest to me: closest to my position
-                if(score < bestScore)
+                vec2 targetCenter = vec2((float)pGame->m_Snap.m_aCharacters[i].m_Cur.m_X, (float)pGame->m_Snap.m_aCharacters[i].m_Cur.m_Y);
+
+                // Sample 5 points of the hitbox: center + 4 corners.
+                vec2 hbPoints[5] = {
+                        targetCenter,
+                        targetCenter + vec2(-HB_HALF, -HB_HALF),
+                        targetCenter + vec2(HB_HALF, -HB_HALF),
+                        targetCenter + vec2(-HB_HALF, HB_HALF),
+                        targetCenter + vec2(HB_HALF, HB_HALF),
+                };
+
+                // Find the best (smallest score) sample that passes FOV + Radius + raycast.
+                bool anyPass = false;
+                float bestSampleScore = 1e18f;
+                for(int s = 0; s < 5; s++)
                 {
-                        bestScore = score;
+                        vec2 sp = hbPoints[s];
+                        vec2 toSample = sp - MyPos;
+                        float dist = length(toSample);
+                        if(dist > Settings.m_Radius || dist < 1.0f)
+                                continue;
+                        vec2 dir = normalize(toSample);
+                        float sampleAngle = atan2f(dir.y, dir.x);
+                        float angleDiff = fabsf(atan2f(sinf(myAngle - sampleAngle), cosf(myAngle - sampleAngle)));
+                        if(angleDiff > halfFovRad)
+                                continue;
+                        if(Settings.m_UseRaycast && !IsVisible(MyPos, sp))
+                                continue;
+                        float score;
+                        if(Settings.m_Priority == 0)
+                                score = angleDiff; // nearest FOV: smallest angle from aim direction
+                        else if(Settings.m_Priority == 1)
+                                score = length(sp - AimPos); // nearest aim: closest to crosshair coordinates
+                        else
+                                score = dist; // nearest to me: closest to my position
+                        if(score < bestSampleScore)
+                        {
+                                bestSampleScore = score;
+                                anyPass = true;
+                        }
+                }
+                if(anyPass && bestSampleScore < bestScore)
+                {
+                        bestScore = bestSampleScore;
                         bestTarget = i;
                 }
         }
@@ -353,10 +383,22 @@ void CAimBot::UpdateTriggerBot()
 
         CNetObj_PlayerInput *pInput = &pGame->m_Controls.m_aInputData[g_Config.m_ClDummy];
 
+        // one_tick: release the trigger on the tick AFTER it was pressed (exactly 1 tick hold).
+        // Done BEFORE the targetInZone check so it runs regardless of current target state.
+        if(m_TriggerBotReleaseNextTick)
+        {
+                if(s.m_Trigger == 0)
+                        pInput->m_Fire &= ~1;
+                else
+                        pInput->m_Hook = 0;
+                m_TriggerBotReleaseNextTick = false;
+        }
+
         if(targetInZone)
         {
                 // TriggerMode:
-                // 0=one_tick  — press trigger for exactly 1 tick (only on edge: target just entered zone)
+                // 0=one_tick  — press trigger for exactly 1 tick (only on edge: target just entered zone),
+                //               then release on the next tick. Don't press again until target leaves and re-enters.
                 // 1=hold      — hold trigger while target in zone, release when it leaves (good for guns)
                 // 2=every_tick — press trigger every tick (spam edge) while target in zone (good for hammer)
                 if(s.m_TriggerMode == 0) // one_tick
@@ -367,6 +409,7 @@ void CAimBot::UpdateTriggerBot()
                                         FireWeapon();
                                 else
                                         DoHook();
+                                m_TriggerBotReleaseNextTick = true; // release on next tick
                         }
                 }
                 else if(s.m_TriggerMode == 1) // hold
@@ -388,7 +431,7 @@ void CAimBot::UpdateTriggerBot()
         else
         {
                 // Target left zone — release for hold/every_tick modes.
-                // one_tick already released after 1 tick (no action needed).
+                // one_tick already released via m_TriggerBotReleaseNextTick (no action needed here).
                 if(s.m_TriggerMode != 0)
                 {
                         // Only release if we were active (don't clobber player's own input).
