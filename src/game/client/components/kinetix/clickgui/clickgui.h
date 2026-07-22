@@ -153,6 +153,9 @@ private:
         SLayoutCache m_aLayoutCache[NUM_PANELS];
         bool m_aLayoutCacheDirty[NUM_PANELS] = {true, true, true, true, true};
 
+        // v1.56.90: Dummies Send toggle state (per-dummy, ClickGUI-local).
+        bool m_aDummySendEnabled[8] = {};
+
         // v1.56.60: advance all per-row / per-panel animations toward their targets.
         // Called once per frame from OnRender before any drawing.
         void UpdateAnimations(float dt);

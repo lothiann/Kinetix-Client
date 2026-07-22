@@ -1247,12 +1247,14 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                                                         else if(strstr(ch.pName, "Switch"))
                                                                 ch.on = (g_Config.m_ClDummy == d);
                                                 }
-                                                // v1.56.90: DoubleButton (Connect+Switch) — ch.on=connected, ch.value=active
+                                                // v1.56.90: DoubleButton (Connect+Switch+Send) — ch.on=connected, ch.value=active, ch.expanded=send
                                                 else if(ch.type == ERowType::DoubleButton && ch.pName && ch.pName[0] == 'D')
                                                 {
                                                         int d = ch.pName[1] - '0';
                                                         ch.on = GameClient()->Client()->DummyConnected(d);
                                                         ch.value = (g_Config.m_ClDummy == d) ? 1.0f : 0.0f;
+                                                        if(d >= 1 && d < 8)
+                                                                ch.expanded = m_aDummySendEnabled[d];
                                                 }
                                         }
                                 }
@@ -2105,7 +2107,7 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         else if(str_comp(pTarget->pName, "Switch to Main") == 0)
                                                 g_Config.m_ClDummy = 0;
                                 }
-                                // v1.56.90: Dummies DoubleButton (Connect+Switch side by side)
+                                // v1.56.90: Dummies DoubleButton (Connect+Switch+Send)
                                 else if(str_comp(row.pName, "Dummies") == 0 && pTarget->type == ERowType::DoubleButton)
                                 {
                                         int d = pTarget->pName[1] - '0';
@@ -2116,15 +2118,26 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         }
                                         else
                                         {
-                                                // Connected — left=Disconnect, right=Switch.
-                                                const float centerX = rx + rw * 0.5f;
-                                                const bool clickLeft = (mousePos.x < centerX);
-                                                if(clickLeft)
-                                                        GameClient()->Client()->DummyDisconnect(d, nullptr);
-                                                else
+                                                // Connected — 3 zones: Disconnect (left 45%) | Switch (middle 45%) | Send toggle (right 10%)
+                                                const float btnW = (rw - 8.0f) * 0.45f;
+                                                const float toggleX = rx + 2.0f + btnW + 2.0f + btnW + 2.0f; // start of toggle zone
+                                                if(mousePos.x < rx + 2.0f + btnW)
                                                 {
+                                                        // Left = Disconnect
+                                                        GameClient()->Client()->DummyDisconnect(d, nullptr);
+                                                }
+                                                else if(mousePos.x < toggleX)
+                                                {
+                                                        // Middle = Switch
                                                         if(g_Config.m_ClDummy != d)
                                                                 g_Config.m_ClDummy = d;
+                                                }
+                                                else
+                                                {
+                                                        // Right = Send toggle
+                                                        pTarget->expanded = !pTarget->expanded;
+                                                        if(d >= 1 && d < 8)
+                                                                m_aDummySendEnabled[d] = pTarget->expanded;
                                                 }
                                         }
                                 }
@@ -3570,9 +3583,9 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                                 }
                                 case ERowType::DoubleButton:
                                 {
-                                        // v1.56.90: DoubleButton child — two buttons side by side (Dummies Connect+Switch).
+                                        // v1.56.90: DoubleButton child — Connect + Switch + Send toggle (Dummies).
                                         // If dummy NOT connected: only Connect button (full row width).
-                                        // If dummy connected: Connect (left) + Switch (right).
+                                        // If dummy connected: Connect (left) + Switch (middle) + Send checkbox (right).
                                         ColorRGBA leftCol = ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha);
                                         if(child.on) // child.on = connected state
                                                 leftCol = ColorRGBA(0xff3da35a, true).WithAlpha(alpha);
@@ -3587,23 +3600,35 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                                         }
                                         else
                                         {
-                                                // Connected — two buttons side by side.
-                                                const float halfW = (crw - 6.0f) * 0.5f; // 2px gap between buttons
-                                                DrawRoundedRect(crx + 2.0f, cry + 2.0f, halfW, crh - 4.0f, 4.0f,
+                                                // Connected — Connect (left) + Switch (middle) + Send toggle (right).
+                                                const float btnW = (crw - 8.0f) * 0.45f; // 45% each button
+                                                const float toggleW = (crw - 8.0f) * 0.10f; // 10% toggle
+                                                // Left button (Connect/Disconnect)
+                                                DrawRoundedRect(crx + 2.0f, cry + 2.0f, btnW, crh - 4.0f, 4.0f,
                                                         IGraphics::CORNER_ALL, leftCol);
-                                                const float lw1 = TextRender()->TextWidth(14.0f, child.pName);
-                                                DrawText(crx + 2.0f + (halfW - lw1) * 0.5f, cry + 8.0f, 14.0f, child.pName,
+                                                const float lw1 = TextRender()->TextWidth(13.0f, child.pName);
+                                                DrawText(crx + 2.0f + (btnW - lw1) * 0.5f, cry + 8.0f, 13.0f, child.pName,
                                                         ColorRGBA(0xffffffff, true).WithAlpha(alpha));
-                                                // Right button (Switch) — green if this dummy is active.
+                                                // Middle button (Switch) — green if active.
                                                 ColorRGBA rightCol = ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha);
-                                                if(child.value > 0.5f) // child.value = is active dummy
+                                                if(child.value > 0.5f)
                                                         rightCol = ColorRGBA(0xff3da35a, true).WithAlpha(alpha);
-                                                const float rx2 = crx + 2.0f + halfW + 2.0f;
-                                                DrawRoundedRect(rx2, cry + 2.0f, halfW, crh - 4.0f, 4.0f,
+                                                const float rx2 = crx + 2.0f + btnW + 2.0f;
+                                                DrawRoundedRect(rx2, cry + 2.0f, btnW, crh - 4.0f, 4.0f,
                                                         IGraphics::CORNER_ALL, rightCol);
-                                                const float lw2 = TextRender()->TextWidth(14.0f, child.pName2);
-                                                DrawText(rx2 + (halfW - lw2) * 0.5f, cry + 8.0f, 14.0f, child.pName2,
+                                                const float lw2 = TextRender()->TextWidth(13.0f, child.pName2);
+                                                DrawText(rx2 + (btnW - lw2) * 0.5f, cry + 8.0f, 13.0f, child.pName2,
                                                         ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                                                // Right toggle (Send) — checkbox.
+                                                const float tx = crx + crw - toggleW - 2.0f;
+                                                DrawRoundedRect(tx, cry + 3.0f, CHECK_W, CHECK_W, 3.0f,
+                                                        IGraphics::CORNER_ALL,
+                                                        ColorRGBA(COL_CHECK_SQUARE, true).WithAlpha(alpha));
+                                                if(child.expanded) // child.expanded = send enabled
+                                                        DrawText(tx + CHECK_W * 0.5f, cry + 3.0f - 2.0f, 22.0f, "\xe2\x9c\x93",
+                                                                ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha), TEXTALIGN_CENTER);
+                                                DrawText(tx + CHECK_W + 2.0f, cry + 8.0f, 13.0f, "Send",
+                                                        ColorRGBA(0xffb0b0d0, true).WithAlpha(alpha));
                                         }
                                         break;
                                 }
