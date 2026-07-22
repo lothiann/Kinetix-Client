@@ -9,72 +9,73 @@
 class CAimBot : public CComponent
 {
 public:
-	CAimBot() = default;
-	~CAimBot() override = default;
+        CAimBot() = default;
+        ~CAimBot() override = default;
 
-	int Sizeof() const override { return sizeof(*this); }
-	void OnConsoleInit() override;
-	void OnReset() override;
-	void OnRender() override;
+        int Sizeof() const override { return sizeof(*this); }
+        void OnConsoleInit() override;
+        void OnReset() override;
+        void OnUpdate() override;
+        void OnRender() override;
 
-	// 7 weapons for AimBot: hammer, pistol, shotgun, grenade, laser, ninja, hook
-	static constexpr int NUM_WEAPONS_AIM = 7;
-	// 6 weapons for TriggerBot: no hook (triggerbot does not aim, hook makes no sense)
-	static constexpr int NUM_WEAPONS_TRIGGER = 6;
+        // 7 weapons for AimBot: hammer, pistol, shotgun, grenade, laser, ninja, hook
+        static constexpr int NUM_WEAPONS_AIM = 7;
+        // 6 weapons for TriggerBot: no hook (triggerbot does not aim, hook makes no sense)
+        static constexpr int NUM_WEAPONS_TRIGGER = 6;
 
-	struct SWeaponSettings
-	{
-		bool m_Enabled = false;
-		int m_Trigger = 0; // 0=fire 1=hook (TriggerBot only)
-		float m_Fov = 90.0f;
-		float m_Radius = 300.0f;
-		bool m_UseRaycast = false;
-		int m_RaycastAngles = 16;
-		int m_AimMode = 0; // 0=silent 1=trigger 2=always (AimBot only)
-		int m_TeamFilter = 0; // 0=both 1=war 2=my
-		int m_FriendFilter = 0; // 0=both 1=ignore
-		int m_DummyFilter = 0; // 0=both 1=ignore
-		int m_FreezeFilter = 0; // 0=both 1=freeze 2=no_freeze
-		int m_Priority = 0; // 0=nearest_fov 1=nearest_aim 2=nearest_to_me
-		int m_RandomLatency = 0; // TriggerBot only (ticks)
-	};
+        struct SWeaponSettings
+        {
+                bool m_Enabled = false;
+                int m_Trigger = 0; // 0=fire 1=hook (TriggerBot only)
+                float m_Fov = 90.0f;
+                float m_Radius = 300.0f;
+                bool m_UseRaycast = false;
+                int m_RaycastAngles = 16;
+                int m_AimMode = 0; // 0=silent 1=trigger 2=always (AimBot only)
+                int m_TeamFilter = 0; // 0=both 1=war 2=my
+                int m_FriendFilter = 0; // 0=both 1=ignore
+                int m_DummyFilter = 0; // 0=both 1=ignore
+                int m_FreezeFilter = 0; // 0=both 1=freeze 2=no_freeze
+                int m_Priority = 0; // 0=nearest_fov 1=nearest_aim 2=nearest_to_me
+                int m_RandomLatency = 0; // TriggerBot only (ticks)
+        };
 
-	bool m_AimBotEnabled = false;
-	bool m_TriggerBotEnabled = false;
-	bool m_AimBotShowFov = false;
-	bool m_AimBotShowRadius = false;
-	bool m_AimBotUseRaycastShow = false;
-	bool m_TriggerBotShowFov = false;
-	bool m_TriggerBotShowRadius = false;
-	bool m_TriggerBotUseRaycastShow = false;
+        bool m_AimBotEnabled = false;
+        bool m_TriggerBotEnabled = false;
+        bool m_AimBotShowFov = false;
+        bool m_AimBotShowRadius = false;
+        bool m_AimBotUseRaycastShow = false;
+        bool m_TriggerBotShowFov = false;
+        bool m_TriggerBotShowRadius = false;
+        bool m_TriggerBotUseRaycastShow = false;
 
-	SWeaponSettings m_AimBotWeapons[NUM_WEAPONS_AIM];
-	SWeaponSettings m_TriggerBotWeapons[NUM_WEAPONS_TRIGGER];
+        SWeaponSettings m_AimBotWeapons[NUM_WEAPONS_AIM];
+        SWeaponSettings m_TriggerBotWeapons[NUM_WEAPONS_TRIGGER];
 
-	int m_AimBotSelectedWeapon = 0;
-	int m_TriggerBotSelectedWeapon = 0;
+        int m_AimBotSelectedWeapon = 0;
+        int m_TriggerBotSelectedWeapon = 0;
 
-	float GetWeaponRadius(int Weapon) const;
+        float GetWeaponRadius(int Weapon) const;
 
 private:
-	int m_LatencyCounter = 0;
-	bool m_PrevFire = false;
-	bool m_PrevHook = false;
+        int m_LatencyCounter = 0;
+        bool m_PrevFire = false;
+        bool m_PrevHook = false;
 
-	void Update();
-	void UpdateAimBot();
-	void UpdateTriggerBot();
-	int FindTarget(const SWeaponSettings &Settings, int LocalId, const vec2 &MyPos, const vec2 &AimDir);
-	bool IsVisible(const vec2 &From, const vec2 &To);
-	bool PassesFilters(int ClientId, int LocalId, const SWeaponSettings &Settings);
-	void ApplyAim(int ClientId, const vec2 &MyPos, const SWeaponSettings &Settings);
-	void FireWeapon();
-	void DoHook();
-	void RenderFov(const SWeaponSettings &Settings, const vec2 &MyPos, const vec2 &AimDir, float Alpha);
-	void RenderRadius(const SWeaponSettings &Settings, const vec2 &MyPos, const vec2 &AimDir, float Alpha);
+        void Update();
+        void UpdateAimBot();
+        void UpdateTriggerBot();
+        int FindTarget(const SWeaponSettings &Settings, int LocalId, const vec2 &MyPos, const vec2 &AimDir, const vec2 &AimPos);
+        bool IsVisible(const vec2 &From, const vec2 &To);
+        bool PassesFilters(int ClientId, int LocalId, const SWeaponSettings &Settings);
+        void ApplyAim(int ClientId, const vec2 &MyPos, const SWeaponSettings &Settings);
+        void FireWeapon();
+        void DoHook();
+        void RenderFov(const SWeaponSettings &Settings, const vec2 &MyPos, const vec2 &AimDir, float Alpha);
+        void RenderRadius(const SWeaponSettings &Settings, const vec2 &MyPos, const vec2 &AimDir, float Alpha);
 
-	static void ConAimBot(IConsole::IResult *pResult, void *pUserData);
-	static void ConTriggerBot(IConsole::IResult *pResult, void *pUserData);
+        static void ConAimBot(IConsole::IResult *pResult, void *pUserData);
+        static void ConTriggerBot(IConsole::IResult *pResult, void *pUserData);
 };
 
 #endif
