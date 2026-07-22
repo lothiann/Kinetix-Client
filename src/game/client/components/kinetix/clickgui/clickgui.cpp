@@ -3613,7 +3613,7 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                                                 // Middle button (Switch) — green if active.
                                                 ColorRGBA rightCol = ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha);
                                                 if(child.value > 0.5f)
-                                                        rightCol = ColorRGBA(0xff3da35a, true).WithAlpha(alpha));
+                                                        rightCol = ColorRGBA(0xff3da35a, true).WithAlpha(alpha);
                                                 const float rx2 = crx + 2.0f + btnW + 2.0f;
                                                 DrawRoundedRect(rx2, cry + 2.0f, btnW, crh - 4.0f, 4.0f,
                                                         IGraphics::CORNER_ALL, rightCol);
