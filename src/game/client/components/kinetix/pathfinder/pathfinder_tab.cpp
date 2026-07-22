@@ -548,9 +548,9 @@ void CBotNet::RenderPathfinderPath()
 
         Graphics()->TextureClear();
 
-        ColorRGBA BaseColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_KxTrajectoryColor, true));
-        float ConfigAlpha = g_Config.m_KxTrajectoryAlpha / 100.0f;
-        int LineSize = g_Config.m_KxTrajectoryLineSize;
+        ColorRGBA BaseColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_KxLineRenderingColor, true));
+        float ConfigAlpha = g_Config.m_KxLineRenderingAlpha / 100.0f;
+        int LineSize = g_Config.m_KxLineRenderingSize;
 
         // If only the start point exists (no chunk generated yet, or all chunks
         // failed), render a small marker so the user sees the pathfinder is

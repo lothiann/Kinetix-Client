@@ -84,7 +84,7 @@ void CAimBot::OnRender()
         bool hookHeld = pGame->m_Controls.m_aInputData[g_Config.m_ClDummy].m_Hook != 0;
         Graphics()->MapScreenToInterface(pGame->m_Camera.m_Center.x, pGame->m_Camera.m_Center.y, pGame->m_Camera.m_Zoom);
 
-        float alpha = (float)g_Config.m_KxTrajectoryAlpha / 100.0f;
+        float alpha = (float)g_Config.m_KxLineRenderingAlpha / 100.0f;
 
         if(m_AimBotEnabled)
         {
@@ -454,8 +454,8 @@ void CAimBot::RenderFov(const SWeaponSettings &Settings, const vec2 &MyPos, cons
         float halfFovRad = (Settings.m_Fov * 0.5f) * (pi / 180.0f);
         float myAngle = atan2f(AimDir.y, AimDir.x);
         float radius = Settings.m_Radius;
-        ColorRGBA col = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_KxTrajectoryColor, true));
-        int LineSize = g_Config.m_KxTrajectoryLineSize;
+        ColorRGBA col = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_KxLineRenderingColor, true));
+        int LineSize = g_Config.m_KxLineRenderingSize;
         float HalfWidth = 0.5f + (float)(LineSize > 0 ? LineSize - 1 : 0) * 0.25f;
         bool useRay = m_AimBotUseRaycastShow || m_TriggerBotUseRaycastShow;
 
@@ -523,8 +523,8 @@ void CAimBot::RenderRadius(const SWeaponSettings &Settings, const vec2 &MyPos, c
         float halfFovRad = (Settings.m_Fov * 0.5f) * (pi / 180.0f);
         float myAngle = atan2f(AimDir.y, AimDir.x);
         float radius = Settings.m_Radius;
-        ColorRGBA col = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_KxTrajectoryColor, true));
-        int LineSize = g_Config.m_KxTrajectoryLineSize;
+        ColorRGBA col = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_KxLineRenderingColor, true));
+        int LineSize = g_Config.m_KxLineRenderingSize;
         float HalfWidth = 0.5f + (float)(LineSize > 0 ? LineSize - 1 : 0) * 0.25f;
         bool useRay = m_AimBotUseRaycastShow || m_TriggerBotUseRaycastShow;
         int segments = 48;

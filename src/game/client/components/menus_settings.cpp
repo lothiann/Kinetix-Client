@@ -5114,19 +5114,19 @@ void CMenus::RenderSettingsAdvanced(CUIRect MainView)
 
                         // Line width slider
                         Panel.HSplitTop(20.0f, &Row, &Panel);
-                        Ui()->DoScrollbarOption(&g_Config.m_KxTrajectoryLineSize, &g_Config.m_KxTrajectoryLineSize, &Row, Localize("Line margin"), 0, 20);
+                        Ui()->DoScrollbarOption(&g_Config.m_KxLineRenderingSize, &g_Config.m_KxLineRenderingSize, &Row, Localize("Line margin"), 0, 20);
 
                         Panel.HSplitTop(RowGap, nullptr, &Panel);
 
                         // Color picker
                         static CButtonContainer s_TrajectoryColorId;
-                        DoLine_ColorPicker(&s_TrajectoryColorId, 25.0f, 13.0f, 0.0f, &Panel, Localize("Line color"), &g_Config.m_KxTrajectoryColor, color_cast<ColorRGBA>(ColorHSLA(65471, true)), false);
+                        DoLine_ColorPicker(&s_TrajectoryColorId, 25.0f, 13.0f, 0.0f, &Panel, Localize("Line color"), &g_Config.m_KxLineRenderingColor, color_cast<ColorRGBA>(ColorHSLA(65471, true)), false);
 
                         Panel.HSplitTop(RowGap, nullptr, &Panel);
 
                         // Alpha slider
                         Panel.HSplitTop(20.0f, &Row, &Panel);
-                        Ui()->DoScrollbarOption(&g_Config.m_KxTrajectoryAlpha, &g_Config.m_KxTrajectoryAlpha, &Row, Localize("Line opacity"), 0, 100);
+                        Ui()->DoScrollbarOption(&g_Config.m_KxLineRenderingAlpha, &g_Config.m_KxLineRenderingAlpha, &Row, Localize("Line opacity"), 0, 100);
                 }
 
                 MainView.HSplitTop(PanelGap, nullptr, &MainView);

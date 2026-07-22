@@ -189,8 +189,12 @@ static SRow g_FakeAimChildren[] = {
         {ERowType::Slider, "Speed", false, false, 1.0f, 100.0f, 1.0f, 10.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Show for me", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
+// v1.56.89: "Trajectory" expandable: toggle + Prediction Ticks slider.
+static SRow g_TrajectoryChildren[] = {
+        {ERowType::Slider, "Prediction Ticks", false, false, 1.0f, 50.0f, 1.0f, 10.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
 static SRow g_AdvancedRows[] = {
-        {ERowType::Toggle, "Trajectory", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Expandable, "Trajectory", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TrajectoryChildren, 1},
         {ERowType::Expandable, "Laser unfreeze", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LaserUnfreezeChildren, 7},
         {ERowType::Expandable, "Fake Aim", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_FakeAimChildren, 3},
 };
@@ -212,9 +216,17 @@ static SRow g_SpooferChildren[] = {
 static SRow g_RainbowChildren[] = {
         {ERowType::Slider, "Speed", false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
+// v1.56.89: "Line rendering" visual expandable (cannot toggle, only expand).
+// Shared line render settings used by trajectory, aimbot FOV/radius, pathfinder path, laser unfreeze.
+static SRow g_LineRenderingChildren[] = {
+        {ERowType::Slider, "Line Margin", false, false, 0.0f, 20.0f, 1.0f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Line color", false, false, 0, 0, 0, 0, nullptr, "ffbf00", "hex...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Line opacity", false, false, 0.0f, 100.0f, 1.0f, 80.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
 static SRow g_SettingsRows[] = {
         {ERowType::Input, "ClickGUI Color", false, false, 0, 0, 0, 0, nullptr, "9d4edd", "hex...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Expandable, "Rainbow color", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowChildren, 1},
+        {ERowType::Expandable, "Line rendering", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LineRenderingChildren, 3},
         {ERowType::Expandable, "IRC", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_IrcChildren, 2},
         {ERowType::Expandable, "Spoofer", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_SpooferChildren, 3},
 };
@@ -734,6 +746,24 @@ void CClickGui::OnRender()
                                                 child.on = g_Config.m_KxIrcRevealJoin != 0;
                                         else if(str_comp(child.pName, "Nameplate tag") == 0)
                                                 child.on = g_Config.m_KxIrcNameplateTag != 0;
+                                        // Settings → Line rendering children
+                                        else if(str_comp(child.pName, "Line Margin") == 0)
+                                                child.value = (float)g_Config.m_KxLineRenderingSize;
+                                        else if(str_comp(child.pName, "Line color") == 0 && str_comp(row.pName, "Line rendering") == 0)
+                                        {
+                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r)
+                                                {
+                                                        char hex[8];
+                                                        str_format(hex, sizeof(hex), "%06x", g_Config.m_KxLineRenderingColor & 0xffffff);
+                                                        str_copy(child.m_aInputBuf, hex, sizeof(child.m_aInputBuf));
+                                                        child.m_InputInitialized = true;
+                                                }
+                                        }
+                                        else if(str_comp(child.pName, "Line opacity") == 0)
+                                                child.value = (float)g_Config.m_KxLineRenderingAlpha;
+                                        // Advanced → Trajectory children
+                                        else if(str_comp(child.pName, "Prediction Ticks") == 0)
+                                                child.value = (float)g_Config.m_KxTrajectoryTicks;
                                         // Advanced → Laser unfreeze children
                                         else if(str_comp(child.pName, "Auto laser") == 0)
                                                 child.on = g_Config.m_KxLaserUnfreezeAuto != 0;
@@ -1059,6 +1089,14 @@ void CClickGui::OnRender()
                                 g_Config.m_KxLaserUnfreezeTicks = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Trigger ticks") == 0)
                                 g_Config.m_KxLaserUnfreezeTriggerTicks = (int)pTarget->value;
+                        // Settings → Line rendering children
+                        else if(str_comp(pTarget->pName, "Line Margin") == 0)
+                                g_Config.m_KxLineRenderingSize = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Line opacity") == 0)
+                                g_Config.m_KxLineRenderingAlpha = (int)pTarget->value;
+                        // Advanced → Trajectory children
+                        else if(str_comp(pTarget->pName, "Prediction Ticks") == 0)
+                                g_Config.m_KxTrajectoryTicks = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Speed") == 0)
                         {
                                 // v1.56.77: "Speed" is used by both Fake Aim and Rainbow.
@@ -1370,6 +1408,13 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         m_SavedAccentColorRGBA = m_AccentColorRGBA;
                                 }
                         }
+                        // v1.56.89: parse HEX color for "Line color" input (Line rendering expandable).
+                        else if(str_comp(pRow->pName, "Line color") == 0)
+                        {
+                                unsigned hex = 0;
+                                if(sscanf(pRow->m_aInputBuf, "%6x", &hex) == 1)
+                                        g_Config.m_KxLineRenderingColor = hex & 0xffffff;
+                        }
                 }
                 m_InputEditing = false; Input()->StopTextInput();
         }
@@ -1434,7 +1479,8 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 const bool isVisualExpandable = (pTarget->type == ERowType::Expandable) &&
                                         (str_comp(pTarget->pName, "Score method") == 0 ||
                                          str_comp(pTarget->pName, "Penalties") == 0 ||
-                                         str_comp(pTarget->pName, "Visuals") == 0);
+                                         str_comp(pTarget->pName, "Visuals") == 0 ||
+                                         str_comp(pTarget->pName, "Line rendering") == 0);
                                 // Click on check area or name area → toggle on/off (or expand for visual).
                                 const float toggleEndX = rx + rw - (pTarget->type == ERowType::Expandable ? ARROW_W + 4.0f : (pTarget->type == ERowType::ToggleDropdown ? DROPDOWN_W + 4.0f : 0.0f));
                                 if(mousePos.x < toggleEndX)
@@ -1662,6 +1708,14 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         g_Config.m_KxLaserUnfreezeTicks = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Trigger ticks") == 0)
                                         g_Config.m_KxLaserUnfreezeTriggerTicks = (int)pTarget->value;
+                                // Settings → Line rendering children
+                                else if(str_comp(pTarget->pName, "Line Margin") == 0)
+                                        g_Config.m_KxLineRenderingSize = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Line opacity") == 0)
+                                        g_Config.m_KxLineRenderingAlpha = (int)pTarget->value;
+                                // Advanced → Trajectory children
+                                else if(str_comp(pTarget->pName, "Prediction Ticks") == 0)
+                                        g_Config.m_KxTrajectoryTicks = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Chunk size") == 0)
                                         g_Config.m_KxPfChunkSize = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Hook angles") == 0)

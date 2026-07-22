@@ -46,7 +46,7 @@ static const float LATTICE_H_SCALE = 2.0f; // heuristic multiplier (admissible: 
 // enabled Score+Fine methods, picks the best, appends its trajectory to
 // m_PfVPath, and checks for finish.  On finish (or max-chunks), -> FINISHED.
 // The trajectory is rendered every frame via RenderPathfinderPath(), reusing
-// the shared m_KxTrajectoryColor/Alpha/LineSize settings (same as Advanced→Trajectory).
+// the shared m_KxLineRenderingColor/Alpha/LineSize settings (same as Advanced→Trajectory).
 enum EPfState
 {
         PF_STATE_IDLE = 0,

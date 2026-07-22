@@ -297,9 +297,9 @@ MACRO_CONFIG_INT(KxBotTargetDummy, kx_bot_target_dummy, 1, 0, 7, CFGFLAG_CLIENT 
 // trajectory prediction
 MACRO_CONFIG_INT(KxShowTrajectory, kx_show_trajectory, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Show trajectory prediction for active player")
 MACRO_CONFIG_INT(KxTrajectoryTicks, kx_trajectory_ticks, 10, 1, 50, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Number of ticks to predict trajectory (1-50)")
-MACRO_CONFIG_INT(KxTrajectoryLineSize, kx_trajectory_line_size, 1, 0, 20, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Trajectory line width in pixels (0=thin default)")
-MACRO_CONFIG_COL(KxTrajectoryColor, kx_trajectory_color, 65471, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Trajectory line color")
-MACRO_CONFIG_INT(KxTrajectoryAlpha, kx_trajectory_alpha, 80, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Trajectory line opacity (0-100)")
+MACRO_CONFIG_INT(KxLineRenderingSize, kx_line_rendering_size, 1, 0, 20, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Trajectory line width in pixels (0=thin default)")
+MACRO_CONFIG_COL(KxLineRenderingColor, kx_line_rendering_color, 65471, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Trajectory line color")
+MACRO_CONFIG_INT(KxLineRenderingAlpha, kx_line_rendering_alpha, 80, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Trajectory line opacity (0-100)")
 
 // Laser unfreeze — predictive laser self-unfreeze
 MACRO_CONFIG_INT(KxLaserUnfreeze, kx_laser_unfreeze, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Laser unfreeze: predict freeze and auto-fire laser to unfreeze self")

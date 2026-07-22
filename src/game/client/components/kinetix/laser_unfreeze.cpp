@@ -357,9 +357,9 @@ void CBotNet::RenderLaserUnfreezePath()
     // Color: laser rifle inner color (same as in-game laser)
     ColorRGBA BaseColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClLaserRifleInnerColor, true));
     // Alpha: trajectory alpha setting * fade
-    float ConfigAlpha = (g_Config.m_KxTrajectoryAlpha / 100.0f) * fadeAlpha;
+    float ConfigAlpha = (g_Config.m_KxLineRenderingAlpha / 100.0f) * fadeAlpha;
     // Line size: trajectory line size setting
-    int LineSize = g_Config.m_KxTrajectoryLineSize;
+    int LineSize = g_Config.m_KxLineRenderingSize;
 
     pGame->Graphics()->TextureClear();
     pGame->Graphics()->BlendNormal();
