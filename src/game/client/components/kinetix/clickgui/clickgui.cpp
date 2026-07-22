@@ -194,22 +194,22 @@ static SRow g_BlockChildren[] = {
         {ERowType::Toggle, "Rescue All", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Kill On Freeze", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Avoid Freeze", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Avoid Freeze Radius", false, false, 1.0f, 10.0f, 1.0f, 3.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+	{ERowType::Input, "Avoid Freeze Radius", false, false, 0, 0, 0, 0, nullptr, "3", "value...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Laser Rescue", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Fire Dist", false, false, 0.0f, 2000.0f, 1.0f, 200.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Hook Dist", false, false, 0.0f, 2000.0f, 1.0f, 200.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Rescue Radius", false, false, 0.0f, 2000.0f, 1.0f, 300.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Target Dist", false, false, 0.0f, 2000.0f, 1.0f, 500.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Main Dist", false, false, 0.0f, 2000.0f, 1.0f, 500.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Stand Dist", false, false, 0.0f, 2000.0f, 1.0f, 100.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Main Stand Dist", false, false, 0.0f, 2000.0f, 1.0f, 100.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Laser Rescue Dist", false, false, 0.0f, 2000.0f, 1.0f, 500.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+	{ERowType::Input, "Fire Dist", false, false, 0, 0, 0, 0, nullptr, "200", "value...", nullptr, 0, 0, nullptr, 0},
+	{ERowType::Input, "Hook Dist", false, false, 0, 0, 0, 0, nullptr, "200", "value...", nullptr, 0, 0, nullptr, 0},
+	{ERowType::Input, "Rescue Radius", false, false, 0, 0, 0, 0, nullptr, "300", "value...", nullptr, 0, 0, nullptr, 0},
+	{ERowType::Input, "Target Dist", false, false, 0, 0, 0, 0, nullptr, "500", "value...", nullptr, 0, 0, nullptr, 0},
+	{ERowType::Input, "Main Dist", false, false, 0, 0, 0, 0, nullptr, "500", "value...", nullptr, 0, 0, nullptr, 0},
+	{ERowType::Input, "Stand Dist", false, false, 0, 0, 0, 0, nullptr, "100", "value...", nullptr, 0, 0, nullptr, 0},
+	{ERowType::Input, "Main Stand Dist", false, false, 0, 0, 0, 0, nullptr, "100", "value...", nullptr, 0, 0, nullptr, 0},
+	{ERowType::Input, "Laser Rescue Dist", false, false, 0, 0, 0, 0, nullptr, "500", "value...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Pathfinder Enabled", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Simulate Players", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "SPS (Push)", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Simulate Score", false, false, 0.0f, 100.0f, 1.0f, 50.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Rays", false, false, 12.0f, 90.0f, 1.0f, 24.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Dist", false, false, 1.0f, 128.0f, 1.0f, 32.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+	{ERowType::Input, "Simulate Score", false, false, 0, 0, 0, 0, nullptr, "50", "value...", nullptr, 0, 0, nullptr, 0},
+	{ERowType::Input, "Rays", false, false, 0, 0, 0, 0, nullptr, "24", "value...", nullptr, 0, 0, nullptr, 0},
+	{ERowType::Input, "Dist", false, false, 0, 0, 0, 0, nullptr, "32", "value...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Fix Snap", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Hook Enabled", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
@@ -1098,22 +1098,118 @@ void CClickGui::OnRender()
                                                 else if(str_comp(ch.pName, "Rescue All") == 0) ch.on = bn.m_RescueAll;
                                                 else if(str_comp(ch.pName, "Kill On Freeze") == 0) ch.on = bn.m_KillOnFreeze;
                                                 else if(str_comp(ch.pName, "Avoid Freeze") == 0) ch.on = bn.m_AvoidFreeze;
-                                                else if(str_comp(ch.pName, "Avoid Freeze Radius") == 0) ch.value = (float)bn.m_AvoidFreezeRadius;
+                                                else if(str_comp(ch.pName, "Avoid Freeze Radius") == 0)
+											{
+												if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+												{
+													char b[16]; str_format(b, sizeof(b), "%d", bn.m_AvoidFreezeRadius);
+													str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
+													ch.m_InputInitialized = true;
+												}
+											}
                                                 else if(str_comp(ch.pName, "Laser Rescue") == 0) ch.on = bn.m_LaserRescue;
-                                                else if(str_comp(ch.pName, "Fire Dist") == 0) ch.value = bn.m_FireDist;
-                                                else if(str_comp(ch.pName, "Hook Dist") == 0) ch.value = bn.m_HookDist;
-                                                else if(str_comp(ch.pName, "Rescue Radius") == 0) ch.value = bn.m_RescueRadius;
-                                                else if(str_comp(ch.pName, "Target Dist") == 0) ch.value = bn.m_TargetDist;
-                                                else if(str_comp(ch.pName, "Main Dist") == 0) ch.value = bn.m_MainDist;
-                                                else if(str_comp(ch.pName, "Stand Dist") == 0) ch.value = bn.m_StandDist;
-                                                else if(str_comp(ch.pName, "Main Stand Dist") == 0) ch.value = bn.m_MainStandDist;
-                                                else if(str_comp(ch.pName, "Laser Rescue Dist") == 0) ch.value = bn.m_LaserRescueDist;
+                                                else if(str_comp(ch.pName, "Fire Dist") == 0)
+											{
+												if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+												{
+													char b[16]; str_format(b, sizeof(b), "%d", (int)bn.m_FireDist);
+													str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
+													ch.m_InputInitialized = true;
+												}
+											}
+                                                else if(str_comp(ch.pName, "Hook Dist") == 0)
+											{
+												if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+												{
+													char b[16]; str_format(b, sizeof(b), "%d", (int)bn.m_HookDist);
+													str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
+													ch.m_InputInitialized = true;
+												}
+											}
+                                                else if(str_comp(ch.pName, "Rescue Radius") == 0)
+											{
+												if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+												{
+													char b[16]; str_format(b, sizeof(b), "%d", (int)bn.m_RescueRadius);
+													str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
+													ch.m_InputInitialized = true;
+												}
+											}
+                                                else if(str_comp(ch.pName, "Target Dist") == 0)
+											{
+												if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+												{
+													char b[16]; str_format(b, sizeof(b), "%d", (int)bn.m_TargetDist);
+													str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
+													ch.m_InputInitialized = true;
+												}
+											}
+                                                else if(str_comp(ch.pName, "Main Dist") == 0)
+											{
+												if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+												{
+													char b[16]; str_format(b, sizeof(b), "%d", (int)bn.m_MainDist);
+													str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
+													ch.m_InputInitialized = true;
+												}
+											}
+                                                else if(str_comp(ch.pName, "Stand Dist") == 0)
+											{
+												if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+												{
+													char b[16]; str_format(b, sizeof(b), "%d", (int)bn.m_StandDist);
+													str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
+													ch.m_InputInitialized = true;
+												}
+											}
+                                                else if(str_comp(ch.pName, "Main Stand Dist") == 0)
+											{
+												if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+												{
+													char b[16]; str_format(b, sizeof(b), "%d", (int)bn.m_MainStandDist);
+													str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
+													ch.m_InputInitialized = true;
+												}
+											}
+                                                else if(str_comp(ch.pName, "Laser Rescue Dist") == 0)
+											{
+												if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+												{
+													char b[16]; str_format(b, sizeof(b), "%d", (int)bn.m_LaserRescueDist);
+													str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
+													ch.m_InputInitialized = true;
+												}
+											}
                                                 else if(str_comp(ch.pName, "Pathfinder Enabled") == 0) ch.on = bn.m_PathfinderEnabled;
                                                 else if(str_comp(ch.pName, "Simulate Players") == 0) ch.on = bn.m_PfSimulatePlayers;
                                                 else if(str_comp(ch.pName, "SPS (Push)") == 0) ch.on = (bn.m_PfSimulateMethod != 0);
-                                                else if(str_comp(ch.pName, "Simulate Score") == 0) ch.value = bn.m_PfSimulateScore;
-                                                else if(str_comp(ch.pName, "Rays") == 0) ch.value = (float)bn.m_PfRays;
-                                                else if(str_comp(ch.pName, "Dist") == 0) ch.value = (float)bn.m_PfViewRadius;
+                                                else if(str_comp(ch.pName, "Simulate Score") == 0)
+											{
+												if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+												{
+													char b[16]; str_format(b, sizeof(b), "%d", (int)bn.m_PfSimulateScore);
+													str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
+													ch.m_InputInitialized = true;
+												}
+											}
+                                                else if(str_comp(ch.pName, "Rays") == 0)
+											{
+												if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+												{
+													char b[16]; str_format(b, sizeof(b), "%d", bn.m_PfRays);
+													str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
+													ch.m_InputInitialized = true;
+												}
+											}
+                                                else if(str_comp(ch.pName, "Dist") == 0)
+											{
+												if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+												{
+													char b[16]; str_format(b, sizeof(b), "%d", bn.m_PfViewRadius);
+													str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
+													ch.m_InputInitialized = true;
+												}
+											}
                                                 else if(str_comp(ch.pName, "Fix Snap") == 0) ch.on = bn.m_PfSnap;
                                                 else if(str_comp(ch.pName, "Hook Enabled") == 0) ch.on = bn.m_PfHookEnabled;
                                         }
@@ -1636,6 +1732,19 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 str_copy(GameClient()->m_BotNet.m_aTargetIDsStr, pRow->m_aInputBuf, sizeof(GameClient()->m_BotNet.m_aTargetIDsStr));
                         else if(str_comp(pRow->pName, "Rescue IDs") == 0)
                                 str_copy(GameClient()->m_BotNet.m_aRescueIDsStr, pRow->m_aInputBuf, sizeof(GameClient()->m_BotNet.m_aRescueIDsStr));
+                        // v1.56.90: Block children numeric input commits
+                        else if(str_comp(pRow->pName, "Avoid Freeze Radius") == 0) GameClient()->m_BotNet.m_AvoidFreezeRadius = atoi(pRow->m_aInputBuf);
+                        else if(str_comp(pRow->pName, "Fire Dist") == 0) GameClient()->m_BotNet.m_FireDist = (float)atof(pRow->m_aInputBuf);
+                        else if(str_comp(pRow->pName, "Hook Dist") == 0) GameClient()->m_BotNet.m_HookDist = (float)atof(pRow->m_aInputBuf);
+                        else if(str_comp(pRow->pName, "Rescue Radius") == 0) GameClient()->m_BotNet.m_RescueRadius = (float)atof(pRow->m_aInputBuf);
+                        else if(str_comp(pRow->pName, "Target Dist") == 0) GameClient()->m_BotNet.m_TargetDist = (float)atof(pRow->m_aInputBuf);
+                        else if(str_comp(pRow->pName, "Main Dist") == 0) GameClient()->m_BotNet.m_MainDist = (float)atof(pRow->m_aInputBuf);
+                        else if(str_comp(pRow->pName, "Stand Dist") == 0) GameClient()->m_BotNet.m_StandDist = (float)atof(pRow->m_aInputBuf);
+                        else if(str_comp(pRow->pName, "Main Stand Dist") == 0) GameClient()->m_BotNet.m_MainStandDist = (float)atof(pRow->m_aInputBuf);
+                        else if(str_comp(pRow->pName, "Laser Rescue Dist") == 0) GameClient()->m_BotNet.m_LaserRescueDist = (float)atof(pRow->m_aInputBuf);
+                        else if(str_comp(pRow->pName, "Simulate Score") == 0) GameClient()->m_BotNet.m_PfSimulateScore = (float)atof(pRow->m_aInputBuf);
+                        else if(str_comp(pRow->pName, "Rays") == 0) GameClient()->m_BotNet.m_PfRays = atoi(pRow->m_aInputBuf);
+                        else if(str_comp(pRow->pName, "Dist") == 0) GameClient()->m_BotNet.m_PfViewRadius = atoi(pRow->m_aInputBuf);
                         // v1.56.89: Binds panel — execute "bind <input> toggle <cmd> 1 0"
                         else if(str_comp(pRow->pName, "ClickGUI") == 0 && m_InputPanel == 4)
                         {
@@ -2046,19 +2155,6 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 // Advanced → Trajectory children
                                 else if(str_comp(pTarget->pName, "Prediction Ticks") == 0)
                                         g_Config.m_KxTrajectoryTicks = (int)pTarget->value;
-                                // v1.56.90: Block children sliders
-                                else if(str_comp(pTarget->pName, "Avoid Freeze Radius") == 0) GameClient()->m_BotNet.m_AvoidFreezeRadius = (int)pTarget->value;
-                                else if(str_comp(pTarget->pName, "Fire Dist") == 0) GameClient()->m_BotNet.m_FireDist = pTarget->value;
-                                else if(str_comp(pTarget->pName, "Hook Dist") == 0) GameClient()->m_BotNet.m_HookDist = pTarget->value;
-                                else if(str_comp(pTarget->pName, "Rescue Radius") == 0) GameClient()->m_BotNet.m_RescueRadius = pTarget->value;
-                                else if(str_comp(pTarget->pName, "Target Dist") == 0) GameClient()->m_BotNet.m_TargetDist = pTarget->value;
-                                else if(str_comp(pTarget->pName, "Main Dist") == 0) GameClient()->m_BotNet.m_MainDist = pTarget->value;
-                                else if(str_comp(pTarget->pName, "Stand Dist") == 0) GameClient()->m_BotNet.m_StandDist = pTarget->value;
-                                else if(str_comp(pTarget->pName, "Main Stand Dist") == 0) GameClient()->m_BotNet.m_MainStandDist = pTarget->value;
-                                else if(str_comp(pTarget->pName, "Laser Rescue Dist") == 0) GameClient()->m_BotNet.m_LaserRescueDist = pTarget->value;
-                                else if(str_comp(pTarget->pName, "Simulate Score") == 0) GameClient()->m_BotNet.m_PfSimulateScore = pTarget->value;
-                                else if(str_comp(pTarget->pName, "Rays") == 0) GameClient()->m_BotNet.m_PfRays = (int)pTarget->value;
-                                else if(str_comp(pTarget->pName, "Dist") == 0) GameClient()->m_BotNet.m_PfViewRadius = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Chunk size") == 0)
                                         g_Config.m_KxPfChunkSize = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Hook angles") == 0)
