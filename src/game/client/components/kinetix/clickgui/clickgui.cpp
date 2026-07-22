@@ -1975,62 +1975,6 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 else if(str_comp(pTarget->pName, "Hook Enabled") == 0) bn.m_PfHookEnabled = pTarget->on;
                                                 else if(str_comp(pTarget->pName, "SPS (Push)") == 0) bn.m_PfSimulateMethod = pTarget->on ? 1 : 0;
                                         }
-                                        // v1.56.90: Dummies buttons
-                                        else if(str_comp(row.pName, "Dummies") == 0 && pTarget->type == ERowType::Button)
-                                        {
-                                                if(str_comp(pTarget->pName, "Connect Dummy") == 0)
-                                                {
-                                                        if(GameClient()->Client()->AnyDummyConnected())
-                                                        {
-                                                            for(int D = 1; D < MAX_DUMMIES; D++)
-                                                                if(GameClient()->Client()->DummyConnected(D))
-                                                                    GameClient()->Client()->DummyDisconnect(D, nullptr);
-                                                        }
-                                                        else
-                                                            GameClient()->Client()->DummyConnect(1);
-                                                }
-                                                else if(str_comp(pTarget->pName, "Switch to Main") == 0)
-                                                    g_Config.m_ClDummy = 0;
-                                                else if(pTarget->pName && pTarget->pName[0] == 'D' && pTarget->pName[1] >= '1' && pTarget->pName[1] <= '7')
-                                                {
-                                                        int d = pTarget->pName[1] - '0';
-                                                        if(strstr(pTarget->pName, "Connect"))
-                                                        {
-                                                            if(GameClient()->Client()->DummyConnected(d))
-                                                                GameClient()->Client()->DummyDisconnect(d, nullptr);
-                                                            else
-                                                                GameClient()->Client()->DummyConnect(d);
-                                                        }
-                                                        else if(strstr(pTarget->pName, "Switch"))
-                                                        {
-                                                            if(g_Config.m_ClDummy != d)
-                                                                g_Config.m_ClDummy = d;
-                                                        }
-                                                }
-                                        }
-                                        // v1.56.90: Dummies DoubleButton (Connect+Switch side by side)
-                                        else if(str_comp(row.pName, "Dummies") == 0 && pTarget->type == ERowType::DoubleButton)
-                                        {
-                                                // Determine which button by mouse X relative to row center.
-                                                const float centerX = rx + rw * 0.5f;
-                                                const bool clickLeft = (mousePos.x < centerX);
-                                                if(clickLeft)
-                                                {
-                                                        // Left = Connect/Disconnect
-                                                        int d = pTarget->pName[1] - '0';
-                                                        if(GameClient()->Client()->DummyConnected(d))
-                                                            GameClient()->Client()->DummyDisconnect(d, nullptr);
-                                                        else
-                                                            GameClient()->Client()->DummyConnect(d);
-                                                }
-                                                else
-                                                {
-                                                        // Right = Switch
-                                                        int d = pTarget->pName2[1] - '0';
-                                                        if(g_Config.m_ClDummy != d)
-                                                            g_Config.m_ClDummy = d;
-                                                }
-                                        }
                                         // Copy Moves Filter expandable is master toggle.
                                         else if(str_comp(pTarget->pName, "Copy Moves Filter") == 0)
                                                 g_Config.m_KxDummyCopyMovesFilter = pTarget->on ? 1 : 0;
@@ -2112,7 +2056,7 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         return;
                                 }
                         }
-                        if(pTarget->type == ERowType::Button)
+                        if(pTarget->type == ERowType::Button || pTarget->type == ERowType::DoubleButton)
                         {
                                 // Button click — dispatch by name.
                                 if(str_comp(pTarget->pName, "Pathfinding") == 0)
@@ -2131,6 +2075,46 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         {
                                                 BN.m_PfState = PF_STATE_IDLE;
                                                 BN.m_PfVPath.clear();
+                                        }
+                                }
+                                // v1.56.90: Dummies Button (Connect Dummy, Switch to Main)
+                                else if(str_comp(row.pName, "Dummies") == 0 && pTarget->type == ERowType::Button)
+                                {
+                                        if(str_comp(pTarget->pName, "Connect Dummy") == 0)
+                                        {
+                                                if(GameClient()->Client()->AnyDummyConnected())
+                                                {
+                                                        for(int D = 1; D < MAX_DUMMIES; D++)
+                                                                if(GameClient()->Client()->DummyConnected(D))
+                                                                        GameClient()->Client()->DummyDisconnect(D, nullptr);
+                                                }
+                                                else
+                                                        GameClient()->Client()->DummyConnect(1);
+                                        }
+                                        else if(str_comp(pTarget->pName, "Switch to Main") == 0)
+                                                g_Config.m_ClDummy = 0;
+                                }
+                                // v1.56.90: Dummies DoubleButton (Connect+Switch side by side)
+                                else if(str_comp(row.pName, "Dummies") == 0 && pTarget->type == ERowType::DoubleButton)
+                                {
+                                        int d = pTarget->pName[1] - '0';
+                                        if(!GameClient()->Client()->DummyConnected(d))
+                                        {
+                                                // Not connected — any click = Connect.
+                                                GameClient()->Client()->DummyConnect(d);
+                                        }
+                                        else
+                                        {
+                                                // Connected — left=Disconnect, right=Switch.
+                                                const float centerX = rx + rw * 0.5f;
+                                                const bool clickLeft = (mousePos.x < centerX);
+                                                if(clickLeft)
+                                                        GameClient()->Client()->DummyDisconnect(d, nullptr);
+                                                else
+                                                {
+                                                        if(g_Config.m_ClDummy != d)
+                                                                g_Config.m_ClDummy = d;
+                                                }
                                         }
                                 }
                                 return;
@@ -3550,29 +3534,40 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                 case ERowType::DoubleButton:
                                 {
                                         // v1.56.90: DoubleButton child — two buttons side by side (Dummies Connect+Switch).
-                                        // Left button = pName (Connect/Disconnect), right button = pName2 (Switch).
-                                        // Click handler determines which button was clicked by mouse X position.
-                                        const float halfW = (crw - 6.0f) * 0.5f; // 2px gap between buttons
-                                        // Left button (Connect) — green if connected.
+                                        // If dummy NOT connected: only Connect button (full row width).
+                                        // If dummy connected: Connect (left) + Switch (right).
                                         ColorRGBA leftCol = ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha);
                                         if(child.on) // child.on = connected state
                                                 leftCol = ColorRGBA(0xff3da35a, true).WithAlpha(alpha);
-                                        DrawRoundedRect(crx + 2.0f, cry + 2.0f, halfW, crh - 4.0f, 4.0f,
-                                                IGraphics::CORNER_ALL, leftCol);
-                                        const float lw1 = TextRender()->TextWidth(14.0f, child.pName);
-                                        DrawText(crx + 2.0f + (halfW - lw1) * 0.5f, cry + 8.0f, 14.0f, child.pName,
-                                                ColorRGBA(0xffffffff, true).WithAlpha(alpha));
-                                        // Right button (Switch) — green if this dummy is active.
-                                        ColorRGBA rightCol = ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha);
-                                        // child.value used as "is active" flag (set in sync).
-                                        if(child.value > 0.5f)
-                                                rightCol = ColorRGBA(0xff3da35a, true).WithAlpha(alpha);
-                                        const float rx2 = crx + 2.0f + halfW + 2.0f;
-                                        DrawRoundedRect(rx2, cry + 2.0f, halfW, crh - 4.0f, 4.0f,
-                                                IGraphics::CORNER_ALL, rightCol);
-                                        const float lw2 = TextRender()->TextWidth(14.0f, child.pName2);
-                                        DrawText(rx2 + (halfW - lw2) * 0.5f, cry + 8.0f, 14.0f, child.pName2,
-                                                ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                                        if(!child.on)
+                                        {
+                                                // Not connected — full-width Connect button.
+                                                DrawRoundedRect(crx + 2.0f, cry + 2.0f, crw - 4.0f, crh - 4.0f, 4.0f,
+                                                        IGraphics::CORNER_ALL, leftCol);
+                                                const float lw1 = TextRender()->TextWidth(15.0f, child.pName);
+                                                DrawText(crx + (crw - lw1) * 0.5f, cry + 7.0f, 15.0f, child.pName,
+                                                        ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                                        }
+                                        else
+                                        {
+                                                // Connected — two buttons side by side.
+                                                const float halfW = (crw - 6.0f) * 0.5f; // 2px gap between buttons
+                                                DrawRoundedRect(crx + 2.0f, cry + 2.0f, halfW, crh - 4.0f, 4.0f,
+                                                        IGraphics::CORNER_ALL, leftCol);
+                                                const float lw1 = TextRender()->TextWidth(14.0f, child.pName);
+                                                DrawText(crx + 2.0f + (halfW - lw1) * 0.5f, cry + 8.0f, 14.0f, child.pName,
+                                                        ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                                                // Right button (Switch) — green if this dummy is active.
+                                                ColorRGBA rightCol = ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha);
+                                                if(child.value > 0.5f) // child.value = is active dummy
+                                                        rightCol = ColorRGBA(0xff3da35a, true).WithAlpha(alpha);
+                                                const float rx2 = crx + 2.0f + halfW + 2.0f;
+                                                DrawRoundedRect(rx2, cry + 2.0f, halfW, crh - 4.0f, 4.0f,
+                                                        IGraphics::CORNER_ALL, rightCol);
+                                                const float lw2 = TextRender()->TextWidth(14.0f, child.pName2);
+                                                DrawText(rx2 + (halfW - lw2) * 0.5f, cry + 8.0f, 14.0f, child.pName2,
+                                                        ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                                        }
                                         break;
                                 }
                                 }
