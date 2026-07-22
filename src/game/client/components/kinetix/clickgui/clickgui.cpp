@@ -417,14 +417,16 @@ static float RowHeight(ERowType t)
 
 vec2 CClickGui::PanelHomePos(int panelIdx)
 {
-        // 4 panels: Functions, Advanced, Settings, Pathfinder.
-        // Spaced horizontally at the top, 330px apart (300px panel + 30px gap).
+        // 5 panels: Functions, Advanced, Settings, Pathfinder (top row), Binds (second row).
+        // Top row spaced horizontally 330px apart (300px panel + 30px gap).
+        // Binds panel placed below Functions (second row) so it doesn't overflow the screen.
         switch(panelIdx)
         {
         case 0: return vec2(60.0f, 90.0f); // Functions
         case 1: return vec2(390.0f, 90.0f); // Advanced
         case 2: return vec2(720.0f, 90.0f); // Settings
         case 3: return vec2(1050.0f, 90.0f); // Pathfinder
+        case 4: return vec2(1380.0f, 90.0f); // Binds (after Pathfinder, top row)
         default: return vec2(60.0f, 90.0f);
         }
 }
