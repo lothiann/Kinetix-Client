@@ -2308,7 +2308,7 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                         YGNodeStyleSetGap(bodyRoot, YGGutterAll, ROW_GAP);
                         YGNodeStyleSetOverflow(bodyRoot, YGOverflowHidden);
 
-                        constexpr int MAX_ROWS = 32;
+                        constexpr int MAX_ROWS = 256;
                         auto addRowNode = [&](const SRow &row, bool isChild) {
                                 if(cache.rowCount >= MAX_ROWS)
                                         return;

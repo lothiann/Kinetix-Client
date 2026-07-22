@@ -142,7 +142,7 @@ private:
         struct SLayoutCache
         {
                 YGNodeRef pRoot = nullptr;
-                YGNodeRef aRowNodes[64] = {};
+                YGNodeRef aRowNodes[256] = {};
                 int rowCount = 0;
                 float bodyHeightFull = 0.0f;
                 // Signature: a compact hash of which rows + children are in the layout.
