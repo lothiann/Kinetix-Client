@@ -129,7 +129,7 @@ void CIRC::OnReset()
 		m_aNextEmoteSendTick[d] = 0;
 		m_aHandshakeSent[d] = false;
 	}
-	m_LastRevealJoin = g_Config.m_ClIrcEnabled != 0;
+	m_LastRevealJoin = g_Config.m_KxIrcEnabled != 0;
 	for(int i = 0; i < MAX_CLIENTS; ++i)
 	{
 		m_aEmoteHistory[i].clear();
@@ -230,7 +230,7 @@ const char *CIRC::GetClientPrefix(int ClientId) const
 	// Check all local dummies, not just the active one
 	if(IsOwnClient(ClientId))
 	{
-		return g_Config.m_ClIrcRevealJoin ? LOCAL_CLIENT_NAME : nullptr;
+		return g_Config.m_KxIrcRevealJoin ? LOCAL_CLIENT_NAME : nullptr;
 	}
 
 	if(m_aDetectedClient[ClientId][0] != '\0')
@@ -245,7 +245,7 @@ void CIRC::OnRender()
 		return;
 
 	// Handle reveal join toggle / sending handshake
-	if(g_Config.m_ClIrcEnabled && g_Config.m_ClIrcRevealJoin)
+	if(g_Config.m_KxIrcEnabled && g_Config.m_KxIrcRevealJoin)
 	{
 		if(!m_LastRevealJoin)
 		{
@@ -293,7 +293,7 @@ void CIRC::OnRender()
 	}
 	else
 	{
-		m_LastRevealJoin = g_Config.m_ClIrcRevealJoin != 0;
+		m_LastRevealJoin = g_Config.m_KxIrcRevealJoin != 0;
 		for(int d = 0; d < MAX_DUMMIES; ++d)
 		{
 			m_aSendQueue[d].clear();
@@ -302,7 +302,7 @@ void CIRC::OnRender()
 	}
 
 	// Process message buffers for timeout decoding
-	if(g_Config.m_ClIrcEnabled)
+	if(g_Config.m_KxIrcEnabled)
 	{
 		for(int i = 0; i < MAX_CLIENTS; ++i)
 		{
@@ -340,7 +340,7 @@ void CIRC::OnRender()
 
 void CIRC::OnMessage(int MsgId, void *pRawMsg)
 {
-	if(!g_Config.m_ClIrcEnabled)
+	if(!g_Config.m_KxIrcEnabled)
 		return;
 
 	if(MsgId == NETMSGTYPE_SV_EMOTICON)
@@ -404,7 +404,7 @@ void CIRC::OnStateChange(int NewState, int OldState)
 			m_aNextEmoteSendTick[d] = 0;
 		}
 
-		if(g_Config.m_ClIrcEnabled && g_Config.m_ClIrcRevealJoin)
+		if(g_Config.m_KxIrcEnabled && g_Config.m_KxIrcRevealJoin)
 		{
 			// Queue handshake for all connected dummies
 			for(int d = 0; d < MAX_DUMMIES; ++d)

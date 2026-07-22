@@ -90,7 +90,7 @@ using namespace std::chrono_literals;
 const char *CGameClient::Version() const { return GAME_VERSION; }
 const char *CGameClient::NetVersion() const { return GAME_NETVERSION; }
 const char *CGameClient::NetVersion7() const { return GAME_NETVERSION7; }
-int CGameClient::DDNetVersion() const { return g_Config.m_ClSpoofClientStr ? g_Config.m_ClVersionSpoofId : DDNET_VERSION_NUMBER; }
+int CGameClient::DDNetVersion() const { return g_Config.m_KxSpoofClientStr ? g_Config.m_KxVersionSpoofId : DDNET_VERSION_NUMBER; }
 const char *CGameClient::DDNetVersionStr() const
 {
         // Rebuild on every read so spoof settings changed at runtime (Settings UI)
@@ -106,13 +106,13 @@ void CGameClient::UpdateDDNetVersionStr() const
         // / GIT_SHORTREV_HASH with user-configured values. This only affects the
         // string sent to the server in NETMSG_CLIENTVER (DDNetVersionStr); the
         // real GAME_NAME is still used for window title, HTTP UA, etc.
-        if(g_Config.m_ClSpoofClientStr)
+        if(g_Config.m_KxSpoofClientStr)
         {
-                const char *pName = g_Config.m_ClSpoofClientName[0] ? g_Config.m_ClSpoofClientName : GAME_NAME;
-                const char *pVer = g_Config.m_ClSpoofClientVersion[0] ? g_Config.m_ClSpoofClientVersion : GAME_RELEASE_VERSION;
-                if(g_Config.m_ClSpoofGitHashEnabled)
+                const char *pName = g_Config.m_KxSpoofClientName[0] ? g_Config.m_KxSpoofClientName : GAME_NAME;
+                const char *pVer = g_Config.m_KxSpoofClientVersion[0] ? g_Config.m_KxSpoofClientVersion : GAME_RELEASE_VERSION;
+                if(g_Config.m_KxSpoofGitHashEnabled)
                 {
-                        const char *pHash = g_Config.m_ClSpoofGitHash[0] ? g_Config.m_ClSpoofGitHash : "0";
+                        const char *pHash = g_Config.m_KxSpoofGitHash[0] ? g_Config.m_KxSpoofGitHash : "0";
                         str_format(m_aDDNetVersionStr, sizeof(m_aDDNetVersionStr), "%s %s (%s)", pName, pVer, pHash);
                 }
                 else if(GIT_SHORTREV_HASH)
@@ -649,7 +649,7 @@ int CGameClient::OnSnapInput(int *pData, int Conn, bool Force)
         {
                 // Determine if auto-fly is active: dummy auto-hammers every tick when
                 // the active player is within hammer radius.
-                const bool autoFly = g_Config.m_ClDummyHammerAuto != 0;
+                const bool autoFly = g_Config.m_KxDummyHammerAuto != 0;
                 bool canHammerNow = true;
                 if(autoFly)
                 {
@@ -674,9 +674,9 @@ int CGameClient::OnSnapInput(int *pData, int Conn, bool Force)
                         }
                         // Auto fly overrides custom latency — hammers every tick when in range.
                 }
-                else if(g_Config.m_ClDummyHammerCustomLatency)
+                else if(g_Config.m_KxDummyHammerCustomLatency)
                 {
-                        const int latencyTicks = std::max(1, (g_Config.m_ClDummyHammerLatencyMs + 19) / 20);
+                        const int latencyTicks = std::max(1, (g_Config.m_KxDummyHammerLatencyMs + 19) / 20);
                         if(m_aDummyFire[Conn] % latencyTicks != 0)
                                 canHammerNow = false;
                 }
@@ -687,7 +687,7 @@ int CGameClient::OnSnapInput(int *pData, int Conn, bool Force)
                 }
 
                 // Always send a fresh packet every tick (not just on hammer hits).
-                // Without this, when ClDummyHammerKeepInputs is on, the server holds
+                // Without this, when KxDummyHammerKeepInputs is on, the server holds
                 // the last sent hammer input (with stale direction/jump/hook) until
                 // the next hammer hit — so dummy movement lags by up to 25 ticks
                 // (default) or the full custom-latency interval. Fire parity ONLY
@@ -700,7 +700,7 @@ int CGameClient::OnSnapInput(int *pData, int Conn, bool Force)
 
                 // Preserve inputs: when on, keep dummy's movement inputs (direction/jump/hook)
                 // from m_aDummyInput EVERY tick. When off, hammer input fully overrides.
-                if(g_Config.m_ClDummyHammerKeepInputs)
+                if(g_Config.m_KxDummyHammerKeepInputs)
                 {
                         m_aHammerInput[Conn].m_Direction = m_aDummyInput[Conn].m_Direction;
                         m_aHammerInput[Conn].m_Jump = m_aDummyInput[Conn].m_Jump;
@@ -744,15 +744,15 @@ void CGameClient::ApplyCopyMovesTransforms(int D)
                 return;
 
         // --- Mirror direction (XOR) ---
-        if(g_Config.m_ClDummyCopyMirrorDir)
+        if(g_Config.m_KxDummyCopyMirrorDir)
         {
                 // m_Direction: -1, 0, +1. Mirror flips the sign.
                 m_aDummyInput[D].m_Direction = -m_aDummyInput[D].m_Direction;
         }
 
         // --- Aim transforms (only when Smart Aim or Mirror Aim enabled) ---
-        const bool wantSmart = (g_Config.m_ClDummyCopyAimMode == 0) && g_Config.m_ClDummyCopySmartAim;
-        const bool wantMirror = (g_Config.m_ClDummyCopyAimMode == 1) && (g_Config.m_ClDummyCopyMirrorAimX || g_Config.m_ClDummyCopyMirrorAimY);
+        const bool wantSmart = (g_Config.m_KxDummyCopyAimMode == 0) && g_Config.m_KxDummyCopySmartAim;
+        const bool wantMirror = (g_Config.m_KxDummyCopyAimMode == 1) && (g_Config.m_KxDummyCopyMirrorAimX || g_Config.m_KxDummyCopyMirrorAimY);
         if(!wantSmart && !wantMirror)
                 return;
 
@@ -778,9 +778,9 @@ void CGameClient::ApplyCopyMovesTransforms(int D)
                 // Mirror aim: reflect the player's LOCAL aim vector by X and/or Y.
                 int tx = m_Controls.m_aInputData[g_Config.m_ClDummy].m_TargetX;
                 int ty = m_Controls.m_aInputData[g_Config.m_ClDummy].m_TargetY;
-                if(g_Config.m_ClDummyCopyMirrorAimX)
+                if(g_Config.m_KxDummyCopyMirrorAimX)
                         tx = -tx;
-                if(g_Config.m_ClDummyCopyMirrorAimY)
+                if(g_Config.m_KxDummyCopyMirrorAimY)
                         ty = -ty;
                 m_aDummyInput[D].m_TargetX = tx;
                 m_aDummyInput[D].m_TargetY = ty;

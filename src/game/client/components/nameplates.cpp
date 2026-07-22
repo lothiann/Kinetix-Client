@@ -355,7 +355,7 @@ protected:
                 m_Color = Data.m_Color;
 
                 const char *pPrefix = nullptr;
-                if(g_Config.m_ClIrcEnabled && g_Config.m_ClIrcNameplateTag)
+                if(g_Config.m_KxIrcEnabled && g_Config.m_KxIrcNameplateTag)
                 {
                         pPrefix = This.m_IRC.GetClientPrefix(Data.m_ClientId);
                 }
@@ -369,7 +369,7 @@ protected:
                 str_copy(m_aName, Data.m_aName, sizeof(m_aName));
 
                 const char *pPrefix = nullptr;
-                if(g_Config.m_ClIrcEnabled && g_Config.m_ClIrcNameplateTag)
+                if(g_Config.m_KxIrcEnabled && g_Config.m_KxIrcNameplateTag)
                 {
                         pPrefix = This.m_IRC.GetClientPrefix(Data.m_ClientId);
                 }

@@ -276,7 +276,7 @@ bool CChat::OnInput(const IInput::CEvent &Event)
                 GameClient()->OnRelease();
                 m_Input.Clear();
         }
-        else if(Event.m_Flags & IInput::FLAG_PRESS && Event.m_Key == KEY_RSHIFT && g_Config.m_ClIrcEnabled)
+        else if(Event.m_Flags & IInput::FLAG_PRESS && Event.m_Key == KEY_RSHIFT && g_Config.m_KxIrcEnabled)
         {
                 GameClient()->m_IRC.SendIRC(m_Input.GetString());
                 m_pHistoryEntry = nullptr;

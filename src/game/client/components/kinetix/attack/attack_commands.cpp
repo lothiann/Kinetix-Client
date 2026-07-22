@@ -492,7 +492,7 @@ void CBotNet::ConKinoAggressive(IConsole::IResult *pResult, void *pUserData)
 // simulate each in a cloned world, score by enabled Score+Fine methods,
 // pick the best, append trajectory to m_PfVPath, advance sim state.
 //
-// RenderPathfinderPath draws m_PfVPath using the shared m_ClTrajectoryColor/
+// RenderPathfinderPath draws m_PfVPath using the shared m_KxTrajectoryColor/
 // Alpha/LineSize settings (same as Advanced→Trajectory).
 //
 // SIMULATION-ONLY: does NOT write inputs to any dummy.

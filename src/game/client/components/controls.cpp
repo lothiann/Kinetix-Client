@@ -351,7 +351,7 @@ int CControls::SnapInput(int *pData)
                 // dummy copy moves
                 if(g_Config.m_ClDummyCopyMoves)
                 {
-                        const bool filter = g_Config.m_ClDummyCopyMovesFilter != 0;
+                        const bool filter = g_Config.m_KxDummyCopyMovesFilter != 0;
                         for(int D = 0; D < MAX_DUMMIES; D++)
                         {
                                 if(D == g_Config.m_ClDummy)
@@ -366,11 +366,11 @@ int CControls::SnapInput(int *pData)
                                 {
                                         // Copy Moves Filter: when on, only copy selected fields.
                                         // When off, copy everything (original behavior).
-                                        const bool copyJump      = !filter || g_Config.m_ClDummyCopyMovesFilterJump;
-                                        const bool copyDirection = !filter || g_Config.m_ClDummyCopyMovesFilterDirection;
-                                        const bool copyHook      = !filter || g_Config.m_ClDummyCopyMovesFilterHook;
-                                        const bool copyAim       = !filter || g_Config.m_ClDummyCopyMovesFilterAim;
-                                        const bool copyFire      = !filter || g_Config.m_ClDummyCopyMovesFilterFire;
+                                        const bool copyJump      = !filter || g_Config.m_KxDummyCopyMovesFilterJump;
+                                        const bool copyDirection = !filter || g_Config.m_KxDummyCopyMovesFilterDirection;
+                                        const bool copyHook      = !filter || g_Config.m_KxDummyCopyMovesFilterHook;
+                                        const bool copyAim       = !filter || g_Config.m_KxDummyCopyMovesFilterAim;
+                                        const bool copyFire      = !filter || g_Config.m_KxDummyCopyMovesFilterFire;
 
                                         if(copyDirection)
                                                 pDummyInput->m_Direction = m_aInputData[g_Config.m_ClDummy].m_Direction;
@@ -422,14 +422,14 @@ int CControls::SnapInput(int *pData)
                                 pDummyInput->m_Hook = g_Config.m_ClDummyHook;
 
                                 // Aim: copy player's target X/Y to dummy (like Jump/Fire/Hook).
-                                if(g_Config.m_ClDummyAim)
+                                if(g_Config.m_KxDummyAim)
                                 {
                                         pDummyInput->m_TargetX = m_aInputData[g_Config.m_ClDummy].m_TargetX;
                                         pDummyInput->m_TargetY = m_aInputData[g_Config.m_ClDummy].m_TargetY;
                                 }
 
                                 // Direction: copy player's movement direction to dummy.
-                                if(g_Config.m_ClDummyDirection)
+                                if(g_Config.m_KxDummyDirection)
                                         pDummyInput->m_Direction = m_aInputData[g_Config.m_ClDummy].m_Direction;
 
                                 m_aInputData[D] = *pDummyInput;
@@ -562,7 +562,7 @@ int CControls::SnapInput(int *pData)
         static vec2 s_RobotAim = vec2(0, 0);
         static bool s_RobotInit = false;
 
-        if(g_Config.m_ClFakeAim)
+        if(g_Config.m_KxFakeAim)
         {
                 // Detect weapon fire via 1-tick prediction.
                 // This catches EVERY real shot (not just the rising edge of
@@ -641,7 +641,7 @@ int CControls::SnapInput(int *pData)
         }
 
         // Fake aim generation — skipped when laser unfreeze active (laser has priority)
-        if(g_Config.m_ClFakeAim && !laserAimActive)
+        if(g_Config.m_KxFakeAim && !laserAimActive)
         {
                 // Decide: real or fake
                 if(willFire || hookPress)
@@ -652,8 +652,8 @@ int CControls::SnapInput(int *pData)
                 }
                 else
                 {
-                        int mode = g_Config.m_ClFakeAimMode;
-                        int speed = g_Config.m_ClFakeAimSpeed;
+                        int mode = g_Config.m_KxFakeAimMode;
+                        int speed = g_Config.m_KxFakeAimSpeed;
                         if(speed < 1) speed = 1;
                         if(speed > 100) speed = 100;
                         constexpr float AIM_DIST = 200.0f;
@@ -693,7 +693,7 @@ int CControls::SnapInput(int *pData)
                         }
 
                         fakeActive = true;
-                        fakeShowForMe = g_Config.m_ClFakeAimShowForMe != 0;
+                        fakeShowForMe = g_Config.m_KxFakeAimShowForMe != 0;
                 }
         }
 

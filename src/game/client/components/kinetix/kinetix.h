@@ -42,21 +42,21 @@ static const float LATTICE_H_SCALE = 2.0f; // heuristic multiplier (admissible: 
 // =========================================================
 // State machine:  IDLE (green pathfinding btn) -> RUNNING (red stop btn) -> FINISHED (orange finish btn) -> IDLE
 // While RUNNING, UpdatePathfinder() runs one chunk per OnUpdate: generates
-// `ClPfCandidates` input-sequences of `ClPfChunkSize` ticks, scores each by the
+// `KxPfCandidates` input-sequences of `KxPfChunkSize` ticks, scores each by the
 // enabled Score+Fine methods, picks the best, appends its trajectory to
 // m_PfVPath, and checks for finish.  On finish (or max-chunks), -> FINISHED.
 // The trajectory is rendered every frame via RenderPathfinderPath(), reusing
-// the shared m_ClTrajectoryColor/Alpha/LineSize settings (same as Advanced→Trajectory).
+// the shared m_KxTrajectoryColor/Alpha/LineSize settings (same as Advanced→Trajectory).
 enum EPfState
 {
         PF_STATE_IDLE = 0,
         PF_STATE_RUNNING = 1,
         PF_STATE_FINISHED = 2,
 };
-static const int PF_TAB_MAX_CHUNK_TICKS = 50; // matches ClPfChunkSize upper bound
+static const int PF_TAB_MAX_CHUNK_TICKS = 50; // matches KxPfChunkSize upper bound
 static const int PF_TAB_ALGORITHM_COUNT = 15;
 static const int PF_BACKTRACK_DEPTH = 5;
-// PF_BACKTRACK_CANDIDATES removed — now dynamic via ClPfBacktrackCandidates (100-1400)
+// PF_BACKTRACK_CANDIDATES removed — now dynamic via KxPfBacktrackCandidates (100-1400)
 
 // Per-tick hook segment: tee position + hook attach/fly position at one tick.
 // Used by PfSimulateChunk (PfChunkResult) and AStarNode to capture ALL hook
@@ -94,7 +94,7 @@ struct PfBacktrackEntry
                 int endFreezeTime; // bot's m_FreezeTime at end of chunk (0 = not frozen)
                 int freezeTicks;
         };
-        std::vector<Candidate> candidates; // top-N candidates (size = ClPfBacktrackCandidates, dynamic)
+        std::vector<Candidate> candidates; // top-N candidates (size = KxPfBacktrackCandidates, dynamic)
         int numCandidates;
         int usedCandidateIdx;
 

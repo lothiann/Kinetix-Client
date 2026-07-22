@@ -246,10 +246,10 @@ float CBotNet::PfScoreChunk(const vec2 &startPos, const vec2 &endPos, bool reach
 
         // Score method: flow-field alignment (how well the chunk's movement
         // direction matches the flow-field direction toward finish).
-        // Gated by ClPfScoreFlow. Uses cosine of angle between movement vector
+        // Gated by KxPfScoreFlow. Uses cosine of angle between movement vector
         // and flow-field gradient at start tile: +1 = along flow (toward finish),
         // -1 = against flow (away from finish), 0 = perpendicular.
-        if(g_Config.m_ClPfScoreFlow && m_PfFlowField && m_MapWidth > 0 && m_MapHeight > 0)
+        if(g_Config.m_KxPfScoreFlow && m_PfFlowField && m_MapWidth > 0 && m_MapHeight > 0)
         {
                 vec2 move = endPos - startPos;
                 float moveLen = sqrtf(move.x * move.x + move.y * move.y);
@@ -288,10 +288,10 @@ float CBotNet::PfScoreChunk(const vec2 &startPos, const vec2 &endPos, bool reach
         }
 
         // Score method: distance reduction (BFS flow-field distance to finish).
-        // Gated by ClPfScoreDist. Positive when chunk moved us closer to finish
+        // Gated by KxPfScoreDist. Positive when chunk moved us closer to finish
         // in the BFS distance field. Uses flow field (not euclidean) so walls
         // are accounted for — same algorithm as the old always-on flow progress.
-        if(g_Config.m_ClPfScoreDist && m_PfFlowField && m_MapWidth > 0 && m_MapHeight > 0)
+        if(g_Config.m_KxPfScoreDist && m_PfFlowField && m_MapWidth > 0 && m_MapHeight > 0)
         {
                 int sx = pf_clamp((int)(startPos.x / 32.0f), 0, m_MapWidth - 1);
                 int sy = pf_clamp((int)(startPos.y / 32.0f), 0, m_MapHeight - 1);
@@ -316,7 +316,7 @@ float CBotNet::PfScoreChunk(const vec2 &startPos, const vec2 &endPos, bool reach
                 score -= 10000.0f;
 
         // Dynamic freeze penalty (increases over time to discourage freeze routes)
-        if(g_Config.m_ClPfFineFreeze)
+        if(g_Config.m_KxPfFineFreeze)
                 score -= freezeTicks * (1.0f + m_PfTotalFreezeTicks / 64.0f);
 
         // Stall penalty
@@ -352,7 +352,7 @@ void CBotNet::UpdatePathfinder()
         if(m_PfAPathReady)
         {
                 m_PfTickCounter++;
-                int perf = pf_clamp(g_Config.m_ClPfPerf, 1, 100);
+                int perf = pf_clamp(g_Config.m_KxPfPerf, 1, 100);
                 int tickInterval = 6000 / perf;
                 if(tickInterval < 1)
                         tickInterval = 1;
@@ -365,7 +365,7 @@ void CBotNet::UpdatePathfinder()
                         m_PfState = PF_STATE_FINISHED;
                         return;
                 }
-                int ChunkSize = pf_clamp(g_Config.m_ClPfChunkSize, CConfig::PF_CHUNK_SIZE_MIN, PF_TAB_MAX_CHUNK_TICKS);
+                int ChunkSize = pf_clamp(g_Config.m_KxPfChunkSize, CConfig::PF_CHUNK_SIZE_MIN, PF_TAB_MAX_CHUNK_TICKS);
                 size_t endIdx = m_PfFullInputsIdx + (size_t)ChunkSize;
                 if(endIdx > m_PfFullInputs.size())
                         endIdx = m_PfFullInputs.size();
@@ -379,7 +379,7 @@ void CBotNet::UpdatePathfinder()
         // ── A* phase ──
         // Perf throttle: 6000/perf frames between expansions (same as v1.55)
         m_PfTickCounter++;
-        int perf = pf_clamp(g_Config.m_ClPfPerf, 1, 100);
+        int perf = pf_clamp(g_Config.m_KxPfPerf, 1, 100);
         int tickInterval = 6000 / perf;
         if(tickInterval < 1)
                 tickInterval = 1;
@@ -548,9 +548,9 @@ void CBotNet::RenderPathfinderPath()
 
         Graphics()->TextureClear();
 
-        ColorRGBA BaseColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClTrajectoryColor, true));
-        float ConfigAlpha = g_Config.m_ClTrajectoryAlpha / 100.0f;
-        int LineSize = g_Config.m_ClTrajectoryLineSize;
+        ColorRGBA BaseColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_KxTrajectoryColor, true));
+        float ConfigAlpha = g_Config.m_KxTrajectoryAlpha / 100.0f;
+        int LineSize = g_Config.m_KxTrajectoryLineSize;
 
         // If only the start point exists (no chunk generated yet, or all chunks
         // failed), render a small marker so the user sees the pathfinder is
@@ -570,7 +570,7 @@ void CBotNet::RenderPathfinderPath()
         }
 
         // === Show flow field (vector arrows pointing toward finish) ===
-        if(g_Config.m_ClPfShowField && m_PfFlowField && m_MapWidth > 0 && m_MapHeight > 0)
+        if(g_Config.m_KxPfShowField && m_PfFlowField && m_MapWidth > 0 && m_MapHeight > 0)
         {
                 int tx0 = pf_clamp((int)(pGame->m_Camera.m_Center.x / 32.0f) - 30, 0, m_MapWidth - 1);
                 int ty0 = pf_clamp((int)(pGame->m_Camera.m_Center.y / 32.0f) - 20, 0, m_MapHeight - 1);
@@ -629,7 +629,7 @@ void CBotNet::RenderPathfinderPath()
         }
 
         // === Show other branches (semi-transparent, using trajectory settings) ===
-        if(g_Config.m_ClPfShowBranches && m_PfANodes.size() > 1)
+        if(g_Config.m_KxPfShowBranches && m_PfANodes.size() > 1)
         {
                 float HalfWidth = 0.5f + (float)(LineSize - 1) * 0.25f;
                 if(LineSize > 0)
@@ -685,7 +685,7 @@ void CBotNet::RenderPathfinderPath()
         // in PfSimulateChunk (node.HookSegs). This shows multiple hook cycles inside
         // a single chunk (e.g. Advanced search per-tick hook fire), not just the
         // final HOOK_GRABBED state.
-        if(g_Config.m_ClPfShowHooks && m_PfANodes.size() > 0)
+        if(g_Config.m_KxPfShowHooks && m_PfANodes.size() > 0)
         {
                 // Find best path (same as preview)
                 int bestIdx = -1;
@@ -784,7 +784,7 @@ void CBotNet::RenderPathfinderPath()
                                 p1.x - Perp.x, p1.y - Perp.y,
                                 p1.x + Perp.x, p1.y + Perp.y);
 
-                        if(g_Config.m_ClPfShowSpeed)
+                        if(g_Config.m_KxPfShowSpeed)
                         {
                                 // Speed at start and end of this segment.
                                 float speed0 = (i > 1) ? distance(m_PfVPath[i - 2], m_PfVPath[i - 1]) : distance(p0, p1);
@@ -811,7 +811,7 @@ void CBotNet::RenderPathfinderPath()
                 Graphics()->LinesBegin();
                 for(size_t i = 1; i < m_PfVPath.size(); i++)
                 {
-                        if(g_Config.m_ClPfShowSpeed)
+                        if(g_Config.m_KxPfShowSpeed)
                         {
                                 float speed = distance(m_PfVPath[i - 1], m_PfVPath[i]);
                                 ColorRGBA c = fnSpeedColor(speed);
@@ -842,8 +842,8 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
         if(!pGame->m_PredictedWorld.GetCharacterById(LocalID))
                 return false;
 
-        int ChunkSize = pf_clamp(g_Config.m_ClPfChunkSize, CConfig::PF_CHUNK_SIZE_MIN, PF_TAB_MAX_CHUNK_TICKS);
-        int HookAngles = pf_clamp(g_Config.m_ClPfHookAngles, 4, 32);
+        int ChunkSize = pf_clamp(g_Config.m_KxPfChunkSize, CConfig::PF_CHUNK_SIZE_MIN, PF_TAB_MAX_CHUNK_TICKS);
+        int HookAngles = pf_clamp(g_Config.m_KxPfHookAngles, 4, 32);
 
         // Clean planning world (bot + collision only).  Other entities are
         // removed so they don't interfere with the prediction.
@@ -961,11 +961,11 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
                 vec2 endPos, endVel, endHookPos, endHookDir;
                 int endHookState, endHookTick, endJumped;
         };
-        // Top-N candidates (N = ClPfBacktrackCandidates, dynamic). Using a vector
+        // Top-N candidates (N = KxPfBacktrackCandidates, dynamic). Using a vector
         // keeps memory bounded — only N slots per chunk, freed on reset.
         // Max for current params = 3 * (ChunkSize+1) * (1+HookAngles) (see PF_CANDIDATES_MAX).
         const int dynMax = 3 * (ChunkSize + 1) * (1 + HookAngles);
-        const int N = pf_clamp(g_Config.m_ClPfBacktrackCandidates, CConfig::PF_CANDIDATES_MIN, dynMax);
+        const int N = pf_clamp(g_Config.m_KxPfBacktrackCandidates, CConfig::PF_CANDIDATES_MIN, dynMax);
         std::vector<CandidateResult> topCandidates(N);
         for(int i = 0; i < N; i++)
                 topCandidates[i].score = -1e18f;
@@ -974,7 +974,7 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
         // Same flat-counter mechanism as in PfAStarStep — each tick of every
         // candidate gets a unique (dir,jump,angle,hook) combination, the counter
         // keeps advancing across ticks and candidates without restart.
-        if(g_Config.m_ClPfAdvancedSearch)
+        if(g_Config.m_KxPfAdvancedSearch)
         {
                 bool hookIdleAdv = (pBot->GetCore().m_HookState == HOOK_IDLE);
                 bool hookActiveAdv = (pBot->GetCore().m_HookState == HOOK_FLYING || pBot->GetCore().m_HookState == HOOK_GRABBED);
@@ -991,7 +991,7 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
                 const int nHook = 2;
                 const long totalCombos = (long)nDir * nJump * nAngle * nHook; // = 12 * HookAngles
                 const int dynAdvMax = (int)((totalCombos + ChunkSize - 1) / ChunkSize);
-                int numCandidates = pf_clamp(g_Config.m_ClPfBacktrackCandidates, CConfig::PF_CANDIDATES_MIN, dynAdvMax);
+                int numCandidates = pf_clamp(g_Config.m_KxPfBacktrackCandidates, CConfig::PF_CANDIDATES_MIN, dynAdvMax);
                 if(numCandidates < 1) numCandidates = 1;
 
                 for(int cand = 0; cand < numCandidates; cand++)

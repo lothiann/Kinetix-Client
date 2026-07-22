@@ -3320,7 +3320,7 @@ void CMenus::RenderSettingsDummies(CUIRect MainView)
                 SectionH += 20.0f + RowGap; // Dummy hammer
                 SectionH += 20.0f + RowGap; // Preserve inputs
                 SectionH += 20.0f + RowGap; // Custom latency (checkbox)
-                if(g_Config.m_ClDummyHammerCustomLatency)
+                if(g_Config.m_KxDummyHammerCustomLatency)
                         SectionH += 20.0f + RowGap; // latency slider
                 SectionH += 20.0f; // Auto fly (last, no gap after)
                 SectionH += PanelPad;
@@ -3362,30 +3362,30 @@ void CMenus::RenderSettingsDummies(CUIRect MainView)
 
                 // Preserve inputs (DOIODH)
                 Panel.HSplitTop(20.0f, &Row, &Panel);
-                if(DoButton_CheckBox(&g_Config.m_ClDummyHammerKeepInputs, Localize("Preserve inputs"), g_Config.m_ClDummyHammerKeepInputs, &Row))
-                        g_Config.m_ClDummyHammerKeepInputs ^= 1;
-                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyHammerKeepInputs, &Row, Localize("Keep dummy movement inputs (direction/jump/hook) during hammerfly; aim is still overridden for hammer direction"));
+                if(DoButton_CheckBox(&g_Config.m_KxDummyHammerKeepInputs, Localize("Preserve inputs"), g_Config.m_KxDummyHammerKeepInputs, &Row))
+                        g_Config.m_KxDummyHammerKeepInputs ^= 1;
+                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_KxDummyHammerKeepInputs, &Row, Localize("Keep dummy movement inputs (direction/jump/hook) during hammerfly; aim is still overridden for hammer direction"));
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
 
                 // Custom latency (checkbox + conditional slider)
                 Panel.HSplitTop(20.0f, &Row, &Panel);
-                if(DoButton_CheckBox(&g_Config.m_ClDummyHammerCustomLatency, Localize("Custom latency"), g_Config.m_ClDummyHammerCustomLatency, &Row))
-                        g_Config.m_ClDummyHammerCustomLatency ^= 1;
-                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyHammerCustomLatency, &Row, Localize("Use custom hammer latency instead of default 500ms"));
+                if(DoButton_CheckBox(&g_Config.m_KxDummyHammerCustomLatency, Localize("Custom latency"), g_Config.m_KxDummyHammerCustomLatency, &Row))
+                        g_Config.m_KxDummyHammerCustomLatency ^= 1;
+                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_KxDummyHammerCustomLatency, &Row, Localize("Use custom hammer latency instead of default 500ms"));
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
 
-                if(g_Config.m_ClDummyHammerCustomLatency)
+                if(g_Config.m_KxDummyHammerCustomLatency)
                 {
                         Panel.HSplitTop(20.0f, &Row, &Panel);
-                        Ui()->DoScrollbarOption(&g_Config.m_ClDummyHammerLatencyMs, &g_Config.m_ClDummyHammerLatencyMs, &Row, Localize("Latency (ms)"), 50, 2000, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_NOCLAMPVALUE, "ms");
+                        Ui()->DoScrollbarOption(&g_Config.m_KxDummyHammerLatencyMs, &g_Config.m_KxDummyHammerLatencyMs, &Row, Localize("Latency (ms)"), 50, 2000, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_NOCLAMPVALUE, "ms");
                         Panel.HSplitTop(RowGap, nullptr, &Panel);
                 }
 
                 // Auto fly
                 Panel.HSplitTop(20.0f, &Row, &Panel);
-                if(DoButton_CheckBox(&g_Config.m_ClDummyHammerAuto, Localize("Auto fly"), g_Config.m_ClDummyHammerAuto, &Row))
-                        g_Config.m_ClDummyHammerAuto ^= 1;
-                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyHammerAuto, &Row, Localize("Dummy auto-hammers the active player every tick when in hammer radius (overrides custom latency)"));
+                if(DoButton_CheckBox(&g_Config.m_KxDummyHammerAuto, Localize("Auto fly"), g_Config.m_KxDummyHammerAuto, &Row))
+                        g_Config.m_KxDummyHammerAuto ^= 1;
+                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_KxDummyHammerAuto, &Row, Localize("Dummy auto-hammers the active player every tick when in hammer radius (overrides custom latency)"));
         }
 
         MainView.HSplitTop(PanelGap, nullptr, &MainView);
@@ -3400,12 +3400,12 @@ void CMenus::RenderSettingsDummies(CUIRect MainView)
                 SectionH += 25.0f + 5.0f;
                 // Copy Moves Filter + sub-checkboxes
                 SectionH += 20.0f + RowGap;
-                if(g_Config.m_ClDummyCopyMovesFilter)
+                if(g_Config.m_KxDummyCopyMovesFilter)
                         SectionH += 5 * (20.0f + RowGap);
                 // Mirror direction + Aim mode dropdown + conditional aim options
                 SectionH += 20.0f + RowGap;
                 SectionH += 20.0f + RowGap;
-                if(g_Config.m_ClDummyCopyAimMode == 1) // Mirror
+                if(g_Config.m_KxDummyCopyAimMode == 1) // Mirror
                         SectionH += 2 * (20.0f + RowGap);
                 else // Smart
                         SectionH += 20.0f + RowGap;
@@ -3453,16 +3453,16 @@ void CMenus::RenderSettingsDummies(CUIRect MainView)
 
                         // Aim
                         Panel.HSplitTop(20.0f, &Row, &Panel);
-                        if(DoButton_CheckBox(&g_Config.m_ClDummyAim, Localize("Aim"), g_Config.m_ClDummyAim, &Row))
-                                g_Config.m_ClDummyAim ^= 1;
-                        GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyAim, &Row, Localize("All dummies will copy your aim (requires Dummy control)"));
+                        if(DoButton_CheckBox(&g_Config.m_KxDummyAim, Localize("Aim"), g_Config.m_KxDummyAim, &Row))
+                                g_Config.m_KxDummyAim ^= 1;
+                        GameClient()->m_Tooltips.DoToolTip(&g_Config.m_KxDummyAim, &Row, Localize("All dummies will copy your aim (requires Dummy control)"));
                         Panel.HSplitTop(RowGap, nullptr, &Panel);
 
                         // Direction
                         Panel.HSplitTop(20.0f, &Row, &Panel);
-                        if(DoButton_CheckBox(&g_Config.m_ClDummyDirection, Localize("Direction"), g_Config.m_ClDummyDirection, &Row))
-                                g_Config.m_ClDummyDirection ^= 1;
-                        GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyDirection, &Row, Localize("All dummies will copy your movement direction (requires Dummy control)"));
+                        if(DoButton_CheckBox(&g_Config.m_KxDummyDirection, Localize("Direction"), g_Config.m_KxDummyDirection, &Row))
+                                g_Config.m_KxDummyDirection ^= 1;
+                        GameClient()->m_Tooltips.DoToolTip(&g_Config.m_KxDummyDirection, &Row, Localize("All dummies will copy your movement direction (requires Dummy control)"));
                         Panel.HSplitTop(RowGap, nullptr, &Panel);
                 }
 
@@ -3473,45 +3473,45 @@ void CMenus::RenderSettingsDummies(CUIRect MainView)
 
                 // Copy Moves Filter (filters which fields copy_moves copies)
                 Panel.HSplitTop(20.0f, &Row, &Panel);
-                if(DoButton_CheckBox(&g_Config.m_ClDummyCopyMovesFilter, Localize("Copy Moves Filter"), g_Config.m_ClDummyCopyMovesFilter, &Row))
-                        g_Config.m_ClDummyCopyMovesFilter ^= 1;
-                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyCopyMovesFilter, &Row, Localize("When on with copy moves, only copy selected inputs (jump/direction/hook/aim/fire) instead of all"));
+                if(DoButton_CheckBox(&g_Config.m_KxDummyCopyMovesFilter, Localize("Copy Moves Filter"), g_Config.m_KxDummyCopyMovesFilter, &Row))
+                        g_Config.m_KxDummyCopyMovesFilter ^= 1;
+                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_KxDummyCopyMovesFilter, &Row, Localize("When on with copy moves, only copy selected inputs (jump/direction/hook/aim/fire) instead of all"));
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
 
-                if(g_Config.m_ClDummyCopyMovesFilter)
+                if(g_Config.m_KxDummyCopyMovesFilter)
                 {
                         // Filter sub-checkboxes
                         Panel.HSplitTop(20.0f, &Row, &Panel);
-                        if(DoButton_CheckBox(&g_Config.m_ClDummyCopyMovesFilterJump, Localize("Filter: Jump"), g_Config.m_ClDummyCopyMovesFilterJump, &Row))
-                                g_Config.m_ClDummyCopyMovesFilterJump ^= 1;
+                        if(DoButton_CheckBox(&g_Config.m_KxDummyCopyMovesFilterJump, Localize("Filter: Jump"), g_Config.m_KxDummyCopyMovesFilterJump, &Row))
+                                g_Config.m_KxDummyCopyMovesFilterJump ^= 1;
                         Panel.HSplitTop(RowGap, nullptr, &Panel);
 
                         Panel.HSplitTop(20.0f, &Row, &Panel);
-                        if(DoButton_CheckBox(&g_Config.m_ClDummyCopyMovesFilterDirection, Localize("Filter: Direction"), g_Config.m_ClDummyCopyMovesFilterDirection, &Row))
-                                g_Config.m_ClDummyCopyMovesFilterDirection ^= 1;
+                        if(DoButton_CheckBox(&g_Config.m_KxDummyCopyMovesFilterDirection, Localize("Filter: Direction"), g_Config.m_KxDummyCopyMovesFilterDirection, &Row))
+                                g_Config.m_KxDummyCopyMovesFilterDirection ^= 1;
                         Panel.HSplitTop(RowGap, nullptr, &Panel);
 
                         Panel.HSplitTop(20.0f, &Row, &Panel);
-                        if(DoButton_CheckBox(&g_Config.m_ClDummyCopyMovesFilterHook, Localize("Filter: Hook"), g_Config.m_ClDummyCopyMovesFilterHook, &Row))
-                                g_Config.m_ClDummyCopyMovesFilterHook ^= 1;
+                        if(DoButton_CheckBox(&g_Config.m_KxDummyCopyMovesFilterHook, Localize("Filter: Hook"), g_Config.m_KxDummyCopyMovesFilterHook, &Row))
+                                g_Config.m_KxDummyCopyMovesFilterHook ^= 1;
                         Panel.HSplitTop(RowGap, nullptr, &Panel);
 
                         Panel.HSplitTop(20.0f, &Row, &Panel);
-                        if(DoButton_CheckBox(&g_Config.m_ClDummyCopyMovesFilterAim, Localize("Filter: Aim"), g_Config.m_ClDummyCopyMovesFilterAim, &Row))
-                                g_Config.m_ClDummyCopyMovesFilterAim ^= 1;
+                        if(DoButton_CheckBox(&g_Config.m_KxDummyCopyMovesFilterAim, Localize("Filter: Aim"), g_Config.m_KxDummyCopyMovesFilterAim, &Row))
+                                g_Config.m_KxDummyCopyMovesFilterAim ^= 1;
                         Panel.HSplitTop(RowGap, nullptr, &Panel);
 
                         Panel.HSplitTop(20.0f, &Row, &Panel);
-                        if(DoButton_CheckBox(&g_Config.m_ClDummyCopyMovesFilterFire, Localize("Filter: Fire"), g_Config.m_ClDummyCopyMovesFilterFire, &Row))
-                                g_Config.m_ClDummyCopyMovesFilterFire ^= 1;
+                        if(DoButton_CheckBox(&g_Config.m_KxDummyCopyMovesFilterFire, Localize("Filter: Fire"), g_Config.m_KxDummyCopyMovesFilterFire, &Row))
+                                g_Config.m_KxDummyCopyMovesFilterFire ^= 1;
                         Panel.HSplitTop(RowGap, nullptr, &Panel);
                 }
 
                 // Mirror direction
                 Panel.HSplitTop(20.0f, &Row, &Panel);
-                if(DoButton_CheckBox(&g_Config.m_ClDummyCopyMirrorDir, Localize("Mirror direction"), g_Config.m_ClDummyCopyMirrorDir, &Row))
-                        g_Config.m_ClDummyCopyMirrorDir ^= 1;
-                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyCopyMirrorDir, &Row, Localize("Mirror direction of inactive dummies by XOR when copy moves is on"));
+                if(DoButton_CheckBox(&g_Config.m_KxDummyCopyMirrorDir, Localize("Mirror direction"), g_Config.m_KxDummyCopyMirrorDir, &Row))
+                        g_Config.m_KxDummyCopyMirrorDir ^= 1;
+                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_KxDummyCopyMirrorDir, &Row, Localize("Mirror direction of inactive dummies by XOR when copy moves is on"));
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
 
                 // Aim mode dropdown (Smart / Mirror)
@@ -3522,34 +3522,34 @@ void CMenus::RenderSettingsDummies(CUIRect MainView)
                         Ui()->DoLabel(&LabelRect, Localize("Aim mode"), 13.0f, TEXTALIGN_ML);
                         static const char *s_apAimModeNames[] = {"Smart", "Mirror"};
                         static CButtonContainer s_AimModeButton;
-                        if(DoButton_MenuTab(&s_AimModeButton, s_apAimModeNames[g_Config.m_ClDummyCopyAimMode], 0, &ButtonRect, IGraphics::CORNER_ALL))
+                        if(DoButton_MenuTab(&s_AimModeButton, s_apAimModeNames[g_Config.m_KxDummyCopyAimMode], 0, &ButtonRect, IGraphics::CORNER_ALL))
                         {
-                                g_Config.m_ClDummyCopyAimMode = (g_Config.m_ClDummyCopyAimMode + 1) % 2;
+                                g_Config.m_KxDummyCopyAimMode = (g_Config.m_KxDummyCopyAimMode + 1) % 2;
                         }
-                        GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyCopyAimMode, &Row, Localize("Aim mode for copy moves: Smart (world coords) or Mirror (reflect aim)"));
+                        GameClient()->m_Tooltips.DoToolTip(&g_Config.m_KxDummyCopyAimMode, &Row, Localize("Aim mode for copy moves: Smart (world coords) or Mirror (reflect aim)"));
                 }
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
 
                 // Conditional aim options based on mode.
-                if(g_Config.m_ClDummyCopyAimMode == 1) // Mirror
+                if(g_Config.m_KxDummyCopyAimMode == 1) // Mirror
                 {
                         Panel.HSplitTop(20.0f, &Row, &Panel);
-                        if(DoButton_CheckBox(&g_Config.m_ClDummyCopyMirrorAimX, Localize("Mirror Aim X"), g_Config.m_ClDummyCopyMirrorAimX, &Row))
-                                g_Config.m_ClDummyCopyMirrorAimX ^= 1;
-                        GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyCopyMirrorAimX, &Row, Localize("Mirror aim X of inactive dummies when copy moves is on (mirror mode)"));
+                        if(DoButton_CheckBox(&g_Config.m_KxDummyCopyMirrorAimX, Localize("Mirror Aim X"), g_Config.m_KxDummyCopyMirrorAimX, &Row))
+                                g_Config.m_KxDummyCopyMirrorAimX ^= 1;
+                        GameClient()->m_Tooltips.DoToolTip(&g_Config.m_KxDummyCopyMirrorAimX, &Row, Localize("Mirror aim X of inactive dummies when copy moves is on (mirror mode)"));
                         Panel.HSplitTop(RowGap, nullptr, &Panel);
 
                         Panel.HSplitTop(20.0f, &Row, &Panel);
-                        if(DoButton_CheckBox(&g_Config.m_ClDummyCopyMirrorAimY, Localize("Mirror Aim Y"), g_Config.m_ClDummyCopyMirrorAimY, &Row))
-                                g_Config.m_ClDummyCopyMirrorAimY ^= 1;
-                        GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyCopyMirrorAimY, &Row, Localize("Mirror aim Y of inactive dummies when copy moves is on (mirror mode)"));
+                        if(DoButton_CheckBox(&g_Config.m_KxDummyCopyMirrorAimY, Localize("Mirror Aim Y"), g_Config.m_KxDummyCopyMirrorAimY, &Row))
+                                g_Config.m_KxDummyCopyMirrorAimY ^= 1;
+                        GameClient()->m_Tooltips.DoToolTip(&g_Config.m_KxDummyCopyMirrorAimY, &Row, Localize("Mirror aim Y of inactive dummies when copy moves is on (mirror mode)"));
                 }
                 else // Smart
                 {
                         Panel.HSplitTop(20.0f, &Row, &Panel);
-                        if(DoButton_CheckBox(&g_Config.m_ClDummyCopySmartAim, Localize("Smart Aim"), g_Config.m_ClDummyCopySmartAim, &Row))
-                                g_Config.m_ClDummyCopySmartAim ^= 1;
-                        GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClDummyCopySmartAim, &Row, Localize("Smart aim: inactive dummies aim at the same world point as the player (smart mode)"));
+                        if(DoButton_CheckBox(&g_Config.m_KxDummyCopySmartAim, Localize("Smart Aim"), g_Config.m_KxDummyCopySmartAim, &Row))
+                                g_Config.m_KxDummyCopySmartAim ^= 1;
+                        GameClient()->m_Tooltips.DoToolTip(&g_Config.m_KxDummyCopySmartAim, &Row, Localize("Smart aim: inactive dummies aim at the same world point as the player (smart mode)"));
                 }
         }
 
@@ -4824,7 +4824,7 @@ void CMenus::RenderSettingsAdvanced(CUIRect MainView)
         s_AdvancedScrollRegion.Begin(&MainView, &ScrollParams);
 
         CUIRect Row, Label;
-        int TargetDummy = g_Config.m_ClBotTargetDummy;
+        int TargetDummy = g_Config.m_KxBotTargetDummy;
 
         MainView.HSplitTop(5.0f, nullptr, &MainView);
 
@@ -4873,7 +4873,7 @@ void CMenus::RenderSettingsAdvanced(CUIRect MainView)
 
                                         if(DoButton_MenuTab(&s_aAdvDummyButtons[D], aName, Active ? 1 : 0, &Btn, IGraphics::CORNER_ALL))
                                         {
-                                                g_Config.m_ClBotTargetDummy = D;
+                                                g_Config.m_KxBotTargetDummy = D;
                                         }
                                 }
                         }
@@ -4924,7 +4924,7 @@ void CMenus::RenderSettingsAdvanced(CUIRect MainView)
 
                         // Duration slider
                         Panel.HSplitTop(20.0f, &Row, &Panel);
-                        Ui()->DoScrollbarOption(&g_Config.m_ClBotActionDuration, &g_Config.m_ClBotActionDuration, &Row, Localize("Action duration (ms)"), 100, 10000);
+                        Ui()->DoScrollbarOption(&g_Config.m_KxBotActionDuration, &g_Config.m_KxBotActionDuration, &Row, Localize("Action duration (ms)"), 100, 10000);
                 }
 
                 MainView.HSplitTop(PanelGap, nullptr, &MainView);
@@ -4973,7 +4973,7 @@ void CMenus::RenderSettingsAdvanced(CUIRect MainView)
 
                                         if(DoButton_Menu(apBtnIds[i], Localize(apActions[i]), Active ? 1 : 0, &Btn))
                                         {
-                                                GameClient()->m_BotControl.ActionInput(apCmdNames[i], g_Config.m_ClBotActionDuration, TargetDummy);
+                                                GameClient()->m_BotControl.ActionInput(apCmdNames[i], g_Config.m_KxBotActionDuration, TargetDummy);
                                         }
                                 }
                         }
@@ -5101,32 +5101,32 @@ void CMenus::RenderSettingsAdvanced(CUIRect MainView)
 
                         // Show trajectory checkbox
                         Panel.HSplitTop(20.0f, &Row, &Panel);
-                        if(DoButton_CheckBox(&g_Config.m_ClShowTrajectory, Localize("Show trajectory"), g_Config.m_ClShowTrajectory, &Row))
-                                g_Config.m_ClShowTrajectory ^= 1;
+                        if(DoButton_CheckBox(&g_Config.m_KxShowTrajectory, Localize("Show trajectory"), g_Config.m_KxShowTrajectory, &Row))
+                                g_Config.m_KxShowTrajectory ^= 1;
 
                         Panel.HSplitTop(RowGap, nullptr, &Panel);
 
                         // Ticks slider
                         Panel.HSplitTop(20.0f, &Row, &Panel);
-                        Ui()->DoScrollbarOption(&g_Config.m_ClTrajectoryTicks, &g_Config.m_ClTrajectoryTicks, &Row, Localize("Prediction ticks"), 1, 50);
+                        Ui()->DoScrollbarOption(&g_Config.m_KxTrajectoryTicks, &g_Config.m_KxTrajectoryTicks, &Row, Localize("Prediction ticks"), 1, 50);
 
                         Panel.HSplitTop(RowGap, nullptr, &Panel);
 
                         // Line width slider
                         Panel.HSplitTop(20.0f, &Row, &Panel);
-                        Ui()->DoScrollbarOption(&g_Config.m_ClTrajectoryLineSize, &g_Config.m_ClTrajectoryLineSize, &Row, Localize("Line margin"), 0, 20);
+                        Ui()->DoScrollbarOption(&g_Config.m_KxTrajectoryLineSize, &g_Config.m_KxTrajectoryLineSize, &Row, Localize("Line margin"), 0, 20);
 
                         Panel.HSplitTop(RowGap, nullptr, &Panel);
 
                         // Color picker
                         static CButtonContainer s_TrajectoryColorId;
-                        DoLine_ColorPicker(&s_TrajectoryColorId, 25.0f, 13.0f, 0.0f, &Panel, Localize("Line color"), &g_Config.m_ClTrajectoryColor, color_cast<ColorRGBA>(ColorHSLA(65471, true)), false);
+                        DoLine_ColorPicker(&s_TrajectoryColorId, 25.0f, 13.0f, 0.0f, &Panel, Localize("Line color"), &g_Config.m_KxTrajectoryColor, color_cast<ColorRGBA>(ColorHSLA(65471, true)), false);
 
                         Panel.HSplitTop(RowGap, nullptr, &Panel);
 
                         // Alpha slider
                         Panel.HSplitTop(20.0f, &Row, &Panel);
-                        Ui()->DoScrollbarOption(&g_Config.m_ClTrajectoryAlpha, &g_Config.m_ClTrajectoryAlpha, &Row, Localize("Line opacity"), 0, 100);
+                        Ui()->DoScrollbarOption(&g_Config.m_KxTrajectoryAlpha, &g_Config.m_KxTrajectoryAlpha, &Row, Localize("Line opacity"), 0, 100);
                 }
 
                 MainView.HSplitTop(PanelGap, nullptr, &MainView);
@@ -5135,7 +5135,7 @@ void CMenus::RenderSettingsAdvanced(CUIRect MainView)
                 {
                         float SectionH = PanelPad + 25.0f + 5.0f; // header
                         SectionH += 20.0f + RowGap; // Laser unfreeze toggle
-                        if(g_Config.m_ClLaserUnfreeze)
+                        if(g_Config.m_KxLaserUnfreeze)
                         {
                                 SectionH += 20.0f + RowGap; // Auto laser
                                 SectionH += 20.0f + RowGap; // FOV
@@ -5156,45 +5156,45 @@ void CMenus::RenderSettingsAdvanced(CUIRect MainView)
                         Panel.HSplitTop(5.0f, nullptr, &Panel);
 
                         Panel.HSplitTop(20.0f, &Row, &Panel);
-                        if(DoButton_CheckBox(&g_Config.m_ClLaserUnfreeze, Localize("Laser unfreeze"), g_Config.m_ClLaserUnfreeze, &Row))
-                                g_Config.m_ClLaserUnfreeze ^= 1;
-                        GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClLaserUnfreeze, &Row, Localize("Predict freeze and auto-fire laser to unfreeze self"));
+                        if(DoButton_CheckBox(&g_Config.m_KxLaserUnfreeze, Localize("Laser unfreeze"), g_Config.m_KxLaserUnfreeze, &Row))
+                                g_Config.m_KxLaserUnfreeze ^= 1;
+                        GameClient()->m_Tooltips.DoToolTip(&g_Config.m_KxLaserUnfreeze, &Row, Localize("Predict freeze and auto-fire laser to unfreeze self"));
                         Panel.HSplitTop(RowGap, nullptr, &Panel);
 
-                        if(g_Config.m_ClLaserUnfreeze)
+                        if(g_Config.m_KxLaserUnfreeze)
                         {
                                 Panel.HSplitTop(20.0f, &Row, &Panel);
-                                if(DoButton_CheckBox(&g_Config.m_ClLaserUnfreezeAuto, Localize("Auto laser"), g_Config.m_ClLaserUnfreezeAuto, &Row))
-                                        g_Config.m_ClLaserUnfreezeAuto ^= 1;
-                                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClLaserUnfreezeAuto, &Row, Localize("Auto switch to laser weapon before firing"));
+                                if(DoButton_CheckBox(&g_Config.m_KxLaserUnfreezeAuto, Localize("Auto laser"), g_Config.m_KxLaserUnfreezeAuto, &Row))
+                                        g_Config.m_KxLaserUnfreezeAuto ^= 1;
+                                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_KxLaserUnfreezeAuto, &Row, Localize("Auto switch to laser weapon before firing"));
                                 Panel.HSplitTop(RowGap, nullptr, &Panel);
 
                                 Panel.HSplitTop(20.0f, &Row, &Panel);
-                                Ui()->DoScrollbarOption(&g_Config.m_ClLaserUnfreezeFov, &g_Config.m_ClLaserUnfreezeFov, &Row, Localize("FOV"), 5, 360);
+                                Ui()->DoScrollbarOption(&g_Config.m_KxLaserUnfreezeFov, &g_Config.m_KxLaserUnfreezeFov, &Row, Localize("FOV"), 5, 360);
                                 Panel.HSplitTop(RowGap, nullptr, &Panel);
 
                                 Panel.HSplitTop(20.0f, &Row, &Panel);
-                                Ui()->DoScrollbarOption(&g_Config.m_ClLaserUnfreezeAngles, &g_Config.m_ClLaserUnfreezeAngles, &Row, Localize("Angles"), 1, 144);
+                                Ui()->DoScrollbarOption(&g_Config.m_KxLaserUnfreezeAngles, &g_Config.m_KxLaserUnfreezeAngles, &Row, Localize("Angles"), 1, 144);
                                 Panel.HSplitTop(RowGap, nullptr, &Panel);
 
                                 Panel.HSplitTop(20.0f, &Row, &Panel);
-                                Ui()->DoScrollbarOption(&g_Config.m_ClLaserUnfreezeTicks, &g_Config.m_ClLaserUnfreezeTicks, &Row, Localize("Ticks"), 1, 50);
+                                Ui()->DoScrollbarOption(&g_Config.m_KxLaserUnfreezeTicks, &g_Config.m_KxLaserUnfreezeTicks, &Row, Localize("Ticks"), 1, 50);
                                 Panel.HSplitTop(RowGap, nullptr, &Panel);
 
                                 Panel.HSplitTop(20.0f, &Row, &Panel);
-                                Ui()->DoScrollbarOption(&g_Config.m_ClLaserUnfreezeTriggerTicks, &g_Config.m_ClLaserUnfreezeTriggerTicks, &Row, Localize("Trigger ticks"), 1, 5);
+                                Ui()->DoScrollbarOption(&g_Config.m_KxLaserUnfreezeTriggerTicks, &g_Config.m_KxLaserUnfreezeTriggerTicks, &Row, Localize("Trigger ticks"), 1, 5);
                                 Panel.HSplitTop(RowGap, nullptr, &Panel);
 
                                 Panel.HSplitTop(20.0f, &Row, &Panel);
-                                if(DoButton_CheckBox(&g_Config.m_ClLaserUnfreezeSilent, Localize("Silent"), g_Config.m_ClLaserUnfreezeSilent, &Row))
-                                        g_Config.m_ClLaserUnfreezeSilent ^= 1;
-                                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClLaserUnfreezeSilent, &Row, Localize("Don't change crosshair — only send aim to server"));
+                                if(DoButton_CheckBox(&g_Config.m_KxLaserUnfreezeSilent, Localize("Silent"), g_Config.m_KxLaserUnfreezeSilent, &Row))
+                                        g_Config.m_KxLaserUnfreezeSilent ^= 1;
+                                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_KxLaserUnfreezeSilent, &Row, Localize("Don't change crosshair — only send aim to server"));
                                 Panel.HSplitTop(RowGap, nullptr, &Panel);
 
                                 Panel.HSplitTop(20.0f, &Row, &Panel);
-                                if(DoButton_CheckBox(&g_Config.m_ClLaserUnfreezeShowAttempt, Localize("Show attempt"), g_Config.m_ClLaserUnfreezeShowAttempt, &Row))
-                                        g_Config.m_ClLaserUnfreezeShowAttempt ^= 1;
-                                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClLaserUnfreezeShowAttempt, &Row, Localize("Render successful laser path as blue line with 5s fade"));
+                                if(DoButton_CheckBox(&g_Config.m_KxLaserUnfreezeShowAttempt, Localize("Show attempt"), g_Config.m_KxLaserUnfreezeShowAttempt, &Row))
+                                        g_Config.m_KxLaserUnfreezeShowAttempt ^= 1;
+                                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_KxLaserUnfreezeShowAttempt, &Row, Localize("Render successful laser path as blue line with 5s fade"));
                                 Panel.HSplitTop(RowGap, nullptr, &Panel);
                         }
                 }
@@ -5205,7 +5205,7 @@ void CMenus::RenderSettingsAdvanced(CUIRect MainView)
                 {
                         float SectionH = PanelPad + 25.0f + 5.0f;
                         SectionH += 20.0f + RowGap; // Fake Aim toggle
-                        if(g_Config.m_ClFakeAim)
+                        if(g_Config.m_KxFakeAim)
                         {
                                 SectionH += 20.0f + RowGap; // Mode
                                 SectionH += 20.0f + RowGap; // Speed
@@ -5222,12 +5222,12 @@ void CMenus::RenderSettingsAdvanced(CUIRect MainView)
                         Panel.HSplitTop(5.0f, nullptr, &Panel);
 
                         Panel.HSplitTop(20.0f, &Row, &Panel);
-                        if(DoButton_CheckBox(&g_Config.m_ClFakeAim, Localize("Fake Aim"), g_Config.m_ClFakeAim, &Row))
-                                g_Config.m_ClFakeAim ^= 1;
-                        GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClFakeAim, &Row, Localize("Send fake aim to server for fun"));
+                        if(DoButton_CheckBox(&g_Config.m_KxFakeAim, Localize("Fake Aim"), g_Config.m_KxFakeAim, &Row))
+                                g_Config.m_KxFakeAim ^= 1;
+                        GameClient()->m_Tooltips.DoToolTip(&g_Config.m_KxFakeAim, &Row, Localize("Send fake aim to server for fun"));
                         Panel.HSplitTop(RowGap, nullptr, &Panel);
 
-                        if(g_Config.m_ClFakeAim)
+                        if(g_Config.m_KxFakeAim)
                         {
                                 Panel.HSplitTop(20.0f, &Row, &Panel);
                                 {
@@ -5236,19 +5236,19 @@ void CMenus::RenderSettingsAdvanced(CUIRect MainView)
                                         Ui()->DoLabel(&LabelRect, Localize("Mode"), 13.0f, TEXTALIGN_ML);
                                         static const char *s_apFakeAimModeNames[] = {"Random", "Robot", "Spin"};
                                         static CButtonContainer s_FakeAimModeButton;
-                                        if(DoButton_MenuTab(&s_FakeAimModeButton, s_apFakeAimModeNames[g_Config.m_ClFakeAimMode], 0, &ButtonRect, IGraphics::CORNER_ALL))
-                                                g_Config.m_ClFakeAimMode = (g_Config.m_ClFakeAimMode + 1) % 3;
+                                        if(DoButton_MenuTab(&s_FakeAimModeButton, s_apFakeAimModeNames[g_Config.m_KxFakeAimMode], 0, &ButtonRect, IGraphics::CORNER_ALL))
+                                                g_Config.m_KxFakeAimMode = (g_Config.m_KxFakeAimMode + 1) % 3;
                                 }
                                 Panel.HSplitTop(RowGap, nullptr, &Panel);
 
                                 Panel.HSplitTop(20.0f, &Row, &Panel);
-                                Ui()->DoScrollbarOption(&g_Config.m_ClFakeAimSpeed, &g_Config.m_ClFakeAimSpeed, &Row, Localize("Speed"), 1, 100);
+                                Ui()->DoScrollbarOption(&g_Config.m_KxFakeAimSpeed, &g_Config.m_KxFakeAimSpeed, &Row, Localize("Speed"), 1, 100);
                                 Panel.HSplitTop(RowGap, nullptr, &Panel);
 
                                 Panel.HSplitTop(20.0f, &Row, &Panel);
-                                if(DoButton_CheckBox(&g_Config.m_ClFakeAimShowForMe, Localize("Show for me"), g_Config.m_ClFakeAimShowForMe, &Row))
-                                        g_Config.m_ClFakeAimShowForMe ^= 1;
-                                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClFakeAimShowForMe, &Row, Localize("Show fake aim on player's crosshair"));
+                                if(DoButton_CheckBox(&g_Config.m_KxFakeAimShowForMe, Localize("Show for me"), g_Config.m_KxFakeAimShowForMe, &Row))
+                                        g_Config.m_KxFakeAimShowForMe ^= 1;
+                                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_KxFakeAimShowForMe, &Row, Localize("Show fake aim on player's crosshair"));
                                 Panel.HSplitTop(RowGap, nullptr, &Panel);
                         }
                 }
@@ -5258,7 +5258,7 @@ void CMenus::RenderSettingsAdvanced(CUIRect MainView)
                 // === Macro Panel ===
                 {
                         CBotNet &BN = GameClient()->m_BotNet;
-                        CBotNetDummy &D0 = BN.m_aDummies[g_Config.m_ClBotTargetDummy > 0 ? g_Config.m_ClBotTargetDummy : 0];
+                        CBotNetDummy &D0 = BN.m_aDummies[g_Config.m_KxBotTargetDummy > 0 ? g_Config.m_KxBotTargetDummy : 0];
                         bool IsRecording = D0.m_MacroRecording;
                         bool IsPlaying = D0.m_MacroPlaying;
                         int CaptureID = D0.m_MacroCaptureID;
@@ -5441,23 +5441,23 @@ void CMenus::RenderSettingsBotSettings(CUIRect MainView)
 
                 // IRC Enabled
                 Panel.HSplitTop(20.0f, &Row, &Panel);
-                if(DoButton_CheckBox(&g_Config.m_ClIrcEnabled, Localize("Enable IRC"), g_Config.m_ClIrcEnabled, &Row))
-                        g_Config.m_ClIrcEnabled ^= 1;
-                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClIrcEnabled, &Row, Localize("Enable emote-based IRC communication and decode incoming messages"));
+                if(DoButton_CheckBox(&g_Config.m_KxIrcEnabled, Localize("Enable IRC"), g_Config.m_KxIrcEnabled, &Row))
+                        g_Config.m_KxIrcEnabled ^= 1;
+                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_KxIrcEnabled, &Row, Localize("Enable emote-based IRC communication and decode incoming messages"));
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
 
                 // Reveal Join
                 Panel.HSplitTop(20.0f, &Row, &Panel);
-                if(DoButton_CheckBox(&g_Config.m_ClIrcRevealJoin, Localize("Reveal join"), g_Config.m_ClIrcRevealJoin, &Row))
-                        g_Config.m_ClIrcRevealJoin ^= 1;
-                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClIrcRevealJoin, &Row, Localize("Send handshake on join to reveal yourself as an IRC user (DMC/CFF)"));
+                if(DoButton_CheckBox(&g_Config.m_KxIrcRevealJoin, Localize("Reveal join"), g_Config.m_KxIrcRevealJoin, &Row))
+                        g_Config.m_KxIrcRevealJoin ^= 1;
+                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_KxIrcRevealJoin, &Row, Localize("Send handshake on join to reveal yourself as an IRC user (DMC/CFF)"));
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
 
                 // Nameplate Tag
                 Panel.HSplitTop(20.0f, &Row, &Panel);
-                if(DoButton_CheckBox(&g_Config.m_ClIrcNameplateTag, Localize("Nameplate tag"), g_Config.m_ClIrcNameplateTag, &Row))
-                        g_Config.m_ClIrcNameplateTag ^= 1;
-                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClIrcNameplateTag, &Row, Localize("Show client tag (e.g. [DMC], [CFF]) in player nameplates if IRC user detected"));
+                if(DoButton_CheckBox(&g_Config.m_KxIrcNameplateTag, Localize("Nameplate tag"), g_Config.m_KxIrcNameplateTag, &Row))
+                        g_Config.m_KxIrcNameplateTag ^= 1;
+                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_KxIrcNameplateTag, &Row, Localize("Show client tag (e.g. [DMC], [CFF]) in player nameplates if IRC user detected"));
 
                 // Credits
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
@@ -5477,7 +5477,7 @@ void CMenus::RenderSettingsBotSettings(CUIRect MainView)
         // Real GAME_NAME (window title, HTTP UA, logs) is NOT touched.
         // Server never kicks on these fields — they are only logged / displayed.
         {
-                // Presets table: index = ClSpoofClientPreset
+                // Presets table: index = KxSpoofClientPreset
                 // 0 = DDNet 19.8.2 (latest stable, git cbb22df93df2d97c)
                 // 1 = T-Client     (CLIENT_NAME="TClient", version="10.8.7", DDNetVersion=19080)
                 // 2 = Best Client  (CLIENT_NAME="BestClient", version="1.9 beta", DDNetVersion=19080)
@@ -5494,11 +5494,11 @@ void CMenus::RenderSettingsBotSettings(CUIRect MainView)
                 static const int s_aPresetVersionIds[] = {19082, 19080, 19080, 20000};
 
                 float SectionH = PanelPad + 25.0f + 5.0f + 20.0f; // header + enable checkbox
-                if(g_Config.m_ClSpoofClientStr)
+                if(g_Config.m_KxSpoofClientStr)
                 {
                         SectionH += RowGap + 20.0f; // Version ID slider
                         SectionH += RowGap + 20.0f; // Client name dropdown
-                        if(g_Config.m_ClSpoofClientPreset == PRESET_CUSTOM)
+                        if(g_Config.m_KxSpoofClientPreset == PRESET_CUSTOM)
                                 SectionH += RowGap + 20.0f; // Custom client name field
                         SectionH += RowGap + 20.0f; // Client version field
                         SectionH += RowGap + 20.0f; // Git hash checkbox + field (same row)
@@ -5517,18 +5517,18 @@ void CMenus::RenderSettingsBotSettings(CUIRect MainView)
 
                 // Enable checkbox
                 Panel.HSplitTop(20.0f, &Row, &Panel);
-                if(DoButton_CheckBox(&g_Config.m_ClSpoofClientStr, Localize("Spoofer"), g_Config.m_ClSpoofClientStr, &Row))
-                        g_Config.m_ClSpoofClientStr ^= 1;
-                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_ClSpoofClientStr, &Row, Localize("Spoof client identity (name, version, git hash, version ID) sent to the server in NETMSG_CLIENTVER. Does not affect NetVersion — server won't kick."));
+                if(DoButton_CheckBox(&g_Config.m_KxSpoofClientStr, Localize("Spoofer"), g_Config.m_KxSpoofClientStr, &Row))
+                        g_Config.m_KxSpoofClientStr ^= 1;
+                GameClient()->m_Tooltips.DoToolTip(&g_Config.m_KxSpoofClientStr, &Row, Localize("Spoof client identity (name, version, git hash, version ID) sent to the server in NETMSG_CLIENTVER. Does not affect NetVersion — server won't kick."));
 
-                if(g_Config.m_ClSpoofClientStr)
+                if(g_Config.m_KxSpoofClientStr)
                 {
                         // Row: Version ID (slider, 10000-21000, exact value)
                         Panel.HSplitTop(RowGap, nullptr, &Panel);
                         Panel.HSplitTop(20.0f, &Row, &Panel);
-                        int SpoofId = g_Config.m_ClVersionSpoofId;
-                        Ui()->DoScrollbarOption(&g_Config.m_ClVersionSpoofId, &SpoofId, &Row, Localize("Version ID"), 10000, 21000, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
-                        g_Config.m_ClVersionSpoofId = SpoofId;
+                        int SpoofId = g_Config.m_KxVersionSpoofId;
+                        Ui()->DoScrollbarOption(&g_Config.m_KxVersionSpoofId, &SpoofId, &Row, Localize("Version ID"), 10000, 21000, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
+                        g_Config.m_KxVersionSpoofId = SpoofId;
 
                         // Row: Client name (dropdown)
                         Panel.HSplitTop(RowGap, nullptr, &Panel);
@@ -5541,29 +5541,29 @@ void CMenus::RenderSettingsBotSettings(CUIRect MainView)
                                 static CUi::SDropDownState s_PresetDropDownState;
                                 static CScrollRegion s_PresetDropDownScrollRegion;
                                 s_PresetDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_PresetDropDownScrollRegion;
-                                const int NewPreset = Ui()->DoDropDown(&DropDown, g_Config.m_ClSpoofClientPreset, apPresetNames, 4, s_PresetDropDownState);
-                                if(NewPreset != g_Config.m_ClSpoofClientPreset)
+                                const int NewPreset = Ui()->DoDropDown(&DropDown, g_Config.m_KxSpoofClientPreset, apPresetNames, 4, s_PresetDropDownState);
+                                if(NewPreset != g_Config.m_KxSpoofClientPreset)
                                 {
-                                        g_Config.m_ClSpoofClientPreset = NewPreset;
+                                        g_Config.m_KxSpoofClientPreset = NewPreset;
                                         // Auto-apply preset: name, version, version ID
                                         if(NewPreset != PRESET_CUSTOM)
                                         {
-                                                str_copy(g_Config.m_ClSpoofClientName, s_apPresetClientNames[NewPreset], sizeof(g_Config.m_ClSpoofClientName));
-                                                str_copy(g_Config.m_ClSpoofClientVersion, s_apPresetVersions[NewPreset], sizeof(g_Config.m_ClSpoofClientVersion));
-                                                g_Config.m_ClVersionSpoofId = s_aPresetVersionIds[NewPreset];
+                                                str_copy(g_Config.m_KxSpoofClientName, s_apPresetClientNames[NewPreset], sizeof(g_Config.m_KxSpoofClientName));
+                                                str_copy(g_Config.m_KxSpoofClientVersion, s_apPresetVersions[NewPreset], sizeof(g_Config.m_KxSpoofClientVersion));
+                                                g_Config.m_KxVersionSpoofId = s_aPresetVersionIds[NewPreset];
                                         }
                                 }
                         }
 
                         // Row: Custom client name (only when preset = Custom)
-                        if(g_Config.m_ClSpoofClientPreset == PRESET_CUSTOM)
+                        if(g_Config.m_KxSpoofClientPreset == PRESET_CUSTOM)
                         {
                                 Panel.HSplitTop(RowGap, nullptr, &Panel);
                                 Panel.HSplitTop(20.0f, &Row, &Panel);
                                 CUIRect Lab, Field;
                                 Row.VSplitLeft(110.0f, &Lab, &Field);
                                 Ui()->DoLabel(&Lab, Localize("Custom client name"), 12.0f, TEXTALIGN_ML);
-                                static CLineInput s_NameInput(g_Config.m_ClSpoofClientName, sizeof(g_Config.m_ClSpoofClientName));
+                                static CLineInput s_NameInput(g_Config.m_KxSpoofClientName, sizeof(g_Config.m_KxSpoofClientName));
                                 s_NameInput.SetEmptyText("MyClient");
                                 Ui()->DoEditBox(&s_NameInput, &Field, 12.0f);
                         }
@@ -5575,7 +5575,7 @@ void CMenus::RenderSettingsBotSettings(CUIRect MainView)
                                 CUIRect Lab, Field;
                                 Row.VSplitLeft(110.0f, &Lab, &Field);
                                 Ui()->DoLabel(&Lab, Localize("Client version"), 12.0f, TEXTALIGN_ML);
-                                static CLineInput s_VerInput(g_Config.m_ClSpoofClientVersion, sizeof(g_Config.m_ClSpoofClientVersion));
+                                static CLineInput s_VerInput(g_Config.m_KxSpoofClientVersion, sizeof(g_Config.m_KxSpoofClientVersion));
                                 s_VerInput.SetEmptyText("20.0");
                                 Ui()->DoEditBox(&s_VerInput, &Field, 12.0f);
                         }
@@ -5586,18 +5586,18 @@ void CMenus::RenderSettingsBotSettings(CUIRect MainView)
                         {
                                 CUIRect CbRect, Field;
                                 Row.VSplitLeft(110.0f, &CbRect, &Field);
-                                if(DoButton_CheckBox(&g_Config.m_ClSpoofGitHashEnabled, Localize("Git hash"), g_Config.m_ClSpoofGitHashEnabled, &CbRect))
-                                        g_Config.m_ClSpoofGitHashEnabled ^= 1;
-                                if(g_Config.m_ClSpoofGitHashEnabled)
+                                if(DoButton_CheckBox(&g_Config.m_KxSpoofGitHashEnabled, Localize("Git hash"), g_Config.m_KxSpoofGitHashEnabled, &CbRect))
+                                        g_Config.m_KxSpoofGitHashEnabled ^= 1;
+                                if(g_Config.m_KxSpoofGitHashEnabled)
                                 {
-                                        static CLineInput s_HashInput(g_Config.m_ClSpoofGitHash, sizeof(g_Config.m_ClSpoofGitHash));
+                                        static CLineInput s_HashInput(g_Config.m_KxSpoofGitHash, sizeof(g_Config.m_KxSpoofGitHash));
                                         s_HashInput.SetEmptyText("abc1234def567890");
                                         Ui()->DoEditBox(&s_HashInput, &Field, 12.0f);
                                 }
                                 else
                                 {
                                         // Clear hash when checkbox is off → real git hash is used
-                                        g_Config.m_ClSpoofGitHash[0] = '\0';
+                                        g_Config.m_KxSpoofGitHash[0] = '\0';
                                 }
                         }
 
@@ -5606,8 +5606,8 @@ void CMenus::RenderSettingsBotSettings(CUIRect MainView)
                         Panel.HSplitTop(15.0f, &Row, &Panel);
                         TextRender()->TextColor(0.5f, 0.5f, 0.5f, 1.0f);
                         char aPreview[96];
-                        const char *pPreviewName = g_Config.m_ClSpoofClientName[0] ? g_Config.m_ClSpoofClientName : s_apPresetClientNames[g_Config.m_ClSpoofClientPreset];
-                        const char *pPreviewVer = g_Config.m_ClSpoofClientVersion[0] ? g_Config.m_ClSpoofClientVersion : s_apPresetVersions[g_Config.m_ClSpoofClientPreset];
+                        const char *pPreviewName = g_Config.m_KxSpoofClientName[0] ? g_Config.m_KxSpoofClientName : s_apPresetClientNames[g_Config.m_KxSpoofClientPreset];
+                        const char *pPreviewVer = g_Config.m_KxSpoofClientVersion[0] ? g_Config.m_KxSpoofClientVersion : s_apPresetVersions[g_Config.m_KxSpoofClientPreset];
                         str_format(aPreview, sizeof(aPreview), Localize("Server will see: \"%s %s (...)\""), pPreviewName, pPreviewVer);
                         Ui()->DoLabel(&Row, aPreview, 11.0f, TEXTALIGN_ML);
                         TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
@@ -5686,22 +5686,22 @@ void CMenus::RenderSettingsPathfinder(CUIRect MainView)
                         static CUi::SDropDownState s_AlgoDropDownState;
                         static CScrollRegion s_AlgoDropDownScrollRegion;
                         s_AlgoDropDownState.m_SelectionPopupContext.m_pScrollRegion = &s_AlgoDropDownScrollRegion;
-                        const int NewAlgo = Ui()->DoDropDown(&DropDown, g_Config.m_ClPfAlgorithm, apAlgoNames, PF_TAB_ALGORITHM_COUNT, s_AlgoDropDownState);
-                        if(NewAlgo != g_Config.m_ClPfAlgorithm)
-                                g_Config.m_ClPfAlgorithm = NewAlgo;
+                        const int NewAlgo = Ui()->DoDropDown(&DropDown, g_Config.m_KxPfAlgorithm, apAlgoNames, PF_TAB_ALGORITHM_COUNT, s_AlgoDropDownState);
+                        if(NewAlgo != g_Config.m_KxPfAlgorithm)
+                                g_Config.m_KxPfAlgorithm = NewAlgo;
                 }
 
                 // --- Chunk size slider ---
                 Panel.HSplitTop(LineSize, &Row, &Panel);
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
-                Ui()->DoScrollbarOption(&g_Config.m_ClPfChunkSize, &g_Config.m_ClPfChunkSize, &Row,
+                Ui()->DoScrollbarOption(&g_Config.m_KxPfChunkSize, &g_Config.m_KxPfChunkSize, &Row,
                         Localize("Chunk Size"), CConfig::PF_CHUNK_SIZE_MIN, PF_TAB_MAX_CHUNK_TICKS, &CUi::ms_LinearScrollbarScale,
                         CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
 
                 // --- Hook angles slider ---
                 Panel.HSplitTop(LineSize, &Row, &Panel);
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
-                Ui()->DoScrollbarOption(&g_Config.m_ClPfHookAngles, &g_Config.m_ClPfHookAngles, &Row,
+                Ui()->DoScrollbarOption(&g_Config.m_KxPfHookAngles, &g_Config.m_KxPfHookAngles, &Row,
                         Localize("Hook Angles"), 4, 32, &CUi::ms_LinearScrollbarScale,
                         CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
 
@@ -5709,12 +5709,12 @@ void CMenus::RenderSettingsPathfinder(CUIRect MainView)
                 Panel.HSplitTop(LineSize, &Row, &Panel);
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
                 {
-                        int chunkSize = std::clamp(g_Config.m_ClPfChunkSize, CConfig::PF_CHUNK_SIZE_MIN, CConfig::PF_CHUNK_SIZE_MAX);
-                        int hookAngles = std::clamp(g_Config.m_ClPfHookAngles, CConfig::PF_HOOK_ANGLES_MIN, CConfig::PF_HOOK_ANGLES_MAX);
+                        int chunkSize = std::clamp(g_Config.m_KxPfChunkSize, CConfig::PF_CHUNK_SIZE_MIN, CConfig::PF_CHUNK_SIZE_MAX);
+                        int hookAngles = std::clamp(g_Config.m_KxPfHookAngles, CConfig::PF_HOOK_ANGLES_MIN, CConfig::PF_HOOK_ANGLES_MAX);
                         // Advanced search: max candidates = ceil(totalCombos / ChunkSize)
                         // where totalCombos = 3 * 2 * hookAngles * 2 = 12 * hookAngles.
                         int maxCandidates;
-                        if(g_Config.m_ClPfAdvancedSearch)
+                        if(g_Config.m_KxPfAdvancedSearch)
                         {
                                 long totalCombos = (long)3 * 2 * hookAngles * 2;
                                 maxCandidates = (int)((totalCombos + chunkSize - 1) / chunkSize);
@@ -5723,7 +5723,7 @@ void CMenus::RenderSettingsPathfinder(CUIRect MainView)
                         {
                                 maxCandidates = 3 * (chunkSize + 1) * (1 + hookAngles);
                         }
-                        Ui()->DoScrollbarOption(&g_Config.m_ClPfBacktrackCandidates, &g_Config.m_ClPfBacktrackCandidates, &Row,
+                        Ui()->DoScrollbarOption(&g_Config.m_KxPfBacktrackCandidates, &g_Config.m_KxPfBacktrackCandidates, &Row,
                                 Localize("Candidates"), CConfig::PF_CANDIDATES_MIN, maxCandidates, &CUi::ms_LinearScrollbarScale,
                                 CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
                 }
@@ -5731,16 +5731,16 @@ void CMenus::RenderSettingsPathfinder(CUIRect MainView)
                 // --- Performance slider ---
                 Panel.HSplitTop(LineSize, &Row, &Panel);
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
-                Ui()->DoScrollbarOption(&g_Config.m_ClPfPerf, &g_Config.m_ClPfPerf, &Row,
+                Ui()->DoScrollbarOption(&g_Config.m_KxPfPerf, &g_Config.m_KxPfPerf, &Row,
                         Localize("Performance"), 1, 100, &CUi::ms_LinearScrollbarScale,
                         CUi::SCROLLBAR_OPTION_NOCLAMPVALUE);
 
                 // --- Advanced search checkbox ---
                 Panel.HSplitTop(LineSize, &Row, &Panel);
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
-                static int s_AdvancedSearch = g_Config.m_ClPfAdvancedSearch;
-                if(DoButton_CheckBox(&s_AdvancedSearch, Localize("Advanced search"), g_Config.m_ClPfAdvancedSearch, &Row))
-                        g_Config.m_ClPfAdvancedSearch ^= 1;
+                static int s_AdvancedSearch = g_Config.m_KxPfAdvancedSearch;
+                if(DoButton_CheckBox(&s_AdvancedSearch, Localize("Advanced search"), g_Config.m_KxPfAdvancedSearch, &Row))
+                        g_Config.m_KxPfAdvancedSearch ^= 1;
         }
 
         MainView.HSplitTop(PanelGap, nullptr, &MainView);
@@ -5761,10 +5761,10 @@ void CMenus::RenderSettingsPathfinder(CUIRect MainView)
                 Panel.HSplitTop(LineSize, &Row, &Panel);
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
                 Row.VSplitMid(&Left, &Right, ColGap);
-                if(DoButton_CheckBox(&g_Config.m_ClPfScoreDist, Localize("Distance reduction"), g_Config.m_ClPfScoreDist, &Left))
-                        g_Config.m_ClPfScoreDist ^= 1;
-                if(DoButton_CheckBox(&g_Config.m_ClPfScoreFlow, Localize("Flow-field alignment"), g_Config.m_ClPfScoreFlow, &Right))
-                        g_Config.m_ClPfScoreFlow ^= 1;
+                if(DoButton_CheckBox(&g_Config.m_KxPfScoreDist, Localize("Distance reduction"), g_Config.m_KxPfScoreDist, &Left))
+                        g_Config.m_KxPfScoreDist ^= 1;
+                if(DoButton_CheckBox(&g_Config.m_KxPfScoreFlow, Localize("Flow-field alignment"), g_Config.m_KxPfScoreFlow, &Right))
+                        g_Config.m_KxPfScoreFlow ^= 1;
         }
 
         MainView.HSplitTop(PanelGap, nullptr, &MainView);
@@ -5785,26 +5785,26 @@ void CMenus::RenderSettingsPathfinder(CUIRect MainView)
                 Panel.HSplitTop(LineSize, &Row, &Panel);
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
                 Row.VSplitMid(&Left, &Right, ColGap);
-                if(DoButton_CheckBox(&g_Config.m_ClPfFineFreeze, Localize("Freeze penalty"), g_Config.m_ClPfFineFreeze, &Left))
-                        g_Config.m_ClPfFineFreeze ^= 1;
-                if(DoButton_CheckBox(&g_Config.m_ClPfFineRetract, Localize("Hook retract"), g_Config.m_ClPfFineRetract, &Right))
-                        g_Config.m_ClPfFineRetract ^= 1;
+                if(DoButton_CheckBox(&g_Config.m_KxPfFineFreeze, Localize("Freeze penalty"), g_Config.m_KxPfFineFreeze, &Left))
+                        g_Config.m_KxPfFineFreeze ^= 1;
+                if(DoButton_CheckBox(&g_Config.m_KxPfFineRetract, Localize("Hook retract"), g_Config.m_KxPfFineRetract, &Right))
+                        g_Config.m_KxPfFineRetract ^= 1;
 
                 Panel.HSplitTop(LineSize, &Row, &Panel);
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
                 Row.VSplitMid(&Left, &Right, ColGap);
-                if(DoButton_CheckBox(&g_Config.m_ClPfFineDeath, Localize("Death penalty"), g_Config.m_ClPfFineDeath, &Left))
-                        g_Config.m_ClPfFineDeath ^= 1;
-                if(DoButton_CheckBox(&g_Config.m_ClPfFineWall, Localize("Wall hit"), g_Config.m_ClPfFineWall, &Right))
-                        g_Config.m_ClPfFineWall ^= 1;
+                if(DoButton_CheckBox(&g_Config.m_KxPfFineDeath, Localize("Death penalty"), g_Config.m_KxPfFineDeath, &Left))
+                        g_Config.m_KxPfFineDeath ^= 1;
+                if(DoButton_CheckBox(&g_Config.m_KxPfFineWall, Localize("Wall hit"), g_Config.m_KxPfFineWall, &Right))
+                        g_Config.m_KxPfFineWall ^= 1;
 
                 Panel.HSplitTop(LineSize, &Row, &Panel);
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
                 Row.VSplitMid(&Left, &Right, ColGap);
-                if(DoButton_CheckBox(&g_Config.m_ClPfFineAir, Localize("Air time"), g_Config.m_ClPfFineAir, &Left))
-                        g_Config.m_ClPfFineAir ^= 1;
-                if(DoButton_CheckBox(&g_Config.m_ClPfFineHook, Localize("Hook fire"), g_Config.m_ClPfFineHook, &Right))
-                        g_Config.m_ClPfFineHook ^= 1;
+                if(DoButton_CheckBox(&g_Config.m_KxPfFineAir, Localize("Air time"), g_Config.m_KxPfFineAir, &Left))
+                        g_Config.m_KxPfFineAir ^= 1;
+                if(DoButton_CheckBox(&g_Config.m_KxPfFineHook, Localize("Hook fire"), g_Config.m_KxPfFineHook, &Right))
+                        g_Config.m_KxPfFineHook ^= 1;
         }
 
         MainView.HSplitTop(PanelGap, nullptr, &MainView);
@@ -5825,18 +5825,18 @@ void CMenus::RenderSettingsPathfinder(CUIRect MainView)
                 Panel.HSplitTop(LineSize, &Row, &Panel);
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
                 Row.VSplitMid(&Left, &Right, ColGap);
-                if(DoButton_CheckBox(&g_Config.m_ClPfShowField, Localize("Show field"), g_Config.m_ClPfShowField, &Left))
-                        g_Config.m_ClPfShowField ^= 1;
-                if(DoButton_CheckBox(&g_Config.m_ClPfShowHooks, Localize("Show hooks"), g_Config.m_ClPfShowHooks, &Right))
-                        g_Config.m_ClPfShowHooks ^= 1;
+                if(DoButton_CheckBox(&g_Config.m_KxPfShowField, Localize("Show field"), g_Config.m_KxPfShowField, &Left))
+                        g_Config.m_KxPfShowField ^= 1;
+                if(DoButton_CheckBox(&g_Config.m_KxPfShowHooks, Localize("Show hooks"), g_Config.m_KxPfShowHooks, &Right))
+                        g_Config.m_KxPfShowHooks ^= 1;
 
                 Panel.HSplitTop(LineSize, &Row, &Panel);
                 Panel.HSplitTop(RowGap, nullptr, &Panel);
                 Row.VSplitMid(&Left, &Right, ColGap);
-                if(DoButton_CheckBox(&g_Config.m_ClPfShowBranches, Localize("Show other branches"), g_Config.m_ClPfShowBranches, &Left))
-                        g_Config.m_ClPfShowBranches ^= 1;
-                if(DoButton_CheckBox(&g_Config.m_ClPfShowSpeed, Localize("Show speed gradient"), g_Config.m_ClPfShowSpeed, &Right))
-                        g_Config.m_ClPfShowSpeed ^= 1;
+                if(DoButton_CheckBox(&g_Config.m_KxPfShowBranches, Localize("Show other branches"), g_Config.m_KxPfShowBranches, &Left))
+                        g_Config.m_KxPfShowBranches ^= 1;
+                if(DoButton_CheckBox(&g_Config.m_KxPfShowSpeed, Localize("Show speed gradient"), g_Config.m_KxPfShowSpeed, &Right))
+                        g_Config.m_KxPfShowSpeed ^= 1;
         }
 
         MainView.HSplitTop(PanelGap, nullptr, &MainView);

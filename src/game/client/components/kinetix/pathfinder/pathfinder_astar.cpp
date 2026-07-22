@@ -57,11 +57,11 @@ static int PfAStarHeapPop(std::vector<int> &heap, const std::vector<CBotNet::ASt
 // chunk's end position is within 2 pixels of its start (bot effectively did not
 // move during ChunkSize ticks), add a large fixed cost (500) to the child's G.
 // This makes stall branches expensive in the A* open-set so the search prefers
-// nodes that actually make progress. Gated by ClPfFineStuck (default off, same
-// opt-in pattern as the other ClPfFine* penalties).
+// nodes that actually make progress. Gated by KxPfFineStuck (default off, same
+// opt-in pattern as the other KxPfFine* penalties).
 static float PfAStarStuckPenalty(const vec2 &startPos, const vec2 &endPos)
 {
-        if(!g_Config.m_ClPfFineStuck)
+        if(!g_Config.m_KxPfFineStuck)
                 return 0.0f;
         if(distance(endPos, startPos) < 2.0f)
                 return 500.0f;
@@ -71,17 +71,17 @@ static float PfAStarStuckPenalty(const vec2 &startPos, const vec2 &endPos)
 float CBotNet::PfAStarHeuristic(const vec2 &pos, const vec2 &endPos)
 {
         // Heuristic is gated by the same Score Method checkboxes as PfScoreChunk:
-        //   ClPfScoreFlow → flow-field direction alignment (cosine with gradient)
+        //   KxPfScoreFlow → flow-field direction alignment (cosine with gradient)
         //                    — but for A* H we need a distance estimate, so use
         //                    flow-field distance to finish (fd * 2.0f).
-        //   ClPfScoreDist → flow-field distance to finish (BFS, accounts for walls)
+        //   KxPfScoreDist → flow-field distance to finish (BFS, accounts for walls)
         //   Both on        → flow-field distance (same source, both rely on flow field)
         //   Both off       → 0 (Dijkstra, blind search)
         // Note: Dist and Flow both use flow-field distance for H. The difference
         // between them is only in PfScoreChunk (Dist = distance delta, Flow = cosine
         // alignment). For A* heuristic, both resolve to flow-field distance.
-        bool flowOn = g_Config.m_ClPfScoreFlow != 0;
-        bool distOn = g_Config.m_ClPfScoreDist != 0;
+        bool flowOn = g_Config.m_KxPfScoreFlow != 0;
+        bool distOn = g_Config.m_KxPfScoreDist != 0;
 
         if(!flowOn && !distOn)
                 return 0.0f; // Dijkstra
@@ -164,7 +164,7 @@ bool CBotNet::PfAStarInit()
         root.Grounded = pColl ? pColl->IsOnGround(root.Pos, CCharacterCore::PhysicalSize()) : false;
         root.G = 0.0f;
         root.H = PfAStarHeuristic(m_PfCurPos, endPos);
-        root.F = root.G + (float)pf_clamp(g_Config.m_ClPfAStarWeight, 1, 20) * root.H;
+        root.F = root.G + (float)pf_clamp(g_Config.m_KxPfAStarWeight, 1, 20) * root.H;
         root.ParentIdx = -1;
         root.PrimIdx = -1;
         root.PrimTicks = 0;
@@ -189,8 +189,8 @@ int CBotNet::PfAStarStep()
         if(m_PfAOpen.empty())
                 return -1;
 
-        int maxNodes = pf_clamp(g_Config.m_ClPfAStarNodeBudget, 1000, 1000000);
-        int W = pf_clamp(g_Config.m_ClPfAStarWeight, 1, 20);
+        int maxNodes = pf_clamp(g_Config.m_KxPfAStarNodeBudget, 1000, 1000000);
+        int W = pf_clamp(g_Config.m_KxPfAStarWeight, 1, 20);
         const int maxTicks = 4000;
         const float hookLength = 380.0f;
 
@@ -308,8 +308,8 @@ int CBotNet::PfAStarStep()
 
         // === Parameter sweep (same as v1.55 PfGenerateChunk) ===
         // direction × jumpTick × hook × hookAngle
-        int ChunkSize = pf_clamp(g_Config.m_ClPfChunkSize, CConfig::PF_CHUNK_SIZE_MIN, PF_TAB_MAX_CHUNK_TICKS);
-        int HookAngles = pf_clamp(g_Config.m_ClPfHookAngles, 4, 32);
+        int ChunkSize = pf_clamp(g_Config.m_KxPfChunkSize, CConfig::PF_CHUNK_SIZE_MIN, PF_TAB_MAX_CHUNK_TICKS);
+        int HookAngles = pf_clamp(g_Config.m_KxPfHookAngles, 4, 32);
         static const int aDirs[] = {-1, 0, 1};
 
         // Precompute hook raycast (same as v1.55)
@@ -341,7 +341,7 @@ int CBotNet::PfAStarStep()
         // advances across ticks AND across candidates without restart, so every
         // tick of every candidate gets a unique combination.
         // One candidate = ChunkSize consecutive picks from the counter.
-        if(g_Config.m_ClPfAdvancedSearch)
+        if(g_Config.m_KxPfAdvancedSearch)
         {
                 // Push helper: simulate one inSeq, push bestG + A* open heap.
                 auto fnPushAdvanced = [&](std::vector<CNetObj_PlayerInput> &inSeq) {
@@ -399,11 +399,11 @@ int CBotNet::PfAStarStep()
                 const int nAngle = HookAngles;
                 const int nHook = 2;
                 const long totalCombos = (long)nDir * nJump * nAngle * nHook; // = 12 * HookAngles
-                // Number of candidates: bounded by ClPfBacktrackCandidates, by available
+                // Number of candidates: bounded by KxPfBacktrackCandidates, by available
                 // combos (ceil(totalCombos / ChunkSize)), and by A* node budget.
-                const int maxNodes = pf_clamp(g_Config.m_ClPfAStarNodeBudget, 1000, 1000000);
+                const int maxNodes = pf_clamp(g_Config.m_KxPfAStarNodeBudget, 1000, 1000000);
                 const int dynAdvMax = (int)((totalCombos + ChunkSize - 1) / ChunkSize); // ceil(combos/CS)
-                int numCandidates = pf_clamp(g_Config.m_ClPfBacktrackCandidates, CConfig::PF_CANDIDATES_MIN, dynAdvMax);
+                int numCandidates = pf_clamp(g_Config.m_KxPfBacktrackCandidates, CConfig::PF_CANDIDATES_MIN, dynAdvMax);
                 if(numCandidates > maxNodes) numCandidates = maxNodes;
                 if(numCandidates < 1) numCandidates = 1;
 

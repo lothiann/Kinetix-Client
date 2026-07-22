@@ -284,7 +284,7 @@ static bool FindHookGrabPoint(CCollision *pColl, vec2 from, float angle, float m
 //   hook        in {0, 1}
 //   hookAngle   in [-5pi/6, +5pi/6] evenly spaced   (ONLY when hook=1 and HOOK_IDLE)
 //
-// Top-N candidates (N = ClPfBacktrackCandidates, default 100) are kept for the
+// Top-N candidates (N = KxPfBacktrackCandidates, default 100) are kept for the
 // backtracking buffer.
 //
 // Per candidate: save pBot state (core + pos + m_FreezeTime), simulate via

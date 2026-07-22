@@ -40,7 +40,7 @@ void CBotNet::UpdateLaserUnfreeze()
     // 50x/sec full-world-clone that caused the FPS collapse.
     static int s_ThrottleCounter = 0;
 
-    if(!g_Config.m_ClLaserUnfreeze)
+    if(!g_Config.m_KxLaserUnfreeze)
     {
         if(s_WasFiring)
         {
@@ -121,7 +121,7 @@ void CBotNet::UpdateLaserUnfreeze()
     bool willFreeze = s_HeldWillFreeze; // keep last if skipping Phase 1
     if(s_ThrottleCounter == 0) // we just reset it above => this is a Phase 1 tick
     {
-        int triggerTicks = g_Config.m_ClLaserUnfreezeTriggerTicks;
+        int triggerTicks = g_Config.m_KxLaserUnfreezeTriggerTicks;
         if(triggerTicks < 1) triggerTicks = 1;
         if(triggerTicks > 5) triggerTicks = 5;
 
@@ -186,9 +186,9 @@ void CBotNet::UpdateLaserUnfreeze()
     }
 
     // ── PHASE 2: raycast — find best angle ───────────────────────
-    int fov = g_Config.m_ClLaserUnfreezeFov;
-    int numAngles = g_Config.m_ClLaserUnfreezeAngles;
-    int simTicks = g_Config.m_ClLaserUnfreezeTicks;
+    int fov = g_Config.m_KxLaserUnfreezeFov;
+    int numAngles = g_Config.m_KxLaserUnfreezeAngles;
+    int simTicks = g_Config.m_KxLaserUnfreezeTicks;
 
     if(fov < 5) fov = 5;
     if(fov > 360) fov = 360;
@@ -298,7 +298,7 @@ void CBotNet::UpdateLaserUnfreeze()
     // ── PHASE 3: execute ─────────────────────────────────────────
     vec2 aimOffset = bestBouncePos - myPos;
 
-    if(g_Config.m_ClLaserUnfreezeSilent)
+    if(g_Config.m_KxLaserUnfreezeSilent)
     {
         // Silent mode: don't change m_aMousePos (visible crosshair).
         // Set the aim override flag — SnapInput will use this offset
@@ -314,7 +314,7 @@ void CBotNet::UpdateLaserUnfreeze()
 
     CNetObj_PlayerInput *pInput = &pGame->m_Controls.m_aInputData[g_Config.m_ClDummy];
 
-    if(g_Config.m_ClLaserUnfreezeAuto)
+    if(g_Config.m_KxLaserUnfreezeAuto)
         pInput->m_WantedWeapon = WEAPON_LASER + 1;
 
     if((pInput->m_Fire & 1) == 0)
@@ -322,7 +322,7 @@ void CBotNet::UpdateLaserUnfreeze()
     s_WasFiring = true;
 
     // Store path for Show attempt rendering
-    if(g_Config.m_ClLaserUnfreezeShowAttempt && bestPath.size() >= 2)
+    if(g_Config.m_KxLaserUnfreezeShowAttempt && bestPath.size() >= 2)
     {
         m_LaserUnfreezePath = bestPath;
         m_LaserUnfreezePathTime = time_get();
@@ -334,7 +334,7 @@ void CBotNet::UpdateLaserUnfreeze()
 // Uses trajectory line size + laser rifle inner color from settings.
 void CBotNet::RenderLaserUnfreezePath()
 {
-    if(!g_Config.m_ClLaserUnfreezeShowAttempt)
+    if(!g_Config.m_KxLaserUnfreezeShowAttempt)
         return;
     if(m_LaserUnfreezePath.empty())
         return;
@@ -357,9 +357,9 @@ void CBotNet::RenderLaserUnfreezePath()
     // Color: laser rifle inner color (same as in-game laser)
     ColorRGBA BaseColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClLaserRifleInnerColor, true));
     // Alpha: trajectory alpha setting * fade
-    float ConfigAlpha = (g_Config.m_ClTrajectoryAlpha / 100.0f) * fadeAlpha;
+    float ConfigAlpha = (g_Config.m_KxTrajectoryAlpha / 100.0f) * fadeAlpha;
     // Line size: trajectory line size setting
-    int LineSize = g_Config.m_ClTrajectoryLineSize;
+    int LineSize = g_Config.m_KxTrajectoryLineSize;
 
     pGame->Graphics()->TextureClear();
     pGame->Graphics()->BlendNormal();

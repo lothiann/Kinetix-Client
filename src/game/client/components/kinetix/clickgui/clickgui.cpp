@@ -605,7 +605,7 @@ void CClickGui::OnRender()
                         }
                 }
                 // Sync reference toggles with real subsystem state on open.
-                // (So if c_attack / c_random_aim / cl_show_trajectory were enabled
+                // (So if c_attack / c_random_aim / kx_show_trajectory were enabled
                 // via console before opening ClickGUI, the checkboxes reflect that.)
                 for(int p = 0; p < NUM_PANELS; ++p)
                 {
@@ -617,48 +617,48 @@ void CClickGui::OnRender()
                                 else if(str_comp(row.pName, "Random Aim") == 0)
                                         row.on = GameClient()->m_BotNet.m_RandomAim;
                                 else if(str_comp(row.pName, "Trajectory") == 0)
-                                        row.on = g_Config.m_ClShowTrajectory != 0;
+                                        row.on = g_Config.m_KxShowTrajectory != 0;
                                 // Advanced → Laser unfreeze expandable is master toggle.
                                 else if(str_comp(row.pName, "Laser unfreeze") == 0)
-                                        row.on = g_Config.m_ClLaserUnfreeze != 0;
+                                        row.on = g_Config.m_KxLaserUnfreeze != 0;
                                 else if(str_comp(row.pName, "Fake Aim") == 0)
-                                        row.on = g_Config.m_ClFakeAim != 0;
+                                        row.on = g_Config.m_KxFakeAim != 0;
                                 // Functions panel — Fly/Copy Moves sub-section
                                 else if(str_comp(row.pName, "Preserve input") == 0)
-                                        row.on = g_Config.m_ClDummyHammerKeepInputs != 0;
+                                        row.on = g_Config.m_KxDummyHammerKeepInputs != 0;
                                 else if(str_comp(row.pName, "Custom latency") == 0)
-                                        row.on = g_Config.m_ClDummyHammerCustomLatency != 0;
+                                        row.on = g_Config.m_KxDummyHammerCustomLatency != 0;
                                 else if(str_comp(row.pName, "Auto fly") == 0)
-                                        row.on = g_Config.m_ClDummyHammerAuto != 0;
+                                        row.on = g_Config.m_KxDummyHammerAuto != 0;
                                 else if(str_comp(row.pName, "Mirror direction") == 0)
-                                        row.on = g_Config.m_ClDummyCopyMirrorDir != 0;
+                                        row.on = g_Config.m_KxDummyCopyMirrorDir != 0;
                                 else if(str_comp(row.pName, "Aim mode") == 0)
-                                        row.valueIdx = g_Config.m_ClDummyCopyAimMode;
+                                        row.valueIdx = g_Config.m_KxDummyCopyAimMode;
                                 else if(str_comp(row.pName, "Mirror aim X") == 0)
-                                        row.on = g_Config.m_ClDummyCopyMirrorAimX != 0;
+                                        row.on = g_Config.m_KxDummyCopyMirrorAimX != 0;
                                 else if(str_comp(row.pName, "Mirror aim Y") == 0)
-                                        row.on = g_Config.m_ClDummyCopyMirrorAimY != 0;
+                                        row.on = g_Config.m_KxDummyCopyMirrorAimY != 0;
                                 else if(str_comp(row.pName, "Smart aim") == 0)
-                                        row.on = g_Config.m_ClDummyCopySmartAim != 0;
+                                        row.on = g_Config.m_KxDummyCopySmartAim != 0;
                                 // Functions → Copy Moves Filter expandable is master toggle.
                                 else if(str_comp(row.pName, "Copy Moves Filter") == 0)
-                                        row.on = g_Config.m_ClDummyCopyMovesFilter != 0;
+                                        row.on = g_Config.m_KxDummyCopyMovesFilter != 0;
                                 // Pathfinder top-level sliders/toggles
                                 else if(str_comp(row.pName, "Chunk size") == 0)
-                                        row.value = (float)g_Config.m_ClPfChunkSize;
+                                        row.value = (float)g_Config.m_KxPfChunkSize;
                                 else if(str_comp(row.pName, "Hook angles") == 0)
-                                        row.value = (float)g_Config.m_ClPfHookAngles;
+                                        row.value = (float)g_Config.m_KxPfHookAngles;
                                 else if(str_comp(row.pName, "Candidates") == 0)
-                                        row.value = (float)g_Config.m_ClPfCandidates;
+                                        row.value = (float)g_Config.m_KxPfCandidates;
                                 else if(str_comp(row.pName, "Performance") == 0)
-                                        row.value = (float)g_Config.m_ClPfPerf;
+                                        row.value = (float)g_Config.m_KxPfPerf;
                                 else if(str_comp(row.pName, "Advanced search") == 0)
-                                        row.on = g_Config.m_ClPfAdvancedSearch != 0;
+                                        row.on = g_Config.m_KxPfAdvancedSearch != 0;
                                 // Settings → IRC/Spoofer top-level expandables are master toggles.
                                 else if(str_comp(row.pName, "IRC") == 0)
-                                        row.on = g_Config.m_ClIrcEnabled != 0;
+                                        row.on = g_Config.m_KxIrcEnabled != 0;
                                 else if(str_comp(row.pName, "Spoofer") == 0)
-                                        row.on = (g_Config.m_ClVersionSpoof != 0 || g_Config.m_ClSpoofClientStr != 0);
+                                        row.on = (g_Config.m_KxVersionSpoof != 0 || g_Config.m_KxSpoofClientStr != 0);
                                 // Sync children of expandable rows
                                 for(int c = 0; c < row.childCount; ++c)
                                 {
@@ -666,78 +666,78 @@ void CClickGui::OnRender()
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;
                                         if(str_comp(child.pName, "Latency (ms)") == 0)
-                                                child.value = (float)g_Config.m_ClDummyHammerLatencyMs;
+                                                child.value = (float)g_Config.m_KxDummyHammerLatencyMs;
                                         else if(str_comp(child.pName, "Filter: Jump") == 0)
-                                                child.on = g_Config.m_ClDummyCopyMovesFilterJump != 0;
+                                                child.on = g_Config.m_KxDummyCopyMovesFilterJump != 0;
                                         else if(str_comp(child.pName, "Filter: Direction") == 0)
-                                                child.on = g_Config.m_ClDummyCopyMovesFilterDirection != 0;
+                                                child.on = g_Config.m_KxDummyCopyMovesFilterDirection != 0;
                                         else if(str_comp(child.pName, "Filter: Hook") == 0)
-                                                child.on = g_Config.m_ClDummyCopyMovesFilterHook != 0;
+                                                child.on = g_Config.m_KxDummyCopyMovesFilterHook != 0;
                                         else if(str_comp(child.pName, "Filter: Aim") == 0)
-                                                child.on = g_Config.m_ClDummyCopyMovesFilterAim != 0;
+                                                child.on = g_Config.m_KxDummyCopyMovesFilterAim != 0;
                                         else if(str_comp(child.pName, "Filter: Fire") == 0)
-                                                child.on = g_Config.m_ClDummyCopyMovesFilterFire != 0;
+                                                child.on = g_Config.m_KxDummyCopyMovesFilterFire != 0;
                                         // Settings → IRC children
                                         else if(str_comp(child.pName, "Reveal join") == 0)
-                                                child.on = g_Config.m_ClIrcRevealJoin != 0;
+                                                child.on = g_Config.m_KxIrcRevealJoin != 0;
                                         else if(str_comp(child.pName, "Nameplate tag") == 0)
-                                                child.on = g_Config.m_ClIrcNameplateTag != 0;
+                                                child.on = g_Config.m_KxIrcNameplateTag != 0;
                                         // Advanced → Laser unfreeze children
                                         else if(str_comp(child.pName, "Auto laser") == 0)
-                                                child.on = g_Config.m_ClLaserUnfreezeAuto != 0;
+                                                child.on = g_Config.m_KxLaserUnfreezeAuto != 0;
                                         else if(str_comp(child.pName, "FOV") == 0)
-                                                child.value = (float)g_Config.m_ClLaserUnfreezeFov;
+                                                child.value = (float)g_Config.m_KxLaserUnfreezeFov;
                                         else if(str_comp(child.pName, "Angles") == 0)
-                                                child.value = (float)g_Config.m_ClLaserUnfreezeAngles;
+                                                child.value = (float)g_Config.m_KxLaserUnfreezeAngles;
                                         else if(str_comp(child.pName, "Ticks") == 0)
-                                                child.value = (float)g_Config.m_ClLaserUnfreezeTicks;
+                                                child.value = (float)g_Config.m_KxLaserUnfreezeTicks;
                                         else if(str_comp(child.pName, "Trigger ticks") == 0)
-                                                child.value = (float)g_Config.m_ClLaserUnfreezeTriggerTicks;
+                                                child.value = (float)g_Config.m_KxLaserUnfreezeTriggerTicks;
                                         else if(str_comp(child.pName, "Silent") == 0)
-                                                child.on = g_Config.m_ClLaserUnfreezeSilent != 0;
+                                                child.on = g_Config.m_KxLaserUnfreezeSilent != 0;
                                         else if(str_comp(child.pName, "Show attempt") == 0)
-                                                child.on = g_Config.m_ClLaserUnfreezeShowAttempt != 0;
+                                                child.on = g_Config.m_KxLaserUnfreezeShowAttempt != 0;
                                         // Fake Aim children
                                         else if(str_comp(child.pName, "Mode") == 0 && str_comp(row.pName, "Fake Aim") == 0)
-                                                child.valueIdx = g_Config.m_ClFakeAimMode;
+                                                child.valueIdx = g_Config.m_KxFakeAimMode;
                                         else if(str_comp(child.pName, "Speed") == 0 && str_comp(row.pName, "Fake Aim") == 0)
-                                                child.value = (float)g_Config.m_ClFakeAimSpeed;
+                                                child.value = (float)g_Config.m_KxFakeAimSpeed;
                                         else if(str_comp(child.pName, "Show for me") == 0)
-                                                child.on = g_Config.m_ClFakeAimShowForMe != 0;
+                                                child.on = g_Config.m_KxFakeAimShowForMe != 0;
                                         // Settings → Spoofer children
                                         else if(str_comp(child.pName, "Version ID") == 0)
-                                                child.value = (float)g_Config.m_ClVersionSpoofId;
+                                                child.value = (float)g_Config.m_KxVersionSpoofId;
                                         else if(str_comp(child.pName, "Client preset") == 0)
-                                                child.valueIdx = g_Config.m_ClSpoofClientPreset;
+                                                child.valueIdx = g_Config.m_KxSpoofClientPreset;
                                         // Pathfinder → Score method children
                                         else if(str_comp(child.pName, "Distance reduction") == 0)
-                                                child.on = g_Config.m_ClPfScoreDist != 0;
+                                                child.on = g_Config.m_KxPfScoreDist != 0;
                                         else if(str_comp(child.pName, "Flow-field alignment") == 0)
-                                                child.on = g_Config.m_ClPfScoreFlow != 0;
+                                                child.on = g_Config.m_KxPfScoreFlow != 0;
                                         // Pathfinder → Penalties children
                                         else if(str_comp(child.pName, "Freeze penalty") == 0)
-                                                child.on = g_Config.m_ClPfFineFreeze != 0;
+                                                child.on = g_Config.m_KxPfFineFreeze != 0;
                                         else if(str_comp(child.pName, "Hook retract penalty") == 0)
-                                                child.on = g_Config.m_ClPfFineRetract != 0;
+                                                child.on = g_Config.m_KxPfFineRetract != 0;
                                         else if(str_comp(child.pName, "Death penalty") == 0)
-                                                child.on = g_Config.m_ClPfFineDeath != 0;
+                                                child.on = g_Config.m_KxPfFineDeath != 0;
                                         else if(str_comp(child.pName, "Wall-hit penalty") == 0)
-                                                child.on = g_Config.m_ClPfFineWall != 0;
+                                                child.on = g_Config.m_KxPfFineWall != 0;
                                         else if(str_comp(child.pName, "Air-time penalty") == 0)
-                                                child.on = g_Config.m_ClPfFineAir != 0;
+                                                child.on = g_Config.m_KxPfFineAir != 0;
                                         else if(str_comp(child.pName, "Hook-fire penalty") == 0)
-                                                child.on = g_Config.m_ClPfFineHook != 0;
+                                                child.on = g_Config.m_KxPfFineHook != 0;
                                         else if(str_comp(child.pName, "Stuck penalty") == 0)
-                                                child.on = g_Config.m_ClPfFineStuck != 0;
+                                                child.on = g_Config.m_KxPfFineStuck != 0;
                                         // Pathfinder → Visuals children
                                         else if(str_comp(child.pName, "Show field") == 0)
-                                                child.on = g_Config.m_ClPfShowField != 0;
+                                                child.on = g_Config.m_KxPfShowField != 0;
                                         else if(str_comp(child.pName, "Show hooks") == 0)
-                                                child.on = g_Config.m_ClPfShowHooks != 0;
+                                                child.on = g_Config.m_KxPfShowHooks != 0;
                                         else if(str_comp(child.pName, "Show branches") == 0)
-                                                child.on = g_Config.m_ClPfShowBranches != 0;
+                                                child.on = g_Config.m_KxPfShowBranches != 0;
                                         else if(str_comp(child.pName, "Show speed") == 0)
-                                                child.on = g_Config.m_ClPfShowSpeed != 0;
+                                                child.on = g_Config.m_KxPfShowSpeed != 0;
                                 }
                         }
                 }
@@ -886,17 +886,17 @@ void CClickGui::OnRender()
                                         pTarget->value = raw;
                         }
                         if(str_comp(pTarget->pName, "Latency (ms)") == 0)
-                                g_Config.m_ClDummyHammerLatencyMs = (int)pTarget->value;
+                                g_Config.m_KxDummyHammerLatencyMs = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Version ID") == 0)
-                                g_Config.m_ClVersionSpoofId = (int)pTarget->value;
+                                g_Config.m_KxVersionSpoofId = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "FOV") == 0)
-                                g_Config.m_ClLaserUnfreezeFov = (int)pTarget->value;
+                                g_Config.m_KxLaserUnfreezeFov = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Angles") == 0)
-                                g_Config.m_ClLaserUnfreezeAngles = (int)pTarget->value;
+                                g_Config.m_KxLaserUnfreezeAngles = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Ticks") == 0)
-                                g_Config.m_ClLaserUnfreezeTicks = (int)pTarget->value;
+                                g_Config.m_KxLaserUnfreezeTicks = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Trigger ticks") == 0)
-                                g_Config.m_ClLaserUnfreezeTriggerTicks = (int)pTarget->value;
+                                g_Config.m_KxLaserUnfreezeTriggerTicks = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Speed") == 0)
                         {
                                 // v1.56.77: "Speed" is used by both Fake Aim and Rainbow.
@@ -915,16 +915,16 @@ void CClickGui::OnRender()
                                 if(isRainbow)
                                         m_RainbowSpeed = pTarget->value;
                                 else
-                                        g_Config.m_ClFakeAimSpeed = (int)pTarget->value;
+                                        g_Config.m_KxFakeAimSpeed = (int)pTarget->value;
                         }
                         else if(str_comp(pTarget->pName, "Chunk size") == 0)
-                                g_Config.m_ClPfChunkSize = (int)pTarget->value;
+                                g_Config.m_KxPfChunkSize = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Hook angles") == 0)
-                                g_Config.m_ClPfHookAngles = (int)pTarget->value;
+                                g_Config.m_KxPfHookAngles = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Candidates") == 0)
-                                g_Config.m_ClPfCandidates = (int)pTarget->value;
+                                g_Config.m_KxPfCandidates = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Performance") == 0)
-                                g_Config.m_ClPfPerf = (int)pTarget->value;
+                                g_Config.m_KxPfPerf = (int)pTarget->value;
                 }
         }
 
@@ -1251,94 +1251,94 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         else if(str_comp(pTarget->pName, "Random Aim") == 0)
                                                 GameClient()->m_BotNet.m_RandomAim = pTarget->on;
                                         else if(str_comp(pTarget->pName, "Trajectory") == 0)
-                                                g_Config.m_ClShowTrajectory = pTarget->on ? 1 : 0;
+                                                g_Config.m_KxShowTrajectory = pTarget->on ? 1 : 0;
                                         // Advanced → Laser unfreeze expandable is master toggle.
                                         else if(str_comp(pTarget->pName, "Laser unfreeze") == 0)
-                                                g_Config.m_ClLaserUnfreeze = pTarget->on ? 1 : 0;
+                                                g_Config.m_KxLaserUnfreeze = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Fake Aim") == 0)
-                                                g_Config.m_ClFakeAim = pTarget->on ? 1 : 0;
+                                                g_Config.m_KxFakeAim = pTarget->on ? 1 : 0;
                                         // Functions panel — Fly/Copy Moves sub-section
                                         else if(str_comp(pTarget->pName, "Preserve input") == 0)
-                                                g_Config.m_ClDummyHammerKeepInputs = pTarget->on ? 1 : 0;
+                                                g_Config.m_KxDummyHammerKeepInputs = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Custom latency") == 0)
-                                                g_Config.m_ClDummyHammerCustomLatency = pTarget->on ? 1 : 0;
+                                                g_Config.m_KxDummyHammerCustomLatency = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Auto fly") == 0)
-                                                g_Config.m_ClDummyHammerAuto = pTarget->on ? 1 : 0;
+                                                g_Config.m_KxDummyHammerAuto = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Mirror direction") == 0)
-                                                g_Config.m_ClDummyCopyMirrorDir = pTarget->on ? 1 : 0;
+                                                g_Config.m_KxDummyCopyMirrorDir = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Mirror aim X") == 0)
-                                                g_Config.m_ClDummyCopyMirrorAimX = pTarget->on ? 1 : 0;
+                                                g_Config.m_KxDummyCopyMirrorAimX = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Mirror aim Y") == 0)
-                                                g_Config.m_ClDummyCopyMirrorAimY = pTarget->on ? 1 : 0;
+                                                g_Config.m_KxDummyCopyMirrorAimY = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Smart aim") == 0)
-                                                g_Config.m_ClDummyCopySmartAim = pTarget->on ? 1 : 0;
+                                                g_Config.m_KxDummyCopySmartAim = pTarget->on ? 1 : 0;
                                         // Copy Moves Filter expandable is master toggle.
                                         else if(str_comp(pTarget->pName, "Copy Moves Filter") == 0)
-                                                g_Config.m_ClDummyCopyMovesFilter = pTarget->on ? 1 : 0;
+                                                g_Config.m_KxDummyCopyMovesFilter = pTarget->on ? 1 : 0;
                                         // Copy Moves Filter sub-toggles
                                         else if(str_comp(pTarget->pName, "Filter: Jump") == 0)
-                                                g_Config.m_ClDummyCopyMovesFilterJump = pTarget->on ? 1 : 0;
+                                                g_Config.m_KxDummyCopyMovesFilterJump = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Filter: Direction") == 0)
-                                                g_Config.m_ClDummyCopyMovesFilterDirection = pTarget->on ? 1 : 0;
+                                                g_Config.m_KxDummyCopyMovesFilterDirection = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Filter: Hook") == 0)
-                                                g_Config.m_ClDummyCopyMovesFilterHook = pTarget->on ? 1 : 0;
+                                                g_Config.m_KxDummyCopyMovesFilterHook = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Filter: Aim") == 0)
-                                                g_Config.m_ClDummyCopyMovesFilterAim = pTarget->on ? 1 : 0;
+                                                g_Config.m_KxDummyCopyMovesFilterAim = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Filter: Fire") == 0)
-                                                g_Config.m_ClDummyCopyMovesFilterFire = pTarget->on ? 1 : 0;
+                                                g_Config.m_KxDummyCopyMovesFilterFire = pTarget->on ? 1 : 0;
                                         // Settings → IRC children
                                         else if(str_comp(pTarget->pName, "Reveal join") == 0)
-                                                g_Config.m_ClIrcRevealJoin = pTarget->on ? 1 : 0;
+                                                g_Config.m_KxIrcRevealJoin = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Nameplate tag") == 0)
-                                                g_Config.m_ClIrcNameplateTag = pTarget->on ? 1 : 0;
+                                                g_Config.m_KxIrcNameplateTag = pTarget->on ? 1 : 0;
                                         // Advanced → Laser unfreeze children
                                         else if(str_comp(pTarget->pName, "Auto laser") == 0)
-                                                g_Config.m_ClLaserUnfreezeAuto = pTarget->on ? 1 : 0;
+                                                g_Config.m_KxLaserUnfreezeAuto = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Silent") == 0)
-                                                g_Config.m_ClLaserUnfreezeSilent = pTarget->on ? 1 : 0;
+                                                g_Config.m_KxLaserUnfreezeSilent = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Show attempt") == 0)
-                                                g_Config.m_ClLaserUnfreezeShowAttempt = pTarget->on ? 1 : 0;
+                                                g_Config.m_KxLaserUnfreezeShowAttempt = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Show for me") == 0)
-                                                g_Config.m_ClFakeAimShowForMe = pTarget->on ? 1 : 0;
+                                                g_Config.m_KxFakeAimShowForMe = pTarget->on ? 1 : 0;
                                         // Pathfinder → Score method children
                                         else if(str_comp(pTarget->pName, "Distance reduction") == 0)
-                                                g_Config.m_ClPfScoreDist = pTarget->on ? 1 : 0;
+                                                g_Config.m_KxPfScoreDist = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Flow-field alignment") == 0)
-                                                g_Config.m_ClPfScoreFlow = pTarget->on ? 1 : 0;
+                                                g_Config.m_KxPfScoreFlow = pTarget->on ? 1 : 0;
                                         // Pathfinder → Penalties children
                                         else if(str_comp(pTarget->pName, "Freeze penalty") == 0)
-                                                g_Config.m_ClPfFineFreeze = pTarget->on ? 1 : 0;
+                                                g_Config.m_KxPfFineFreeze = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Hook retract penalty") == 0)
-                                                g_Config.m_ClPfFineRetract = pTarget->on ? 1 : 0;
+                                                g_Config.m_KxPfFineRetract = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Death penalty") == 0)
-                                                g_Config.m_ClPfFineDeath = pTarget->on ? 1 : 0;
+                                                g_Config.m_KxPfFineDeath = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Wall-hit penalty") == 0)
-                                                g_Config.m_ClPfFineWall = pTarget->on ? 1 : 0;
+                                                g_Config.m_KxPfFineWall = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Air-time penalty") == 0)
-                                                g_Config.m_ClPfFineAir = pTarget->on ? 1 : 0;
+                                                g_Config.m_KxPfFineAir = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Hook-fire penalty") == 0)
-                                                g_Config.m_ClPfFineHook = pTarget->on ? 1 : 0;
+                                                g_Config.m_KxPfFineHook = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Stuck penalty") == 0)
-                                                g_Config.m_ClPfFineStuck = pTarget->on ? 1 : 0;
+                                                g_Config.m_KxPfFineStuck = pTarget->on ? 1 : 0;
                                         // Pathfinder → Visuals children
                                         else if(str_comp(pTarget->pName, "Show field") == 0)
-                                                g_Config.m_ClPfShowField = pTarget->on ? 1 : 0;
+                                                g_Config.m_KxPfShowField = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Show hooks") == 0)
-                                                g_Config.m_ClPfShowHooks = pTarget->on ? 1 : 0;
+                                                g_Config.m_KxPfShowHooks = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Show branches") == 0)
-                                                g_Config.m_ClPfShowBranches = pTarget->on ? 1 : 0;
+                                                g_Config.m_KxPfShowBranches = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Show speed") == 0)
-                                                g_Config.m_ClPfShowSpeed = pTarget->on ? 1 : 0;
+                                                g_Config.m_KxPfShowSpeed = pTarget->on ? 1 : 0;
                                         // Pathfinder top-level
                                         else if(str_comp(pTarget->pName, "Advanced search") == 0)
-                                                g_Config.m_ClPfAdvancedSearch = pTarget->on ? 1 : 0;
+                                                g_Config.m_KxPfAdvancedSearch = pTarget->on ? 1 : 0;
                                         // Settings → IRC/Spoofer expandables are master toggles.
                                         else if(str_comp(pTarget->pName, "IRC") == 0)
-                                                g_Config.m_ClIrcEnabled = pTarget->on ? 1 : 0;
+                                                g_Config.m_KxIrcEnabled = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Spoofer") == 0)
                                         {
-                                                g_Config.m_ClVersionSpoof = pTarget->on ? 1 : 0;
-                                                g_Config.m_ClSpoofClientStr = pTarget->on ? 1 : 0;
+                                                g_Config.m_KxVersionSpoof = pTarget->on ? 1 : 0;
+                                                g_Config.m_KxSpoofClientStr = pTarget->on ? 1 : 0;
                                         }
                                         else if(str_comp(pTarget->pName, "Rainbow color") == 0)
                                         {
@@ -1404,25 +1404,25 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 pTarget->value = raw;
                                 }
                                 if(str_comp(pTarget->pName, "Latency (ms)") == 0)
-                                        g_Config.m_ClDummyHammerLatencyMs = (int)pTarget->value;
+                                        g_Config.m_KxDummyHammerLatencyMs = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Version ID") == 0)
-                                        g_Config.m_ClVersionSpoofId = (int)pTarget->value;
+                                        g_Config.m_KxVersionSpoofId = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "FOV") == 0)
-                                        g_Config.m_ClLaserUnfreezeFov = (int)pTarget->value;
+                                        g_Config.m_KxLaserUnfreezeFov = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Angles") == 0)
-                                        g_Config.m_ClLaserUnfreezeAngles = (int)pTarget->value;
+                                        g_Config.m_KxLaserUnfreezeAngles = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Ticks") == 0)
-                                        g_Config.m_ClLaserUnfreezeTicks = (int)pTarget->value;
+                                        g_Config.m_KxLaserUnfreezeTicks = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Trigger ticks") == 0)
-                                        g_Config.m_ClLaserUnfreezeTriggerTicks = (int)pTarget->value;
+                                        g_Config.m_KxLaserUnfreezeTriggerTicks = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Chunk size") == 0)
-                                        g_Config.m_ClPfChunkSize = (int)pTarget->value;
+                                        g_Config.m_KxPfChunkSize = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Hook angles") == 0)
-                                        g_Config.m_ClPfHookAngles = (int)pTarget->value;
+                                        g_Config.m_KxPfHookAngles = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Candidates") == 0)
-                                        g_Config.m_ClPfCandidates = (int)pTarget->value;
+                                        g_Config.m_KxPfCandidates = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Performance") == 0)
-                                        g_Config.m_ClPfPerf = (int)pTarget->value;
+                                        g_Config.m_KxPfPerf = (int)pTarget->value;
                                 return;
                         }
                         if(pTarget->type == ERowType::Dropdown || pTarget->type == ERowType::ToggleDropdown)
@@ -1559,11 +1559,11 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                                 {
                                         target.valueIdx = o;
                                         if(str_comp(target.pName, "Aim mode") == 0)
-                                                g_Config.m_ClDummyCopyAimMode = o;
+                                                g_Config.m_KxDummyCopyAimMode = o;
                                         else if(str_comp(target.pName, "Client preset") == 0)
-                                                g_Config.m_ClSpoofClientPreset = o;
+                                                g_Config.m_KxSpoofClientPreset = o;
                                         else if(str_comp(target.pName, "Mode") == 0)
-                                                g_Config.m_ClFakeAimMode = o;
+                                                g_Config.m_KxFakeAimMode = o;
                                         m_DropdownOpen = false;
                                         return true;
                                 }
@@ -1594,11 +1594,11 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                                                 {
                                                         target.valueIdx = o;
                                                         if(str_comp(target.pName, "Aim mode") == 0)
-                                                                g_Config.m_ClDummyCopyAimMode = o;
+                                                                g_Config.m_KxDummyCopyAimMode = o;
                                                         else if(str_comp(target.pName, "Client preset") == 0)
-                                                                g_Config.m_ClSpoofClientPreset = o;
+                                                                g_Config.m_KxSpoofClientPreset = o;
                                                         else if(str_comp(target.pName, "Mode") == 0)
-                                                                g_Config.m_ClFakeAimMode = o;
+                                                                g_Config.m_KxFakeAimMode = o;
                                                         m_DropdownOpen = false;
                                                         return true;
                                                 }

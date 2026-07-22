@@ -146,8 +146,8 @@ float CPlayers::GetPlayerTargetAngle(
         {
                 // Fake Aim: if active and show_for_me, use fake offset for character
                 if(GameClient()->m_Controls.m_FakeAimRenderActive &&
-                   g_Config.m_ClFakeAimShowForMe &&
-                   g_Config.m_ClFakeAim)
+                   g_Config.m_KxFakeAimShowForMe &&
+                   g_Config.m_KxFakeAim)
                 {
                         vec2 Direction = normalize(GameClient()->m_Controls.m_FakeAimRenderOffset);
                         if(Direction == vec2(0.0f, 0.0f))
@@ -1139,7 +1139,7 @@ void CPlayers::OnRender()
 
 void CPlayers::RenderTrajectory()
 {
-        if(!g_Config.m_ClShowTrajectory)
+        if(!g_Config.m_KxShowTrajectory)
                 return;
 
         // Need a local character to predict
@@ -1152,7 +1152,7 @@ void CPlayers::RenderTrajectory()
         if(!pLocalChar)
                 return;
 
-        int NumTicks = g_Config.m_ClTrajectoryTicks;
+        int NumTicks = g_Config.m_KxTrajectoryTicks;
         if(NumTicks <= 0)
                 return;
 
@@ -1209,9 +1209,9 @@ void CPlayers::RenderTrajectory()
         // Render trajectory
         Graphics()->TextureClear();
 
-        ColorRGBA BaseColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClTrajectoryColor, true));
-        float ConfigAlpha = g_Config.m_ClTrajectoryAlpha / 100.0f;
-        int LineSize = g_Config.m_ClTrajectoryLineSize;
+        ColorRGBA BaseColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_KxTrajectoryColor, true));
+        float ConfigAlpha = g_Config.m_KxTrajectoryAlpha / 100.0f;
+        int LineSize = g_Config.m_KxTrajectoryLineSize;
 
         if(LineSize > 0)
         {
