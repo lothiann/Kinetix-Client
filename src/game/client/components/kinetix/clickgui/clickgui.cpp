@@ -1527,7 +1527,7 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                 return false;
         const vec2 ppos = m_aPanelPosValid[m_DropdownPanel] ? m_aPanelPos[m_DropdownPanel] : PanelHomePos(m_DropdownPanel);
         const float bodyX = ppos.x + BODY_PADDING;
-        float cursorY = ppos.y + HEADER_HEIGHT + BODY_PADDING;
+        float cursorY = ppos.y + HEADER_HEIGHT + BODY_PADDING - m_aPanelScroll[m_DropdownPanel];
         SPanel &panel = g_Panels[m_DropdownPanel];
         for(int r = 0; r < panel.rowCount; ++r)
         {
@@ -1619,7 +1619,7 @@ void CClickGui::RenderDropdownPopup(float alpha)
         // Locate the dropdown box position (mirror HandleDropdownClick traversal).
         const vec2 ppos = m_aPanelPosValid[m_DropdownPanel] ? m_aPanelPos[m_DropdownPanel] : PanelHomePos(m_DropdownPanel);
         const float bodyX = ppos.x + BODY_PADDING;
-        float cursorY = ppos.y + HEADER_HEIGHT + BODY_PADDING;
+        float cursorY = ppos.y + HEADER_HEIGHT + BODY_PADDING - m_aPanelScroll[m_DropdownPanel];
         SPanel &panel = g_Panels[m_DropdownPanel];
         for(int r = 0; r < panel.rowCount; ++r)
         {
