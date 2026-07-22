@@ -151,8 +151,77 @@ static SRow g_TriggerBotChildren[] = {
         {ERowType::Dropdown, "TB Freeze", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "TB Priority", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABPriorityOpts, 3, 0, nullptr, 0},
 };
+// v1.56.90: Dummies expandable — dummy connect/disconnect/switch buttons.
+// MAX_DUMMIES=8 (D1..D7, index 0 = main). Layout: Connect/Disconnect button +
+// Switch button per dummy. Plus top "Connect Dummy 1" (first connect) and
+// "Switch to Main Player" (only visible when not on main).
+static SRow g_DummiesChildren[] = {
+        {ERowType::Button, "Connect Dummy", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Button, "Switch to Main", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Button, "D1 Connect", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Button, "D1 Switch", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Button, "D2 Connect", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Button, "D2 Switch", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Button, "D3 Connect", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Button, "D3 Switch", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Button, "D4 Connect", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Button, "D4 Switch", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Button, "D5 Connect", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Button, "D5 Switch", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Button, "D6 Connect", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Button, "D6 Switch", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Button, "D7 Connect", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Button, "D7 Switch", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
+// v1.56.90: Block expandable — all attack settings (37 children).
+static SRow g_BlockChildren[] = {
+        {ERowType::Toggle, "Attack Main", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Auto Main", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Main ID", false, false, 0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Target IDs", false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Rescue IDs", false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "All Target", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Auto Aim", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Auto Fire", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Auto Hook", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Auto Hammer", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Move Enabled", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Stand Enabled", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Stand On X Only", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Smart Detect", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Smart Rescue", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Rescue Frozen", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Rescue All", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Kill On Freeze", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Avoid Freeze", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Avoid Freeze Radius", false, false, 1.0f, 10.0f, 1.0f, 3.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Laser Rescue", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Fire Dist", false, false, 0.0f, 2000.0f, 1.0f, 200.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Hook Dist", false, false, 0.0f, 2000.0f, 1.0f, 200.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Rescue Radius", false, false, 0.0f, 2000.0f, 1.0f, 300.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Target Dist", false, false, 0.0f, 2000.0f, 1.0f, 500.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Main Dist", false, false, 0.0f, 2000.0f, 1.0f, 500.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Stand Dist", false, false, 0.0f, 2000.0f, 1.0f, 100.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Main Stand Dist", false, false, 0.0f, 2000.0f, 1.0f, 100.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Laser Rescue Dist", false, false, 0.0f, 2000.0f, 1.0f, 500.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Hook Delay", false, false, 0.0f, 100.0f, 1.0f, 5.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Client Delay", false, false, 0.0f, 100.0f, 1.0f, 0.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Copy Moves", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Copy Target ID", false, false, 0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Random Aim", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Random Aim Interval", false, false, 1.0f, 100.0f, 1.0f, 10.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Pathfinder Enabled", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Simulate Players", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "SPS (Push)", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Simulate Score", false, false, 0.0f, 100.0f, 1.0f, 50.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Rays", false, false, 12.0f, 90.0f, 1.0f, 24.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Dist", false, false, 1.0f, 128.0f, 1.0f, 32.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Fix Snap", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Hook Enabled", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
 static SRow g_FunctionsRows[] = {
-        {ERowType::Toggle, "Block", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Expandable, "Dummies", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_DummiesChildren, 16},
+        {ERowType::Expandable, "Block", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BlockChildren, 43},
         {ERowType::Toggle, "Random Aim", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         // v1.56.83: AimBot + TriggerBot expandables
         {ERowType::Expandable, "AimBot", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AimBotChildren, 15},
@@ -977,6 +1046,128 @@ void CClickGui::OnRender()
                         }
                 }
         }
+        // v1.56.90: per-frame sync of Block + Dummies UI from CBotNet state.
+        if(isOpen)
+        {
+                CBotNet &bn = GameClient()->m_BotNet;
+                for(int p = 0; p < NUM_PANELS; ++p)
+                {
+                        for(int r = 0; r < g_Panels[p].rowCount; ++r)
+                        {
+                                SRow &row = g_Panels[p].pRows[r];
+                                if(row.type != ERowType::Expandable)
+                                        continue;
+                                if(str_comp(row.pName, "Block") == 0)
+                                {
+                                        row.on = bn.m_AttackEnabled;
+                                        for(int c = 0; c < row.childCount; ++c)
+                                        {
+                                                SRow &ch = row.pChildren[c];
+                                                if(str_comp(ch.pName, "Attack Main") == 0) ch.on = bn.m_AttackMain;
+                                                else if(str_comp(ch.pName, "Auto Main") == 0) ch.on = bn.m_AutoMain;
+                                                else if(str_comp(ch.pName, "Main ID") == 0)
+                                                {
+                                                        if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                        {
+                                                                char b[16]; str_format(b, sizeof(b), "%d", bn.m_MainID);
+                                                                str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
+                                                                ch.m_InputInitialized = true;
+                                                        }
+                                                }
+                                                else if(str_comp(ch.pName, "Target IDs") == 0)
+                                                {
+                                                        if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                        {
+                                                                str_copy(ch.m_aInputBuf, bn.m_aTargetIDsStr, sizeof(ch.m_aInputBuf));
+                                                                ch.m_InputInitialized = true;
+                                                        }
+                                                }
+                                                else if(str_comp(ch.pName, "Rescue IDs") == 0)
+                                                {
+                                                        if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                        {
+                                                                str_copy(ch.m_aInputBuf, bn.m_aRescueIDsStr, sizeof(ch.m_aInputBuf));
+                                                                ch.m_InputInitialized = true;
+                                                        }
+                                                }
+                                                else if(str_comp(ch.pName, "All Target") == 0) ch.on = bn.m_AllTarget;
+                                                else if(str_comp(ch.pName, "Auto Aim") == 0) ch.on = bn.m_AutoAim;
+                                                else if(str_comp(ch.pName, "Auto Fire") == 0) ch.on = bn.m_AutoFire;
+                                                else if(str_comp(ch.pName, "Auto Hook") == 0) ch.on = bn.m_AutoHook;
+                                                else if(str_comp(ch.pName, "Auto Hammer") == 0) ch.on = bn.m_AutoHammer;
+                                                else if(str_comp(ch.pName, "Move Enabled") == 0) ch.on = bn.m_MoveEnabled;
+                                                else if(str_comp(ch.pName, "Stand Enabled") == 0) ch.on = bn.m_StandEnabled;
+                                                else if(str_comp(ch.pName, "Stand On X Only") == 0) ch.on = bn.m_StandOnXOnly;
+                                                else if(str_comp(ch.pName, "Smart Detect") == 0) ch.on = bn.m_SmartDetect;
+                                                else if(str_comp(ch.pName, "Smart Rescue") == 0) ch.on = bn.m_SmartRescue;
+                                                else if(str_comp(ch.pName, "Rescue Frozen") == 0) ch.on = bn.m_RescueFrozen;
+                                                else if(str_comp(ch.pName, "Rescue All") == 0) ch.on = bn.m_RescueAll;
+                                                else if(str_comp(ch.pName, "Kill On Freeze") == 0) ch.on = bn.m_KillOnFreeze;
+                                                else if(str_comp(ch.pName, "Avoid Freeze") == 0) ch.on = bn.m_AvoidFreeze;
+                                                else if(str_comp(ch.pName, "Avoid Freeze Radius") == 0) ch.value = (float)bn.m_AvoidFreezeRadius;
+                                                else if(str_comp(ch.pName, "Laser Rescue") == 0) ch.on = bn.m_LaserRescue;
+                                                else if(str_comp(ch.pName, "Fire Dist") == 0) ch.value = bn.m_FireDist;
+                                                else if(str_comp(ch.pName, "Hook Dist") == 0) ch.value = bn.m_HookDist;
+                                                else if(str_comp(ch.pName, "Rescue Radius") == 0) ch.value = bn.m_RescueRadius;
+                                                else if(str_comp(ch.pName, "Target Dist") == 0) ch.value = bn.m_TargetDist;
+                                                else if(str_comp(ch.pName, "Main Dist") == 0) ch.value = bn.m_MainDist;
+                                                else if(str_comp(ch.pName, "Stand Dist") == 0) ch.value = bn.m_StandDist;
+                                                else if(str_comp(ch.pName, "Main Stand Dist") == 0) ch.value = bn.m_MainStandDist;
+                                                else if(str_comp(ch.pName, "Laser Rescue Dist") == 0) ch.value = bn.m_LaserRescueDist;
+                                                else if(str_comp(ch.pName, "Hook Delay") == 0) ch.value = (float)bn.m_HookDelay;
+                                                else if(str_comp(ch.pName, "Client Delay") == 0) ch.value = (float)bn.m_ClientDelay;
+                                                else if(str_comp(ch.pName, "Copy Moves") == 0) ch.on = bn.m_CopyMoves;
+                                                else if(str_comp(ch.pName, "Copy Target ID") == 0)
+                                                {
+                                                        if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                        {
+                                                                char b[16]; str_format(b, sizeof(b), "%d", bn.m_CopyTargetID);
+                                                                str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
+                                                                ch.m_InputInitialized = true;
+                                                        }
+                                                }
+                                                else if(str_comp(ch.pName, "Random Aim") == 0) ch.on = bn.m_RandomAim;
+                                                else if(str_comp(ch.pName, "Random Aim Interval") == 0) ch.value = (float)bn.m_RandomAimInterval;
+                                                else if(str_comp(ch.pName, "Pathfinder Enabled") == 0) ch.on = bn.m_PathfinderEnabled;
+                                                else if(str_comp(ch.pName, "Simulate Players") == 0) ch.on = bn.m_PfSimulatePlayers;
+                                                else if(str_comp(ch.pName, "SPS (Push)") == 0) ch.on = (bn.m_PfSimulateMethod != 0);
+                                                else if(str_comp(ch.pName, "Simulate Score") == 0) ch.value = bn.m_PfSimulateScore;
+                                                else if(str_comp(ch.pName, "Rays") == 0) ch.value = (float)bn.m_PfRays;
+                                                else if(str_comp(ch.pName, "Dist") == 0) ch.value = (float)bn.m_PfViewRadius;
+                                                else if(str_comp(ch.pName, "Fix Snap") == 0) ch.on = bn.m_PfSnap;
+                                                else if(str_comp(ch.pName, "Hook Enabled") == 0) ch.on = bn.m_PfHookEnabled;
+                                        }
+                                }
+                                // Dummies: hide "Switch to Main" if already on main player.
+                                else if(str_comp(row.pName, "Dummies") == 0)
+                                {
+                                        // Update button labels + visibility dynamically.
+                                        for(int c = 0; c < row.childCount; ++c)
+                                        {
+                                                SRow &ch = row.pChildren[c];
+                                                if(str_comp(ch.pName, "Connect Dummy") == 0)
+                                                {
+                                                        // Label depends on connection state.
+                                                        ch.on = GameClient()->Client()->AnyDummyConnected();
+                                                }
+                                                else if(str_comp(ch.pName, "Switch to Main") == 0)
+                                                {
+                                                        // Hide if already on main (g_Config.m_ClDummy == 0).
+                                                        ch.on = (g_Config.m_ClDummy != 0);
+                                                }
+                                                else if(ch.pName && ch.pName[0] == 'D' && ch.pName[1] >= '1' && ch.pName[1] <= '7')
+                                                {
+                                                        int d = ch.pName[1] - '0';
+                                                        if(strstr(ch.pName, "Connect"))
+                                                                ch.on = GameClient()->Client()->DummyConnected(d);
+                                                        else if(strstr(ch.pName, "Switch"))
+                                                                ch.on = (g_Config.m_ClDummy == d);
+                                                }
+                                        }
+                                }
+                        }
+                }
+        }
         // v1.56.77: sync ClickGUI Color input + Rainbow state from m_AccentColorRGBA.
         for(int p = 0; p < NUM_PANELS; ++p)
         {
@@ -1458,6 +1649,15 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 if(sscanf(pRow->m_aInputBuf, "%6x", &hex) == 1)
                                         g_Config.m_KxLineRenderingColor = hex & 0xffffff;
                         }
+                        // v1.56.90: Block children input commits
+                        else if(str_comp(pRow->pName, "Main ID") == 0)
+                                GameClient()->m_BotNet.m_MainID = atoi(pRow->m_aInputBuf);
+                        else if(str_comp(pRow->pName, "Target IDs") == 0)
+                                str_copy(GameClient()->m_BotNet.m_aTargetIDsStr, pRow->m_aInputBuf, sizeof(GameClient()->m_BotNet.m_aTargetIDsStr));
+                        else if(str_comp(pRow->pName, "Rescue IDs") == 0)
+                                str_copy(GameClient()->m_BotNet.m_aRescueIDsStr, pRow->m_aInputBuf, sizeof(GameClient()->m_BotNet.m_aRescueIDsStr));
+                        else if(str_comp(pRow->pName, "Copy Target ID") == 0)
+                                GameClient()->m_BotNet.m_CopyTargetID = atoi(pRow->m_aInputBuf);
                         // v1.56.89: Binds panel — execute "bind <input> toggle <cmd> 1 0"
                         else if(str_comp(pRow->pName, "ClickGUI") == 0 && m_InputPanel == 4)
                         {
@@ -1657,6 +1857,68 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                             s.m_UseRaycast = pTarget->on;
                                                 }
                                         }
+                                        // v1.56.90: Block children toggles
+                                        else if(str_comp(row.pName, "Block") == 0 && pTarget != &row)
+                                        {
+                                                CBotNet &bn = GameClient()->m_BotNet;
+                                                else if(str_comp(pTarget->pName, "Attack Main") == 0) bn.m_AttackMain = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Auto Main") == 0) bn.m_AutoMain = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "All Target") == 0) bn.m_AllTarget = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Auto Aim") == 0) bn.m_AutoAim = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Auto Fire") == 0) bn.m_AutoFire = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Auto Hook") == 0) bn.m_AutoHook = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Auto Hammer") == 0) bn.m_AutoHammer = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Move Enabled") == 0) bn.m_MoveEnabled = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Stand Enabled") == 0) bn.m_StandEnabled = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Stand On X Only") == 0) bn.m_StandOnXOnly = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Smart Detect") == 0) bn.m_SmartDetect = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Smart Rescue") == 0) bn.m_SmartRescue = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Rescue Frozen") == 0) bn.m_RescueFrozen = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Rescue All") == 0) bn.m_RescueAll = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Kill On Freeze") == 0) bn.m_KillOnFreeze = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Avoid Freeze") == 0) bn.m_AvoidFreeze = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Laser Rescue") == 0) bn.m_LaserRescue = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Copy Moves") == 0) bn.m_CopyMoves = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Random Aim") == 0) bn.m_RandomAim = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Pathfinder Enabled") == 0) bn.m_PathfinderEnabled = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Simulate Players") == 0) bn.m_PfSimulatePlayers = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Fix Snap") == 0) bn.m_PfSnap = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Hook Enabled") == 0) bn.m_PfHookEnabled = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "SPS (Push)") == 0) bn.m_PfSimulateMethod = pTarget->on ? 1 : 0;
+                                        }
+                                        // v1.56.90: Dummies buttons
+                                        else if(str_comp(row.pName, "Dummies") == 0 && pTarget->type == ERowType::Button)
+                                        {
+                                                if(str_comp(pTarget->pName, "Connect Dummy") == 0)
+                                                {
+                                                        if(GameClient()->Client()->AnyDummyConnected())
+                                                        {
+                                                            for(int D = 1; D < MAX_DUMMIES; D++)
+                                                                if(GameClient()->Client()->DummyConnected(D))
+                                                                    GameClient()->Client()->DummyDisconnect(D, nullptr);
+                                                        }
+                                                        else
+                                                            GameClient()->Client()->DummyConnect(1);
+                                                }
+                                                else if(str_comp(pTarget->pName, "Switch to Main") == 0)
+                                                    g_Config.m_ClDummy = 0;
+                                                else if(pTarget->pName && pTarget->pName[0] == 'D' && pTarget->pName[1] >= '1' && pTarget->pName[1] <= '7')
+                                                {
+                                                        int d = pTarget->pName[1] - '0';
+                                                        if(strstr(pTarget->pName, "Connect"))
+                                                        {
+                                                            if(GameClient()->Client()->DummyConnected(d))
+                                                                GameClient()->Client()->DummyDisconnect(d, nullptr);
+                                                            else
+                                                                GameClient()->Client()->DummyConnect(d);
+                                                        }
+                                                        else if(strstr(pTarget->pName, "Switch"))
+                                                        {
+                                                            if(g_Config.m_ClDummy != d)
+                                                                g_Config.m_ClDummy = d;
+                                                        }
+                                                }
+                                        }
                                         // Copy Moves Filter expandable is master toggle.
                                         else if(str_comp(pTarget->pName, "Copy Moves Filter") == 0)
                                                 g_Config.m_KxDummyCopyMovesFilter = pTarget->on ? 1 : 0;
@@ -1808,6 +2070,22 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 // Advanced → Trajectory children
                                 else if(str_comp(pTarget->pName, "Prediction Ticks") == 0)
                                         g_Config.m_KxTrajectoryTicks = (int)pTarget->value;
+                                // v1.56.90: Block children sliders
+                                else if(str_comp(pTarget->pName, "Avoid Freeze Radius") == 0) GameClient()->m_BotNet.m_AvoidFreezeRadius = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Fire Dist") == 0) GameClient()->m_BotNet.m_FireDist = pTarget->value;
+                                else if(str_comp(pTarget->pName, "Hook Dist") == 0) GameClient()->m_BotNet.m_HookDist = pTarget->value;
+                                else if(str_comp(pTarget->pName, "Rescue Radius") == 0) GameClient()->m_BotNet.m_RescueRadius = pTarget->value;
+                                else if(str_comp(pTarget->pName, "Target Dist") == 0) GameClient()->m_BotNet.m_TargetDist = pTarget->value;
+                                else if(str_comp(pTarget->pName, "Main Dist") == 0) GameClient()->m_BotNet.m_MainDist = pTarget->value;
+                                else if(str_comp(pTarget->pName, "Stand Dist") == 0) GameClient()->m_BotNet.m_StandDist = pTarget->value;
+                                else if(str_comp(pTarget->pName, "Main Stand Dist") == 0) GameClient()->m_BotNet.m_MainStandDist = pTarget->value;
+                                else if(str_comp(pTarget->pName, "Laser Rescue Dist") == 0) GameClient()->m_BotNet.m_LaserRescueDist = pTarget->value;
+                                else if(str_comp(pTarget->pName, "Hook Delay") == 0) GameClient()->m_BotNet.m_HookDelay = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Client Delay") == 0) GameClient()->m_BotNet.m_ClientDelay = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Random Aim Interval") == 0) GameClient()->m_BotNet.m_RandomAimInterval = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Simulate Score") == 0) GameClient()->m_BotNet.m_PfSimulateScore = pTarget->value;
+                                else if(str_comp(pTarget->pName, "Rays") == 0) GameClient()->m_BotNet.m_PfRays = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Dist") == 0) GameClient()->m_BotNet.m_PfViewRadius = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Chunk size") == 0)
                                         g_Config.m_KxPfChunkSize = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Hook angles") == 0)
