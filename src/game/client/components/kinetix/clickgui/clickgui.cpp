@@ -2778,9 +2778,9 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                         // [name (compact)] [text input box]
                         const float nameW = std::min(88.0f, TextRender()->TextWidth(17.0f, row.pName) + 4.0f);
                         DrawText(rx + 2.0f, ry + 5.0f, 17.0f, row.pName, textCol);
-                        const float inX = rx + nameW + 2.0f;
-                        const float inY = ry + 2.0f;
                         const float inW = rw / 2.0f; // v1.56.89: input field always half row width
+                        const float inX = rx + rw - inW - 2.0f; // v1.56.89: align to right edge of panel (like dropdown)
+                        const float inY = ry + 2.0f;
                         const float inH = rh - 4.0f;
                         // Highlight border if this input is being edited.
                         const bool editingThis = (m_InputEditing && m_InputPanel == panelIdx && m_InputRow == r && m_InputChild < 0);
