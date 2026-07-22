@@ -3521,6 +3521,20 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                         // v1.56.90: Button child — colored rect with centered label (Dummies).
                                         ColorRGBA btnCol = ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha);
                                         const char *pLabel = child.pName;
+                                        // v1.56.90: "Connect Dummy" label changes based on connection state.
+                                        if(str_comp(child.pName, "Connect Dummy") == 0)
+                                        {
+                                                if(GameClient()->Client()->AnyDummyConnecting())
+                                                        pLabel = "Connecting...";
+                                                else if(GameClient()->Client()->AnyDummyConnected())
+                                                {
+                                                        pLabel = "Disconnect All";
+                                                        btnCol = ColorRGBA(0xff3da35a, true).WithAlpha(alpha); // green
+                                                }
+                                        }
+                                        // v1.56.90: "Switch to Main" — hide if already on main (don't render).
+                                        if(str_comp(child.pName, "Switch to Main") == 0 && g_Config.m_ClDummy == 0)
+                                                break; // skip render — not on dummy
                                         // Connected/active state → green tint.
                                         if(child.on)
                                                 btnCol = ColorRGBA(0xff3da35a, true).WithAlpha(alpha);
