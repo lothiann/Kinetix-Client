@@ -424,7 +424,7 @@ static constexpr unsigned COL_HEADER_TEXT = 0xffffffff;
 static constexpr unsigned COL_ARROW = 0xffdddddd;
 static constexpr unsigned COL_ROW_TEXT = 0xffd8d8e8;
 static constexpr unsigned COL_ROW_TEXT_ON = 0xffffffff;
-static constexpr unsigned COL_CHECK_ON = 0xff00ff00; // green check
+static constexpr unsigned COL_CHECK_ON = 0xffd0d0e0; // light white checkmark
 static constexpr unsigned COL_CHECK_SQUARE = 0xff282834; // v1.56.61: rounded square bg under the checkmark (slightly lighter than COL_PANEL_BG=0xff161622)
 static constexpr unsigned COL_EXPAND_ARROW = 0xff8a8aa8;
 static constexpr unsigned COL_SUB_LIST_BG = 0x2e000000; // 18% alpha, black
@@ -3082,24 +3082,24 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                 {
                 case ERowType::Toggle:
                 {
-                        // [✓ or empty] [name]
+                        // [✕ or empty] [name]
                         DrawRoundedRect(rx + 1.0f, ry + 3.0f, CHECK_W, CHECK_W, 3.0f,
                                 IGraphics::CORNER_ALL,
                                 ColorRGBA(COL_CHECK_SQUARE, true).WithAlpha(alpha));
                         if(row.on)
-                                DrawText(rx + 1.0f + CHECK_W * 0.5f, ry + 3.0f - 2.0f, 24.0f, "\xe2\x9c\x93" /* ✓ */,
+                                DrawText(rx + 1.0f + CHECK_W * 0.5f, ry + 3.0f - 2.0f, 24.0f, "\xe2\x9c\x95" /* ✕ */,
                                         ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha), TEXTALIGN_CENTER);
                         DrawText(rx + CHECK_W + 4.0f, ry + 5.0f, 18.0f, row.pName, textCol);
                         break;
                 }
                 case ERowType::ToggleDropdown:
                 {
-                        // [✓ or empty] [name] [select box]
+                        // [✕ or empty] [name] [select box]
                         DrawRoundedRect(rx + 1.0f, ry + 3.0f, CHECK_W, CHECK_W, 3.0f,
                                 IGraphics::CORNER_ALL,
                                 ColorRGBA(COL_CHECK_SQUARE, true).WithAlpha(alpha));
                         if(row.on)
-                                DrawText(rx + 1.0f + CHECK_W * 0.5f, ry + 3.0f - 2.0f, 24.0f, "\xe2\x9c\x93",
+                                DrawText(rx + 1.0f + CHECK_W * 0.5f, ry + 3.0f - 2.0f, 24.0f, "\xe2\x9c\x95",
                                         ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha), TEXTALIGN_CENTER);
                         DrawText(rx + CHECK_W + 4.0f, ry + 5.0f, 18.0f, row.pName, textCol);
 
@@ -3254,12 +3254,12 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                 }
                 case ERowType::Expandable:
                 {
-                        // [✓ or empty] [name] [▶ or ▼]
+                        // [✕ or empty] [name] [▶ or ▼]
                         DrawRoundedRect(rx + 1.0f, ry + 3.0f, CHECK_W, CHECK_W, 3.0f,
                                 IGraphics::CORNER_ALL,
                                 ColorRGBA(COL_CHECK_SQUARE, true).WithAlpha(alpha));
                         if(row.on)
-                                DrawText(rx + 1.0f + CHECK_W * 0.5f, ry + 3.0f - 2.0f, 24.0f, "\xe2\x9c\x93",
+                                DrawText(rx + 1.0f + CHECK_W * 0.5f, ry + 3.0f - 2.0f, 24.0f, "\xe2\x9c\x95",
                                         ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha), TEXTALIGN_CENTER);
                         DrawText(rx + CHECK_W + 4.0f, ry + 5.0f, 18.0f, row.pName,
                                 row.on ? ColorRGBA(COL_ROW_TEXT_ON, true).WithAlpha(alpha) : textCol);
@@ -3414,7 +3414,7 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                                                 IGraphics::CORNER_ALL,
                                                 ColorRGBA(COL_CHECK_SQUARE, true).WithAlpha(alpha));
                                         if(child.on)
-                                                DrawText(crx + 1.0f + CHECK_W * 0.5f, cry + 3.0f - 2.0f, 22.0f, "\xe2\x9c\x93",
+                                                DrawText(crx + 1.0f + CHECK_W * 0.5f, cry + 3.0f - 2.0f, 22.0f, "\xe2\x9c\x95",
                                                                                         ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha), TEXTALIGN_CENTER);
                                         DrawText(crx + CHECK_W + 4.0f, cry + 5.0f, 17.0f, child.pName, cText);
                                         break;
@@ -3532,7 +3532,7 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                                                         IGraphics::CORNER_ALL,
                                                         ColorRGBA(COL_CHECK_SQUARE, true).WithAlpha(alpha));
                                                 if(child.on)
-                                                        DrawText(crx + 1.0f + CHECK_W * 0.5f, cry + 3.0f - 2.0f, 22.0f, "\xe2\x9c\x93",
+                                                        DrawText(crx + 1.0f + CHECK_W * 0.5f, cry + 3.0f - 2.0f, 22.0f, "\xe2\x9c\x95",
                                                                                                 ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha), TEXTALIGN_CENTER);
                                         }
                                         DrawText(crx + CHECK_W + 4.0f, cry + 5.0f, 17.0f, child.pName, cText);
@@ -3553,7 +3553,7 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                                                 IGraphics::CORNER_ALL,
                                                 ColorRGBA(COL_CHECK_SQUARE, true).WithAlpha(alpha));
                                         if(child.on)
-                                                DrawText(crx + 1.0f + CHECK_W * 0.5f, cry + 3.0f - 2.0f, 22.0f, "\xe2\x9c\x93",
+                                                DrawText(crx + 1.0f + CHECK_W * 0.5f, cry + 3.0f - 2.0f, 22.0f, "\xe2\x9c\x95",
                                                                                         ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha), TEXTALIGN_CENTER);
                                         DrawText(crx + CHECK_W + 4.0f, cry + 5.0f, 17.0f, child.pName, cText);
                                         break;
@@ -3628,7 +3628,7 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                                                         IGraphics::CORNER_ALL,
                                                         ColorRGBA(COL_CHECK_SQUARE, true).WithAlpha(alpha));
                                                 if(child.expanded) // child.expanded = send enabled
-                                                        DrawText(tx + checkSide * 0.5f, cry + 2.0f - 2.0f, checkSide, "\xe2\x9c\x93",
+                                                        DrawText(tx + checkSide * 0.5f, cry + 2.0f - 2.0f, checkSide, "\xe2\x9c\x95",
                                                                 ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha), TEXTALIGN_CENTER);
                                         }
                                         break;
