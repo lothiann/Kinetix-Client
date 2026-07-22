@@ -59,12 +59,14 @@ enum class ERowType
         Dropdown,
         Expandable,
         Button,
+        DoubleButton, // v1.56.90: two buttons in one row (Dummies Connect+Switch)
 };
 
 struct SRow
 {
         ERowType type;
         const char *pName;
+        const char *pName2; // v1.56.90: DoubleButton second button label
         bool on; // toggle / toggle-dropdown / expandable
         bool expanded; // expandable only
         float min, max, step, value; // slider only
@@ -90,15 +92,15 @@ struct SRow
 // ---------- Functions panel (4) ----------
 // "Custom latency" expandable: 1 slider child.
 static SRow g_CustomLatencyChildren[] = {
-        {ERowType::Slider, "Latency (ms)", false, false, 50.0f, 2000.0f, 10.0f, 500.0f, "ms", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Latency (ms)", nullptr, false, false, 50.0f, 2000.0f, 10.0f, 500.0f, "ms", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 // "Copy Moves Filter" expandable: 5 sub-toggles.
 static SRow g_CopyMovesFilterChildren[] = {
-        {ERowType::Toggle, "Filter: Jump", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Filter: Direction", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Filter: Hook", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Filter: Aim", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Filter: Fire", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Filter: Jump", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Filter: Direction", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Filter: Hook", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Filter: Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Filter: Fire", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 // Aim mode dropdown options.
 static const char *const g_AimModeOpts[] = {"Smart", "Mirror"};
@@ -115,218 +117,211 @@ static const char *const g_ABFreezeOpts[] = {"Both", "Freeze", "No freeze"};
 static const char *const g_ABPriorityOpts[] = {"Nearest FOV", "Nearest Aim", "Nearest to me"};
 // v1.56.83: AimBot expandable — 15 children.
 static SRow g_AimBotChildren[] = {
-        {ERowType::Dropdown, "AB Weapon", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABWeaponOpts, 7, 0, nullptr, 0},
-        {ERowType::Toggle, "AB Enable", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "AB FOV", false, false, 1.0f, 360.0f, 1.0f, 90.0f, "\xc2\xb0", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "AB Radius", false, false, 1.0f, 2000.0f, 1.0f, 300.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Show FOV", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Show Radius", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Use raycast (show)", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "AB Raycast (aim)", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "AB Angles", false, false, 1.0f, 64.0f, 1.0f, 16.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Dropdown, "AB Aim Mode", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABAimModeOpts, 3, 0, nullptr, 0},
-        {ERowType::Dropdown, "AB Team", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTeamOpts, 3, 0, nullptr, 0},
-        {ERowType::Dropdown, "AB Friend", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 2, 0, nullptr, 0},
-        {ERowType::Dropdown, "AB Dummy", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 2, 0, nullptr, 0},
-        {ERowType::Dropdown, "AB Freeze", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0},
-        {ERowType::Dropdown, "AB Priority", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABPriorityOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "AB Weapon", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABWeaponOpts, 7, 0, nullptr, 0},
+        {ERowType::Toggle, "AB Enable", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "AB FOV", nullptr, false, false, 1.0f, 360.0f, 1.0f, 90.0f, "\xc2\xb0", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "AB Radius", nullptr, false, false, 1.0f, 2000.0f, 1.0f, 300.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Show FOV", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Show Radius", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Use raycast (show)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "AB Raycast (aim)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "AB Angles", nullptr, false, false, 1.0f, 64.0f, 1.0f, 16.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "AB Aim Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABAimModeOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "AB Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTeamOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "AB Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 2, 0, nullptr, 0},
+        {ERowType::Dropdown, "AB Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 2, 0, nullptr, 0},
+        {ERowType::Dropdown, "AB Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "AB Priority", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABPriorityOpts, 3, 0, nullptr, 0},
 };
 // v1.56.86: TriggerBot expandable — 17 children (no Hook, has Trigger + Trigger mode + Latency).
 static SRow g_TriggerBotChildren[] = {
-        {ERowType::Dropdown, "TB Weapon", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABWeaponOptsNoHook, 6, 0, nullptr, 0},
-        {ERowType::Toggle, "TB Enable", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Dropdown, "TB Trigger", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTriggerOpts, 2, 0, nullptr, 0},
-        {ERowType::Dropdown, "TB Trigger mode", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTriggerModeOpts, 3, 0, nullptr, 0},
-        {ERowType::Slider, "TB FOV", false, false, 1.0f, 360.0f, 1.0f, 90.0f, "\xc2\xb0", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "TB Radius", false, false, 1.0f, 2000.0f, 1.0f, 300.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "TB Show FOV", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "TB Show Radius", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "TB Use raycast (show)", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "TB Raycast (trigger)", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "TB Angles", false, false, 1.0f, 64.0f, 1.0f, 16.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "TB Latency", false, false, 0.0f, 10.0f, 1.0f, 0.0f, " ticks", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Dropdown, "TB Team", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTeamOpts, 3, 0, nullptr, 0},
-        {ERowType::Dropdown, "TB Friend", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 2, 0, nullptr, 0},
-        {ERowType::Dropdown, "TB Dummy", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 2, 0, nullptr, 0},
-        {ERowType::Dropdown, "TB Freeze", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0},
-        {ERowType::Dropdown, "TB Priority", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABPriorityOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "TB Weapon", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABWeaponOptsNoHook, 6, 0, nullptr, 0},
+        {ERowType::Toggle, "TB Enable", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "TB Trigger", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTriggerOpts, 2, 0, nullptr, 0},
+        {ERowType::Dropdown, "TB Trigger mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTriggerModeOpts, 3, 0, nullptr, 0},
+        {ERowType::Slider, "TB FOV", nullptr, false, false, 1.0f, 360.0f, 1.0f, 90.0f, "\xc2\xb0", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "TB Radius", nullptr, false, false, 1.0f, 2000.0f, 1.0f, 300.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "TB Show FOV", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "TB Show Radius", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "TB Use raycast (show)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "TB Raycast (trigger)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "TB Angles", nullptr, false, false, 1.0f, 64.0f, 1.0f, 16.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "TB Latency", nullptr, false, false, 0.0f, 10.0f, 1.0f, 0.0f, " ticks", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "TB Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTeamOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "TB Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 2, 0, nullptr, 0},
+        {ERowType::Dropdown, "TB Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 2, 0, nullptr, 0},
+        {ERowType::Dropdown, "TB Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "TB Priority", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABPriorityOpts, 3, 0, nullptr, 0},
 };
 // v1.56.90: Dummies expandable — dummy connect/disconnect/switch buttons.
 // MAX_DUMMIES=8 (D1..D7, index 0 = main). Layout: Connect/Disconnect button +
 // Switch button per dummy. Plus top "Connect Dummy 1" (first connect) and
 // "Switch to Main Player" (only visible when not on main).
 static SRow g_DummiesChildren[] = {
-        {ERowType::Button, "Connect Dummy", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Button, "Switch to Main", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Button, "D1 Connect", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Button, "D1 Switch", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Button, "D2 Connect", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Button, "D2 Switch", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Button, "D3 Connect", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Button, "D3 Switch", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Button, "D4 Connect", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Button, "D4 Switch", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Button, "D5 Connect", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Button, "D5 Switch", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Button, "D6 Connect", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Button, "D6 Switch", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Button, "D7 Connect", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Button, "D7 Switch", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Button, "Connect Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Button, "Switch to Main", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::DoubleButton, "D1 Connect", "D1 Switch", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::DoubleButton, "D2 Connect", "D2 Switch", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::DoubleButton, "D3 Connect", "D3 Switch", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::DoubleButton, "D4 Connect", "D4 Switch", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::DoubleButton, "D5 Connect", "D5 Switch", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::DoubleButton, "D6 Connect", "D6 Switch", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::DoubleButton, "D7 Connect", "D7 Switch", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 // v1.56.90: Block expandable — all attack settings (37 children).
 static SRow g_BlockChildren[] = {
-        {ERowType::Toggle, "Attack Main", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Auto Main", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Main ID", false, false, 0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Target IDs", false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Rescue IDs", false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "All Target", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Auto Aim", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Auto Fire", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Auto Hook", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Auto Hammer", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Move Enabled", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Stand Enabled", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Stand On X Only", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Smart Detect", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Smart Rescue", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Rescue Frozen", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Rescue All", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Kill On Freeze", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Avoid Freeze", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-	{ERowType::Input, "Avoid Freeze Radius", false, false, 0, 0, 0, 0, nullptr, "3", "value...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Laser Rescue", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-	{ERowType::Input, "Fire Dist", false, false, 0, 0, 0, 0, nullptr, "200", "value...", nullptr, 0, 0, nullptr, 0},
-	{ERowType::Input, "Hook Dist", false, false, 0, 0, 0, 0, nullptr, "200", "value...", nullptr, 0, 0, nullptr, 0},
-	{ERowType::Input, "Rescue Radius", false, false, 0, 0, 0, 0, nullptr, "300", "value...", nullptr, 0, 0, nullptr, 0},
-	{ERowType::Input, "Target Dist", false, false, 0, 0, 0, 0, nullptr, "500", "value...", nullptr, 0, 0, nullptr, 0},
-	{ERowType::Input, "Main Dist", false, false, 0, 0, 0, 0, nullptr, "500", "value...", nullptr, 0, 0, nullptr, 0},
-	{ERowType::Input, "Stand Dist", false, false, 0, 0, 0, 0, nullptr, "100", "value...", nullptr, 0, 0, nullptr, 0},
-	{ERowType::Input, "Main Stand Dist", false, false, 0, 0, 0, 0, nullptr, "100", "value...", nullptr, 0, 0, nullptr, 0},
-	{ERowType::Input, "Laser Rescue Dist", false, false, 0, 0, 0, 0, nullptr, "500", "value...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Pathfinder Enabled", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Simulate Players", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "SPS (Push)", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-	{ERowType::Input, "Simulate Score", false, false, 0, 0, 0, 0, nullptr, "50", "value...", nullptr, 0, 0, nullptr, 0},
-	{ERowType::Input, "Rays", false, false, 0, 0, 0, 0, nullptr, "24", "value...", nullptr, 0, 0, nullptr, 0},
-	{ERowType::Input, "Dist", false, false, 0, 0, 0, 0, nullptr, "32", "value...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Fix Snap", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Hook Enabled", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Attack Main", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Auto Main", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Main ID", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Target IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Rescue IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "All Target", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Auto Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Auto Fire", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Auto Hook", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Auto Hammer", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Move Enabled", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Stand Enabled", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Stand On X Only", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Smart Detect", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Smart Rescue", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Rescue Frozen", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Rescue All", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Kill On Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Avoid Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Avoid Freeze Radius", nullptr, false, false, 0, 0, 0, 0, nullptr, "3", "value...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Laser Rescue", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Fire Dist", nullptr, false, false, 0, 0, 0, 0, nullptr, "200", "value...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Hook Dist", nullptr, false, false, 0, 0, 0, 0, nullptr, "200", "value...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Rescue Radius", nullptr, false, false, 0, 0, 0, 0, nullptr, "300", "value...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Target Dist", nullptr, false, false, 0, 0, 0, 0, nullptr, "500", "value...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Main Dist", nullptr, false, false, 0, 0, 0, 0, nullptr, "500", "value...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Stand Dist", nullptr, false, false, 0, 0, 0, 0, nullptr, "100", "value...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Main Stand Dist", nullptr, false, false, 0, 0, 0, 0, nullptr, "100", "value...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Laser Rescue Dist", nullptr, false, false, 0, 0, 0, 0, nullptr, "500", "value...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Pathfinder Enabled", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Simulate Players", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "SPS (Push)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Simulate Score", nullptr, false, false, 0, 0, 0, 0, nullptr, "50", "value...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Rays", nullptr, false, false, 0, 0, 0, 0, nullptr, "24", "value...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Dist", nullptr, false, false, 0, 0, 0, 0, nullptr, "32", "value...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Fix Snap", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Hook Enabled", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 static SRow g_FunctionsRows[] = {
-        {ERowType::Expandable, "Dummies", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_DummiesChildren, 16},
-        {ERowType::Expandable, "Block", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BlockChildren, 37},
-        {ERowType::Toggle, "Random Aim", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Expandable, "Dummies", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_DummiesChildren, 9},
+        {ERowType::Expandable, "Block", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BlockChildren, 37},
+        {ERowType::Toggle, "Random Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         // v1.56.83: AimBot + TriggerBot expandables
-        {ERowType::Expandable, "AimBot", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AimBotChildren, 15},
-        {ERowType::Expandable, "TriggerBot", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TriggerBotChildren, 17},
+        {ERowType::Expandable, "AimBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AimBotChildren, 15},
+        {ERowType::Expandable, "TriggerBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TriggerBotChildren, 17},
         // Fly sub-section
-        {ERowType::Toggle, "Preserve input", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Expandable, "Custom latency", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CustomLatencyChildren, 1},
-        {ERowType::Toggle, "Auto fly", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Preserve input", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Expandable, "Custom latency", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CustomLatencyChildren, 1},
+        {ERowType::Toggle, "Auto fly", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         // Copy Moves sub-section
-        {ERowType::Expandable, "Copy Moves Filter", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CopyMovesFilterChildren, 5},
-        {ERowType::Toggle, "Mirror direction", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Dropdown, "Aim mode", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_AimModeOpts, 2, 0, nullptr, 0},
+        {ERowType::Expandable, "Copy Moves Filter", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CopyMovesFilterChildren, 5},
+        {ERowType::Toggle, "Mirror direction", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "Aim mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_AimModeOpts, 2, 0, nullptr, 0},
         // Conditional aim options (visibility based on Aim mode)
-        {ERowType::Toggle, "Mirror aim X", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Mirror aim Y", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Smart aim", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Mirror aim X", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Mirror aim Y", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Smart aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 
 // ---------- Advanced panel (5) ----------
 // "Laser unfreeze" expandable: predictive laser self-unfreeze.
 static SRow g_LaserUnfreezeChildren[] = {
-        {ERowType::Toggle, "Auto laser", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "FOV", false, false, 5.0f, 360.0f, 5.0f, 90.0f, "°", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Angles", false, false, 1.0f, 144.0f, 1.0f, 9.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Ticks", false, false, 1.0f, 50.0f, 1.0f, 10.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Trigger ticks", false, false, 1.0f, 5.0f, 1.0f, 3.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Silent", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Show attempt", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Auto laser", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "FOV", nullptr, false, false, 5.0f, 360.0f, 5.0f, 90.0f, "°", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Angles", nullptr, false, false, 1.0f, 144.0f, 1.0f, 9.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Ticks", nullptr, false, false, 1.0f, 50.0f, 1.0f, 10.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Trigger ticks", nullptr, false, false, 1.0f, 5.0f, 1.0f, 3.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Silent", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Show attempt", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 // "Fake Aim" expandable.
 static const char *const g_FakeAimModeOpts[] = {"Random", "Robot", "Spin", "Lag"};
 static SRow g_FakeAimChildren[] = {
-        {ERowType::Dropdown, "Mode", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_FakeAimModeOpts, 4, 0, nullptr, 0},
-        {ERowType::Slider, "Speed", false, false, 1.0f, 100.0f, 1.0f, 10.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Show for me", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_FakeAimModeOpts, 4, 0, nullptr, 0},
+        {ERowType::Slider, "Speed", nullptr, false, false, 1.0f, 100.0f, 1.0f, 10.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Show for me", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 // v1.56.89: "Trajectory" expandable: toggle + Prediction Ticks slider.
 static SRow g_TrajectoryChildren[] = {
-        {ERowType::Slider, "Prediction Ticks", false, false, 1.0f, 50.0f, 1.0f, 10.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Prediction Ticks", nullptr, false, false, 1.0f, 50.0f, 1.0f, 10.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 static SRow g_AdvancedRows[] = {
-        {ERowType::Expandable, "Trajectory", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TrajectoryChildren, 1},
-        {ERowType::Expandable, "Laser unfreeze", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LaserUnfreezeChildren, 7},
-        {ERowType::Expandable, "Fake Aim", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_FakeAimChildren, 3},
+        {ERowType::Expandable, "Trajectory", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TrajectoryChildren, 1},
+        {ERowType::Expandable, "Laser unfreeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LaserUnfreezeChildren, 7},
+        {ERowType::Expandable, "Fake Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_FakeAimChildren, 3},
 };
 
 // ---------- Settings panel (6) ----------
 // "IRC" expandable: 2 sub-toggles.
 static SRow g_IrcChildren[] = {
-        {ERowType::Toggle, "Reveal join", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Nameplate tag", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Reveal join", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Nameplate tag", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 // "Spoofer" expandable: slider + dropdown + input.
 static const char *const g_ClientPresetOpts[] = {"DDNet", "TClient", "BestClient", "Custom"};
 static SRow g_SpooferChildren[] = {
-        {ERowType::Slider, "Version ID", false, false, 10000.0f, 21000.0f, 1.0f, 20000.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Dropdown, "Client preset", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ClientPresetOpts, 4, 0, nullptr, 0},
-        {ERowType::Input, "Client version", false, false, 0, 0, 0, 0, nullptr, "10.8.7", "version...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Version ID", nullptr, false, false, 10000.0f, 21000.0f, 1.0f, 20000.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "Client preset", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ClientPresetOpts, 4, 0, nullptr, 0},
+        {ERowType::Input, "Client version", nullptr, false, false, 0, 0, 0, 0, nullptr, "10.8.7", "version...", nullptr, 0, 0, nullptr, 0},
 };
 // v1.56.77: "Rainbow color" expandable: toggle + speed slider.
 static SRow g_RainbowChildren[] = {
-        {ERowType::Slider, "Speed", false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 // v1.56.89: "Line rendering" visual expandable (cannot toggle, only expand).
 // Shared line render settings used by trajectory, aimbot FOV/radius, pathfinder path, laser unfreeze.
 static SRow g_LineRenderingChildren[] = {
-        {ERowType::Slider, "Line Margin", false, false, 0.0f, 20.0f, 1.0f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Line color", false, false, 0, 0, 0, 0, nullptr, "ffbf00", "hex...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Line opacity", false, false, 0.0f, 100.0f, 1.0f, 80.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Line Margin", nullptr, false, false, 0.0f, 20.0f, 1.0f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Line color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ffbf00", "hex...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Line opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 80.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 static SRow g_SettingsRows[] = {
-        {ERowType::Input, "ClickGUI Color", false, false, 0, 0, 0, 0, nullptr, "9d4edd", "hex...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Expandable, "Rainbow color", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowChildren, 1},
-        {ERowType::Expandable, "Line rendering", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LineRenderingChildren, 3},
-        {ERowType::Expandable, "IRC", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_IrcChildren, 2},
-        {ERowType::Expandable, "Spoofer", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_SpooferChildren, 3},
+        {ERowType::Input, "ClickGUI Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "9d4edd", "hex...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Expandable, "Rainbow color", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowChildren, 1},
+        {ERowType::Expandable, "Line rendering", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LineRenderingChildren, 3},
+        {ERowType::Expandable, "IRC", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_IrcChildren, 2},
+        {ERowType::Expandable, "Spoofer", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_SpooferChildren, 3},
 };
 
 // ---------- Pathfinder panel (7) ----------
 // "Score method" visual expandable (cannot toggle off, only expand).
 static SRow g_ScoreMethodChildren[] = {
-        {ERowType::Toggle, "Distance reduction", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Flow-field alignment", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Distance reduction", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Flow-field alignment", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 // "Penalties" visual expandable.
 static SRow g_PenaltiesChildren[] = {
-        {ERowType::Toggle, "Freeze penalty", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Hook retract penalty", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Death penalty", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Wall-hit penalty", false, false, 0, 0, 0,0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Air-time penalty", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Hook-fire penalty", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Stuck penalty", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Freeze penalty", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Hook retract penalty", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Death penalty", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Wall-hit penalty", nullptr, false, false, 0, 0, 0,0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Air-time penalty", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Hook-fire penalty", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Stuck penalty", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 // "Visuals" visual expandable.
 static SRow g_VisualsChildren[] = {
-        {ERowType::Toggle, "Show field", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Show hooks", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Show branches", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Show speed", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Show field", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Show hooks", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Show branches", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Show speed", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 static SRow g_PathfinderRows[] = {
-        {ERowType::Slider, "Chunk size", false, false, 1.0f, 50.0f, 1.0f, 20.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Hook angles", false, false, 4.0f, 32.0f, 1.0f, 9.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Candidates", false, false, 50.0f, 2000.0f, 10.0f, 200.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Performance", false, false, 1.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Advanced search", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Expandable, "Score method", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ScoreMethodChildren, 2},
-        {ERowType::Expandable, "Penalties", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_PenaltiesChildren, 7},
-        {ERowType::Expandable, "Visuals", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_VisualsChildren, 4},
-        {ERowType::Button, "Pathfinding", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Chunk size", nullptr, false, false, 1.0f, 50.0f, 1.0f, 20.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Hook angles", nullptr, false, false, 4.0f, 32.0f, 1.0f, 9.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Candidates", nullptr, false, false, 50.0f, 2000.0f, 10.0f, 200.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Performance", nullptr, false, false, 1.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Advanced search", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Expandable, "Score method", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ScoreMethodChildren, 2},
+        {ERowType::Expandable, "Penalties", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_PenaltiesChildren, 7},
+        {ERowType::Expandable, "Visuals", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_VisualsChildren, 4},
+        {ERowType::Button, "Pathfinding", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 
 struct SPanel
@@ -339,14 +334,14 @@ struct SPanel
 // v1.56.89: Binds panel — input fields for binding keys to toggle commands.
 // On input commit (focus lost), executes: bind <input_value> toggle <cmd> 1 0
 static SRow g_BindsRows[] = {
-        {ERowType::Input, "ClickGUI", false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "AimBot", false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "TriggerBot", false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Fake Aim", false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Laser Unfreeze", false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Copy Moves Filter", false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Trajectory", false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Block", false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "ClickGUI", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "AimBot", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "TriggerBot", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Fake Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Laser Unfreeze", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Copy Moves Filter", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Trajectory", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Block", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
 };
 
 static SPanel g_Panels[NUM_PANELS] = {
@@ -467,6 +462,8 @@ static float RowHeight(ERowType t)
         case ERowType::Expandable:
                 return ROW_H_EXPANDABLE;
         case ERowType::Button:
+                return ROW_H_BUTTON;
+        case ERowType::DoubleButton:
                 return ROW_H_BUTTON;
         }
         return ROW_H_TOGGLE;
@@ -1099,117 +1096,117 @@ void CClickGui::OnRender()
                                                 else if(str_comp(ch.pName, "Kill On Freeze") == 0) ch.on = bn.m_KillOnFreeze;
                                                 else if(str_comp(ch.pName, "Avoid Freeze") == 0) ch.on = bn.m_AvoidFreeze;
                                                 else if(str_comp(ch.pName, "Avoid Freeze Radius") == 0)
-											{
-												if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
-												{
-													char b[16]; str_format(b, sizeof(b), "%d", bn.m_AvoidFreezeRadius);
-													str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
-													ch.m_InputInitialized = true;
-												}
-											}
+                                                                                        {
+                                                                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                                                                {
+                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", bn.m_AvoidFreezeRadius);
+                                                                                                        str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
+                                                                                                        ch.m_InputInitialized = true;
+                                                                                                }
+                                                                                        }
                                                 else if(str_comp(ch.pName, "Laser Rescue") == 0) ch.on = bn.m_LaserRescue;
                                                 else if(str_comp(ch.pName, "Fire Dist") == 0)
-											{
-												if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
-												{
-													char b[16]; str_format(b, sizeof(b), "%d", (int)bn.m_FireDist);
-													str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
-													ch.m_InputInitialized = true;
-												}
-											}
+                                                                                        {
+                                                                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                                                                {
+                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", (int)bn.m_FireDist);
+                                                                                                        str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
+                                                                                                        ch.m_InputInitialized = true;
+                                                                                                }
+                                                                                        }
                                                 else if(str_comp(ch.pName, "Hook Dist") == 0)
-											{
-												if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
-												{
-													char b[16]; str_format(b, sizeof(b), "%d", (int)bn.m_HookDist);
-													str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
-													ch.m_InputInitialized = true;
-												}
-											}
+                                                                                        {
+                                                                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                                                                {
+                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", (int)bn.m_HookDist);
+                                                                                                        str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
+                                                                                                        ch.m_InputInitialized = true;
+                                                                                                }
+                                                                                        }
                                                 else if(str_comp(ch.pName, "Rescue Radius") == 0)
-											{
-												if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
-												{
-													char b[16]; str_format(b, sizeof(b), "%d", (int)bn.m_RescueRadius);
-													str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
-													ch.m_InputInitialized = true;
-												}
-											}
+                                                                                        {
+                                                                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                                                                {
+                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", (int)bn.m_RescueRadius);
+                                                                                                        str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
+                                                                                                        ch.m_InputInitialized = true;
+                                                                                                }
+                                                                                        }
                                                 else if(str_comp(ch.pName, "Target Dist") == 0)
-											{
-												if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
-												{
-													char b[16]; str_format(b, sizeof(b), "%d", (int)bn.m_TargetDist);
-													str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
-													ch.m_InputInitialized = true;
-												}
-											}
+                                                                                        {
+                                                                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                                                                {
+                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", (int)bn.m_TargetDist);
+                                                                                                        str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
+                                                                                                        ch.m_InputInitialized = true;
+                                                                                                }
+                                                                                        }
                                                 else if(str_comp(ch.pName, "Main Dist") == 0)
-											{
-												if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
-												{
-													char b[16]; str_format(b, sizeof(b), "%d", (int)bn.m_MainDist);
-													str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
-													ch.m_InputInitialized = true;
-												}
-											}
+                                                                                        {
+                                                                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                                                                {
+                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", (int)bn.m_MainDist);
+                                                                                                        str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
+                                                                                                        ch.m_InputInitialized = true;
+                                                                                                }
+                                                                                        }
                                                 else if(str_comp(ch.pName, "Stand Dist") == 0)
-											{
-												if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
-												{
-													char b[16]; str_format(b, sizeof(b), "%d", (int)bn.m_StandDist);
-													str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
-													ch.m_InputInitialized = true;
-												}
-											}
+                                                                                        {
+                                                                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                                                                {
+                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", (int)bn.m_StandDist);
+                                                                                                        str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
+                                                                                                        ch.m_InputInitialized = true;
+                                                                                                }
+                                                                                        }
                                                 else if(str_comp(ch.pName, "Main Stand Dist") == 0)
-											{
-												if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
-												{
-													char b[16]; str_format(b, sizeof(b), "%d", (int)bn.m_MainStandDist);
-													str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
-													ch.m_InputInitialized = true;
-												}
-											}
+                                                                                        {
+                                                                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                                                                {
+                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", (int)bn.m_MainStandDist);
+                                                                                                        str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
+                                                                                                        ch.m_InputInitialized = true;
+                                                                                                }
+                                                                                        }
                                                 else if(str_comp(ch.pName, "Laser Rescue Dist") == 0)
-											{
-												if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
-												{
-													char b[16]; str_format(b, sizeof(b), "%d", (int)bn.m_LaserRescueDist);
-													str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
-													ch.m_InputInitialized = true;
-												}
-											}
+                                                                                        {
+                                                                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                                                                {
+                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", (int)bn.m_LaserRescueDist);
+                                                                                                        str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
+                                                                                                        ch.m_InputInitialized = true;
+                                                                                                }
+                                                                                        }
                                                 else if(str_comp(ch.pName, "Pathfinder Enabled") == 0) ch.on = bn.m_PathfinderEnabled;
                                                 else if(str_comp(ch.pName, "Simulate Players") == 0) ch.on = bn.m_PfSimulatePlayers;
                                                 else if(str_comp(ch.pName, "SPS (Push)") == 0) ch.on = (bn.m_PfSimulateMethod != 0);
                                                 else if(str_comp(ch.pName, "Simulate Score") == 0)
-											{
-												if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
-												{
-													char b[16]; str_format(b, sizeof(b), "%d", (int)bn.m_PfSimulateScore);
-													str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
-													ch.m_InputInitialized = true;
-												}
-											}
+                                                                                        {
+                                                                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                                                                {
+                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", (int)bn.m_PfSimulateScore);
+                                                                                                        str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
+                                                                                                        ch.m_InputInitialized = true;
+                                                                                                }
+                                                                                        }
                                                 else if(str_comp(ch.pName, "Rays") == 0)
-											{
-												if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
-												{
-													char b[16]; str_format(b, sizeof(b), "%d", bn.m_PfRays);
-													str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
-													ch.m_InputInitialized = true;
-												}
-											}
+                                                                                        {
+                                                                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                                                                {
+                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", bn.m_PfRays);
+                                                                                                        str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
+                                                                                                        ch.m_InputInitialized = true;
+                                                                                                }
+                                                                                        }
                                                 else if(str_comp(ch.pName, "Dist") == 0)
-											{
-												if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
-												{
-													char b[16]; str_format(b, sizeof(b), "%d", bn.m_PfViewRadius);
-													str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
-													ch.m_InputInitialized = true;
-												}
-											}
+                                                                                        {
+                                                                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                                                                {
+                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", bn.m_PfViewRadius);
+                                                                                                        str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
+                                                                                                        ch.m_InputInitialized = true;
+                                                                                                }
+                                                                                        }
                                                 else if(str_comp(ch.pName, "Fix Snap") == 0) ch.on = bn.m_PfSnap;
                                                 else if(str_comp(ch.pName, "Hook Enabled") == 0) ch.on = bn.m_PfHookEnabled;
                                         }
@@ -1238,6 +1235,13 @@ void CClickGui::OnRender()
                                                                 ch.on = GameClient()->Client()->DummyConnected(d);
                                                         else if(strstr(ch.pName, "Switch"))
                                                                 ch.on = (g_Config.m_ClDummy == d);
+                                                }
+                                                // v1.56.90: DoubleButton (Connect+Switch) — ch.on=connected, ch.value=active
+                                                else if(ch.type == ERowType::DoubleButton && ch.pName && ch.pName[0] == 'D')
+                                                {
+                                                        int d = ch.pName[1] - '0';
+                                                        ch.on = GameClient()->Client()->DummyConnected(d);
+                                                        ch.value = (g_Config.m_ClDummy == d) ? 1.0f : 0.0f;
                                                 }
                                         }
                                 }
@@ -2002,6 +2006,29 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                             if(g_Config.m_ClDummy != d)
                                                                 g_Config.m_ClDummy = d;
                                                         }
+                                                }
+                                        }
+                                        // v1.56.90: Dummies DoubleButton (Connect+Switch side by side)
+                                        else if(str_comp(row.pName, "Dummies") == 0 && pTarget->type == ERowType::DoubleButton)
+                                        {
+                                                // Determine which button by mouse X relative to row center.
+                                                const float centerX = rx + rw * 0.5f;
+                                                const bool clickLeft = (mousePos.x < centerX);
+                                                if(clickLeft)
+                                                {
+                                                        // Left = Connect/Disconnect
+                                                        int d = pTarget->pName[1] - '0';
+                                                        if(GameClient()->Client()->DummyConnected(d))
+                                                            GameClient()->Client()->DummyDisconnect(d, nullptr);
+                                                        else
+                                                            GameClient()->Client()->DummyConnect(d);
+                                                }
+                                                else
+                                                {
+                                                        // Right = Switch
+                                                        int d = pTarget->pName2[1] - '0';
+                                                        if(g_Config.m_ClDummy != d)
+                                                            g_Config.m_ClDummy = d;
                                                 }
                                         }
                                         // Copy Moves Filter expandable is master toggle.
@@ -3517,6 +3544,34 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                                 IGraphics::CORNER_ALL, btnCol);
                                         const float labelW = TextRender()->TextWidth(15.0f, pLabel);
                                         DrawText(crx + (crw - labelW) * 0.5f, cry + 7.0f, 15.0f, pLabel,
+                                                ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                                        break;
+                                }
+                                case ERowType::DoubleButton:
+                                {
+                                        // v1.56.90: DoubleButton child — two buttons side by side (Dummies Connect+Switch).
+                                        // Left button = pName (Connect/Disconnect), right button = pName2 (Switch).
+                                        // Click handler determines which button was clicked by mouse X position.
+                                        const float halfW = (crw - 6.0f) * 0.5f; // 2px gap between buttons
+                                        // Left button (Connect) — green if connected.
+                                        ColorRGBA leftCol = ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha);
+                                        if(child.on) // child.on = connected state
+                                                leftCol = ColorRGBA(0xff3da35a, true).WithAlpha(alpha);
+                                        DrawRoundedRect(crx + 2.0f, cry + 2.0f, halfW, crh - 4.0f, 4.0f,
+                                                IGraphics::CORNER_ALL, leftCol);
+                                        const float lw1 = TextRender()->TextWidth(14.0f, child.pName);
+                                        DrawText(crx + 2.0f + (halfW - lw1) * 0.5f, cry + 8.0f, 14.0f, child.pName,
+                                                ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                                        // Right button (Switch) — green if this dummy is active.
+                                        ColorRGBA rightCol = ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha);
+                                        // child.value used as "is active" flag (set in sync).
+                                        if(child.value > 0.5f)
+                                                rightCol = ColorRGBA(0xff3da35a, true).WithAlpha(alpha);
+                                        const float rx2 = crx + 2.0f + halfW + 2.0f;
+                                        DrawRoundedRect(rx2, cry + 2.0f, halfW, crh - 4.0f, 4.0f,
+                                                IGraphics::CORNER_ALL, rightCol);
+                                        const float lw2 = TextRender()->TextWidth(14.0f, child.pName2);
+                                        DrawText(rx2 + (halfW - lw2) * 0.5f, cry + 8.0f, 14.0f, child.pName2,
                                                 ColorRGBA(0xffffffff, true).WithAlpha(alpha));
                                         break;
                                 }
