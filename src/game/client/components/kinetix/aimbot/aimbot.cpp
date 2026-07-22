@@ -382,16 +382,17 @@ void CAimBot::UpdateTriggerBot()
         }
 
         CNetObj_PlayerInput *pInput = &pGame->m_Controls.m_aInputData[g_Config.m_ClDummy];
+        int curTick = Client()->GameTick(g_Config.m_ClDummy);
 
         // one_tick: release the trigger on the tick AFTER it was pressed (exactly 1 tick hold).
         // Done BEFORE the targetInZone check so it runs regardless of current target state.
-        if(m_TriggerBotReleaseNextTick)
+        if(m_TriggerBotReleaseTick >= 0 && curTick >= m_TriggerBotReleaseTick)
         {
                 if(s.m_Trigger == 0)
                         pInput->m_Fire &= ~1;
                 else
                         pInput->m_Hook = 0;
-                m_TriggerBotReleaseNextTick = false;
+                m_TriggerBotReleaseTick = -1;
         }
 
         if(targetInZone)
@@ -409,7 +410,7 @@ void CAimBot::UpdateTriggerBot()
                                         FireWeapon();
                                 else
                                         DoHook();
-                                m_TriggerBotReleaseNextTick = true; // release on next tick
+                                m_TriggerBotReleaseTick = curTick + 1; // release on next tick
                         }
                 }
                 else if(s.m_TriggerMode == 1) // hold
@@ -431,7 +432,7 @@ void CAimBot::UpdateTriggerBot()
         else
         {
                 // Target left zone — release for hold/every_tick modes.
-                // one_tick already released via m_TriggerBotReleaseNextTick (no action needed here).
+                // one_tick already released via m_TriggerBotReleaseTick (no action needed here).
                 if(s.m_TriggerMode != 0)
                 {
                         // Only release if we were active (don't clobber player's own input).
