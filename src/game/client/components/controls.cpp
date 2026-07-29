@@ -587,7 +587,7 @@ int CControls::SnapInput(int *pData)
                         if(pChar)
                         {
                                 int tickBefore = pChar->GetAttackTick();
-                                bool wasFrozen = (pChar->m_FreezeTime > 0) || pChar->m_Core.m_DeepFrozen;
+                                bool wasFrozen = (pChar->m_FreezeTime > 0) || pChar->Core()->m_DeepFrozen;
                                 CGameWorld FutureWorld;
                                 FutureWorld.CopyWorld(&pGC->m_PredictedWorld);
                                 CCharacter *pFuture = FutureWorld.GetCharacterById(LocalID);
@@ -605,7 +605,7 @@ int CControls::SnapInput(int *pData)
                                                 // v1.56.103: Emulate freeze state in prediction.
                                                 // If player was frozen and will unfreeze next tick,
                                                 // treat as willFire so fake aim releases correctly.
-                                                if(wasFrozen && pAfter->m_FreezeTime == 0 && !pAfter->m_Core.m_DeepFrozen)
+                                                if(wasFrozen && pAfter->m_FreezeTime == 0 && !pAfter->Core()->m_DeepFrozen)
                                                         willFire = true;
                                         }
                                 }
