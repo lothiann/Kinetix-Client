@@ -2108,10 +2108,6 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                             tb.m_TriggerBotShowFov = pTarget->on;
                                                         else if(str_comp(pTarget->pName, "TB Show Radius") == 0)
                                                             tb.m_TriggerBotShowRadius = pTarget->on;
-                                                        else if(str_comp(pTarget->pName, "Use Angle") == 0)
-                                                            s.m_UseAngle = pTarget->on;
-                                                        else if(str_comp(pTarget->pName, "Show success") == 0)
-                                                            s.m_ShowSuccess = pTarget->on;
                                                         else if(str_comp(pTarget->pName, "TB Use raycast (Show)") == 0)
                                                             s.m_UseRaycastShow = pTarget->on;
                                                         else if(str_comp(pTarget->pName, "TB Use raycast (TB)") == 0)
