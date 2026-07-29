@@ -1047,6 +1047,14 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                                                         ch.on = s.m_UseRaycastAB;
                                                 else if(str_comp(ch.pName, "Raycast angles (Show)") == 0)
                                                         ch.value = (float)s.m_RaycastAnglesShow;
+                                                else if(str_comp(ch.pName, "Rules") == 0)
+                                                        ch.valueIdx = s.m_Rules;
+                                                else if(str_comp(ch.pName, "Show raycast lines (AB)") == 0)
+                                                        ch.on = s.m_ShowRaycastLinesAB;
+                                                else if(str_comp(ch.pName, "Raycast angles (AB)") == 0)
+                                                        ch.value = (float)s.m_RaycastAnglesAB;
+                                                else if(str_comp(ch.pName, "Use Angle") == 0)
+                                                        ch.on = s.m_UseAngle;
                                                 else if(str_comp(ch.pName, "AB Aim Mode") == 0)
                                                         ch.valueIdx = s.m_AimMode;
                                                 else if(str_comp(ch.pName, "AB Team") == 0)
@@ -1107,6 +1115,14 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                                                         ch.on = s.m_UseRaycastAB;
                                                 else if(str_comp(ch.pName, "TB Raycast angles (Show)") == 0)
                                                         ch.value = (float)s.m_RaycastAnglesShow;
+                                                else if(str_comp(ch.pName, "TB Rules") == 0)
+                                                        ch.valueIdx = s.m_Rules;
+                                                else if(str_comp(ch.pName, "TB Show raycast lines (TB)") == 0)
+                                                        ch.on = s.m_ShowRaycastLinesAB;
+                                                else if(str_comp(ch.pName, "TB Raycast angles (TB)") == 0)
+                                                        ch.value = (float)s.m_RaycastAnglesAB;
+                                                else if(str_comp(ch.pName, "TB Use Angle") == 0)
+                                                        ch.on = s.m_UseAngle;
                                                 else if(str_comp(ch.pName, "TB Latency") == 0)
                                                         ch.value = (float)s.m_RandomLatency;
                                                 else if(str_comp(ch.pName, "TB Team") == 0)
