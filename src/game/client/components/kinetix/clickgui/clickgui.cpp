@@ -110,6 +110,7 @@ static const char *const g_ABWeaponOptsNoHook[] = {"Hammer", "Pistol", "Shotgun"
 static const char *const g_ABTriggerOpts[] = {"Fire", "Hook"};
 static const char *const g_ABTriggerModeOpts[] = {"One tick", "Hold", "Every tick"};
 static const char *const g_ABAimModeOpts[] = {"Silent", "Trigger", "Always"};
+static const char *const g_ABRulesOpts[] = {"None", "Insert line", "Insert line + Raycast"};
 static const char *const g_ABTeamOpts[] = {"Both", "War", "My"};
 static const char *const g_ABFriendOpts[] = {"Both", "Ignore"};
 static const char *const g_ABDummyOpts[] = {"Both", "Ignore"};
@@ -125,6 +126,7 @@ static SRow g_AimBotChildren[] = {
         {ERowType::Toggle, "Show Radius", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Use raycast (Show)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Raycast angles (Show)", nullptr, false, false, 1.0f, 64.0f, 1.0f, 16.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "Rules", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABRulesOpts, 3, 0, nullptr, 0},
         {ERowType::Toggle, "Use raycast (AB)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Show raycast lines (AB)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Raycast angles (AB)", nullptr, false, false, 1.0f, 64.0f, 1.0f, 16.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
@@ -146,12 +148,11 @@ static SRow g_TriggerBotChildren[] = {
         {ERowType::Toggle, "TB Show FOV", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "TB Show Radius", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "TB Use raycast (Show)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-	{ERowType::Slider, "TB Raycast angles (Show)", nullptr, false, false, 1.0f, 64.0f, 1.0f, 16.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-	{ERowType::Toggle, "TB Use raycast (TB)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-	{ERowType::Toggle, "TB Show raycast lines (TB)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-	{ERowType::Slider, "TB Raycast angles (TB)", nullptr, false, false, 1.0f, 64.0f, 1.0f, 16.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "TB Use raycast (TB)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "TB Raycast angles (Show)", nullptr, false, false, 1.0f, 64.0f, 1.0f, 16.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "TB Rules", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABRulesOpts, 3, 0, nullptr, 0},
+        {ERowType::Toggle, "TB Use raycast (TB)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "TB Show raycast lines (TB)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "TB Raycast angles (TB)", nullptr, false, false, 1.0f, 64.0f, 1.0f, 16.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "TB Latency", nullptr, false, false, 0.0f, 10.0f, 1.0f, 0.0f, " ticks", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Dropdown, "TB Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTeamOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "TB Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 2, 0, nullptr, 0},
@@ -219,7 +220,7 @@ static SRow g_FunctionsRows[] = {
         {ERowType::Expandable, "Block", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BlockChildren, 37},
         {ERowType::Toggle, "Random Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         // v1.56.83: AimBot + TriggerBot expandables
-        {ERowType::Expandable, "AimBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AimBotChildren, 17},
+        {ERowType::Expandable, "AimBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AimBotChildren, 18},
         {ERowType::Expandable, "TriggerBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TriggerBotChildren, 21},
         // Fly sub-section
         {ERowType::Toggle, "Preserve input", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
@@ -403,6 +404,54 @@ static bool FakeAimChildVisible(const SRow *pChildren, int childCount, int idx)
         if(str_comp(row.pName, "Speed") == 0)
                 return modeIdx != 1;
         return true;
+}
+
+// v1.56.92: AimBot — raycast AB fields visible only when Rules=2 (Insert line + Raycast)
+static bool AimBotChildVisible(const SRow *pChildren, int childCount, int idx)
+{
+	if(idx < 0 || idx >= childCount)
+		return false;
+	const SRow &row = pChildren[idx];
+	// Find Rules dropdown value
+	int rulesIdx = 1; // default Insert line
+	for(int i = 0; i < childCount; ++i)
+	{
+		if(str_comp(pChildren[i].pName, "Rules") == 0)
+		{
+			rulesIdx = pChildren[i].valueIdx;
+			break;
+		}
+	}
+	const bool isRaycastMode = (rulesIdx == 2);
+	// Raycast AB fields hidden when Rules != 2
+	if(str_comp(row.pName, "Use raycast (AB)") == 0 ||
+	   str_comp(row.pName, "Show raycast lines (AB)") == 0 ||
+	   str_comp(row.pName, "Raycast angles (AB)") == 0)
+		return isRaycastMode;
+	return true;
+}
+
+// v1.56.92: TriggerBot — same as AimBot
+static bool TriggerBotChildVisible(const SRow *pChildren, int childCount, int idx)
+{
+	if(idx < 0 || idx >= childCount)
+		return false;
+	const SRow &row = pChildren[idx];
+	int rulesIdx = 1;
+	for(int i = 0; i < childCount; ++i)
+	{
+		if(str_comp(pChildren[i].pName, "TB Rules") == 0)
+		{
+			rulesIdx = pChildren[i].valueIdx;
+			break;
+		}
+	}
+	const bool isRaycastMode = (rulesIdx == 2);
+	if(str_comp(row.pName, "TB Use raycast (TB)") == 0 ||
+	   str_comp(row.pName, "TB Show raycast lines (TB)") == 0 ||
+	   str_comp(row.pName, "TB Raycast angles (TB)") == 0)
+		return isRaycastMode;
+	return true;
 }
 
 // v1.56.90: Dummies — "Switch to Main" hidden when already on main player.
@@ -847,6 +896,10 @@ void CClickGui::OnRender()
                                         SRow &child = row.pChildren[c];
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;
+							if(str_comp(row.pName, "AimBot") == 0 && !AimBotChildVisible(row.pChildren, row.childCount, c))
+								continue;
+							if(str_comp(row.pName, "TriggerBot") == 0 && !TriggerBotChildVisible(row.pChildren, row.childCount, c))
+								continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
                                         if(str_comp(child.pName, "Latency (ms)") == 0)
@@ -1478,8 +1531,8 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                                                         s.m_Radius = pTarget->value;
                                                     else if(str_comp(pTarget->pName, "Raycast angles (Show)") == 0)
                                                         s.m_RaycastAnglesShow = (int)pTarget->value;
-									else if(str_comp(pTarget->pName, "Raycast angles (AB)") == 0)
-										s.m_RaycastAnglesAB = (int)pTarget->value;
+                                                                        else if(str_comp(pTarget->pName, "Raycast angles (AB)") == 0)
+                                                                                s.m_RaycastAnglesAB = (int)pTarget->value;
                                                 }
                                         }
                                         else if(str_comp(parentRow.pName, "TriggerBot") == 0)
@@ -1494,8 +1547,8 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                                                         s.m_Radius = pTarget->value;
                                                     else if(str_comp(pTarget->pName, "TB Raycast angles (Show)") == 0)
                                                         s.m_RaycastAnglesShow = (int)pTarget->value;
-									else if(str_comp(pTarget->pName, "Raycast angles (AB)") == 0)
-										s.m_RaycastAnglesAB = (int)pTarget->value;
+                                                                        else if(str_comp(pTarget->pName, "Raycast angles (AB)") == 0)
+                                                                                s.m_RaycastAnglesAB = (int)pTarget->value;
                                                     else if(str_comp(pTarget->pName, "TB Latency") == 0)
                                                         s.m_RandomLatency = (int)pTarget->value;
                                                 }
@@ -1949,8 +2002,8 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                             s.m_UseRaycastShow = pTarget->on;
                                                         else if(str_comp(pTarget->pName, "Use raycast (AB)") == 0)
                                                             s.m_UseRaycastAB = pTarget->on;
-									else if(str_comp(pTarget->pName, "Show raycast lines (AB)") == 0)
-										s.m_ShowRaycastLinesAB = pTarget->on;
+                                                                        else if(str_comp(pTarget->pName, "Show raycast lines (AB)") == 0)
+                                                                                s.m_ShowRaycastLinesAB = pTarget->on;
                                                 }
                                         }
                                         // v1.56.83: TriggerBot per-weapon child toggles (parent = "TriggerBot")
@@ -1971,8 +2024,8 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                             s.m_UseRaycastShow = pTarget->on;
                                                         else if(str_comp(pTarget->pName, "TB Use raycast (TB)") == 0)
                                                             s.m_UseRaycastAB = pTarget->on;
-									else if(str_comp(pTarget->pName, "Show raycast lines (AB)") == 0)
-										s.m_ShowRaycastLinesAB = pTarget->on;
+                                                                        else if(str_comp(pTarget->pName, "Show raycast lines (AB)") == 0)
+                                                                                s.m_ShowRaycastLinesAB = pTarget->on;
                                                 }
                                         }
                                         // v1.56.90: Block children toggles
@@ -2369,6 +2422,10 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                                 SRow &child = row.pChildren[c];
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;
+							if(str_comp(row.pName, "AimBot") == 0 && !AimBotChildVisible(row.pChildren, row.childCount, c))
+								continue;
+							if(str_comp(row.pName, "TriggerBot") == 0 && !TriggerBotChildVisible(row.pChildren, row.childCount, c))
+								continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
                                 const float crh = RowHeight(child.type);
@@ -2406,6 +2463,8 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                                                                                 auto &s = ab.m_AimBotWeapons[w];
                                                                                 if(str_comp(target.pName, "AB Aim Mode") == 0)
                                                                                         s.m_AimMode = o;
+                                                                                else if(str_comp(target.pName, "Rules") == 0)
+                                                                                        s.m_Rules = o;
                                                                                 else if(str_comp(target.pName, "AB Team") == 0)
                                                                                         s.m_TeamFilter = o;
                                                                                 else if(str_comp(target.pName, "AB Friend") == 0)
@@ -2435,6 +2494,8 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                                                                                         s.m_Trigger = o;
                                                                                 else if(str_comp(target.pName, "TB Trigger mode") == 0)
                                                                                         s.m_TriggerMode = o;
+                                                                                else if(str_comp(target.pName, "TB Rules") == 0)
+                                                                                        s.m_Rules = o;
                                                                                 else if(str_comp(target.pName, "TB Team") == 0)
                                                                                         s.m_TeamFilter = o;
                                                                                 else if(str_comp(target.pName, "TB Friend") == 0)
@@ -2520,6 +2581,10 @@ void CClickGui::RenderDropdownPopup(float alpha)
                                 SRow &child = row.pChildren[c];
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;
+							if(str_comp(row.pName, "AimBot") == 0 && !AimBotChildVisible(row.pChildren, row.childCount, c))
+								continue;
+							if(str_comp(row.pName, "TriggerBot") == 0 && !TriggerBotChildVisible(row.pChildren, row.childCount, c))
+								continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
                                 const float crh = RowHeight(child.type);
@@ -2779,6 +2844,10 @@ bool CClickGui::HitTestRow(vec2 mousePos, int panelIdx, int &outRow, int &outChi
                                 SRow &child = row.pChildren[c];
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;
+							if(str_comp(row.pName, "AimBot") == 0 && !AimBotChildVisible(row.pChildren, row.childCount, c))
+								continue;
+							if(str_comp(row.pName, "TriggerBot") == 0 && !TriggerBotChildVisible(row.pChildren, row.childCount, c))
+								continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
                                 const float crh = RowHeight(child.type);
@@ -2835,6 +2904,10 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                         {
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;
+							if(str_comp(row.pName, "AimBot") == 0 && !AimBotChildVisible(row.pChildren, row.childCount, c))
+								continue;
+							if(str_comp(row.pName, "TriggerBot") == 0 && !TriggerBotChildVisible(row.pChildren, row.childCount, c))
+								continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
                                 sig = sig * 31u + (unsigned)(c + 100);
@@ -2890,6 +2963,10 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                                         {
                                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                                         continue;
+							if(str_comp(row.pName, "AimBot") == 0 && !AimBotChildVisible(row.pChildren, row.childCount, c))
+								continue;
+							if(str_comp(row.pName, "TriggerBot") == 0 && !TriggerBotChildVisible(row.pChildren, row.childCount, c))
+								continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
                                                 addRowNode(row.pChildren[c], true);
@@ -2949,6 +3026,10 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                         {
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;
+							if(str_comp(row.pName, "AimBot") == 0 && !AimBotChildVisible(row.pChildren, row.childCount, c))
+								continue;
+							if(str_comp(row.pName, "TriggerBot") == 0 && !TriggerBotChildVisible(row.pChildren, row.childCount, c))
+								continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
                                 childrenBlockH += RowHeight(row.pChildren[c].type);
@@ -3378,6 +3459,10 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                                 {
                                         if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                                 continue;
+							if(str_comp(row.pName, "AimBot") == 0 && !AimBotChildVisible(row.pChildren, row.childCount, c))
+								continue;
+							if(str_comp(row.pName, "TriggerBot") == 0 && !TriggerBotChildVisible(row.pChildren, row.childCount, c))
+								continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
                                         ++rowIdx;
@@ -3403,6 +3488,10 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                                 SRow &child = row.pChildren[c];
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;
+							if(str_comp(row.pName, "AimBot") == 0 && !AimBotChildVisible(row.pChildren, row.childCount, c))
+								continue;
+							if(str_comp(row.pName, "TriggerBot") == 0 && !TriggerBotChildVisible(row.pChildren, row.childCount, c))
+								continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
                                 const YGNodeRef cnode = rowNodes[rowIdx];

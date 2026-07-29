@@ -32,6 +32,7 @@ public:
                 float m_Radius = 300.0f;
                 bool m_UseRaycastShow = false; // show: render FOV cone with wall collision
                 int m_RaycastAnglesShow = 16; // show: number of raycast angles
+                int m_Rules = 1; // 0=none 1=insert_line 2=insert_line+raycast
                 bool m_UseRaycastAB = false; // AB: use raycast for target detection
                 bool m_ShowRaycastLinesAB = false; // AB: debug render raycast lines
                 int m_RaycastAnglesAB = 16; // AB: number of raycast angles

@@ -166,7 +166,8 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int LocalId, const vec2
         // v1.56.92: Raycast AB — cast N rays ONCE across FOV cone, store (end, dist).
         struct RayHit { vec2 end; float dist; };
         std::vector<RayHit> rayHits;
-        if(Settings.m_UseRaycastAB)
+        bool doRaycast = (Settings.m_Rules == 2 || Settings.m_ShowRaycastLinesAB);
+        if(doRaycast)
         {
                 int angles = std::max(1, std::min(64, Settings.m_RaycastAnglesAB));
                 float leftAngle = myAngle - halfFovRad;
@@ -230,7 +231,15 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int LocalId, const vec2
                         if(angleDiff > halfFovRad)
                                 continue;
                         bool visible = false;
-                        if(Settings.m_UseRaycastAB && !rayHits.empty())
+                        if(Settings.m_Rules == 0)
+                        {
+                                visible = true; // None: always visible
+                        }
+                        else if(Settings.m_Rules == 1)
+                        {
+                                visible = IsVisible(MyPos, sp); // Insert line only
+                        }
+                        else if(Settings.m_Rules == 2 && !rayHits.empty())
                         {
                                 for(const auto &rh : rayHits)
                                 {
