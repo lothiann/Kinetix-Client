@@ -113,6 +113,7 @@ void CAimBot::OnRender()
                         RenderRadius(m_TriggerBotWeapons[weapon], MyPos, AimDir, alpha * 0.7f);
         }
 
+        // TODO: Replace fixed-angle raycasting with shadowcasting or DDA for pixel-perfect gap detection between blocks.
         // v1.56.98: Render raycast lines — Show angles (AB) and/or Show success.
         auto renderRays = [&](const SWeaponSettings &s) {
                 bool showAll = s.m_ShowRaycastLinesAB;
