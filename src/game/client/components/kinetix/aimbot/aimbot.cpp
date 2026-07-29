@@ -459,8 +459,8 @@ void CAimBot::RenderFov(const SWeaponSettings &Settings, const vec2 &MyPos, cons
         float HalfWidth = 0.5f + (float)(LineSize > 0 ? LineSize - 1 : 0) * 0.25f;
         bool useRay = m_AimBotUseRaycastShow || m_TriggerBotUseRaycastShow;
 
-        std::vector<vec2> points;
-        points.push_back(MyPos);
+        // Build line segments. Each segment is a pair (p0, p1).
+        std::vector<std::pair<vec2, vec2>> segments;
         if(useRay)
         {
                 int angles = std::max(1, std::min(64, Settings.m_RaycastAngles));
@@ -473,26 +473,25 @@ void CAimBot::RenderFov(const SWeaponSettings &Settings, const vec2 &MyPos, cons
                         vec2 end = MyPos + vec2(cosf(a), sinf(a)) * radius;
                         vec2 hitPos;
                         if(GameClient()->Collision()->IntersectLine(MyPos, end, &hitPos, nullptr) > 0)
-                                points.push_back(hitPos);
+                                segments.push_back({MyPos, hitPos});
                         else
-                                points.push_back(end);
+                                segments.push_back({MyPos, end});
                 }
         }
         else
         {
-                points.push_back(MyPos + vec2(cosf(myAngle - halfFovRad), sinf(myAngle - halfFovRad)) * radius);
-                points.push_back(MyPos);
-                points.push_back(MyPos + vec2(cosf(myAngle + halfFovRad), sinf(myAngle + halfFovRad)) * radius);
+                segments.push_back({MyPos, MyPos + vec2(cosf(myAngle - halfFovRad), sinf(myAngle - halfFovRad)) * radius});
+                segments.push_back({MyPos, MyPos + vec2(cosf(myAngle + halfFovRad), sinf(myAngle + halfFovRad)) * radius});
         }
 
         Graphics()->TextureClear();
         if(LineSize > 0)
         {
                 Graphics()->QuadsBegin();
-                for(size_t i = 0; i + 1 < points.size(); i++)
+                for(const auto &seg : segments)
                 {
-                        vec2 p0 = points[i];
-                        vec2 p1 = points[i + 1];
+                        vec2 p0 = seg.first;
+                        vec2 p1 = seg.second;
                         vec2 dir = normalize(p1 - p0);
                         if(length(dir) < 0.001f)
                                 continue;
@@ -509,9 +508,9 @@ void CAimBot::RenderFov(const SWeaponSettings &Settings, const vec2 &MyPos, cons
         {
                 Graphics()->LinesBegin();
                 Graphics()->SetColor(col.r, col.g, col.b, Alpha);
-                for(size_t i = 0; i + 1 < points.size(); i++)
+                for(const auto &seg : segments)
                 {
-                        IGraphics::CLineItem Line(points[i].x, points[i].y, points[i + 1].x, points[i + 1].y);
+                        IGraphics::CLineItem Line(seg.first.x, seg.first.y, seg.second.x, seg.second.y);
                         Graphics()->LinesDraw(&Line, 1);
                 }
                 Graphics()->LinesEnd();
