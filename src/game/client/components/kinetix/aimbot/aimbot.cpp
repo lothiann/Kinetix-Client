@@ -115,8 +115,8 @@ void CAimBot::OnRender()
 
         // v1.56.98: Render raycast lines — Show angles (AB) and/or Show success.
         auto renderRays = [&](const SWeaponSettings &s) {
-                bool showAll = s.m_ShowRaycastLinesAB && s.m_Rules == 2;
-                bool showSuccess = s.m_ShowSuccess && s.m_Rules == 2;
+                bool showAll = s.m_ShowRaycastLinesAB;
+                bool showSuccess = s.m_ShowSuccess;
                 if(!showAll && !showSuccess)
                         return;
                 int angles = std::max(1, std::min(64, s.m_RaycastAnglesAB));

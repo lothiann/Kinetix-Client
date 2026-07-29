@@ -431,11 +431,8 @@ static bool AimBotChildVisible(const SRow *pChildren, int childCount, int idx)
         const bool isRaycastMode = (rulesIdx == 2);
         // Raycast AB fields hidden when Rules != 2
         if(str_comp(row.pName, "Use raycast (AB)") == 0 ||
-           str_comp(row.pName, "Show raycast lines (AB)") == 0 ||
-           str_comp(row.pName, "Show success") == 0 ||
-           str_comp(row.pName, "Success color") == 0 ||
-           str_comp(row.pName, "Use Angle") == 0 ||
-           str_comp(row.pName, "Raycast angles (AB)") == 0)
+           str_comp(row.pName, "Raycast angles (AB)") == 0 ||
+           str_comp(row.pName, "Use Angle") == 0)
                 return isRaycastMode;
         return true;
 }
@@ -457,11 +454,8 @@ static bool TriggerBotChildVisible(const SRow *pChildren, int childCount, int id
         }
         const bool isRaycastMode = (rulesIdx == 2);
         if(str_comp(row.pName, "TB Use raycast (TB)") == 0 ||
-           str_comp(row.pName, "TB Show raycast lines (TB)") == 0 ||
-           str_comp(row.pName, "TB Show success") == 0 ||
-           str_comp(row.pName, "TB Success color") == 0 ||
-           str_comp(row.pName, "TB Use Angle") == 0 ||
-           str_comp(row.pName, "TB Raycast angles (TB)") == 0)
+           str_comp(row.pName, "TB Raycast angles (TB)") == 0 ||
+           str_comp(row.pName, "TB Use Angle") == 0)
                 return isRaycastMode;
         return true;
 }
@@ -2076,8 +2070,12 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                             s.m_UseRaycastShow = pTarget->on;
                                                         else if(str_comp(pTarget->pName, "Use raycast (AB)") == 0)
                                                             s.m_UseRaycastAB = pTarget->on;
-                                                                        else if(str_comp(pTarget->pName, "Show raycast lines (AB)") == 0)
-                                                                                s.m_ShowRaycastLinesAB = pTarget->on;
+                                                        else if(str_comp(pTarget->pName, "Show raycast lines (AB)") == 0)
+                                                            s.m_ShowRaycastLinesAB = pTarget->on;
+                                                        else if(str_comp(pTarget->pName, "Use Angle") == 0)
+                                                            s.m_UseAngle = pTarget->on;
+                                                        else if(str_comp(pTarget->pName, "Show success") == 0)
+                                                            s.m_ShowSuccess = pTarget->on;
                                                 }
                                         }
                                         // v1.56.83: TriggerBot per-weapon child toggles (parent = "TriggerBot")
