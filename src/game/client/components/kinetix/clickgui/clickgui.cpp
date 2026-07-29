@@ -1125,8 +1125,6 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                                                         ch.valueIdx = s.m_FreezeFilter;
                                                 else if(str_comp(ch.pName, "TB Priority") == 0)
                                                         ch.valueIdx = s.m_Priority;
-                                        }
-                                }
                                                 else if(str_comp(ch.pName, "TB Show success") == 0)
                                                         ch.on = s.m_ShowSuccess;
                                                 else if(str_comp(ch.pName, "TB Success color") == 0)
@@ -1138,6 +1136,8 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                                                                 ch.m_InputInitialized = true;
                                                         }
                                                 }
+                                        }
+                                }
                         }
                 }
         }
@@ -2094,16 +2094,16 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                             tb.m_TriggerBotShowFov = pTarget->on;
                                                         else if(str_comp(pTarget->pName, "TB Show Radius") == 0)
                                                             tb.m_TriggerBotShowRadius = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Use Angle") == 0)
-                                                        s.m_UseAngle = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Show success") == 0)
-                                                        s.m_ShowSuccess = pTarget->on;
+                                                        else if(str_comp(pTarget->pName, "Use Angle") == 0)
+                                                            s.m_UseAngle = pTarget->on;
+                                                        else if(str_comp(pTarget->pName, "Show success") == 0)
+                                                            s.m_ShowSuccess = pTarget->on;
                                                         else if(str_comp(pTarget->pName, "TB Use raycast (Show)") == 0)
                                                             s.m_UseRaycastShow = pTarget->on;
                                                         else if(str_comp(pTarget->pName, "TB Use raycast (TB)") == 0)
                                                             s.m_UseRaycastAB = pTarget->on;
-                                                                        else if(str_comp(pTarget->pName, "Show raycast lines (AB)") == 0)
-                                                                                s.m_ShowRaycastLinesAB = pTarget->on;
+                                                        else if(str_comp(pTarget->pName, "Show raycast lines (AB)") == 0)
+                                                            s.m_ShowRaycastLinesAB = pTarget->on;
                                                 }
                                         }
                                         // v1.56.90: Block children toggles
@@ -2120,10 +2120,6 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 else if(str_comp(pTarget->pName, "Move Enabled") == 0) bn.m_MoveEnabled = pTarget->on;
                                                 else if(str_comp(pTarget->pName, "Stand Enabled") == 0) bn.m_StandEnabled = pTarget->on;
                                                 else if(str_comp(pTarget->pName, "Stand On X Only") == 0) bn.m_StandOnXOnly = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "TB Use Angle") == 0)
-                                                        s.m_UseAngle = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "TB Show success") == 0)
-                                                        s.m_ShowSuccess = pTarget->on;
                                                 else if(str_comp(pTarget->pName, "Smart Detect") == 0) bn.m_SmartDetect = pTarget->on;
                                                 else if(str_comp(pTarget->pName, "Smart Rescue") == 0) bn.m_SmartRescue = pTarget->on;
                                                 else if(str_comp(pTarget->pName, "Rescue Frozen") == 0) bn.m_RescueFrozen = pTarget->on;
