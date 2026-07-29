@@ -250,8 +250,8 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int LocalId, const vec2
                         }
                         else if(Settings.m_Rules == 2 && !rayHits.empty())
                         {
-                                // Find the ray closest to this hitbox point's angle that passes through it
-                                float bestRayAngleDiff = 1e18f;
+                                // Find the ray closest to target center that passes through hitbox
+                                float bestRayDist = 1e18f;
                                 for(const auto &rh : rayHits)
                                 {
                                         vec2 rayDir = normalize(rh.end - MyPos);
@@ -262,14 +262,14 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int LocalId, const vec2
                                         if(length(perp) < HB_HALF)
                                         {
                                                 visible = true;
-                                                // This ray passes through hitbox. Compute its angle difference from aim direction.
-                                                float rayAngle = atan2f(rayDir.y, rayDir.x);
-                                                float rayAngleDiff = fabsf(atan2f(sinf(myAngle - rayAngle), cosf(myAngle - rayAngle)));
-                                                if(rayAngleDiff < bestRayAngleDiff)
+                                                // Distance from ray to target center (smaller = closer to center)
+                                                float centerProj = dot(targetCenter - MyPos, rayDir);
+                                                vec2 centerPerp = (targetCenter - MyPos) - rayDir * centerProj;
+                                                float centerDist = length(centerPerp);
+                                                if(centerDist < bestRayDist)
                                                 {
-                                                        bestRayAngleDiff = rayAngleDiff;
-                                                        // Aim point = closest point on ray to target center
-                                                        rayHitPoint = MyPos + rayDir * proj;
+                                                        bestRayDist = centerDist;
+                                                        rayHitPoint = MyPos + rayDir * centerProj;
                                                 }
                                         }
                                 }
@@ -309,6 +309,7 @@ bool CAimBot::IsVisible(const vec2 &From, const vec2 &To)
 
 void CAimBot::ApplyAim(int ClientId, const vec2 &MyPos, const SWeaponSettings &Settings, const vec2 &AimPoint)
 {
+        CGameClient *pGame = GameClient();
         vec2 aimOffset = AimPoint - MyPos;
         if(Settings.m_AimMode == 0) // Silent
         {
