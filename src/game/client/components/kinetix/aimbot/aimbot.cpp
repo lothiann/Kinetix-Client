@@ -155,6 +155,7 @@ bool CAimBot::PassesFilters(int ClientId, int LocalId, const SWeaponSettings &Se
         for(int d = 0; d < MAX_DUMMIES; d++)
         {
                 if(pGame->m_aLocalIds[d] == ClientId)
+}
                 {
                         isDummy = true;
                         break;
@@ -178,10 +179,10 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int LocalId, const vec2
         float halfFovRad = (Settings.m_Fov * 0.5f) * (pi / 180.0f);
         constexpr float HB_HITBOX = CCharacterCore::PhysicalSize() + 2.0f; // 30px — same as IntersectCharacter
 
-        // v1.56.92: Raycast AB — cast N rays ONCE across FOV cone, store (end, dist).
-        struct RayHit { vec2 end; float dist; };
-        std::vector<RayHit> rayHits;
-        bool doRaycast = (Settings.m_Rules == 2 || Settings.m_ShowRaycastLinesAB);
+        // v1.56.98: Raycast — cast N rays ONCE, cache for both FindTarget and OnRender.
+        bool doRaycast = (Settings.m_Rules == 2 || (Settings.m_Rules == 2 && (Settings.m_ShowRaycastLinesAB || Settings.m_ShowSuccess)));
+        m_DebugRayHits.clear();
+        m_DebugShowRays = false;
         if(doRaycast)
         {
                 int angles = std::max(1, std::min(64, Settings.m_RaycastAnglesAB));
@@ -194,17 +195,12 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int LocalId, const vec2
                         vec2 end = MyPos + vec2(cosf(a), sinf(a)) * Settings.m_Radius;
                         vec2 hitPos;
                         if(pGame->Collision()->IntersectLineTeleHook(MyPos, end, &hitPos, nullptr) > 0)
-                                rayHits.push_back({hitPos, length(hitPos - MyPos)});
+                                m_DebugRayHits.push_back({hitPos, length(hitPos - MyPos)});
                         else
-                                rayHits.push_back({end, Settings.m_Radius});
+                                m_DebugRayHits.push_back({end, Settings.m_Radius});
                 }
+                m_DebugShowRays = Settings.m_Rules == 2 && (Settings.m_ShowRaycastLinesAB || Settings.m_ShowSuccess);
         }
-
-        // v1.56.92: Cache rayHits for debug rendering in OnRender.
-        m_DebugShowRays = Settings.m_ShowRaycastLinesAB;
-        m_DebugRayHits.clear();
-        for(const auto &rh : rayHits)
-                m_DebugRayHits.push_back({rh.end, rh.dist});
 
         int bestTarget = -1;
         float bestScore = 1e18f;
@@ -247,11 +243,11 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int LocalId, const vec2
                         {
                                 visible = IsVisible(MyPos, sp);
                         }
-                        else if(Settings.m_Rules == 2 && !rayHits.empty())
+                        else if(Settings.m_Rules == 2 && !m_DebugRayHits.empty())
                         {
                                 // Find the ray closest to target center that passes through hitbox
                                 float bestRayDist = 1e18f;
-                                for(const auto &rh : rayHits)
+                                for(const auto &rh : m_DebugRayHits)
                                 {
                                         vec2 rayDir = normalize(rh.end - MyPos);
                                         float proj = dot(sp - MyPos, rayDir);
@@ -259,7 +255,7 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int LocalId, const vec2
                                                 continue;
                                         vec2 perp = (sp - MyPos) - rayDir * proj;
                                         vec2 closestPt;
-						if(closest_point_on_line(MyPos, rh.end, sp, closestPt) && distance(sp, closestPt) < HB_HITBOX)
+                                                if(closest_point_on_line(MyPos, rh.end, sp, closestPt) && distance(sp, closestPt) < HB_HITBOX)
                                         {
                                                 visible = true;
                                                 // Distance from ray to target center (smaller = closer to center)
