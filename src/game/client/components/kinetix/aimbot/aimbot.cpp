@@ -173,106 +173,109 @@ bool CAimBot::PassesFilters(int ClientId, int LocalId, const SWeaponSettings &Se
 
 int CAimBot::FindTarget(const SWeaponSettings &Settings, int LocalId, const vec2 &MyPos, const vec2 &AimDir, const vec2 &AimPos, vec2 &outAimPoint)
 {
-        CGameClient *pGame = GameClient();
-        float myAngle = atan2f(AimDir.y, AimDir.x);
-        float halfFovRad = (Settings.m_Fov * 0.5f) * (pi / 180.0f);
-        constexpr float HB_HITBOX = CCharacterCore::PhysicalSize() + 2.0f; // 30px — same as IntersectCharacter
+	CGameClient *pGame = GameClient();
+	float myAngle = atan2f(AimDir.y, AimDir.x);
+	float halfFovRad = (Settings.m_Fov * 0.5f) * (pi / 180.0f);
+	constexpr float HB_HITBOX = CCharacterCore::PhysicalSize() + 2.0f;
+	constexpr float HB_HALF = HB_HITBOX * 0.5f;
 
-        // v1.56.98: FindTarget uses m_DebugRayHits (cached from renderRays in OnRender).
-        // renderRays computes rays + fills m_DebugRayHits. FindTarget just reads them.
-
-        int bestTarget = -1;
-        float bestScore = 1e18f;
-        vec2 bestAimPoint = vec2(0, 0);
-        for(int i = 0; i < MAX_CLIENTS; i++)
-        {
-                if(i == LocalId)
-                        continue;
-                if(!PassesFilters(i, LocalId, Settings))
-                        continue;
-                vec2 targetCenter = vec2((float)pGame->m_Snap.m_aCharacters[i].m_Cur.m_X, (float)pGame->m_Snap.m_aCharacters[i].m_Cur.m_Y);
-                vec2 hbPoints[5] = {
-                        targetCenter,
-                        targetCenter + vec2(-HB_HALF, -HB_HALF),
-                        targetCenter + vec2(HB_HALF, -HB_HALF),
-                        targetCenter + vec2(-HB_HALF, HB_HALF),
-                        targetCenter + vec2(HB_HALF, HB_HALF),
-                };
-                float bestSampleScore = 1e18f;
-                vec2 sampleAimPoint = targetCenter; // default: aim at center
-                for(int s = 0; s < 5; s++)
-                {
-                        vec2 sp = hbPoints[s];
-                        vec2 toSample = sp - MyPos;
-                        float dist = length(toSample);
-                        if(dist > Settings.m_Radius || dist < 1.0f)
-                                continue;
-                        vec2 dir = normalize(toSample);
-                        float sampleAngle = atan2f(dir.y, dir.x);
-                        float angleDiff = fabsf(atan2f(sinf(myAngle - sampleAngle), cosf(myAngle - sampleAngle)));
-                        if(angleDiff > halfFovRad)
-                                continue;
-                        bool visible = false;
-                        vec2 rayHitPoint = sp; // where the ray hit (for UseAngle)
-                        if(Settings.m_Rules == 0)
-                        {
-                                visible = true;
-                        }
-                        else if(Settings.m_Rules == 1)
-                        {
-                                visible = IsVisible(MyPos, sp);
-                        }
-                        else if(Settings.m_Rules == 2 && !m_DebugRayHits.empty())
-                        {
-                                // Find the ray closest to target center that passes through hitbox
-                                float bestRayDist = 1e18f;
-                                for(const auto &rh : m_DebugRayHits)
-                                {
-                                        vec2 rayDir = normalize(rh.end - MyPos);
-                                        float proj = dot(sp - MyPos, rayDir);
-                                        if(proj < 0.0f || proj > rh.dist)
-                                                continue;
-                                        vec2 perp = (sp - MyPos) - rayDir * proj;
-                                        vec2 closestPt;
-                                                if(closest_point_on_line(MyPos, rh.end, sp, closestPt) && distance(sp, closestPt) < HB_HITBOX)
-                                        {
-                                                visible = true;
-                                                // Distance from ray to target center (smaller = closer to center)
-                                                float centerProj = dot(targetCenter - MyPos, rayDir);
-                                                vec2 centerPerp = (targetCenter - MyPos) - rayDir * centerProj;
-                                                float centerDist = length(centerPerp);
-                                                if(centerDist < bestRayDist)
-                                                {
-                                                        bestRayDist = centerDist;
-                                                        rayHitPoint = MyPos + rayDir * centerProj;
-                                        }
-                                }
-                // Interpolated position (same as IntersectCharacter gameclient.cpp:3802)
-                vec2 prevPos = vec2((float)pGame->m_Snap.m_aCharacters[i].m_Prev.m_X, (float)pGame->m_Snap.m_aCharacters[i].m_Prev.m_Y);
-                vec2 curPos = vec2((float)pGame->m_Snap.m_aCharacters[i].m_Cur.m_X, (float)pGame->m_Snap.m_aCharacters[i].m_Cur.m_Y);
-                float intra = pGame->Client()->IntraGameTick(g_Config.m_ClDummy);
-                targetCenter = mix(prevPos, curPos, intra);
-                vec2 sp = targetCenter;
-                        vec2 toSample = sp - MyPos;
-                        float dist = length(toSample);
-                        if(dist > Settings.m_Radius || dist < 1.0f)
-                                continue;
-                        {
-                                bestSampleScore = score;
-                                anyPass = true;
-                                sampleAimPoint = Settings.m_UseAngle ? rayHitPoint : targetCenter;
-                        }
-                }
-                if(anyPass && bestSampleScore < bestScore)
-                {
-                        bestScore = bestSampleScore;
-                        bestTarget = i;
-                        bestAimPoint = sampleAimPoint;
-                }
-        }
-        outAimPoint = bestAimPoint;
-        return bestTarget;
+	int bestTarget = -1;
+	float bestScore = 1e18f;
+	vec2 bestAimPoint = vec2(0, 0);
+	for(int i = 0; i < MAX_CLIENTS; i++)
+	{
+		if(i == LocalId)
+			continue;
+		if(!PassesFilters(i, LocalId, Settings))
+			continue;
+		vec2 prevPos = vec2((float)pGame->m_Snap.m_aCharacters[i].m_Prev.m_X, (float)pGame->m_Snap.m_aCharacters[i].m_Prev.m_Y);
+		vec2 curPos = vec2((float)pGame->m_Snap.m_aCharacters[i].m_Cur.m_X, (float)pGame->m_Snap.m_aCharacters[i].m_Cur.m_Y);
+		float intra = pGame->Client()->IntraGameTick(g_Config.m_ClDummy);
+		vec2 targetCenter = mix(prevPos, curPos, intra);
+		vec2 hbPoints[5] = {
+			targetCenter,
+			targetCenter + vec2(-HB_HALF, -HB_HALF),
+			targetCenter + vec2(HB_HALF, -HB_HALF),
+			targetCenter + vec2(-HB_HALF, HB_HALF),
+			targetCenter + vec2(HB_HALF, HB_HALF),
+		};
+		float bestSampleScore = 1e18f;
+		bool anyPass = false;
+		vec2 sampleAimPoint = targetCenter;
+		for(int s = 0; s < 5; s++)
+		{
+			vec2 sp = hbPoints[s];
+			vec2 toSample = sp - MyPos;
+			float dist = length(toSample);
+			if(dist > Settings.m_Radius || dist < 1.0f)
+				continue;
+			vec2 dir = normalize(toSample);
+			float sampleAngle = atan2f(dir.y, dir.x);
+			float angleDiff = fabsf(atan2f(sinf(myAngle - sampleAngle), cosf(myAngle - sampleAngle)));
+			if(angleDiff > halfFovRad)
+				continue;
+			bool visible = false;
+			vec2 rayHitPoint = sp;
+			if(Settings.m_Rules == 0)
+			{
+				visible = true;
+			}
+			else if(Settings.m_Rules == 1)
+			{
+				visible = IsVisible(MyPos, sp);
+			}
+			else if(Settings.m_Rules == 2 && !m_DebugRayHits.empty())
+			{
+				float bestRayDist = 1e18f;
+				for(const auto &rh : m_DebugRayHits)
+				{
+					vec2 rayDir = normalize(rh.end - MyPos);
+					float proj = dot(sp - MyPos, rayDir);
+					if(proj < 0.0f || proj > rh.dist)
+						continue;
+					vec2 closestPt;
+					if(closest_point_on_line(MyPos, rh.end, sp, closestPt) && distance(sp, closestPt) < HB_HITBOX)
+					{
+						visible = true;
+						float centerProj = dot(targetCenter - MyPos, rayDir);
+						vec2 centerPerp = (targetCenter - MyPos) - rayDir * centerProj;
+						float centerDist = length(centerPerp);
+						if(centerDist < bestRayDist)
+						{
+							bestRayDist = centerDist;
+							rayHitPoint = MyPos + rayDir * centerProj;
+						}
+					}
+				}
+			}
+			if(visible)
+			{
+				float score;
+				if(Settings.m_Priority == 0)
+					score = angleDiff;
+				else if(Settings.m_Priority == 1)
+					score = length(AimPos - sp);
+				else
+					score = dist;
+				if(score < bestSampleScore)
+				{
+					bestSampleScore = score;
+					anyPass = true;
+					sampleAimPoint = Settings.m_UseAngle ? rayHitPoint : targetCenter;
+				}
+			}
+		}
+		if(anyPass && bestSampleScore < bestScore)
+		{
+			bestScore = bestSampleScore;
+			bestTarget = i;
+			bestAimPoint = sampleAimPoint;
+		}
+	}
+	outAimPoint = bestAimPoint;
+	return bestTarget;
 }
+
 bool CAimBot::IsVisible(const vec2 &From, const vec2 &To)
 {
         return GameClient()->Collision()->IntersectLineTeleHook(From, To, nullptr, nullptr) == 0;
