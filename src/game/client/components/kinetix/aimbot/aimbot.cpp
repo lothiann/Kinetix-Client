@@ -155,7 +155,6 @@ bool CAimBot::PassesFilters(int ClientId, int LocalId, const SWeaponSettings &Se
         for(int d = 0; d < MAX_DUMMIES; d++)
         {
                 if(pGame->m_aLocalIds[d] == ClientId)
-}
                 {
                         isDummy = true;
                         break;
@@ -179,28 +178,8 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int LocalId, const vec2
         float halfFovRad = (Settings.m_Fov * 0.5f) * (pi / 180.0f);
         constexpr float HB_HITBOX = CCharacterCore::PhysicalSize() + 2.0f; // 30px — same as IntersectCharacter
 
-        // v1.56.98: Raycast — cast N rays ONCE, cache for both FindTarget and OnRender.
-        bool doRaycast = (Settings.m_Rules == 2 || (Settings.m_Rules == 2 && (Settings.m_ShowRaycastLinesAB || Settings.m_ShowSuccess)));
-        m_DebugRayHits.clear();
-        m_DebugShowRays = false;
-        if(doRaycast)
-        {
-                int angles = std::max(1, std::min(64, Settings.m_RaycastAnglesAB));
-                float leftAngle = myAngle - halfFovRad;
-                float rightAngle = myAngle + halfFovRad;
-                for(int i = 0; i <= angles; i++)
-                {
-                        float t = (float)i / (float)angles;
-                        float a = leftAngle + t * (rightAngle - leftAngle);
-                        vec2 end = MyPos + vec2(cosf(a), sinf(a)) * Settings.m_Radius;
-                        vec2 hitPos;
-                        if(pGame->Collision()->IntersectLineTeleHook(MyPos, end, &hitPos, nullptr) > 0)
-                                m_DebugRayHits.push_back({hitPos, length(hitPos - MyPos)});
-                        else
-                                m_DebugRayHits.push_back({end, Settings.m_Radius});
-                }
-                m_DebugShowRays = Settings.m_Rules == 2 && (Settings.m_ShowRaycastLinesAB || Settings.m_ShowSuccess);
-        }
+        // v1.56.98: FindTarget uses m_DebugRayHits (cached from renderRays in OnRender).
+        // renderRays computes rays + fills m_DebugRayHits. FindTarget just reads them.
 
         int bestTarget = -1;
         float bestScore = 1e18f;
