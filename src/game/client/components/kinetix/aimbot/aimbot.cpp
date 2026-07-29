@@ -176,7 +176,7 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int LocalId, const vec2
         CGameClient *pGame = GameClient();
         float myAngle = atan2f(AimDir.y, AimDir.x);
         float halfFovRad = (Settings.m_Fov * 0.5f) * (pi / 180.0f);
-        constexpr float HB_HALF = CCharacterCore::PhysicalSize() * 0.5f;
+        constexpr float HB_HITBOX = CCharacterCore::PhysicalSize() + 2.0f; // 30px — same as IntersectCharacter
 
         // v1.56.92: Raycast AB — cast N rays ONCE across FOV cone, store (end, dist).
         struct RayHit { vec2 end; float dist; };
@@ -193,7 +193,7 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int LocalId, const vec2
                         float a = leftAngle + t * (rightAngle - leftAngle);
                         vec2 end = MyPos + vec2(cosf(a), sinf(a)) * Settings.m_Radius;
                         vec2 hitPos;
-                        if(pGame->Collision()->IntersectLine(MyPos, end, &hitPos, nullptr) > 0)
+                        if(pGame->Collision()->IntersectLineTeleHook(MyPos, end, &hitPos, nullptr) > 0)
                                 rayHits.push_back({hitPos, length(hitPos - MyPos)});
                         else
                                 rayHits.push_back({end, Settings.m_Radius});
@@ -223,7 +223,6 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int LocalId, const vec2
                         targetCenter + vec2(-HB_HALF, HB_HALF),
                         targetCenter + vec2(HB_HALF, HB_HALF),
                 };
-                bool anyPass = false;
                 float bestSampleScore = 1e18f;
                 vec2 sampleAimPoint = targetCenter; // default: aim at center
                 for(int s = 0; s < 5; s++)
@@ -259,7 +258,8 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int LocalId, const vec2
                                         if(proj < 0.0f || proj > rh.dist)
                                                 continue;
                                         vec2 perp = (sp - MyPos) - rayDir * proj;
-                                        if(length(perp) < HB_HALF)
+                                        vec2 closestPt;
+						if(closest_point_on_line(MyPos, rh.end, sp, closestPt) && distance(sp, closestPt) < HB_HITBOX)
                                         {
                                                 visible = true;
                                                 // Distance from ray to target center (smaller = closer to center)
@@ -270,22 +270,18 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int LocalId, const vec2
                                                 {
                                                         bestRayDist = centerDist;
                                                         rayHitPoint = MyPos + rayDir * centerProj;
-                                                }
                                         }
                                 }
-                        }
-                        else
-                                visible = IsVisible(MyPos, sp);
-                        if(!visible)
+                // Interpolated position (same as IntersectCharacter gameclient.cpp:3802)
+                vec2 prevPos = vec2((float)pGame->m_Snap.m_aCharacters[i].m_Prev.m_X, (float)pGame->m_Snap.m_aCharacters[i].m_Prev.m_Y);
+                vec2 curPos = vec2((float)pGame->m_Snap.m_aCharacters[i].m_Cur.m_X, (float)pGame->m_Snap.m_aCharacters[i].m_Cur.m_Y);
+                float intra = pGame->Client()->IntraGameTick(g_Config.m_ClDummy);
+                targetCenter = mix(prevPos, curPos, intra);
+                vec2 sp = targetCenter;
+                        vec2 toSample = sp - MyPos;
+                        float dist = length(toSample);
+                        if(dist > Settings.m_Radius || dist < 1.0f)
                                 continue;
-                        float score;
-                        if(Settings.m_Priority == 0)
-                                score = angleDiff;
-                        else if(Settings.m_Priority == 1)
-                                score = length(sp - AimPos);
-                        else
-                                score = dist;
-                        if(score < bestSampleScore)
                         {
                                 bestSampleScore = score;
                                 anyPass = true;
@@ -304,7 +300,7 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int LocalId, const vec2
 }
 bool CAimBot::IsVisible(const vec2 &From, const vec2 &To)
 {
-        return GameClient()->Collision()->IntersectLine(From, To, nullptr, nullptr) == 0;
+        return GameClient()->Collision()->IntersectLineTeleHook(From, To, nullptr, nullptr) == 0;
 }
 
 void CAimBot::ApplyAim(int ClientId, const vec2 &MyPos, const SWeaponSettings &Settings, const vec2 &AimPoint)
@@ -546,11 +542,11 @@ void CAimBot::RenderFov(const SWeaponSettings &Settings, const vec2 &MyPos, cons
                 vec2 leftEnd = MyPos + vec2(cosf(leftAngle), sinf(leftAngle)) * radius;
                 vec2 rightEnd = MyPos + vec2(cosf(rightAngle), sinf(rightAngle)) * radius;
                 vec2 hitPos;
-                if(GameClient()->Collision()->IntersectLine(MyPos, leftEnd, &hitPos, nullptr) > 0)
+                if(GameClient()->Collision()->IntersectLineTeleHook(MyPos, leftEnd, &hitPos, nullptr) > 0)
                         segments.push_back({MyPos, hitPos});
                 else
                         segments.push_back({MyPos, leftEnd});
-                if(GameClient()->Collision()->IntersectLine(MyPos, rightEnd, &hitPos, nullptr) > 0)
+                if(GameClient()->Collision()->IntersectLineTeleHook(MyPos, rightEnd, &hitPos, nullptr) > 0)
                         segments.push_back({MyPos, hitPos});
                 else
                         segments.push_back({MyPos, rightEnd});
@@ -614,7 +610,7 @@ void CAimBot::RenderRadius(const SWeaponSettings &Settings, const vec2 &MyPos, c
                 if(useRay)
                 {
                         vec2 hit;
-                        if(GameClient()->Collision()->IntersectLine(MyPos, p, &hit, nullptr) > 0)
+                        if(GameClient()->Collision()->IntersectLineTeleHook(MyPos, p, &hit, nullptr) > 0)
                                 p = hit;
                 }
                 points.push_back(p);

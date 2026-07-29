@@ -37,6 +37,8 @@ public:
                 bool m_ShowRaycastLinesAB = false; // AB: debug render raycast lines
                 int m_RaycastAnglesAB = 16; // AB: number of raycast angles
                 bool m_UseAngle = false; // AB: aim at raycast hit point instead of target center
+                bool m_ShowSuccess = false; // AB: show rays that hit player hitbox in success color
+                unsigned m_SuccessColor = 0xff0000ff; // AB: success color (RGBA, default red)
                 int m_AimMode = 0; // 0=silent 1=trigger 2=always (AimBot only)
                 int m_TeamFilter = 0; // 0=both 1=war 2=my
                 int m_FriendFilter = 0; // 0=both 1=ignore
