@@ -130,6 +130,7 @@ static SRow g_AimBotChildren[] = {
         {ERowType::Toggle, "Use raycast (AB)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Show raycast lines (AB)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Raycast angles (AB)", nullptr, false, false, 1.0f, 64.0f, 1.0f, 16.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Use Angle", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Dropdown, "AB Aim Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABAimModeOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "AB Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTeamOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "AB Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 2, 0, nullptr, 0},
@@ -153,6 +154,7 @@ static SRow g_TriggerBotChildren[] = {
         {ERowType::Toggle, "TB Use raycast (TB)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "TB Show raycast lines (TB)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "TB Raycast angles (TB)", nullptr, false, false, 1.0f, 64.0f, 1.0f, 16.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "TB Use Angle", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "TB Latency", nullptr, false, false, 0.0f, 10.0f, 1.0f, 0.0f, " ticks", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Dropdown, "TB Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTeamOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "TB Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 2, 0, nullptr, 0},
@@ -220,8 +222,8 @@ static SRow g_FunctionsRows[] = {
         {ERowType::Expandable, "Block", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BlockChildren, 37},
         {ERowType::Toggle, "Random Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         // v1.56.83: AimBot + TriggerBot expandables
-        {ERowType::Expandable, "AimBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AimBotChildren, 18},
-        {ERowType::Expandable, "TriggerBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TriggerBotChildren, 21},
+        {ERowType::Expandable, "AimBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AimBotChildren, 19},
+        {ERowType::Expandable, "TriggerBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TriggerBotChildren, 22},
         // Fly sub-section
         {ERowType::Toggle, "Preserve input", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Expandable, "Custom latency", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CustomLatencyChildren, 1},
@@ -426,6 +428,7 @@ static bool AimBotChildVisible(const SRow *pChildren, int childCount, int idx)
 	// Raycast AB fields hidden when Rules != 2
 	if(str_comp(row.pName, "Use raycast (AB)") == 0 ||
 	   str_comp(row.pName, "Show raycast lines (AB)") == 0 ||
+	   str_comp(row.pName, "Use Angle") == 0 ||
 	   str_comp(row.pName, "Raycast angles (AB)") == 0)
 		return isRaycastMode;
 	return true;
@@ -449,6 +452,7 @@ static bool TriggerBotChildVisible(const SRow *pChildren, int childCount, int id
 	const bool isRaycastMode = (rulesIdx == 2);
 	if(str_comp(row.pName, "TB Use raycast (TB)") == 0 ||
 	   str_comp(row.pName, "TB Show raycast lines (TB)") == 0 ||
+	   str_comp(row.pName, "TB Use Angle") == 0 ||
 	   str_comp(row.pName, "TB Raycast angles (TB)") == 0)
 		return isRaycastMode;
 	return true;
@@ -2020,6 +2024,8 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                             tb.m_TriggerBotShowFov = pTarget->on;
                                                         else if(str_comp(pTarget->pName, "TB Show Radius") == 0)
                                                             tb.m_TriggerBotShowRadius = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Use Angle") == 0)
+                                                        s.m_UseAngle = pTarget->on;
                                                         else if(str_comp(pTarget->pName, "TB Use raycast (Show)") == 0)
                                                             s.m_UseRaycastShow = pTarget->on;
                                                         else if(str_comp(pTarget->pName, "TB Use raycast (TB)") == 0)
@@ -2042,6 +2048,8 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 else if(str_comp(pTarget->pName, "Move Enabled") == 0) bn.m_MoveEnabled = pTarget->on;
                                                 else if(str_comp(pTarget->pName, "Stand Enabled") == 0) bn.m_StandEnabled = pTarget->on;
                                                 else if(str_comp(pTarget->pName, "Stand On X Only") == 0) bn.m_StandOnXOnly = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "TB Use Angle") == 0)
+                                                        s.m_UseAngle = pTarget->on;
                                                 else if(str_comp(pTarget->pName, "Smart Detect") == 0) bn.m_SmartDetect = pTarget->on;
                                                 else if(str_comp(pTarget->pName, "Smart Rescue") == 0) bn.m_SmartRescue = pTarget->on;
                                                 else if(str_comp(pTarget->pName, "Rescue Frozen") == 0) bn.m_RescueFrozen = pTarget->on;

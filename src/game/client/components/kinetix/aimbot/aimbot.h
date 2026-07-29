@@ -36,6 +36,7 @@ public:
                 bool m_UseRaycastAB = false; // AB: use raycast for target detection
                 bool m_ShowRaycastLinesAB = false; // AB: debug render raycast lines
                 int m_RaycastAnglesAB = 16; // AB: number of raycast angles
+                bool m_UseAngle = false; // AB: aim at raycast hit point instead of target center
                 int m_AimMode = 0; // 0=silent 1=trigger 2=always (AimBot only)
                 int m_TeamFilter = 0; // 0=both 1=war 2=my
                 int m_FriendFilter = 0; // 0=both 1=ignore
@@ -77,10 +78,10 @@ private:
         void Update();
         void UpdateAimBot();
         void UpdateTriggerBot();
-        int FindTarget(const SWeaponSettings &Settings, int LocalId, const vec2 &MyPos, const vec2 &AimDir, const vec2 &AimPos);
+        int FindTarget(const SWeaponSettings &Settings, int LocalId, const vec2 &MyPos, const vec2 &AimDir, const vec2 &AimPos, vec2 &outAimPoint);
         bool IsVisible(const vec2 &From, const vec2 &To);
         bool PassesFilters(int ClientId, int LocalId, const SWeaponSettings &Settings);
-        void ApplyAim(int ClientId, const vec2 &MyPos, const SWeaponSettings &Settings);
+        void ApplyAim(int ClientId, const vec2 &MyPos, const SWeaponSettings &Settings, const vec2 &AimPoint);
         void FireWeapon();
         void DoHook();
         void RenderFov(const SWeaponSettings &Settings, const vec2 &MyPos, const vec2 &AimDir, float Alpha);

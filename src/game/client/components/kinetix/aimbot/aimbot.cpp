@@ -171,7 +171,7 @@ bool CAimBot::PassesFilters(int ClientId, int LocalId, const SWeaponSettings &Se
         return true;
 }
 
-int CAimBot::FindTarget(const SWeaponSettings &Settings, int LocalId, const vec2 &MyPos, const vec2 &AimDir, const vec2 &AimPos)
+int CAimBot::FindTarget(const SWeaponSettings &Settings, int LocalId, const vec2 &MyPos, const vec2 &AimDir, const vec2 &AimPos, vec2 &outAimPoint)
 {
         CGameClient *pGame = GameClient();
         float myAngle = atan2f(AimDir.y, AimDir.x);
@@ -208,6 +208,7 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int LocalId, const vec2
 
         int bestTarget = -1;
         float bestScore = 1e18f;
+        vec2 bestAimPoint = vec2(0, 0);
         for(int i = 0; i < MAX_CLIENTS; i++)
         {
                 if(i == LocalId)
@@ -224,6 +225,7 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int LocalId, const vec2
                 };
                 bool anyPass = false;
                 float bestSampleScore = 1e18f;
+                vec2 sampleAimPoint = targetCenter; // default: aim at center
                 for(int s = 0; s < 5; s++)
                 {
                         vec2 sp = hbPoints[s];
@@ -237,16 +239,19 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int LocalId, const vec2
                         if(angleDiff > halfFovRad)
                                 continue;
                         bool visible = false;
+                        vec2 rayHitPoint = sp; // where the ray hit (for UseAngle)
                         if(Settings.m_Rules == 0)
                         {
-                                visible = true; // None: always visible
+                                visible = true;
                         }
                         else if(Settings.m_Rules == 1)
                         {
-                                visible = IsVisible(MyPos, sp); // Insert line only
+                                visible = IsVisible(MyPos, sp);
                         }
                         else if(Settings.m_Rules == 2 && !rayHits.empty())
                         {
+                                // Find the ray closest to this hitbox point's angle that passes through it
+                                float bestRayAngleDiff = 1e18f;
                                 for(const auto &rh : rayHits)
                                 {
                                         vec2 rayDir = normalize(rh.end - MyPos);
@@ -257,7 +262,15 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int LocalId, const vec2
                                         if(length(perp) < HB_HALF)
                                         {
                                                 visible = true;
-                                                break;
+                                                // This ray passes through hitbox. Compute its angle difference from aim direction.
+                                                float rayAngle = atan2f(rayDir.y, rayDir.x);
+                                                float rayAngleDiff = fabsf(atan2f(sinf(myAngle - rayAngle), cosf(myAngle - rayAngle)));
+                                                if(rayAngleDiff < bestRayAngleDiff)
+                                                {
+                                                        bestRayAngleDiff = rayAngleDiff;
+                                                        // Aim point = closest point on ray to target center
+                                                        rayHitPoint = MyPos + rayDir * proj;
+                                                }
                                         }
                                 }
                         }
@@ -276,14 +289,17 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int LocalId, const vec2
                         {
                                 bestSampleScore = score;
                                 anyPass = true;
+                                sampleAimPoint = Settings.m_UseAngle ? rayHitPoint : targetCenter;
                         }
                 }
                 if(anyPass && bestSampleScore < bestScore)
                 {
                         bestScore = bestSampleScore;
                         bestTarget = i;
+                        bestAimPoint = sampleAimPoint;
                 }
         }
+        outAimPoint = bestAimPoint;
         return bestTarget;
 }
 bool CAimBot::IsVisible(const vec2 &From, const vec2 &To)
@@ -291,11 +307,9 @@ bool CAimBot::IsVisible(const vec2 &From, const vec2 &To)
         return GameClient()->Collision()->IntersectLine(From, To, nullptr, nullptr) == 0;
 }
 
-void CAimBot::ApplyAim(int ClientId, const vec2 &MyPos, const SWeaponSettings &Settings)
+void CAimBot::ApplyAim(int ClientId, const vec2 &MyPos, const SWeaponSettings &Settings, const vec2 &AimPoint)
 {
-        CGameClient *pGame = GameClient();
-        vec2 targetPos = vec2((float)pGame->m_Snap.m_aCharacters[ClientId].m_Cur.m_X, (float)pGame->m_Snap.m_aCharacters[ClientId].m_Cur.m_Y);
-        vec2 aimOffset = targetPos - MyPos;
+        vec2 aimOffset = AimPoint - MyPos;
         if(Settings.m_AimMode == 0) // Silent
         {
                 // Silent mode: do NOT change m_aMousePos (visible crosshair stays where the player aims).
@@ -380,9 +394,9 @@ void CAimBot::UpdateAimBot()
                 bool trigger = (s.m_AimMode == 2) ? true : willFire;
                 if(trigger)
                 {
-                        int t = FindTarget(s, LocalId, MyPos, AimDir, AimPos);
+                        vec2 aimPt; int t = FindTarget(s, LocalId, MyPos, AimDir, AimPos, aimPt);
                         if(t >= 0)
-                                ApplyAim(t, MyPos, s);
+                                ApplyAim(t, MyPos, s, aimPt);
                 }
         }
         // Hook (6): Silent/Trigger use hook edge (hook has no reload cadence); Always = every tick
@@ -392,9 +406,9 @@ void CAimBot::UpdateAimBot()
                 bool trigger = (s.m_AimMode == 2) ? true : (hook && !m_PrevHook);
                 if(trigger)
                 {
-                        int t = FindTarget(s, LocalId, MyPos, AimDir, AimPos);
+                        vec2 aimPt; int t = FindTarget(s, LocalId, MyPos, AimDir, AimPos, aimPt);
                         if(t >= 0)
-                                ApplyAim(t, MyPos, s);
+                                ApplyAim(t, MyPos, s, aimPt);
                 }
         }
         m_PrevFire = fire;
@@ -423,7 +437,7 @@ void CAimBot::UpdateTriggerBot()
         if(length(AimDir) < 0.001f)
                 AimDir = vec2(1, 0);
 
-        int target = FindTarget(s, LocalId, MyPos, AimDir, AimPos);
+        vec2 aimPtTb; int target = FindTarget(s, LocalId, MyPos, AimDir, AimPos, aimPtTb);
         bool targetInZone = (target >= 0);
 
         // Random latency: delay the trigger reaction by a random number of ticks.
