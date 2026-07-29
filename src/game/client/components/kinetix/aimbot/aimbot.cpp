@@ -112,6 +112,21 @@ void CAimBot::OnRender()
                 if(m_TriggerBotShowRadius)
                         RenderRadius(m_TriggerBotWeapons[weapon], MyPos, AimDir, alpha * 0.7f);
         }
+
+        // v1.56.92: Debug render AB raycast lines (computed in FindTarget during OnUpdate).
+        if(m_DebugShowRays && !m_DebugRayHits.empty())
+        {
+                Graphics()->TextureClear();
+                Graphics()->LinesBegin();
+                ColorRGBA dbgCol = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_KxLineRenderingColor, true));
+                Graphics()->SetColor(dbgCol.r, dbgCol.g, dbgCol.b, 0.3f);
+                for(const auto &rh : m_DebugRayHits)
+                {
+                        IGraphics::CLineItem Line(MyPos.x, MyPos.y, rh.end.x, rh.end.y);
+                        Graphics()->LinesDraw(&Line, 1);
+                }
+                Graphics()->LinesEnd();
+        }
 }
 
 bool CAimBot::PassesFilters(int ClientId, int LocalId, const SWeaponSettings &Settings)
@@ -185,20 +200,11 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int LocalId, const vec2
                 }
         }
 
-        // v1.56.92: Debug render AB raycast lines.
-        if(Settings.m_ShowRaycastLinesAB && !rayHits.empty())
-        {
-                Graphics()->TextureClear();
-                Graphics()->LinesBegin();
-                ColorRGBA dbgCol = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_KxLineRenderingColor, true));
-                Graphics()->SetColor(dbgCol.r, dbgCol.g, dbgCol.b, 0.3f);
-                for(const auto &rh : rayHits)
-                {
-                        IGraphics::CLineItem Line(MyPos.x, MyPos.y, rh.end.x, rh.end.y);
-                        Graphics()->LinesDraw(&Line, 1);
-                }
-                Graphics()->LinesEnd();
-        }
+        // v1.56.92: Cache rayHits for debug rendering in OnRender.
+        m_DebugShowRays = Settings.m_ShowRaycastLinesAB;
+        m_DebugRayHits.clear();
+        for(const auto &rh : rayHits)
+                m_DebugRayHits.push_back({rh.end, rh.dist});
 
         int bestTarget = -1;
         float bestScore = 1e18f;

@@ -69,6 +69,11 @@ private:
         bool m_TriggerBotWasActive = false; // edge detection for TriggerBot one_tick mode
         int m_TriggerBotReleaseTick = -1; // one_tick: tick on which to release trigger (-1 = none)
 
+        // v1.56.92: Cached raycast rays for debug rendering (filled in FindTarget, drawn in OnRender)
+        struct SRayHit { vec2 end; float dist; };
+        std::vector<SRayHit> m_DebugRayHits;
+        bool m_DebugShowRays = false;
+
         void Update();
         void UpdateAimBot();
         void UpdateTriggerBot();
