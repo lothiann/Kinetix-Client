@@ -156,7 +156,6 @@ static SRow g_TriggerBotChildren[] = {
         {ERowType::Toggle, "TB Use raycast (TB)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "TB Show raycast lines (TB)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "TB Raycast angles (TB)", nullptr, false, false, 1.0f, 64.0f, 1.0f, 16.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "TB Use Angle", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "TB Show success", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Input, "TB Success color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ff0000", "hex...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "TB Latency", nullptr, false, false, 0.0f, 10.0f, 1.0f, 0.0f, " ticks", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
@@ -227,7 +226,7 @@ static SRow g_FunctionsRows[] = {
         {ERowType::Toggle, "Random Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         // v1.56.83: AimBot + TriggerBot expandables
         {ERowType::Expandable, "AimBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AimBotChildren, 21},
-        {ERowType::Expandable, "TriggerBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TriggerBotChildren, 24},
+        {ERowType::Expandable, "TriggerBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TriggerBotChildren, 23},
         // Fly sub-section
         {ERowType::Toggle, "Preserve input", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Expandable, "Custom latency", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CustomLatencyChildren, 1},
@@ -454,8 +453,7 @@ static bool TriggerBotChildVisible(const SRow *pChildren, int childCount, int id
         }
         const bool isRaycastMode = (rulesIdx == 2);
         if(str_comp(row.pName, "TB Use raycast (TB)") == 0 ||
-           str_comp(row.pName, "TB Raycast angles (TB)") == 0 ||
-           str_comp(row.pName, "TB Use Angle") == 0)
+           str_comp(row.pName, "TB Raycast angles (TB)") == 0)
                 return isRaycastMode;
         return true;
 }
@@ -1121,8 +1119,6 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                                                         ch.on = s.m_ShowRaycastLinesAB;
                                                 else if(str_comp(ch.pName, "TB Raycast angles (TB)") == 0)
                                                         ch.value = (float)s.m_RaycastAnglesAB;
-                                                else if(str_comp(ch.pName, "TB Use Angle") == 0)
-                                                        ch.on = s.m_UseAngle;
                                                 else if(str_comp(ch.pName, "TB Latency") == 0)
                                                         ch.value = (float)s.m_RandomLatency;
                                                 else if(str_comp(ch.pName, "TB Team") == 0)
@@ -2114,8 +2110,6 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                             s.m_UseRaycastAB = pTarget->on;
                                                         else if(str_comp(pTarget->pName, "TB Show raycast lines (TB)") == 0)
                                                             s.m_ShowRaycastLinesAB = pTarget->on;
-                                                        else if(str_comp(pTarget->pName, "TB Use Angle") == 0)
-                                                            s.m_UseAngle = pTarget->on;
                                                         else if(str_comp(pTarget->pName, "TB Show success") == 0)
                                                             s.m_ShowSuccess = pTarget->on;
                                                 }
