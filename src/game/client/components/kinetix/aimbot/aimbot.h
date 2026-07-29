@@ -30,8 +30,11 @@ public:
                 int m_TriggerMode = 0; // 0=one_tick 1=hold 2=every_tick (TriggerBot only)
                 float m_Fov = 90.0f;
                 float m_Radius = 300.0f;
-                bool m_UseRaycast = false;
-                int m_RaycastAngles = 16;
+                bool m_UseRaycastShow = false; // show: render FOV cone with wall collision
+                int m_RaycastAnglesShow = 16; // show: number of raycast angles
+                bool m_UseRaycastAB = false; // AB: use raycast for target detection
+                bool m_ShowRaycastLinesAB = false; // AB: debug render raycast lines
+                int m_RaycastAnglesAB = 16; // AB: number of raycast angles
                 int m_AimMode = 0; // 0=silent 1=trigger 2=always (AimBot only)
                 int m_TeamFilter = 0; // 0=both 1=war 2=my
                 int m_FriendFilter = 0; // 0=both 1=ignore

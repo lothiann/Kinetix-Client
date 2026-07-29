@@ -158,15 +158,47 @@ bool CAimBot::PassesFilters(int ClientId, int LocalId, const SWeaponSettings &Se
 
 int CAimBot::FindTarget(const SWeaponSettings &Settings, int LocalId, const vec2 &MyPos, const vec2 &AimDir, const vec2 &AimPos)
 {
-        // Hitbox-aware target search (variant A): target is in FOV+Radius if ANY point of its
-        // 28×28 square hitbox (CCharacterCore::PhysicalSize = 28.0f, half = 14.0f) falls inside
-        // the FOV cone AND within Radius. We sample 5 points: center + 4 corners of the hitbox.
-        // If any sample passes FOV+Radius+raycast, the target qualifies. Score uses the best
-        // (smallest) score among passing samples so the chosen target is the closest one.
         CGameClient *pGame = GameClient();
         float myAngle = atan2f(AimDir.y, AimDir.x);
         float halfFovRad = (Settings.m_Fov * 0.5f) * (pi / 180.0f);
-        constexpr float HB_HALF = CCharacterCore::PhysicalSize() * 0.5f; // 14.0f
+        constexpr float HB_HALF = CCharacterCore::PhysicalSize() * 0.5f;
+
+        // v1.56.92: Raycast AB — cast N rays ONCE across FOV cone, store (end, dist).
+        struct RayHit { vec2 end; float dist; };
+        std::vector<RayHit> rayHits;
+        if(Settings.m_UseRaycastAB)
+        {
+                int angles = std::max(1, std::min(64, Settings.m_RaycastAnglesAB));
+                float leftAngle = myAngle - halfFovRad;
+                float rightAngle = myAngle + halfFovRad;
+                for(int i = 0; i <= angles; i++)
+                {
+                        float t = (float)i / (float)angles;
+                        float a = leftAngle + t * (rightAngle - leftAngle);
+                        vec2 end = MyPos + vec2(cosf(a), sinf(a)) * Settings.m_Radius;
+                        vec2 hitPos;
+                        if(pGame->Collision()->IntersectLine(MyPos, end, &hitPos, nullptr) > 0)
+                                rayHits.push_back({hitPos, length(hitPos - MyPos)});
+                        else
+                                rayHits.push_back({end, Settings.m_Radius});
+                }
+        }
+
+        // v1.56.92: Debug render AB raycast lines.
+        if(Settings.m_ShowRaycastLinesAB && !rayHits.empty())
+        {
+                Graphics()->TextureClear();
+                Graphics()->LinesBegin();
+                ColorRGBA dbgCol = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_KxLineRenderingColor, true));
+                Graphics()->SetColor(dbgCol.r, dbgCol.g, dbgCol.b, 0.3f);
+                for(const auto &rh : rayHits)
+                {
+                        IGraphics::CLineItem Line(MyPos.x, MyPos.y, rh.end.x, rh.end.y);
+                        Graphics()->LinesDraw(&Line, 1);
+                }
+                Graphics()->LinesEnd();
+        }
+
         int bestTarget = -1;
         float bestScore = 1e18f;
         for(int i = 0; i < MAX_CLIENTS; i++)
@@ -176,8 +208,6 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int LocalId, const vec2
                 if(!PassesFilters(i, LocalId, Settings))
                         continue;
                 vec2 targetCenter = vec2((float)pGame->m_Snap.m_aCharacters[i].m_Cur.m_X, (float)pGame->m_Snap.m_aCharacters[i].m_Cur.m_Y);
-
-                // Sample 5 points of the hitbox: center + 4 corners.
                 vec2 hbPoints[5] = {
                         targetCenter,
                         targetCenter + vec2(-HB_HALF, -HB_HALF),
@@ -185,8 +215,6 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int LocalId, const vec2
                         targetCenter + vec2(-HB_HALF, HB_HALF),
                         targetCenter + vec2(HB_HALF, HB_HALF),
                 };
-
-                // Find the best (smallest score) sample that passes FOV + Radius + raycast.
                 bool anyPass = false;
                 float bestSampleScore = 1e18f;
                 for(int s = 0; s < 5; s++)
@@ -201,15 +229,34 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int LocalId, const vec2
                         float angleDiff = fabsf(atan2f(sinf(myAngle - sampleAngle), cosf(myAngle - sampleAngle)));
                         if(angleDiff > halfFovRad)
                                 continue;
-                        if(Settings.m_UseRaycast && !IsVisible(MyPos, sp))
+                        bool visible = false;
+                        if(Settings.m_UseRaycastAB && !rayHits.empty())
+                        {
+                                for(const auto &rh : rayHits)
+                                {
+                                        vec2 rayDir = normalize(rh.end - MyPos);
+                                        float proj = dot(sp - MyPos, rayDir);
+                                        if(proj < 0.0f || proj > rh.dist)
+                                                continue;
+                                        vec2 perp = (sp - MyPos) - rayDir * proj;
+                                        if(length(perp) < HB_HALF)
+                                        {
+                                                visible = true;
+                                                break;
+                                        }
+                                }
+                        }
+                        else
+                                visible = IsVisible(MyPos, sp);
+                        if(!visible)
                                 continue;
                         float score;
                         if(Settings.m_Priority == 0)
-                                score = angleDiff; // nearest FOV: smallest angle from aim direction
+                                score = angleDiff;
                         else if(Settings.m_Priority == 1)
-                                score = length(sp - AimPos); // nearest aim: closest to crosshair coordinates
+                                score = length(sp - AimPos);
                         else
-                                score = dist; // nearest to me: closest to my position
+                                score = dist;
                         if(score < bestSampleScore)
                         {
                                 bestSampleScore = score;
@@ -224,7 +271,6 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int LocalId, const vec2
         }
         return bestTarget;
 }
-
 bool CAimBot::IsVisible(const vec2 &From, const vec2 &To)
 {
         return GameClient()->Collision()->IntersectLine(From, To, nullptr, nullptr) == 0;
@@ -457,26 +503,27 @@ void CAimBot::RenderFov(const SWeaponSettings &Settings, const vec2 &MyPos, cons
         ColorRGBA col = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_KxLineRenderingColor, true));
         int LineSize = g_Config.m_KxLineRenderingSize;
         float HalfWidth = 0.5f + (float)(LineSize > 0 ? LineSize - 1 : 0) * 0.25f;
-        bool useRay = m_AimBotUseRaycastShow || m_TriggerBotUseRaycastShow;
+        bool useRay = Settings.m_UseRaycastShow;
 
         // Build line segments. Each segment is a pair (p0, p1).
         std::vector<std::pair<vec2, vec2>> segments;
         if(useRay)
         {
-                int angles = std::max(1, std::min(64, Settings.m_RaycastAngles));
+                // v1.56.92: Show only 2 edge lines (left + right) with wall collision.
+                // The arc (radius circle) is drawn by RenderRadius with N raycast points.
                 float leftAngle = myAngle - halfFovRad;
                 float rightAngle = myAngle + halfFovRad;
-                for(int i = 0; i <= angles; i++)
-                {
-                        float t = (float)i / (float)angles;
-                        float a = leftAngle + t * (rightAngle - leftAngle);
-                        vec2 end = MyPos + vec2(cosf(a), sinf(a)) * radius;
-                        vec2 hitPos;
-                        if(GameClient()->Collision()->IntersectLine(MyPos, end, &hitPos, nullptr) > 0)
-                                segments.push_back({MyPos, hitPos});
-                        else
-                                segments.push_back({MyPos, end});
-                }
+                vec2 leftEnd = MyPos + vec2(cosf(leftAngle), sinf(leftAngle)) * radius;
+                vec2 rightEnd = MyPos + vec2(cosf(rightAngle), sinf(rightAngle)) * radius;
+                vec2 hitPos;
+                if(GameClient()->Collision()->IntersectLine(MyPos, leftEnd, &hitPos, nullptr) > 0)
+                        segments.push_back({MyPos, hitPos});
+                else
+                        segments.push_back({MyPos, leftEnd});
+                if(GameClient()->Collision()->IntersectLine(MyPos, rightEnd, &hitPos, nullptr) > 0)
+                        segments.push_back({MyPos, hitPos});
+                else
+                        segments.push_back({MyPos, rightEnd});
         }
         else
         {
@@ -525,8 +572,8 @@ void CAimBot::RenderRadius(const SWeaponSettings &Settings, const vec2 &MyPos, c
         ColorRGBA col = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_KxLineRenderingColor, true));
         int LineSize = g_Config.m_KxLineRenderingSize;
         float HalfWidth = 0.5f + (float)(LineSize > 0 ? LineSize - 1 : 0) * 0.25f;
-        bool useRay = m_AimBotUseRaycastShow || m_TriggerBotUseRaycastShow;
-        int segments = 48;
+        bool useRay = Settings.m_UseRaycastShow;
+        int segments = useRay ? std::max(1, std::min(64, Settings.m_RaycastAnglesShow)) : 48;
 
         std::vector<vec2> points;
         for(int i = 0; i <= segments; i++)

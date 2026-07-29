@@ -123,9 +123,11 @@ static SRow g_AimBotChildren[] = {
         {ERowType::Slider, "AB Radius", nullptr, false, false, 1.0f, 2000.0f, 1.0f, 300.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Show FOV", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Show Radius", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Use raycast (show)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "AB Raycast (aim)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "AB Angles", nullptr, false, false, 1.0f, 64.0f, 1.0f, 16.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Use raycast (Show)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Raycast angles (Show)", nullptr, false, false, 1.0f, 64.0f, 1.0f, 16.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Use raycast (AB)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Show raycast lines (AB)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Raycast angles (AB)", nullptr, false, false, 1.0f, 64.0f, 1.0f, 16.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Dropdown, "AB Aim Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABAimModeOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "AB Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTeamOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "AB Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 2, 0, nullptr, 0},
@@ -143,9 +145,13 @@ static SRow g_TriggerBotChildren[] = {
         {ERowType::Slider, "TB Radius", nullptr, false, false, 1.0f, 2000.0f, 1.0f, 300.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "TB Show FOV", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "TB Show Radius", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "TB Use raycast (show)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "TB Raycast (trigger)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "TB Angles", nullptr, false, false, 1.0f, 64.0f, 1.0f, 16.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "TB Use raycast (Show)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+	{ERowType::Slider, "TB Raycast angles (Show)", nullptr, false, false, 1.0f, 64.0f, 1.0f, 16.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+	{ERowType::Toggle, "TB Use raycast (TB)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+	{ERowType::Toggle, "TB Show raycast lines (TB)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+	{ERowType::Slider, "TB Raycast angles (TB)", nullptr, false, false, 1.0f, 64.0f, 1.0f, 16.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "TB Use raycast (TB)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "TB Raycast angles (Show)", nullptr, false, false, 1.0f, 64.0f, 1.0f, 16.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "TB Latency", nullptr, false, false, 0.0f, 10.0f, 1.0f, 0.0f, " ticks", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Dropdown, "TB Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTeamOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "TB Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 2, 0, nullptr, 0},
@@ -213,8 +219,8 @@ static SRow g_FunctionsRows[] = {
         {ERowType::Expandable, "Block", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BlockChildren, 37},
         {ERowType::Toggle, "Random Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         // v1.56.83: AimBot + TriggerBot expandables
-        {ERowType::Expandable, "AimBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AimBotChildren, 15},
-        {ERowType::Expandable, "TriggerBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TriggerBotChildren, 17},
+        {ERowType::Expandable, "AimBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AimBotChildren, 17},
+        {ERowType::Expandable, "TriggerBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TriggerBotChildren, 21},
         // Fly sub-section
         {ERowType::Toggle, "Preserve input", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Expandable, "Custom latency", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CustomLatencyChildren, 1},
@@ -976,12 +982,12 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                                                         ch.on = aimbot.m_AimBotShowFov;
                                                 else if(str_comp(ch.pName, "Show Radius") == 0)
                                                         ch.on = aimbot.m_AimBotShowRadius;
-                                                else if(str_comp(ch.pName, "Use raycast (show)") == 0)
-                                                        ch.on = aimbot.m_AimBotUseRaycastShow;
-                                                else if(str_comp(ch.pName, "AB Raycast (aim)") == 0)
-                                                        ch.on = s.m_UseRaycast;
-                                                else if(str_comp(ch.pName, "AB Angles") == 0)
-                                                        ch.value = (float)s.m_RaycastAngles;
+                                                else if(str_comp(ch.pName, "Use raycast (Show)") == 0)
+                                                        ch.on = s.m_UseRaycastShow;
+                                                else if(str_comp(ch.pName, "Use raycast (AB)") == 0)
+                                                        ch.on = s.m_UseRaycastAB;
+                                                else if(str_comp(ch.pName, "Raycast angles (Show)") == 0)
+                                                        ch.value = (float)s.m_RaycastAnglesShow;
                                                 else if(str_comp(ch.pName, "AB Aim Mode") == 0)
                                                         ch.valueIdx = s.m_AimMode;
                                                 else if(str_comp(ch.pName, "AB Team") == 0)
@@ -1025,12 +1031,12 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                                                         ch.on = aimbot.m_TriggerBotShowFov;
                                                 else if(str_comp(ch.pName, "TB Show Radius") == 0)
                                                         ch.on = aimbot.m_TriggerBotShowRadius;
-                                                else if(str_comp(ch.pName, "TB Use raycast (show)") == 0)
-                                                        ch.on = aimbot.m_TriggerBotUseRaycastShow;
-                                                else if(str_comp(ch.pName, "TB Raycast (trigger)") == 0)
-                                                        ch.on = s.m_UseRaycast;
-                                                else if(str_comp(ch.pName, "TB Angles") == 0)
-                                                        ch.value = (float)s.m_RaycastAngles;
+                                                else if(str_comp(ch.pName, "TB Use raycast (Show)") == 0)
+                                                        ch.on = s.m_UseRaycastShow;
+                                                else if(str_comp(ch.pName, "TB Use raycast (TB)") == 0)
+                                                        ch.on = s.m_UseRaycastAB;
+                                                else if(str_comp(ch.pName, "TB Raycast angles (Show)") == 0)
+                                                        ch.value = (float)s.m_RaycastAnglesShow;
                                                 else if(str_comp(ch.pName, "TB Latency") == 0)
                                                         ch.value = (float)s.m_RandomLatency;
                                                 else if(str_comp(ch.pName, "TB Team") == 0)
@@ -1470,8 +1476,10 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                                                         s.m_Fov = pTarget->value;
                                                     else if(str_comp(pTarget->pName, "AB Radius") == 0)
                                                         s.m_Radius = pTarget->value;
-                                                    else if(str_comp(pTarget->pName, "AB Angles") == 0)
-                                                        s.m_RaycastAngles = (int)pTarget->value;
+                                                    else if(str_comp(pTarget->pName, "Raycast angles (Show)") == 0)
+                                                        s.m_RaycastAnglesShow = (int)pTarget->value;
+									else if(str_comp(pTarget->pName, "Raycast angles (AB)") == 0)
+										s.m_RaycastAnglesAB = (int)pTarget->value;
                                                 }
                                         }
                                         else if(str_comp(parentRow.pName, "TriggerBot") == 0)
@@ -1484,8 +1492,10 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                                                         s.m_Fov = pTarget->value;
                                                     else if(str_comp(pTarget->pName, "TB Radius") == 0)
                                                         s.m_Radius = pTarget->value;
-                                                    else if(str_comp(pTarget->pName, "TB Angles") == 0)
-                                                        s.m_RaycastAngles = (int)pTarget->value;
+                                                    else if(str_comp(pTarget->pName, "TB Raycast angles (Show)") == 0)
+                                                        s.m_RaycastAnglesShow = (int)pTarget->value;
+									else if(str_comp(pTarget->pName, "Raycast angles (AB)") == 0)
+										s.m_RaycastAnglesAB = (int)pTarget->value;
                                                     else if(str_comp(pTarget->pName, "TB Latency") == 0)
                                                         s.m_RandomLatency = (int)pTarget->value;
                                                 }
@@ -1935,10 +1945,12 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                             ab.m_AimBotShowFov = pTarget->on;
                                                         else if(str_comp(pTarget->pName, "Show Radius") == 0)
                                                             ab.m_AimBotShowRadius = pTarget->on;
-                                                        else if(str_comp(pTarget->pName, "Use raycast (show)") == 0)
-                                                            ab.m_AimBotUseRaycastShow = pTarget->on;
-                                                        else if(str_comp(pTarget->pName, "AB Raycast (aim)") == 0)
-                                                            s.m_UseRaycast = pTarget->on;
+                                                        else if(str_comp(pTarget->pName, "Use raycast (Show)") == 0)
+                                                            s.m_UseRaycastShow = pTarget->on;
+                                                        else if(str_comp(pTarget->pName, "Use raycast (AB)") == 0)
+                                                            s.m_UseRaycastAB = pTarget->on;
+									else if(str_comp(pTarget->pName, "Show raycast lines (AB)") == 0)
+										s.m_ShowRaycastLinesAB = pTarget->on;
                                                 }
                                         }
                                         // v1.56.83: TriggerBot per-weapon child toggles (parent = "TriggerBot")
@@ -1955,10 +1967,12 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                             tb.m_TriggerBotShowFov = pTarget->on;
                                                         else if(str_comp(pTarget->pName, "TB Show Radius") == 0)
                                                             tb.m_TriggerBotShowRadius = pTarget->on;
-                                                        else if(str_comp(pTarget->pName, "TB Use raycast (show)") == 0)
-                                                            tb.m_TriggerBotUseRaycastShow = pTarget->on;
-                                                        else if(str_comp(pTarget->pName, "TB Raycast (trigger)") == 0)
-                                                            s.m_UseRaycast = pTarget->on;
+                                                        else if(str_comp(pTarget->pName, "TB Use raycast (Show)") == 0)
+                                                            s.m_UseRaycastShow = pTarget->on;
+                                                        else if(str_comp(pTarget->pName, "TB Use raycast (TB)") == 0)
+                                                            s.m_UseRaycastAB = pTarget->on;
+									else if(str_comp(pTarget->pName, "Show raycast lines (AB)") == 0)
+										s.m_ShowRaycastLinesAB = pTarget->on;
                                                 }
                                         }
                                         // v1.56.90: Block children toggles
