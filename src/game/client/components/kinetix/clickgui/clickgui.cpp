@@ -1849,13 +1849,13 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         {
                                                 int w = ab.m_AimBotSelectedWeapon;
                                                 if(w >= 0 && w < CAimBot::NUM_WEAPONS_AIM)
-                                                        ab.m_AimBotWeapons[w].m_SuccessColor = 0xff000000u | (hex & 0xffffff);
+                                                        ab.m_AimBotWeapons[w].m_SuccessColor = 0xff000000u | (hex & 0xffffff); // 0xAARRGGBB
                                         }
                                         else
                                         {
                                                 int w = ab.m_TriggerBotSelectedWeapon;
                                                 if(w >= 0 && w < CAimBot::NUM_WEAPONS_TRIGGER)
-                                                        ab.m_TriggerBotWeapons[w].m_SuccessColor = 0xff000000u | (hex & 0xffffff);
+                                                        ab.m_TriggerBotWeapons[w].m_SuccessColor = 0xff000000u | (hex & 0xffffff); // 0xAARRGGBB
                                         }
                                 }
                         }
@@ -1884,13 +1884,13 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         {
                                                 int w = ab.m_AimBotSelectedWeapon;
                                                 if(w >= 0 && w < CAimBot::NUM_WEAPONS_AIM)
-                                                        ab.m_AimBotWeapons[w].m_SuccessColor = 0xff000000u | (hex & 0xffffff);
+                                                        ab.m_AimBotWeapons[w].m_SuccessColor = 0xff000000u | (hex & 0xffffff); // 0xAARRGGBB
                                         }
                                         else
                                         {
                                                 int w = ab.m_TriggerBotSelectedWeapon;
                                                 if(w >= 0 && w < CAimBot::NUM_WEAPONS_TRIGGER)
-                                                        ab.m_TriggerBotWeapons[w].m_SuccessColor = 0xff000000u | (hex & 0xffffff);
+                                                        ab.m_TriggerBotWeapons[w].m_SuccessColor = 0xff000000u | (hex & 0xffffff); // 0xAARRGGBB
                                         }
                                 }
                         }
