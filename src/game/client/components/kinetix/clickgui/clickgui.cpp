@@ -2116,8 +2116,12 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                             s.m_UseRaycastShow = pTarget->on;
                                                         else if(str_comp(pTarget->pName, "TB Use raycast (TB)") == 0)
                                                             s.m_UseRaycastAB = pTarget->on;
-                                                        else if(str_comp(pTarget->pName, "Show raycast lines (AB)") == 0)
+                                                        else if(str_comp(pTarget->pName, "TB Show raycast lines (TB)") == 0)
                                                             s.m_ShowRaycastLinesAB = pTarget->on;
+                                                        else if(str_comp(pTarget->pName, "TB Use Angle") == 0)
+                                                            s.m_UseAngle = pTarget->on;
+                                                        else if(str_comp(pTarget->pName, "TB Show success") == 0)
+                                                            s.m_ShowSuccess = pTarget->on;
                                                 }
                                         }
                                         // v1.56.90: Block children toggles
