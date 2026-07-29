@@ -162,7 +162,7 @@ void CAimBot::OnRender()
                                         }
                                 }
                         }
-                        if(hitsPlayer)
+                        if(hitsPlayer && showSuccess)
                                 Graphics()->SetColor(successCol.r, successCol.g, successCol.b, successCol.a);
                         else if(showAll)
                                 Graphics()->SetColor(normalCol.r, normalCol.g, normalCol.b, 0.3f);
