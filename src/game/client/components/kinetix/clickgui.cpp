@@ -1037,9 +1037,9 @@ if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, ro
                                                 child.value = (float)g_Config.m_KxLaserUnfreezeFov;
                                         else if(str_comp(child.pName, "Angles") == 0)
                                                 child.value = (float)g_Config.m_KxLaserUnfreezeAngles;
-                                        else if(str_comp(child.pName, "Ticks") == 0)
+                                        else if(str_comp(child.pName, "Ticks") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
                                                 child.value = (float)g_Config.m_KxLaserUnfreezeTicks;
-                                        else if(str_comp(child.pName, "Trigger ticks") == 0)
+                                        else if(str_comp(child.pName, "Trigger ticks") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
                                                 child.value = (float)g_Config.m_KxLaserUnfreezeTriggerTicks;
                                         else if(str_comp(child.pName, "Silent") == 0)
                                                 child.on = g_Config.m_KxLaserUnfreezeSilent != 0;
@@ -1695,25 +1695,14 @@ if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, ro
                                 g_Config.m_KxLaserUnfreezeFov = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Angles") == 0)
                                 g_Config.m_KxLaserUnfreezeAngles = (int)pTarget->value;
-                        else if(str_comp(pTarget->pName, "Ticks") == 0)
+                        else if(str_comp(pTarget->pName, "Ticks") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
                                 g_Config.m_KxLaserUnfreezeTicks = (int)pTarget->value;
-                        else if(str_comp(pTarget->pName, "Trigger ticks") == 0)
+                        else if(str_comp(pTarget->pName, "Trigger ticks") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
                                 g_Config.m_KxLaserUnfreezeTriggerTicks = (int)pTarget->value;
-else if(str_comp(pTarget->pName, "Trigger ticks") == 0)
-
-                        g_Config.m_KxLaserUnfreezeTriggerTicks = (int)pTarget->value;
-
-                        else if(str_comp(pTarget->pName, "Trigger ticks") == 0)
-                                g_Config.m_KxLaserUnfreezeTriggerTicks = (int)pTarget->value;
-else if(str_comp(pTarget->pName, "Ticks") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
-
-                        g_Config.m_KxBafTicks = (int)pTarget->value;
-
-                        else if(str_comp(pTarget->pName, "Trigger ticks") == 0)
-                                g_Config.m_KxLaserUnfreezeTriggerTicks = (int)pTarget->value;
-else if(str_comp(pTarget->pName, "Trigger ticks") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
-
-                        g_Config.m_KxBafTriggerTicks = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Ticks") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
+                                g_Config.m_KxBafTicks = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Trigger ticks") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
+                                g_Config.m_KxBafTriggerTicks = (int)pTarget->value;
                         // v1.56.108: Line rendering per-component writes
                         else if(str_comp(pTarget->pName, "Line size") == 0 || str_comp(pTarget->pName, "Line opacity") == 0)
                         {
@@ -2601,25 +2590,14 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         g_Config.m_KxLaserUnfreezeFov = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Angles") == 0)
                                         g_Config.m_KxLaserUnfreezeAngles = (int)pTarget->value;
-                                else if(str_comp(pTarget->pName, "Ticks") == 0)
+                                else if(str_comp(pTarget->pName, "Ticks") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
                                         g_Config.m_KxLaserUnfreezeTicks = (int)pTarget->value;
-                                else if(str_comp(pTarget->pName, "Trigger ticks") == 0)
+                                else if(str_comp(pTarget->pName, "Trigger ticks") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
                                         g_Config.m_KxLaserUnfreezeTriggerTicks = (int)pTarget->value;
-else if(str_comp(pTarget->pName, "Trigger ticks") == 0)
-
-                                g_Config.m_KxLaserUnfreezeTriggerTicks = (int)pTarget->value;
-
-                                else if(str_comp(pTarget->pName, "Trigger ticks") == 0)
-                                        g_Config.m_KxLaserUnfreezeTriggerTicks = (int)pTarget->value;
-else if(str_comp(pTarget->pName, "Ticks") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
-
-                                g_Config.m_KxBafTicks = (int)pTarget->value;
-
-                                else if(str_comp(pTarget->pName, "Trigger ticks") == 0)
-                                        g_Config.m_KxLaserUnfreezeTriggerTicks = (int)pTarget->value;
-else if(str_comp(pTarget->pName, "Trigger ticks") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
-
-                                g_Config.m_KxBafTriggerTicks = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Ticks") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
+                                        g_Config.m_KxBafTicks = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Trigger ticks") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
+                                        g_Config.m_KxBafTriggerTicks = (int)pTarget->value;
                                 // Settings → Line rendering children
                                 // v1.56.108: Line rendering per-component writes
                                 else if(str_comp(pTarget->pName, "Line size") == 0 || str_comp(pTarget->pName, "Line opacity") == 0)
