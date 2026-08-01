@@ -3980,11 +3980,11 @@ if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, ro
                                 DrawRoundedRect(cbX, childBlockTop, cbW, cbH, 0.0f, IGraphics::CORNER_NONE,
                                         ColorRGBA(COL_SUB_LIST_BG, true).WithAlpha(alpha * 0.6f));
                                 const float stripeX = rx + 1.0f + CHECK_W * 0.5f - 1.0f;
-                                const float stripeY = ry + 3.0f + CHECK_W;
-                                const float stripeH = childBlockBottom - stripeY;
+                                const float stripeY = childBlockTop;
+                                const float stripeH = childBlockBottom - childBlockTop;
                                 if(stripeH > 0.5f)
                                         DrawRoundedRect(stripeX, stripeY, 2.0f, stripeH, 0.0f, IGraphics::CORNER_NONE,
-                                                ColorRGBA(COL_CHILD_STRIPE, true).WithAlpha(alpha));
+                                                ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha));
                         }
 
                         for(int c = 0; c < row.childCount; ++c)
