@@ -33,6 +33,10 @@ public:
         int Sizeof() const override { return sizeof(*this); }
         void OnReset() override;
         void OnUpdate() override;
+        // Called from CControls::SnapInput at the very end (after all other
+        // input manipulators: bot control, fake aim, laser unfreeze) so it
+        // can override ANY input field including the player's own.
+        void ApplyOverride();
 
 private:
         // Simulate 'ticks' ticks with the given input on a fresh copy of the

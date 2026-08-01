@@ -24,6 +24,7 @@
 #include <game/collision.h>
 
 // bot_control integration
+#include <game/client/components/kinetix/basic_avoid_freeze.h>
 #include <game/client/components/kinetix/bot_control.h>
 #include <game/client/components/kinetix/kinetix.h>
 
@@ -731,6 +732,14 @@ int CControls::SnapInput(int *pData)
                 pSend->m_TargetX = (int)fakeOffset.x;
                 pSend->m_TargetY = (int)fakeOffset.y;
         }
+
+        // v1.56.123: Basic Avoid Freeze — LAST input override.
+        // Called after all other manipulators (bot control, fake aim, laser
+        // unfreeze) so it can override any field including the player's own.
+        // Modifies m_aInputData (both server + prediction see the override).
+        GameClient()->m_BasicAvoidFreeze.ApplyOverride();
+        // Re-copy after override so server gets the modified input too.
+        mem_copy(pData, &m_aInputData[g_Config.m_ClDummy], sizeof(m_aInputData[0]));
 
         return sizeof(m_aInputData[0]);
 }
