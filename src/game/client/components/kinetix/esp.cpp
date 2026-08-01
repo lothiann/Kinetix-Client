@@ -8,6 +8,7 @@
 #include <engine/graphics.h>
 #include <game/client/gameclient.h>
 #include <game/client/components/camera.h>
+#include <game/client/components/kinetix/kinetix_internal.h>
 #include <game/client/components/kinetix/kinetix_lines.h>
 
 #include <generated/protocol.h>
@@ -65,10 +66,11 @@ bool CEsp::PassesFilters(int ClientId, int LocalId) const
 void CEsp::EmitLine(const vec2 &p0, const vec2 &p1) const
 {
 	// Shared Line rendering settings.
-	ColorRGBA col = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_KxLineRenderingColor, true));
-	float alpha = (float)g_Config.m_KxLineRenderingAlpha / 100.0f;
+	// v1.56.108: per-component line rendering settings (ESP).
+	ColorRGBA col = color_cast<ColorRGBA>(ColorHSLA(KxLineColor(KX_LINE_ESP), true));
+	float alpha = KxLineAlpha(KX_LINE_ESP);
 	col.a = alpha;
-	int lineSize = g_Config.m_KxLineRenderingSize;
+	int lineSize = KxLineSize(KX_LINE_ESP);
 	float halfWidth = lineSize > 0 ? 0.5f + (float)(lineSize - 1) * 0.25f : 0.0f;
 
 	if(g_Config.m_KxLineRenderingLayer > 0)

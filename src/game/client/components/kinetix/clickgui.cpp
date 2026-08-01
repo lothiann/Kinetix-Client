@@ -8,6 +8,7 @@
 // row via IGraphics (rounded rects, gradient fills) and ITextRender (text).
 
 #include <game/client/components/kinetix/clickgui.h>
+#include <game/client/components/kinetix/kinetix_internal.h>
 #include <game/client/components/kinetix/kinetix.h>
 
 #include <yoga/Yoga.h>
@@ -304,16 +305,20 @@ static SRow g_RainbowChildren[] = {
 };
 // v1.56.89: "Line rendering" visual expandable (cannot toggle, only expand).
 // Shared line render settings used by trajectory, aimbot FOV/radius, pathfinder path, laser unfreeze.
+// v1.56.108: Line rendering per-component. Component dropdown selects which
+// component's Size/Color/Opacity is being edited. Layer stays global.
+static const char *const g_LineComponentOpts[] = {"AimBot", "TriggerBot", "Trajectory", "Laser Unfreeze", "Pathfinder", "ESP"};
 static SRow g_LineRenderingChildren[] = {
-        {ERowType::Slider, "Line Margin", nullptr, false, false, 0.0f, 20.0f, 1.0f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "Component", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_LineComponentOpts, 6, 0, nullptr, 0},
         {ERowType::Input, "Line color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ffbf00", "hex...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Line size", nullptr, false, false, 0.0f, 20.0f, 1.0f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Line opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 80.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Layer", nullptr, false, false, 0.0f, 10.0f, 1.0f, 0.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 static SRow g_SettingsRows[] = {
         {ERowType::Input, "ClickGUI Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "9d4edd", "hex...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Expandable, "Rainbow color", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowChildren, 1},
-        {ERowType::Expandable, "Line rendering", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LineRenderingChildren, 4},
+        {ERowType::Expandable, "Line rendering", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LineRenderingChildren, 5},
         {ERowType::Expandable, "IRC", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_IrcChildren, 2},
         {ERowType::Expandable, "Spoofer", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_SpooferChildren, 6},
 };
@@ -1001,23 +1006,38 @@ if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, ro
                                                 child.on = g_Config.m_KxIrcRevealJoin != 0;
                                         else if(str_comp(child.pName, "Nameplate tag") == 0)
                                                 child.on = g_Config.m_KxIrcNameplateTag != 0;
-                                        // Settings → Line rendering children
-                                        else if(str_comp(child.pName, "Line Margin") == 0)
-                                                child.value = (float)g_Config.m_KxLineRenderingSize;
-                                        else if(str_comp(child.pName, "Line color") == 0 && str_comp(row.pName, "Line rendering") == 0)
+                                        // v1.56.108: Settings → Line rendering (per-component)
+                                        else if(str_comp(row.pName, "Line rendering") == 0)
                                         {
-                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r)
+                                                int compIdx = 0;
+                                                for(int k = 0; k < row.childCount; ++k)
                                                 {
-                                                        char hex[8];
-                                                        str_format(hex, sizeof(hex), "%06x", g_Config.m_KxLineRenderingColor & 0xffffff);
-                                                        str_copy(child.m_aInputBuf, hex, sizeof(child.m_aInputBuf));
-                                                        child.m_InputInitialized = true;
+                                                        if(str_comp(row.pChildren[k].pName, "Component") == 0)
+                                                        {
+                                                                compIdx = row.pChildren[k].valueIdx;
+                                                                break;
+                                                        }
                                                 }
+                                                EKxLineComponent comp = (EKxLineComponent)compIdx;
+                                                if(str_comp(child.pName, "Component") == 0)
+                                                        child.valueIdx = compIdx;
+                                                else if(str_comp(child.pName, "Line color") == 0)
+                                                {
+                                                        if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                        {
+                                                                char hex[8];
+                                                                str_format(hex, sizeof(hex), "%06x", KxLineColor(comp) & 0xffffff);
+                                                                str_copy(child.m_aInputBuf, hex, sizeof(child.m_aInputBuf));
+                                                                child.m_InputInitialized = true;
+                                                        }
+                                                }
+                                                else if(str_comp(child.pName, "Line size") == 0)
+                                                        child.value = (float)KxLineSize(comp);
+                                                else if(str_comp(child.pName, "Line opacity") == 0)
+                                                        child.value = (float)(KxLineAlpha(comp) * 100.0f);
+                                                else if(str_comp(child.pName, "Layer") == 0)
+                                                        child.value = (float)g_Config.m_KxLineRenderingLayer;
                                         }
-                                        else if(str_comp(child.pName, "Line opacity") == 0)
-                                                child.value = (float)g_Config.m_KxLineRenderingAlpha;
-                                        else if(str_comp(child.pName, "Layer") == 0)
-                                                child.value = (float)g_Config.m_KxLineRenderingLayer;
                                         // Advanced → Trajectory children
                                         else if(str_comp(child.pName, "Prediction Ticks") == 0)
                                                 child.value = (float)g_Config.m_KxTrajectoryTicks;
@@ -1642,11 +1662,44 @@ if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, ro
                                 g_Config.m_KxLaserUnfreezeTicks = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Trigger ticks") == 0)
                                 g_Config.m_KxLaserUnfreezeTriggerTicks = (int)pTarget->value;
-                        // Settings → Line rendering children
-                        else if(str_comp(pTarget->pName, "Line Margin") == 0)
-                                g_Config.m_KxLineRenderingSize = (int)pTarget->value;
-                        else if(str_comp(pTarget->pName, "Line opacity") == 0)
-                                g_Config.m_KxLineRenderingAlpha = (int)pTarget->value;
+                        // v1.56.108: Line rendering per-component writes
+                        else if(str_comp(pTarget->pName, "Line size") == 0 || str_comp(pTarget->pName, "Line opacity") == 0)
+                        {
+                                int compIdx = 0;
+                                for(int k = 0; k < row.childCount; ++k)
+                                {
+                                        if(str_comp(row.pChildren[k].pName, "Component") == 0)
+                                        {
+                                                compIdx = row.pChildren[k].valueIdx;
+                                                break;
+                                        }
+                                }
+                                EKxLineComponent comp = (EKxLineComponent)compIdx;
+                                if(str_comp(pTarget->pName, "Line size") == 0)
+                                        {
+                                        switch(comp)
+                                        {
+                                        case KX_LINE_AIMBOT: g_Config.m_KxLineAimBotSize = (int)pTarget->value; break;
+                                        case KX_LINE_TRIGGERBOT: g_Config.m_KxLineTriggerBotSize = (int)pTarget->value; break;
+                                        case KX_LINE_TRAJECTORY: g_Config.m_KxLineTrajectorySize = (int)pTarget->value; break;
+                                        case KX_LINE_LASER_UNFREEZE: g_Config.m_KxLineLaserUnfreezeSize = (int)pTarget->value; break;
+                                        case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderSize = (int)pTarget->value; break;
+                                        case KX_LINE_ESP: g_Config.m_KxLineEspSize = (int)pTarget->value; break;
+                                        }
+                                        }
+                                else // Line opacity
+                                        {
+                                        switch(comp)
+                                        {
+                                        case KX_LINE_AIMBOT: g_Config.m_KxLineAimBotAlpha = (int)pTarget->value; break;
+                                        case KX_LINE_TRIGGERBOT: g_Config.m_KxLineTriggerBotAlpha = (int)pTarget->value; break;
+                                        case KX_LINE_TRAJECTORY: g_Config.m_KxLineTrajectoryAlpha = (int)pTarget->value; break;
+                                        case KX_LINE_LASER_UNFREEZE: g_Config.m_KxLineLaserUnfreezeAlpha = (int)pTarget->value; break;
+                                        case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderAlpha = (int)pTarget->value; break;
+                                        case KX_LINE_ESP: g_Config.m_KxLineEspAlpha = (int)pTarget->value; break;
+                                        }
+                                        }
+                        }
                         else if(str_comp(pTarget->pName, "Layer") == 0)
                                 g_Config.m_KxLineRenderingLayer = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "ESP X") == 0)
@@ -1976,7 +2029,19 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                         {
                                 unsigned hex = 0;
                                 if(sscanf(pRow->m_aInputBuf, "%6x", &hex) == 1)
-                                        g_Config.m_KxLineRenderingColor = hex & 0xffffff;
+                                {
+                                        int compIdx = g_LineRenderingChildren[0].valueIdx;
+                                        EKxLineComponent comp = (EKxLineComponent)compIdx;
+                                        switch(comp)
+                                        {
+                                        case KX_LINE_AIMBOT: g_Config.m_KxLineAimBotColor = hex & 0xffffff; break;
+                                        case KX_LINE_TRIGGERBOT: g_Config.m_KxLineTriggerBotColor = hex & 0xffffff; break;
+                                        case KX_LINE_TRAJECTORY: g_Config.m_KxLineTrajectoryColor = hex & 0xffffff; break;
+                                        case KX_LINE_LASER_UNFREEZE: g_Config.m_KxLineLaserUnfreezeColor = hex & 0xffffff; break;
+                                        case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderColor = hex & 0xffffff; break;
+                                        case KX_LINE_ESP: g_Config.m_KxLineEspColor = hex & 0xffffff; break;
+                                        }
+                                }
                         }
                         // v1.56.107: Spoofer string inputs (commit on focus loss)
                         else if(str_comp(pRow->pName, "Custom client name") == 0)
@@ -2483,10 +2548,44 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 else if(str_comp(pTarget->pName, "Trigger ticks") == 0)
                                         g_Config.m_KxLaserUnfreezeTriggerTicks = (int)pTarget->value;
                                 // Settings → Line rendering children
-                                else if(str_comp(pTarget->pName, "Line Margin") == 0)
-                                        g_Config.m_KxLineRenderingSize = (int)pTarget->value;
-                                else if(str_comp(pTarget->pName, "Line opacity") == 0)
-                                        g_Config.m_KxLineRenderingAlpha = (int)pTarget->value;
+                                // v1.56.108: Line rendering per-component writes
+                                else if(str_comp(pTarget->pName, "Line size") == 0 || str_comp(pTarget->pName, "Line opacity") == 0)
+                                {
+                                        int compIdx = 0;
+                                        for(int k = 0; k < row.childCount; ++k)
+                                        {
+                                                if(str_comp(row.pChildren[k].pName, "Component") == 0)
+                                                {
+                                                        compIdx = row.pChildren[k].valueIdx;
+                                                        break;
+                                                }
+                                        }
+                                        EKxLineComponent comp = (EKxLineComponent)compIdx;
+                                        if(str_comp(pTarget->pName, "Line size") == 0)
+                                                {
+                                                switch(comp)
+                                                {
+                                                case KX_LINE_AIMBOT: g_Config.m_KxLineAimBotSize = (int)pTarget->value; break;
+                                                case KX_LINE_TRIGGERBOT: g_Config.m_KxLineTriggerBotSize = (int)pTarget->value; break;
+                                                case KX_LINE_TRAJECTORY: g_Config.m_KxLineTrajectorySize = (int)pTarget->value; break;
+                                                case KX_LINE_LASER_UNFREEZE: g_Config.m_KxLineLaserUnfreezeSize = (int)pTarget->value; break;
+                                                case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderSize = (int)pTarget->value; break;
+                                                case KX_LINE_ESP: g_Config.m_KxLineEspSize = (int)pTarget->value; break;
+                                                }
+                                                }
+                                        else // Line opacity
+                                                {
+                                                switch(comp)
+                                                {
+                                                case KX_LINE_AIMBOT: g_Config.m_KxLineAimBotAlpha = (int)pTarget->value; break;
+                                                case KX_LINE_TRIGGERBOT: g_Config.m_KxLineTriggerBotAlpha = (int)pTarget->value; break;
+                                                case KX_LINE_TRAJECTORY: g_Config.m_KxLineTrajectoryAlpha = (int)pTarget->value; break;
+                                                case KX_LINE_LASER_UNFREEZE: g_Config.m_KxLineLaserUnfreezeAlpha = (int)pTarget->value; break;
+                                                case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderAlpha = (int)pTarget->value; break;
+                                                case KX_LINE_ESP: g_Config.m_KxLineEspAlpha = (int)pTarget->value; break;
+                                                }
+                                                }
+                                }
                                 else if(str_comp(pTarget->pName, "Layer") == 0)
                                         g_Config.m_KxLineRenderingLayer = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "ESP X") == 0)

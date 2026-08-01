@@ -235,4 +235,67 @@ static inline void PfSimulateChunk(CGameWorld *pWorld, int PredictedCharId, CCha
         out.endJumpedTotal = pBot->GetCore().m_JumpedTotal;
 }
 
+// =========================================================
+// v1.56.108: Per-component line rendering settings.
+// Component indices: 0=AimBot 1=TriggerBot 2=Trajectory
+//                   3=LaserUnfreeze 4=Pathfinder 5=ESP
+// Layer (KxLineRenderingLayer) stays global — the deferred
+// overlay queue (CKinetixLines) is shared infrastructure.
+// =========================================================
+enum EKxLineComponent
+{
+	KX_LINE_AIMBOT = 0,
+	KX_LINE_TRIGGERBOT = 1,
+	KX_LINE_TRAJECTORY = 2,
+	KX_LINE_LASER_UNFREEZE = 3,
+	KX_LINE_PATHFINDER = 4,
+	KX_LINE_ESP = 5,
+	KX_LINE_COUNT = 6,
+};
+
+// Read per-component line rendering settings from g_Config.
+// Returns the 3 visual fields (size, color, alpha). Caller
+// applies the global Layer check separately.
+inline int KxLineSize(EKxLineComponent c)
+{
+	switch(c)
+	{
+	case KX_LINE_AIMBOT: return g_Config.m_KxLineAimBotSize;
+	case KX_LINE_TRIGGERBOT: return g_Config.m_KxLineTriggerBotSize;
+	case KX_LINE_TRAJECTORY: return g_Config.m_KxLineTrajectorySize;
+	case KX_LINE_LASER_UNFREEZE: return g_Config.m_KxLineLaserUnfreezeSize;
+	case KX_LINE_PATHFINDER: return g_Config.m_KxLinePathfinderSize;
+	case KX_LINE_ESP: return g_Config.m_KxLineEspSize;
+	}
+	return g_Config.m_KxLineRenderingSize; // fallback
+}
+
+inline unsigned KxLineColor(EKxLineComponent c)
+{
+	switch(c)
+	{
+	case KX_LINE_AIMBOT: return g_Config.m_KxLineAimBotColor;
+	case KX_LINE_TRIGGERBOT: return g_Config.m_KxLineTriggerBotColor;
+	case KX_LINE_TRAJECTORY: return g_Config.m_KxLineTrajectoryColor;
+	case KX_LINE_LASER_UNFREEZE: return g_Config.m_KxLineLaserUnfreezeColor;
+	case KX_LINE_PATHFINDER: return g_Config.m_KxLinePathfinderColor;
+	case KX_LINE_ESP: return g_Config.m_KxLineEspColor;
+	}
+	return g_Config.m_KxLineRenderingColor;
+}
+
+inline float KxLineAlpha(EKxLineComponent c)
+{
+	switch(c)
+	{
+	case KX_LINE_AIMBOT: return (float)g_Config.m_KxLineAimBotAlpha / 100.0f;
+	case KX_LINE_TRIGGERBOT: return (float)g_Config.m_KxLineTriggerBotAlpha / 100.0f;
+	case KX_LINE_TRAJECTORY: return (float)g_Config.m_KxLineTrajectoryAlpha / 100.0f;
+	case KX_LINE_LASER_UNFREEZE: return (float)g_Config.m_KxLineLaserUnfreezeAlpha / 100.0f;
+	case KX_LINE_PATHFINDER: return (float)g_Config.m_KxLinePathfinderAlpha / 100.0f;
+	case KX_LINE_ESP: return (float)g_Config.m_KxLineEspAlpha / 100.0f;
+	}
+	return (float)g_Config.m_KxLineRenderingAlpha / 100.0f;
+}
+
 #endif // GAME_CLIENT_COMPONENTS_KINETIX_INTERNAL_H

@@ -302,6 +302,28 @@ MACRO_CONFIG_COL(KxLineRenderingColor, kx_line_rendering_color, 65471, CFGFLAG_C
 MACRO_CONFIG_INT(KxLineRenderingAlpha, kx_line_rendering_alpha, 80, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Trajectory line opacity (0-100)")
 MACRO_CONFIG_INT(KxLineRenderingLayer, kx_line_rendering_layer, 0, 0, 10, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Line render layer: 0=behind foreground blocks, 1+=on top of blocks (deferred overlay pass)")
 
+// v1.56.108: Per-component line rendering settings.
+// Component indices: 0=AimBot 1=TriggerBot 2=Trajectory 3=LaserUnfreeze 4=Pathfinder 5=ESP
+// KxLineRenderingLayer stays global (deferred-overlay infrastructure is shared).
+MACRO_CONFIG_INT(KxLineAimBotSize, kx_line_aimbot_size, 1, 0, 20, CFGFLAG_CLIENT | CFGFLAG_SAVE, "AimBot line width")
+MACRO_CONFIG_COL(KxLineAimBotColor, kx_line_aimbot_color, 65471, CFGFLAG_CLIENT | CFGFLAG_SAVE, "AimBot line color")
+MACRO_CONFIG_INT(KxLineAimBotAlpha, kx_line_aimbot_alpha, 80, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "AimBot line opacity")
+MACRO_CONFIG_INT(KxLineTriggerBotSize, kx_line_triggerbot_size, 1, 0, 20, CFGFLAG_CLIENT | CFGFLAG_SAVE, "TriggerBot line width")
+MACRO_CONFIG_COL(KxLineTriggerBotColor, kx_line_triggerbot_color, 65471, CFGFLAG_CLIENT | CFGFLAG_SAVE, "TriggerBot line color")
+MACRO_CONFIG_INT(KxLineTriggerBotAlpha, kx_line_triggerbot_alpha, 80, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "TriggerBot line opacity")
+MACRO_CONFIG_INT(KxLineTrajectorySize, kx_line_trajectory_size, 1, 0, 20, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Trajectory line width")
+MACRO_CONFIG_COL(KxLineTrajectoryColor, kx_line_trajectory_color, 65471, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Trajectory line color")
+MACRO_CONFIG_INT(KxLineTrajectoryAlpha, kx_line_trajectory_alpha, 80, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Trajectory line opacity")
+MACRO_CONFIG_INT(KxLineLaserUnfreezeSize, kx_line_laser_unfreeze_size, 1, 0, 20, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Laser Unfreeze line width")
+MACRO_CONFIG_COL(KxLineLaserUnfreezeColor, kx_line_laser_unfreeze_color, 65471, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Laser Unfreeze line color")
+MACRO_CONFIG_INT(KxLineLaserUnfreezeAlpha, kx_line_laser_unfreeze_alpha, 80, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Laser Unfreeze line opacity")
+MACRO_CONFIG_INT(KxLinePathfinderSize, kx_line_pathfinder_size, 1, 0, 20, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder line width")
+MACRO_CONFIG_COL(KxLinePathfinderColor, kx_line_pathfinder_color, 65471, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder line color")
+MACRO_CONFIG_INT(KxLinePathfinderAlpha, kx_line_pathfinder_alpha, 80, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder line opacity")
+MACRO_CONFIG_INT(KxLineEspSize, kx_line_esp_size, 1, 0, 20, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ESP line width")
+MACRO_CONFIG_COL(KxLineEspColor, kx_line_esp_color, 65471, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ESP line color")
+MACRO_CONFIG_INT(KxLineEspAlpha, kx_line_esp_alpha, 80, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ESP line opacity")
+
 // Laser unfreeze — predictive laser self-unfreeze
 MACRO_CONFIG_INT(KxLaserUnfreeze, kx_laser_unfreeze, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Laser unfreeze: predict freeze and auto-fire laser to unfreeze self")
 MACRO_CONFIG_INT(KxLaserUnfreezeAuto, kx_laser_unfreeze_auto, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Laser unfreeze: auto switch to laser weapon before firing")
