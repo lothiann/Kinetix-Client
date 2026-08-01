@@ -292,12 +292,12 @@ static SRow g_IrcChildren[] = {
 // "Spoofer" expandable: slider + dropdown + input.
 static const char *const g_ClientPresetOpts[] = {"DDNet", "TClient", "BestClient", "Custom"};
 static SRow g_SpooferChildren[] = {
-	{ERowType::Slider, "Version ID", nullptr, false, false, 10000.0f, 21000.0f, 1.0f, 20000.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-	{ERowType::Dropdown, "Client preset", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ClientPresetOpts, 4, 0, nullptr, 0},
-	{ERowType::Input, "Custom client name", nullptr, false, false, 0, 0, 0, 0, nullptr, "MyClient", "name...", nullptr, 0, 0, nullptr, 0},
-	{ERowType::Input, "Client version", nullptr, false, false, 0, 0, 0, 0, nullptr, "20.0", "version...", nullptr, 0, 0, nullptr, 0},
-	{ERowType::Toggle, "Git hash", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-	{ERowType::Input, "Git hash value", nullptr, false, false, 0, 0, 0, 0, nullptr, "abc1234", "hash...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Version ID", nullptr, false, false, 10000.0f, 21000.0f, 1.0f, 20000.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "Client preset", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ClientPresetOpts, 4, 0, nullptr, 0},
+        {ERowType::Input, "Custom client name", nullptr, false, false, 0, 0, 0, 0, nullptr, "MyClient", "name...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Client version", nullptr, false, false, 0, 0, 0, 0, nullptr, "20.0", "version...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Git hash", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Git hash value", nullptr, false, false, 0, 0, 0, 0, nullptr, "abc1234", "hash...", nullptr, 0, 0, nullptr, 0},
 };
 // v1.56.77: "Rainbow color" expandable: toggle + speed slider.
 static SRow g_RainbowChildren[] = {
@@ -513,36 +513,36 @@ static bool EspChildVisible(const SRow *pChildren, int childCount, int idx)
 // "Git hash value" visible only when "Git hash" toggle is on.
 static bool SpooferChildVisible(const SRow *pChildren, int childCount, int idx)
 {
-	if(idx < 0 || idx >= childCount)
-		return false;
-	const SRow &row = pChildren[idx];
-	if(str_comp(row.pName, "Custom client name") == 0)
-	{
-		int presetIdx = 0;
-		for(int i = 0; i < childCount; ++i)
-		{
-			if(str_comp(pChildren[i].pName, "Client preset") == 0)
-			{
-				presetIdx = pChildren[i].valueIdx;
-				break;
-			}
-		}
-		return presetIdx == 3;
-	}
-	if(str_comp(row.pName, "Git hash value") == 0)
-	{
-		bool gitOn = false;
-		for(int i = 0; i < childCount; ++i)
-		{
-			if(str_comp(pChildren[i].pName, "Git hash") == 0)
-			{
-				gitOn = pChildren[i].on;
-				break;
-			}
-		}
-		return gitOn;
-	}
-	return true;
+        if(idx < 0 || idx >= childCount)
+                return false;
+        const SRow &row = pChildren[idx];
+        if(str_comp(row.pName, "Custom client name") == 0)
+        {
+                int presetIdx = 0;
+                for(int i = 0; i < childCount; ++i)
+                {
+                        if(str_comp(pChildren[i].pName, "Client preset") == 0)
+                        {
+                                presetIdx = pChildren[i].valueIdx;
+                                break;
+                        }
+                }
+                return presetIdx == 3;
+        }
+        if(str_comp(row.pName, "Git hash value") == 0)
+        {
+                bool gitOn = false;
+                for(int i = 0; i < childCount; ++i)
+                {
+                        if(str_comp(pChildren[i].pName, "Git hash") == 0)
+                        {
+                                gitOn = pChildren[i].on;
+                                break;
+                        }
+                }
+                return gitOn;
+        }
+        return true;
 }
 // Constants — colors and geometry from clickgui.html (box-shadow/blur dropped
 // per the spec; everything else matches the HTML aesthetic).
@@ -1006,31 +1006,8 @@ if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, ro
                                                 child.on = g_Config.m_KxIrcRevealJoin != 0;
                                         else if(str_comp(child.pName, "Nameplate tag") == 0)
                                                 child.on = g_Config.m_KxIrcNameplateTag != 0;
-                                        // v1.56.108: Settings → Line rendering (per-component)
-                                        else if(str_comp(row.pName, "Line rendering") == 0)
-                                        {
-                                                // v1.56.111: read selected component from config (persisted)
-                                                int compIdx = g_Config.m_KxLineComponent;
-                                                EKxLineComponent comp = (EKxLineComponent)compIdx;
-                                                if(str_comp(child.pName, "Component") == 0)
-                                                        child.valueIdx = compIdx;
-                                                else if(str_comp(child.pName, "Line color") == 0)
-                                                {
-                                                        if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
-                                                        {
-                                                                char hex[8];
-                                                                str_format(hex, sizeof(hex), "%06x", KxLineColor(comp) & 0xffffff);
-                                                                str_copy(child.m_aInputBuf, hex, sizeof(child.m_aInputBuf));
-                                                                child.m_InputInitialized = true;
-                                                        }
-                                                }
-                                                else if(str_comp(child.pName, "Line size") == 0)
-                                                        child.value = (float)KxLineSize(comp);
-                                                else if(str_comp(child.pName, "Line opacity") == 0)
-                                                        child.value = (float)(KxLineAlpha(comp) * 100.0f);
-                                                else if(str_comp(child.pName, "Layer") == 0)
-                                                        child.value = (float)g_Config.m_KxLineRenderingLayer;
-                                        }
+                                        // v1.56.112: Line rendering sync moved to dedicated block below
+                                        // (per-component, reads g_Config.m_KxLineComponent every frame).
                                         // Advanced → Trajectory children
                                         else if(str_comp(child.pName, "Prediction Ticks") == 0)
                                                 child.value = (float)g_Config.m_KxTrajectoryTicks;
@@ -1527,6 +1504,39 @@ if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, ro
                                         SRow &child = row.pChildren[c];
                                         if(str_comp(child.pName, "Speed") == 0)
                                                 child.value = m_RainbowSpeed;
+                                }
+                        }
+                        // v1.56.112: Line rendering dedicated sync (per-component).
+                        // Reads g_Config.m_KxLineComponent every frame so changing
+                        // the Component dropdown updates color/size/opacity immediately.
+                        else if(str_comp(row.pName, "Line rendering") == 0 && row.type == ERowType::Expandable)
+                        {
+                                int compIdx = g_Config.m_KxLineComponent;
+                                if(compIdx < 0 || compIdx >= KX_LINE_COUNT)
+                                        compIdx = 0;
+                                EKxLineComponent comp = (EKxLineComponent)compIdx;
+                                for(int c = 0; c < row.childCount; ++c)
+                                {
+                                        SRow &child = row.pChildren[c];
+                                        if(str_comp(child.pName, "Component") == 0)
+                                                child.valueIdx = compIdx;
+                                        else if(str_comp(child.pName, "Line color") == 0)
+                                        {
+                                                // Update unless this field is being actively edited.
+                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                {
+                                                        char hex[8];
+                                                        str_format(hex, sizeof(hex), "%06x", KxLineColor(comp) & 0xffffff);
+                                                        str_copy(child.m_aInputBuf, hex, sizeof(child.m_aInputBuf));
+                                                        child.m_InputInitialized = true;
+                                                }
+                                        }
+                                        else if(str_comp(child.pName, "Line size") == 0)
+                                                child.value = (float)KxLineSize(comp);
+                                        else if(str_comp(child.pName, "Line opacity") == 0)
+                                                child.value = (float)(KxLineAlpha(comp) * 100.0f);
+                                        else if(str_comp(child.pName, "Layer") == 0)
+                                                child.value = (float)g_Config.m_KxLineRenderingLayer;
                                 }
                         }
                 }
@@ -2728,29 +2738,29 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                                                 g_Config.m_KxLineComponent = o;
                                         else if(str_comp(target.pName, "Client preset") == 0)
                                         {
-                                        	g_Config.m_KxSpoofClientPreset = o;
-                                        	// v1.56.107: auto-fill name+version+id from preset (like menus_settings)
-                                        	if(o != 3) // not Custom
-                                        	{
-                                        		if(o == 0)
-                                        		{
-                                        			str_copy(g_Config.m_KxSpoofClientName, "DDNet", sizeof(g_Config.m_KxSpoofClientName));
-                                        			str_copy(g_Config.m_KxSpoofClientVersion, "19.8.2", sizeof(g_Config.m_KxSpoofClientVersion));
-                                        			g_Config.m_KxVersionSpoofId = 19082;
-                                        		}
-                                        		else if(o == 1)
-                                        		{
-                                        			str_copy(g_Config.m_KxSpoofClientName, "TClient", sizeof(g_Config.m_KxSpoofClientName));
-                                        			str_copy(g_Config.m_KxSpoofClientVersion, "10.8.7", sizeof(g_Config.m_KxSpoofClientVersion));
-                                        			g_Config.m_KxVersionSpoofId = 19080;
-                                        		}
-                                        		else if(o == 2)
-                                        		{
-                                        			str_copy(g_Config.m_KxSpoofClientName, "BestClient", sizeof(g_Config.m_KxSpoofClientName));
-                                        			str_copy(g_Config.m_KxSpoofClientVersion, "1.9 beta", sizeof(g_Config.m_KxSpoofClientVersion));
-                                        			g_Config.m_KxVersionSpoofId = 19080;
-                                        		}
-                                        	}
+                                                g_Config.m_KxSpoofClientPreset = o;
+                                                // v1.56.107: auto-fill name+version+id from preset (like menus_settings)
+                                                if(o != 3) // not Custom
+                                                {
+                                                        if(o == 0)
+                                                        {
+                                                                str_copy(g_Config.m_KxSpoofClientName, "DDNet", sizeof(g_Config.m_KxSpoofClientName));
+                                                                str_copy(g_Config.m_KxSpoofClientVersion, "19.8.2", sizeof(g_Config.m_KxSpoofClientVersion));
+                                                                g_Config.m_KxVersionSpoofId = 19082;
+                                                        }
+                                                        else if(o == 1)
+                                                        {
+                                                                str_copy(g_Config.m_KxSpoofClientName, "TClient", sizeof(g_Config.m_KxSpoofClientName));
+                                                                str_copy(g_Config.m_KxSpoofClientVersion, "10.8.7", sizeof(g_Config.m_KxSpoofClientVersion));
+                                                                g_Config.m_KxVersionSpoofId = 19080;
+                                                        }
+                                                        else if(o == 2)
+                                                        {
+                                                                str_copy(g_Config.m_KxSpoofClientName, "BestClient", sizeof(g_Config.m_KxSpoofClientName));
+                                                                str_copy(g_Config.m_KxSpoofClientVersion, "1.9 beta", sizeof(g_Config.m_KxSpoofClientVersion));
+                                                                g_Config.m_KxVersionSpoofId = 19080;
+                                                        }
+                                                }
                                         }
                                         else if(str_comp(target.pName, "Mode") == 0)
                                                 g_Config.m_KxFakeAimMode = o;
@@ -2811,29 +2821,29 @@ if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, ro
                                                                 g_Config.m_KxLineComponent = o;
                                                         else if(str_comp(target.pName, "Client preset") == 0)
                                                         {
-                                                        	g_Config.m_KxSpoofClientPreset = o;
-                                                        	// v1.56.107: auto-fill name+version+id from preset (like menus_settings)
-                                                        	if(o != 3) // not Custom
-                                                        	{
-                                                        		if(o == 0)
-                                                        		{
-                                                        			str_copy(g_Config.m_KxSpoofClientName, "DDNet", sizeof(g_Config.m_KxSpoofClientName));
-                                                        			str_copy(g_Config.m_KxSpoofClientVersion, "19.8.2", sizeof(g_Config.m_KxSpoofClientVersion));
-                                                        			g_Config.m_KxVersionSpoofId = 19082;
-                                                        		}
-                                                        		else if(o == 1)
-                                                        		{
-                                                        			str_copy(g_Config.m_KxSpoofClientName, "TClient", sizeof(g_Config.m_KxSpoofClientName));
-                                                        			str_copy(g_Config.m_KxSpoofClientVersion, "10.8.7", sizeof(g_Config.m_KxSpoofClientVersion));
-                                                        			g_Config.m_KxVersionSpoofId = 19080;
-                                                        		}
-                                                        		else if(o == 2)
-                                                        		{
-                                                        			str_copy(g_Config.m_KxSpoofClientName, "BestClient", sizeof(g_Config.m_KxSpoofClientName));
-                                                        			str_copy(g_Config.m_KxSpoofClientVersion, "1.9 beta", sizeof(g_Config.m_KxSpoofClientVersion));
-                                                        			g_Config.m_KxVersionSpoofId = 19080;
-                                                        		}
-                                                        	}
+                                                                g_Config.m_KxSpoofClientPreset = o;
+                                                                // v1.56.107: auto-fill name+version+id from preset (like menus_settings)
+                                                                if(o != 3) // not Custom
+                                                                {
+                                                                        if(o == 0)
+                                                                        {
+                                                                                str_copy(g_Config.m_KxSpoofClientName, "DDNet", sizeof(g_Config.m_KxSpoofClientName));
+                                                                                str_copy(g_Config.m_KxSpoofClientVersion, "19.8.2", sizeof(g_Config.m_KxSpoofClientVersion));
+                                                                                g_Config.m_KxVersionSpoofId = 19082;
+                                                                        }
+                                                                        else if(o == 1)
+                                                                        {
+                                                                                str_copy(g_Config.m_KxSpoofClientName, "TClient", sizeof(g_Config.m_KxSpoofClientName));
+                                                                                str_copy(g_Config.m_KxSpoofClientVersion, "10.8.7", sizeof(g_Config.m_KxSpoofClientVersion));
+                                                                                g_Config.m_KxVersionSpoofId = 19080;
+                                                                        }
+                                                                        else if(o == 2)
+                                                                        {
+                                                                                str_copy(g_Config.m_KxSpoofClientName, "BestClient", sizeof(g_Config.m_KxSpoofClientName));
+                                                                                str_copy(g_Config.m_KxSpoofClientVersion, "1.9 beta", sizeof(g_Config.m_KxSpoofClientVersion));
+                                                                                g_Config.m_KxVersionSpoofId = 19080;
+                                                                        }
+                                                                }
                                                         }
                                                         else if(str_comp(target.pName, "Mode") == 0)
                                                                 g_Config.m_KxFakeAimMode = o;
