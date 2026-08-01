@@ -3953,6 +3953,39 @@ if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, ro
                         if(useChildClip && childClipH > 0.5f)
                                 Graphics()->ClipEnable((int)bodyX, (int)childClipY, (int)bodyW, (int)bodyH_safe(childClipH));
 
+                        // v1.56.118: merged children background + left stripe.
+                        float childBlockTop = -1.0f, childBlockBottom = -1.0f;
+                        int preIdx = rowIdx;
+                        for(int c = 0; c < row.childCount; ++c)
+                        {
+                                if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c)) continue;
+                                if(str_comp(row.pName, "AimBot") == 0 && !AimBotChildVisible(row.pChildren, row.childCount, c)) continue;
+                                if(str_comp(row.pName, "TriggerBot") == 0 && !TriggerBotChildVisible(row.pChildren, row.childCount, c)) continue;
+                                if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c)) continue;
+                                if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childCount, c)) continue;
+                                if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c)) continue;
+                                const YGNodeRef pn = rowNodes[preIdx];
+                                const float py2 = bodyY + YGNodeLayoutGetTop(pn) + rowYOffset;
+                                const float ph2 = YGNodeLayoutGetHeight(pn);
+                                if(childBlockTop < 0.0f) childBlockTop = py2;
+                                childBlockBottom = py2 + ph2;
+                                ++preIdx;
+                        }
+                        if(childBlockTop >= 0.0f && childBlockBottom > childBlockTop)
+                        {
+                                const float cbX = bodyX + SUB_LIST_INDENT - 2.0f;
+                                const float cbW = bodyW - SUB_LIST_INDENT + 4.0f;
+                                const float cbH = childBlockBottom - childBlockTop;
+                                DrawRoundedRect(cbX, childBlockTop, cbW, cbH, 0.0f, IGraphics::CORNER_NONE,
+                                        ColorRGBA(COL_SUB_LIST_BG, true).WithAlpha(alpha * 0.6f));
+                                const float stripeX = rx + 1.0f + CHECK_W * 0.5f - 1.0f;
+                                const float stripeY = ry + 3.0f + CHECK_W;
+                                const float stripeH = childBlockBottom - stripeY;
+                                if(stripeH > 0.5f)
+                                        DrawRoundedRect(stripeX, stripeY, 2.0f, stripeH, 0.0f, IGraphics::CORNER_NONE,
+                                                ColorRGBA(COL_CHILD_STRIPE, true).WithAlpha(alpha));
+                        }
+
                         for(int c = 0; c < row.childCount; ++c)
                         {
                                 SRow &child = row.pChildren[c];
@@ -3979,11 +4012,7 @@ if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, ro
                                         ? ColorRGBA(COL_ROW_TEXT_ON, true).WithAlpha(alpha)
                                         : ColorRGBA(0xffb0b0d0, true).WithAlpha(alpha);
 
-                                // Faint sub-list background band under each child.
-                                DrawRoundedRect(crx - 2.0f, cry - 1.0f, crw + 4.0f, crh + 1.0f,
-                                        0.0f, IGraphics::CORNER_NONE,
-                                        ColorRGBA(COL_SUB_LIST_BG, true).WithAlpha(alpha * 0.6f));
-
+                                // v1.56.118: per-child bg removed (merged block drawn above).
                                 switch(child.type)
                                 {
                                 case ERowType::Toggle:
