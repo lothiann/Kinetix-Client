@@ -570,6 +570,7 @@ static constexpr unsigned COL_CHECK_SQUARE = 0xff282834; // v1.56.61: rounded sq
 static constexpr unsigned COL_EXPAND_ARROW = 0xff8a8aa8;
 static constexpr unsigned COL_SUB_LIST_BG = 0x2e000000; // 18% alpha, black
 static constexpr unsigned COL_SUB_LIST_BORDER = 0x4d9d4edd; // 30% alpha purple
+static constexpr unsigned COL_CHILD_STRIPE = 0x80ffffff; // 50% alpha white - vertical stripe left of children bg
 static constexpr unsigned COL_SLIDER_TRACK = 0xff2a2a3e;
 static constexpr unsigned COL_SLIDER_THUMB = 0xff9d4edd;
 static constexpr unsigned COL_SLIDER_THUMB_BORDER = 0xffb8b8e8;
