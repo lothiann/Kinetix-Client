@@ -548,7 +548,7 @@ void CBotNet::RenderPathfinderPath()
 
         Graphics()->TextureClear();
 
-        ColorRGBA BaseColor = color_cast<ColorRGBA>(ColorHSLA(KxLineColor(KX_LINE_PATHFINDER), true));
+        ColorRGBA BaseColor = ColorRGBA(KxLineColor(KX_LINE_PATHFINDER), true);
         float ConfigAlpha = KxLineAlpha(KX_LINE_PATHFINDER);
         int LineSize = KxLineSize(KX_LINE_PATHFINDER);
 

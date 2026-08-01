@@ -2044,12 +2044,12 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         EKxLineComponent comp = (EKxLineComponent)compIdx;
                                         switch(comp)
                                         {
-                                        case KX_LINE_AIMBOT: g_Config.m_KxLineAimBotColor = hex & 0xffffff; break;
-                                        case KX_LINE_TRIGGERBOT: g_Config.m_KxLineTriggerBotColor = hex & 0xffffff; break;
-                                        case KX_LINE_TRAJECTORY: g_Config.m_KxLineTrajectoryColor = hex & 0xffffff; break;
-                                        case KX_LINE_LASER_UNFREEZE: g_Config.m_KxLineLaserUnfreezeColor = hex & 0xffffff; break;
-                                        case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderColor = hex & 0xffffff; break;
-                                        case KX_LINE_ESP: g_Config.m_KxLineEspColor = hex & 0xffffff; break;
+                                        case KX_LINE_AIMBOT: g_Config.m_KxLineAimBotColor = 0xff000000u | (hex & 0xffffff); break;
+                                        case KX_LINE_TRIGGERBOT: g_Config.m_KxLineTriggerBotColor = 0xff000000u | (hex & 0xffffff); break;
+                                        case KX_LINE_TRAJECTORY: g_Config.m_KxLineTrajectoryColor = 0xff000000u | (hex & 0xffffff); break;
+                                        case KX_LINE_LASER_UNFREEZE: g_Config.m_KxLineLaserUnfreezeColor = 0xff000000u | (hex & 0xffffff); break;
+                                        case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderColor = 0xff000000u | (hex & 0xffffff); break;
+                                        case KX_LINE_ESP: g_Config.m_KxLineEspColor = 0xff000000u | (hex & 0xffffff); break;
                                         }
                                 }
                         }
@@ -3081,6 +3081,25 @@ void CClickGui::HandleTextInput(const IInput::CEvent &Event)
                                 m_AccentColorRGBA = 0xff000000u | (hex & 0xffffff);
                                 m_RainbowEnabled = false;
                                 m_SavedAccentColorRGBA = m_AccentColorRGBA; // v1.56.78
+                        }
+                }
+                // v1.56.117: Line color input - write to per-component config on Enter.
+                else if(str_comp(pRow->pName, "Line color") == 0)
+                {
+                        unsigned hex = 0;
+                        if(sscanf(pRow->m_aInputBuf, "%6x", &hex) == 1)
+                        {
+                                int compIdx = g_Config.m_KxLineComponent;
+                                EKxLineComponent comp = (EKxLineComponent)compIdx;
+                                switch(comp)
+                                {
+                                case KX_LINE_AIMBOT: g_Config.m_KxLineAimBotColor = 0xff000000u | (hex & 0xffffff); break;
+                                case KX_LINE_TRIGGERBOT: g_Config.m_KxLineTriggerBotColor = 0xff000000u | (hex & 0xffffff); break;
+                                case KX_LINE_TRAJECTORY: g_Config.m_KxLineTrajectoryColor = 0xff000000u | (hex & 0xffffff); break;
+                                case KX_LINE_LASER_UNFREEZE: g_Config.m_KxLineLaserUnfreezeColor = 0xff000000u | (hex & 0xffffff); break;
+                                case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderColor = 0xff000000u | (hex & 0xffffff); break;
+                                case KX_LINE_ESP: g_Config.m_KxLineEspColor = 0xff000000u | (hex & 0xffffff); break;
+                                }
                         }
                 }
         };

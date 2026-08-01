@@ -126,7 +126,7 @@ void CAimBot::OnRender()
                 float halfFov = (s.m_Fov * 0.5f) * (pi / 180.0f);
                 float myAng = atan2f(AimDir.y, AimDir.x);
                 constexpr float HB_HITBOX = CCharacterCore::PhysicalSize() + 2.0f;
-                ColorRGBA normalCol = color_cast<ColorRGBA>(ColorHSLA(KxLineColor(KX_LINE_AIMBOT), true));
+                ColorRGBA normalCol = ColorRGBA(KxLineColor(KX_LINE_AIMBOT), true);
                 ColorRGBA successCol = ColorRGBA(s.m_SuccessColor, true);
                 // v1.56.98: Cache rays for FindTarget to use (no re-computation in OnUpdate)
                 m_DebugRayHits.clear();
@@ -559,7 +559,7 @@ void CAimBot::RenderFov(const SWeaponSettings &Settings, const vec2 &MyPos, cons
         float halfFovRad = (Settings.m_Fov * 0.5f) * (pi / 180.0f);
         float myAngle = atan2f(AimDir.y, AimDir.x);
         float radius = Settings.m_Radius;
-        ColorRGBA col = color_cast<ColorRGBA>(ColorHSLA(KxLineColor(KX_LINE_AIMBOT), true));
+        ColorRGBA col = ColorRGBA(KxLineColor(KX_LINE_AIMBOT), true);
         int LineSize = KxLineSize(KX_LINE_AIMBOT);
         float HalfWidth = 0.5f + (float)(LineSize > 0 ? LineSize - 1 : 0) * 0.25f;
         bool useRay = Settings.m_UseRaycastShow;
@@ -639,7 +639,7 @@ void CAimBot::RenderRadius(const SWeaponSettings &Settings, const vec2 &MyPos, c
         float halfFovRad = (Settings.m_Fov * 0.5f) * (pi / 180.0f);
         float myAngle = atan2f(AimDir.y, AimDir.x);
         float radius = Settings.m_Radius;
-        ColorRGBA col = color_cast<ColorRGBA>(ColorHSLA(KxLineColor(KX_LINE_AIMBOT), true));
+        ColorRGBA col = ColorRGBA(KxLineColor(KX_LINE_AIMBOT), true);
         int LineSize = KxLineSize(KX_LINE_AIMBOT);
         float HalfWidth = 0.5f + (float)(LineSize > 0 ? LineSize - 1 : 0) * 0.25f;
         bool useRay = Settings.m_UseRaycastShow;

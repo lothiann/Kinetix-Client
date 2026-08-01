@@ -1211,7 +1211,7 @@ void CPlayers::RenderTrajectory()
         // Render trajectory
         Graphics()->TextureClear();
 
-        ColorRGBA BaseColor = color_cast<ColorRGBA>(ColorHSLA(KxLineColor(KX_LINE_TRAJECTORY), true));
+        ColorRGBA BaseColor = ColorRGBA(KxLineColor(KX_LINE_TRAJECTORY), true);
         float ConfigAlpha = KxLineAlpha(KX_LINE_TRAJECTORY);
         int LineSize = KxLineSize(KX_LINE_TRAJECTORY);
 

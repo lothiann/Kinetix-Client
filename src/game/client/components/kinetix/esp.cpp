@@ -118,7 +118,7 @@ void CEsp::DrawArrowhead(const vec2 &p0, const vec2 &p1, ColorRGBA col, float ha
 
 void CEsp::EmitLine(const vec2 &p0, const vec2 &p1) const
 {
-	ColorRGBA col = color_cast<ColorRGBA>(ColorHSLA(KxLineColor(KX_LINE_ESP), true));
+	ColorRGBA col = ColorRGBA(KxLineColor(KX_LINE_ESP), true);
 	float alpha = KxLineAlpha(KX_LINE_ESP);
 	col.a = alpha;
 	int lineSize = KxLineSize(KX_LINE_ESP);
