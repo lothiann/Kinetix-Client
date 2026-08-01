@@ -144,7 +144,7 @@ void CEsp::EmitLine(const vec2 &p0, const vec2 &p1) const
 			float animOffset = fmodf(t * speedFactor, pattern);
 			if(animOffset < 0.0f)
 				animOffset += pattern;
-			float pos = -animOffset;
+			float pos = animOffset; // v1.56.116: +animOffset = dashes move toward target (p1)
 			while(pos < totalLen)
 			{
 				float dashStart = pos;
@@ -219,7 +219,7 @@ void CEsp::EmitLine(const vec2 &p0, const vec2 &p1) const
 			float animOffset = fmodf(t * speedFactor, pattern);
 			if(animOffset < 0.0f)
 				animOffset += pattern;
-			float pos = -animOffset;
+			float pos = animOffset; // v1.56.116: +animOffset = dashes move toward target (p1)
 			while(pos < totalLen)
 			{
 				float dashStart = pos;

@@ -270,6 +270,7 @@ static const char *const g_EspModeOpts[] = {"Active player", "Screen coordinates
 static const char *const g_EspStyleOpts[] = {"Line", "Arrow", "Dotted line", "Dotted Arrow"};
 static SRow g_EspChildren[] = {
         {ERowType::Dropdown, "ESP Style", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_EspStyleOpts, 4, 0, nullptr, 0},
+        {ERowType::Slider, "Speed", nullptr, false, false, 0.0f, 100.0f, 1.0f, 30.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Dropdown, "ESP Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTeamOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "ESP Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 2, 0, nullptr, 0},
         {ERowType::Dropdown, "ESP Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 2, 0, nullptr, 0},
@@ -277,7 +278,6 @@ static SRow g_EspChildren[] = {
         {ERowType::Dropdown, "ESP Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_EspModeOpts, 2, 0, nullptr, 0},
         {ERowType::Slider, "ESP X", nullptr, false, false, 0.0f, 7680.0f, 1.0f, 0.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "ESP Y", nullptr, false, false, 0.0f, 4320.0f, 1.0f, 0.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Speed", nullptr, false, false, 0.0f, 100.0f, 1.0f, 30.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 static SRow g_AdvancedRows[] = {
         {ERowType::Expandable, "Trajectory", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TrajectoryChildren, 1},
