@@ -16,6 +16,7 @@
 #ifndef GAME_CLIENT_COMPONENTS_KINETIX_ESP_H
 #define GAME_CLIENT_COMPONENTS_KINETIX_ESP_H
 
+#include <base/color.h>
 #include <base/vmath.h>
 #include <game/client/component.h>
 
@@ -34,8 +35,14 @@ private:
 	// Returns true if ClientId should be an ESP target.
 	bool PassesFilters(int ClientId, int LocalId) const;
 
-	// Draw (or enqueue, when Layer > 0) a single line p0→p1.
+	// v1.56.113: Style-aware line emission (Line/Arrow/Dotted/DottedArrow).
 	void EmitLine(const vec2 &p0, const vec2 &p1) const;
+
+	// Draw a single solid segment (immediate mode, not deferred).
+	void DrawSegment(const vec2 &p0, const vec2 &p1, ColorRGBA col, float halfWidth) const;
+
+	// Draw arrowhead at p1 (2 short lines forming a V pointing toward p1).
+	void DrawArrowhead(const vec2 &p0, const vec2 &p1, ColorRGBA col, float halfWidth) const;
 };
 
 #endif // GAME_CLIENT_COMPONENTS_KINETIX_ESP_H

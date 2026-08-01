@@ -4,6 +4,7 @@
 
 #include <base/color.h>
 #include <base/math.h>
+#include <cmath>
 #include <engine/shared/config.h>
 #include <engine/graphics.h>
 #include <game/client/gameclient.h>
@@ -63,48 +64,184 @@ bool CEsp::PassesFilters(int ClientId, int LocalId) const
 	return true;
 }
 
+// v1.56.113: Draw a single solid segment (immediate mode).
+// Used by Line/Arrow styles and for arrowhead.
+void CEsp::DrawSegment(const vec2 &p0, const vec2 &p1, ColorRGBA col, float halfWidth) const
+{
+	Graphics()->TextureClear();
+	if(halfWidth > 0.0f)
+	{
+		vec2 dir = p1 - p0;
+		float len = length(dir);
+		if(len < 0.001f)
+			return;
+		dir /= len;
+		vec2 perp = vec2(dir.y, -dir.x) * halfWidth;
+		Graphics()->QuadsBegin();
+		IGraphics::CFreeformItem q(
+			p0.x - perp.x, p0.y - perp.y, p0.x + perp.x, p0.y + perp.y,
+			p1.x - perp.x, p1.y - perp.y, p1.x + perp.x, p1.y + perp.y);
+		Graphics()->SetColor(col.r, col.g, col.b, col.a);
+		Graphics()->QuadsDrawFreeform(&q, 1);
+		Graphics()->QuadsEnd();
+	}
+	else
+	{
+		Graphics()->LinesBegin();
+		Graphics()->SetColor(col.r, col.g, col.b, col.a);
+		IGraphics::CLineItem line(p0.x, p0.y, p1.x, p1.y);
+		Graphics()->LinesDraw(&line, 1);
+		Graphics()->LinesEnd();
+	}
+}
+
+// v1.56.113: Draw arrowhead at p1 (2 short lines forming a V pointing toward p1).
+void CEsp::DrawArrowhead(const vec2 &p0, const vec2 &p1, ColorRGBA col, float halfWidth) const
+{
+	vec2 dir = p1 - p0;
+	float len = length(dir);
+	if(len < 0.001f)
+		return;
+	dir /= len;
+	float arrowLen = 8.0f + halfWidth * 2.0f;
+	if(arrowLen > len * 0.4f)
+		arrowLen = len * 0.4f;
+	float angle = 30.0f * (pi / 180.0f);
+	float ca = cosf(angle), sa = sinf(angle);
+	vec2 leftDir = vec2(dir.x * ca - dir.y * sa, dir.x * sa + dir.y * ca);
+	vec2 rightDir = vec2(dir.x * ca + dir.y * sa, -dir.x * sa + dir.y * ca);
+	vec2 leftTip = p1 - leftDir * arrowLen;
+	vec2 rightTip = p1 - rightDir * arrowLen;
+	DrawSegment(p1, leftTip, col, halfWidth);
+	DrawSegment(p1, rightTip, col, halfWidth);
+}
+
 void CEsp::EmitLine(const vec2 &p0, const vec2 &p1) const
 {
-	// Shared Line rendering settings.
-	// v1.56.108: per-component line rendering settings (ESP).
 	ColorRGBA col = color_cast<ColorRGBA>(ColorHSLA(KxLineColor(KX_LINE_ESP), true));
 	float alpha = KxLineAlpha(KX_LINE_ESP);
 	col.a = alpha;
 	int lineSize = KxLineSize(KX_LINE_ESP);
 	float halfWidth = lineSize > 0 ? 0.5f + (float)(lineSize - 1) * 0.25f : 0.0f;
 
+	int style = g_Config.m_KxEspStyle; // 0=Line 1=Arrow 2=Dotted 3=DottedArrow
+	bool isDotted = (style == 2 || style == 3);
+	bool hasArrow = (style == 1 || style == 3);
+
 	if(g_Config.m_KxLineRenderingLayer > 0)
 	{
-		// Deferred: CKinetixLines draws after m_MapLayersForeground (on top of blocks).
-		KinetixEnqueueLine(p0, p1, col, halfWidth);
-	}
-	else
-	{
-		// Immediate: drawn now (behind foreground blocks).
-		Graphics()->TextureClear();
-		if(halfWidth > 0.0f)
+		// Deferred: push to CKinetixLines queue.
+		if(isDotted)
 		{
+			const float dash = 8.0f, gap = 6.0f, pattern = dash + gap;
 			vec2 dir = p1 - p0;
-			float len = length(dir);
-			if(len < 0.001f)
+			float totalLen = length(dir);
+			if(totalLen < 0.001f)
 				return;
-			dir /= len;
-			vec2 perp = vec2(dir.y, -dir.x) * halfWidth;
-			Graphics()->QuadsBegin();
-			IGraphics::CFreeformItem q(
-				p0.x - perp.x, p0.y - perp.y, p0.x + perp.x, p0.y + perp.y,
-				p1.x - perp.x, p1.y - perp.y, p1.x + perp.x, p1.y + perp.y);
-			Graphics()->SetColor(col.r, col.g, col.b, col.a);
-			Graphics()->QuadsDrawFreeform(&q, 1);
-			Graphics()->QuadsEnd();
+			dir /= totalLen;
+			float speedFactor = (float)g_Config.m_KxEspSpeed;
+			float t = (float)GameClient()->Client()->GameTick(g_Config.m_ClDummy) / 50.0f;
+			float animOffset = fmodf(t * speedFactor, pattern);
+			if(animOffset < 0.0f)
+				animOffset += pattern;
+			float pos = -animOffset;
+			while(pos < totalLen)
+			{
+				float dashStart = pos;
+				float dashEnd = pos + dash;
+				if(dashEnd > 0.0f && dashStart < totalLen)
+				{
+					if(dashStart < 0.0f) dashStart = 0.0f;
+					if(dashEnd > totalLen) dashEnd = totalLen;
+					vec2 segStart = p0 + dir * dashStart;
+					vec2 segEnd = p0 + dir * dashEnd;
+					KinetixEnqueueLine(segStart, segEnd, col, halfWidth);
+				}
+				pos += pattern;
+			}
+			if(hasArrow)
+			{
+				vec2 adir = p1 - p0;
+				float alen = length(adir);
+				if(alen > 0.001f)
+				{
+					adir /= alen;
+					float arrowLen = 8.0f + halfWidth * 2.0f;
+					if(arrowLen > alen * 0.4f) arrowLen = alen * 0.4f;
+					float angle = 30.0f * (pi / 180.0f);
+					float ca = cosf(angle), sa = sinf(angle);
+					vec2 leftDir = vec2(adir.x * ca - adir.y * sa, adir.x * sa + adir.y * ca);
+					vec2 rightDir = vec2(adir.x * ca + adir.y * sa, -adir.x * sa + adir.y * ca);
+					vec2 leftTip = p1 - leftDir * arrowLen;
+					vec2 rightTip = p1 - rightDir * arrowLen;
+					KinetixEnqueueLine(p1, leftTip, col, halfWidth);
+					KinetixEnqueueLine(p1, rightTip, col, halfWidth);
+				}
+			}
 		}
 		else
 		{
-			Graphics()->LinesBegin();
-			Graphics()->SetColor(col.r, col.g, col.b, col.a);
-			IGraphics::CLineItem line(p0.x, p0.y, p1.x, p1.y);
-			Graphics()->LinesDraw(&line, 1);
-			Graphics()->LinesEnd();
+			KinetixEnqueueLine(p0, p1, col, halfWidth);
+			if(hasArrow)
+			{
+				vec2 adir = p1 - p0;
+				float alen = length(adir);
+				if(alen > 0.001f)
+				{
+					adir /= alen;
+					float arrowLen = 8.0f + halfWidth * 2.0f;
+					if(arrowLen > alen * 0.4f) arrowLen = alen * 0.4f;
+					float angle = 30.0f * (pi / 180.0f);
+					float ca = cosf(angle), sa = sinf(angle);
+					vec2 leftDir = vec2(adir.x * ca - adir.y * sa, adir.x * sa + adir.y * ca);
+					vec2 rightDir = vec2(adir.x * ca + adir.y * sa, -adir.x * sa + adir.y * ca);
+					vec2 leftTip = p1 - leftDir * arrowLen;
+					vec2 rightTip = p1 - rightDir * arrowLen;
+					KinetixEnqueueLine(p1, leftTip, col, halfWidth);
+					KinetixEnqueueLine(p1, rightTip, col, halfWidth);
+				}
+			}
+		}
+	}
+	else
+	{
+		// Immediate mode.
+		if(isDotted)
+		{
+			const float dash = 8.0f, gap = 6.0f, pattern = dash + gap;
+			vec2 dir = p1 - p0;
+			float totalLen = length(dir);
+			if(totalLen < 0.001f)
+				return;
+			dir /= totalLen;
+			float speedFactor = (float)g_Config.m_KxEspSpeed;
+			float t = (float)GameClient()->Client()->GameTick(g_Config.m_ClDummy) / 50.0f;
+			float animOffset = fmodf(t * speedFactor, pattern);
+			if(animOffset < 0.0f)
+				animOffset += pattern;
+			float pos = -animOffset;
+			while(pos < totalLen)
+			{
+				float dashStart = pos;
+				float dashEnd = pos + dash;
+			if(dashEnd > 0.0f && dashStart < totalLen)
+				{
+					if(dashStart < 0.0f) dashStart = 0.0f;
+					if(dashEnd > totalLen) dashEnd = totalLen;
+					vec2 segStart = p0 + dir * dashStart;
+					vec2 segEnd = p0 + dir * dashEnd;
+					DrawSegment(segStart, segEnd, col, halfWidth);
+				}
+				pos += pattern;
+			}
+			if(hasArrow)
+				DrawArrowhead(p0, p1, col, halfWidth);
+		}
+		else
+		{
+			DrawSegment(p0, p1, col, halfWidth);
+			if(hasArrow)
+				DrawArrowhead(p0, p1, col, halfWidth);
 		}
 	}
 }

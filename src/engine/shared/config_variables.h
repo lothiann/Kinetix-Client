@@ -350,6 +350,8 @@ MACRO_CONFIG_INT(KxEspFreezeFilter, kx_esp_freeze_filter, 0, 0, 2, CFGFLAG_CLIEN
 MACRO_CONFIG_INT(KxEspMode, kx_esp_mode, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ESP point A source: 0=active player 1=screen coordinates")
 MACRO_CONFIG_INT(KxEspScreenX, kx_esp_screen_x, 0, 0, 7680, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ESP screen X coordinate (used when mode=screen coordinates)")
 MACRO_CONFIG_INT(KxEspScreenY, kx_esp_screen_y, 0, 0, 4320, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ESP screen Y coordinate (used when mode=screen coordinates)")
+MACRO_CONFIG_INT(KxEspStyle, kx_esp_style, 0, 0, 3, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ESP line style: 0=Line 1=Arrow 2=Dotted line 3=Dotted Arrow")
+MACRO_CONFIG_INT(KxEspSpeed, kx_esp_speed, 30, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ESP dotted animation speed (0-100, only for dotted styles)")
 
 // Pathfinder parameter bounds — single source of truth for config limits + dynamic formulas.
 // Keep PF_CHUNK_SIZE_MAX / PF_HOOK_ANGLES_MAX in sync with the literals in the

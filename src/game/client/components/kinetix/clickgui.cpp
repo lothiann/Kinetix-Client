@@ -267,7 +267,9 @@ static SRow g_TrajectoryChildren[] = {
 // v1.56.104: "ESP" expandable — lines from point A to all players matching filters.
 // Filter option arrays reuse the AimBot ones (identical option strings).
 static const char *const g_EspModeOpts[] = {"Active player", "Screen coordinates"};
+static const char *const g_EspStyleOpts[] = {"Line", "Arrow", "Dotted line", "Dotted Arrow"};
 static SRow g_EspChildren[] = {
+        {ERowType::Dropdown, "ESP Style", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_EspStyleOpts, 4, 0, nullptr, 0},
         {ERowType::Dropdown, "ESP Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTeamOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "ESP Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 2, 0, nullptr, 0},
         {ERowType::Dropdown, "ESP Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 2, 0, nullptr, 0},
@@ -275,12 +277,13 @@ static SRow g_EspChildren[] = {
         {ERowType::Dropdown, "ESP Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_EspModeOpts, 2, 0, nullptr, 0},
         {ERowType::Slider, "ESP X", nullptr, false, false, 0.0f, 7680.0f, 1.0f, 0.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "ESP Y", nullptr, false, false, 0.0f, 4320.0f, 1.0f, 0.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Speed", nullptr, false, false, 0.0f, 100.0f, 1.0f, 30.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 static SRow g_AdvancedRows[] = {
         {ERowType::Expandable, "Trajectory", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TrajectoryChildren, 1},
         {ERowType::Expandable, "Laser unfreeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LaserUnfreezeChildren, 7},
         {ERowType::Expandable, "Fake Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_FakeAimChildren, 3},
-        {ERowType::Expandable, "ESP", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_EspChildren, 7},
+        {ERowType::Expandable, "ESP", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_EspChildren, 9},
 };
 
 // ---------- Settings panel (6) ----------
@@ -491,22 +494,25 @@ static bool DummiesChildVisible(const SRow *pChildren, int childCount, int idx)
         return true;
 }
 // v1.56.104: ESP — "ESP X"/"ESP Y" visible only when ESP Mode = 1 (Screen coordinates).
+// v1.56.113: "Speed" visible only when ESP Style = 2 or 3 (Dotted line / Dotted Arrow).
 static bool EspChildVisible(const SRow *pChildren, int childCount, int idx)
 {
         if(idx < 0 || idx >= childCount)
                 return false;
         const SRow &row = pChildren[idx];
         int modeIdx = 0;
+        int styleIdx = 0;
         for(int i = 0; i < childCount; ++i)
         {
                 if(str_comp(pChildren[i].pName, "ESP Mode") == 0)
-                {
                         modeIdx = pChildren[i].valueIdx;
-                        break;
-                }
+                else if(str_comp(pChildren[i].pName, "ESP Style") == 0)
+                        styleIdx = pChildren[i].valueIdx;
         }
         if(str_comp(row.pName, "ESP X") == 0 || str_comp(row.pName, "ESP Y") == 0)
                 return modeIdx == 1; // Screen coordinates
+        if(str_comp(row.pName, "Speed") == 0)
+                return styleIdx == 2 || styleIdx == 3; // Dotted line / Dotted Arrow
         return true;
 }
 // v1.56.107: Spoofer — "Custom client name" visible only when preset=Custom (3).
@@ -1044,6 +1050,10 @@ if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, ro
                                                 child.valueIdx = g_Config.m_KxEspFreezeFilter;
                                         else if(str_comp(child.pName, "ESP Mode") == 0)
                                                 child.valueIdx = g_Config.m_KxEspMode;
+                                        else if(str_comp(child.pName, "ESP Style") == 0)
+                                                child.valueIdx = g_Config.m_KxEspStyle;
+                                        else if(str_comp(child.pName, "Speed") == 0 && str_comp(row.pName, "ESP") == 0)
+                                                child.value = (float)g_Config.m_KxEspSpeed;
                                         else if(str_comp(child.pName, "ESP X") == 0)
                                                                                 {
                                                                                         child.value = (float)g_Config.m_KxEspScreenX;
@@ -1704,6 +1714,8 @@ if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, ro
                                 g_Config.m_KxEspScreenX = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "ESP Y") == 0)
                                 g_Config.m_KxEspScreenY = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Speed") == 0 && str_comp(row.pName, "ESP") == 0)
+                                g_Config.m_KxEspSpeed = (int)pTarget->value;
                         // Advanced → Trajectory children
                         else if(str_comp(pTarget->pName, "Prediction Ticks") == 0)
                                 g_Config.m_KxTrajectoryTicks = (int)pTarget->value;
@@ -2585,6 +2597,8 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         g_Config.m_KxEspScreenX = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "ESP Y") == 0)
                                         g_Config.m_KxEspScreenY = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Speed") == 0 && str_comp(row.pName, "ESP") == 0)
+                                        g_Config.m_KxEspSpeed = (int)pTarget->value;
                                 // Advanced → Trajectory children
                                 else if(str_comp(pTarget->pName, "Prediction Ticks") == 0)
                                         g_Config.m_KxTrajectoryTicks = (int)pTarget->value;
@@ -2775,6 +2789,8 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                                                 g_Config.m_KxEspFreezeFilter = o;
                                         else if(str_comp(target.pName, "ESP Mode") == 0)
                                                 g_Config.m_KxEspMode = o;
+                                        else if(str_comp(target.pName, "ESP Style") == 0)
+                                                g_Config.m_KxEspStyle = o;
                                         m_DropdownOpen = false;
                                         return true;
                                 }
@@ -2858,6 +2874,8 @@ if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, ro
                                                                 g_Config.m_KxEspFreezeFilter = o;
                                                         else if(str_comp(target.pName, "ESP Mode") == 0)
                                                                 g_Config.m_KxEspMode = o;
+                                                        else if(str_comp(target.pName, "ESP Style") == 0)
+                                                                g_Config.m_KxEspStyle = o;
                                                         // v1.56.83: AimBot per-weapon dropdowns (parent = "AimBot")
                                                         else if(str_comp(row.pName, "AimBot") == 0)
                                                         {
