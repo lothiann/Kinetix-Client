@@ -2746,7 +2746,7 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                                         	// v1.56.107: auto-fill name+version+id from preset (like menus_settings)
                                         	if(o != 3) // not Custom
                                         	{
-                                        		else if(o == 0)
+                                        		if(o == 0)
                                         		{
                                         			str_copy(g_Config.m_KxSpoofClientName, "DDNet", sizeof(g_Config.m_KxSpoofClientName));
                                         			str_copy(g_Config.m_KxSpoofClientVersion, "19.8.2", sizeof(g_Config.m_KxSpoofClientVersion));
@@ -2826,7 +2826,7 @@ if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, ro
                                                         	// v1.56.107: auto-fill name+version+id from preset (like menus_settings)
                                                         	if(o != 3) // not Custom
                                                         	{
-                                                        		else if(o == 0)
+                                                        		if(o == 0)
                                                         		{
                                                         			str_copy(g_Config.m_KxSpoofClientName, "DDNet", sizeof(g_Config.m_KxSpoofClientName));
                                                         			str_copy(g_Config.m_KxSpoofClientVersion, "19.8.2", sizeof(g_Config.m_KxSpoofClientVersion));
