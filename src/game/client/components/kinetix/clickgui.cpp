@@ -291,9 +291,12 @@ static SRow g_IrcChildren[] = {
 // "Spoofer" expandable: slider + dropdown + input.
 static const char *const g_ClientPresetOpts[] = {"DDNet", "TClient", "BestClient", "Custom"};
 static SRow g_SpooferChildren[] = {
-        {ERowType::Slider, "Version ID", nullptr, false, false, 10000.0f, 21000.0f, 1.0f, 20000.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Dropdown, "Client preset", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ClientPresetOpts, 4, 0, nullptr, 0},
-        {ERowType::Input, "Client version", nullptr, false, false, 0, 0, 0, 0, nullptr, "10.8.7", "version...", nullptr, 0, 0, nullptr, 0},
+	{ERowType::Slider, "Version ID", nullptr, false, false, 10000.0f, 21000.0f, 1.0f, 20000.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+	{ERowType::Dropdown, "Client preset", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ClientPresetOpts, 4, 0, nullptr, 0},
+	{ERowType::Input, "Custom client name", nullptr, false, false, 0, 0, 0, 0, nullptr, "MyClient", "name...", nullptr, 0, 0, nullptr, 0},
+	{ERowType::Input, "Client version", nullptr, false, false, 0, 0, 0, 0, nullptr, "20.0", "version...", nullptr, 0, 0, nullptr, 0},
+	{ERowType::Toggle, "Git hash", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+	{ERowType::Input, "Git hash value", nullptr, false, false, 0, 0, 0, 0, nullptr, "abc1234", "hash...", nullptr, 0, 0, nullptr, 0},
 };
 // v1.56.77: "Rainbow color" expandable: toggle + speed slider.
 static SRow g_RainbowChildren[] = {
@@ -312,7 +315,7 @@ static SRow g_SettingsRows[] = {
         {ERowType::Expandable, "Rainbow color", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowChildren, 1},
         {ERowType::Expandable, "Line rendering", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LineRenderingChildren, 4},
         {ERowType::Expandable, "IRC", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_IrcChildren, 2},
-        {ERowType::Expandable, "Spoofer", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_SpooferChildren, 3},
+        {ERowType::Expandable, "Spoofer", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_SpooferChildren, 6},
 };
 
 // ---------- Pathfinder panel (7) ----------
@@ -500,6 +503,41 @@ static bool EspChildVisible(const SRow *pChildren, int childCount, int idx)
         if(str_comp(row.pName, "ESP X") == 0 || str_comp(row.pName, "ESP Y") == 0)
                 return modeIdx == 1; // Screen coordinates
         return true;
+}
+// v1.56.107: Spoofer — "Custom client name" visible only when preset=Custom (3).
+// "Git hash value" visible only when "Git hash" toggle is on.
+static bool SpooferChildVisible(const SRow *pChildren, int childCount, int idx)
+{
+	if(idx < 0 || idx >= childCount)
+		return false;
+	const SRow &row = pChildren[idx];
+	if(str_comp(row.pName, "Custom client name") == 0)
+	{
+		int presetIdx = 0;
+		for(int i = 0; i < childCount; ++i)
+		{
+			if(str_comp(pChildren[i].pName, "Client preset") == 0)
+			{
+				presetIdx = pChildren[i].valueIdx;
+				break;
+			}
+		}
+		return presetIdx == 3;
+	}
+	if(str_comp(row.pName, "Git hash value") == 0)
+	{
+		bool gitOn = false;
+		for(int i = 0; i < childCount; ++i)
+		{
+			if(str_comp(pChildren[i].pName, "Git hash") == 0)
+			{
+				gitOn = pChildren[i].on;
+				break;
+			}
+		}
+		return gitOn;
+	}
+	return true;
 }
 // Constants — colors and geometry from clickgui.html (box-shadow/blur dropped
 // per the spec; everything else matches the HTML aesthetic).
@@ -944,6 +982,8 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
         continue;
 if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childCount, c))
         continue;
+if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
+        continue;
                                         if(str_comp(child.pName, "Latency (ms)") == 0)
                                                 child.value = (float)g_Config.m_KxDummyHammerLatencyMs;
                                         else if(str_comp(child.pName, "Filter: Jump") == 0)
@@ -1029,6 +1069,32 @@ if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childC
                                                 child.value = (float)g_Config.m_KxVersionSpoofId;
                                         else if(str_comp(child.pName, "Client preset") == 0)
                                                 child.valueIdx = g_Config.m_KxSpoofClientPreset;
+                                        else if(str_comp(child.pName, "Custom client name") == 0)
+                                        {
+                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                {
+                                                        str_copy(child.m_aInputBuf, g_Config.m_KxSpoofClientName, sizeof(child.m_aInputBuf));
+                                                        child.m_InputInitialized = true;
+                                                }
+                                        }
+                                        else if(str_comp(child.pName, "Client version") == 0)
+                                        {
+                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                {
+                                                        str_copy(child.m_aInputBuf, g_Config.m_KxSpoofClientVersion, sizeof(child.m_aInputBuf));
+                                                        child.m_InputInitialized = true;
+                                                }
+                                        }
+                                        else if(str_comp(child.pName, "Git hash") == 0)
+                                                child.on = g_Config.m_KxSpoofGitHashEnabled != 0;
+                                        else if(str_comp(child.pName, "Git hash value") == 0)
+                                        {
+                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                {
+                                                        str_copy(child.m_aInputBuf, g_Config.m_KxSpoofGitHash, sizeof(child.m_aInputBuf));
+                                                        child.m_InputInitialized = true;
+                                                }
+                                        }
                                         // Pathfinder → Score method children
                                         else if(str_comp(child.pName, "Distance reduction") == 0)
                                                 child.on = g_Config.m_KxPfScoreDist != 0;
@@ -1912,6 +1978,13 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 if(sscanf(pRow->m_aInputBuf, "%6x", &hex) == 1)
                                         g_Config.m_KxLineRenderingColor = hex & 0xffffff;
                         }
+                        // v1.56.107: Spoofer string inputs (commit on focus loss)
+                        else if(str_comp(pRow->pName, "Custom client name") == 0)
+                                str_copy(g_Config.m_KxSpoofClientName, pRow->m_aInputBuf, sizeof(g_Config.m_KxSpoofClientName));
+                        else if(str_comp(pRow->pName, "Client version") == 0)
+                                str_copy(g_Config.m_KxSpoofClientVersion, pRow->m_aInputBuf, sizeof(g_Config.m_KxSpoofClientVersion));
+                        else if(str_comp(pRow->pName, "Git hash value") == 0)
+                                str_copy(g_Config.m_KxSpoofGitHash, pRow->m_aInputBuf, sizeof(g_Config.m_KxSpoofGitHash));
                         else if(str_comp(pRow->pName, "Success color") == 0 || str_comp(pRow->pName, "TB Success color") == 0)
                         {
                                 unsigned hex = 0;
@@ -2278,6 +2351,9 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 g_Config.m_KxVersionSpoof = pTarget->on ? 1 : 0;
                                                 g_Config.m_KxSpoofClientStr = pTarget->on ? 1 : 0;
                                         }
+                                        // v1.56.107: Spoofer → Git hash toggle (child)
+                                        else if(str_comp(pTarget->pName, "Git hash") == 0 && str_comp(row.pName, "Spoofer") == 0)
+                                                g_Config.m_KxSpoofGitHashEnabled = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Rainbow color") == 0)
                                         {
                                                 // v1.56.78: save color before enabling rainbow,
@@ -2566,7 +2642,31 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                                         if(str_comp(target.pName, "Aim mode") == 0)
                                                 g_Config.m_KxDummyCopyAimMode = o;
                                         else if(str_comp(target.pName, "Client preset") == 0)
-                                                g_Config.m_KxSpoofClientPreset = o;
+                                        {
+                                        	g_Config.m_KxSpoofClientPreset = o;
+                                        	// v1.56.107: auto-fill name+version+id from preset (like menus_settings)
+                                        	if(o != 3) // not Custom
+                                        	{
+                                        		else if(o == 0)
+                                        		{
+                                        			str_copy(g_Config.m_KxSpoofClientName, "DDNet", sizeof(g_Config.m_KxSpoofClientName));
+                                        			str_copy(g_Config.m_KxSpoofClientVersion, "19.8.2", sizeof(g_Config.m_KxSpoofClientVersion));
+                                        			g_Config.m_KxVersionSpoofId = 19082;
+                                        		}
+                                        		else if(o == 1)
+                                        		{
+                                        			str_copy(g_Config.m_KxSpoofClientName, "TClient", sizeof(g_Config.m_KxSpoofClientName));
+                                        			str_copy(g_Config.m_KxSpoofClientVersion, "10.8.7", sizeof(g_Config.m_KxSpoofClientVersion));
+                                        			g_Config.m_KxVersionSpoofId = 19080;
+                                        		}
+                                        		else if(o == 2)
+                                        		{
+                                        			str_copy(g_Config.m_KxSpoofClientName, "BestClient", sizeof(g_Config.m_KxSpoofClientName));
+                                        			str_copy(g_Config.m_KxSpoofClientVersion, "1.9 beta", sizeof(g_Config.m_KxSpoofClientVersion));
+                                        			g_Config.m_KxVersionSpoofId = 19080;
+                                        		}
+                                        	}
+                                        }
                                         else if(str_comp(target.pName, "Mode") == 0)
                                                 g_Config.m_KxFakeAimMode = o;
                                         // ESP dropdowns
@@ -2602,6 +2702,8 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
         continue;
 if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childCount, c))
         continue;
+if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
+        continue;
                                 const float crh = RowHeight(child.type);
                                 if(r == m_DropdownRow && c == m_DropdownChild)
                                 {
@@ -2620,7 +2722,31 @@ if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childC
                                                         if(str_comp(target.pName, "Aim mode") == 0)
                                                                 g_Config.m_KxDummyCopyAimMode = o;
                                                         else if(str_comp(target.pName, "Client preset") == 0)
-                                                                g_Config.m_KxSpoofClientPreset = o;
+                                                        {
+                                                        	g_Config.m_KxSpoofClientPreset = o;
+                                                        	// v1.56.107: auto-fill name+version+id from preset (like menus_settings)
+                                                        	if(o != 3) // not Custom
+                                                        	{
+                                                        		else if(o == 0)
+                                                        		{
+                                                        			str_copy(g_Config.m_KxSpoofClientName, "DDNet", sizeof(g_Config.m_KxSpoofClientName));
+                                                        			str_copy(g_Config.m_KxSpoofClientVersion, "19.8.2", sizeof(g_Config.m_KxSpoofClientVersion));
+                                                        			g_Config.m_KxVersionSpoofId = 19082;
+                                                        		}
+                                                        		else if(o == 1)
+                                                        		{
+                                                        			str_copy(g_Config.m_KxSpoofClientName, "TClient", sizeof(g_Config.m_KxSpoofClientName));
+                                                        			str_copy(g_Config.m_KxSpoofClientVersion, "10.8.7", sizeof(g_Config.m_KxSpoofClientVersion));
+                                                        			g_Config.m_KxVersionSpoofId = 19080;
+                                                        		}
+                                                        		else if(o == 2)
+                                                        		{
+                                                        			str_copy(g_Config.m_KxSpoofClientName, "BestClient", sizeof(g_Config.m_KxSpoofClientName));
+                                                        			str_copy(g_Config.m_KxSpoofClientVersion, "1.9 beta", sizeof(g_Config.m_KxSpoofClientVersion));
+                                                        			g_Config.m_KxVersionSpoofId = 19080;
+                                                        		}
+                                                        	}
+                                                        }
                                                         else if(str_comp(target.pName, "Mode") == 0)
                                                                 g_Config.m_KxFakeAimMode = o;
                                                         // ESP dropdowns
@@ -2773,6 +2899,8 @@ void CClickGui::RenderDropdownPopup(float alpha)
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
 if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childCount, c))
+        continue;
+if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
         continue;
                                 const float crh = RowHeight(child.type);
                                 if(r == m_DropdownRow && c == m_DropdownChild)
@@ -3039,6 +3167,8 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
         continue;
 if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childCount, c))
         continue;
+if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
+        continue;
                                 const float crh = RowHeight(child.type);
                                 const float crw = rw - SUB_LIST_INDENT;
                                 if(PointInRect(mousePos, bodyX + SUB_LIST_INDENT, cursorY, crw, crh))
@@ -3101,6 +3231,8 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
         continue;
 if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childCount, c))
         continue;
+if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
+        continue;
                                 sig = sig * 31u + (unsigned)(c + 100);
                         }
                 }
@@ -3161,6 +3293,8 @@ if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childC
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
 if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childCount, c))
+        continue;
+if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
         continue;
                                                 addRowNode(row.pChildren[c], true);
                                         }
@@ -3226,6 +3360,8 @@ if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childC
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
 if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childCount, c))
+        continue;
+if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
         continue;
                                 childrenBlockH += RowHeight(row.pChildren[c].type);
                                 visibleCount++;
@@ -3662,6 +3798,8 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
         continue;
 if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childCount, c))
         continue;
+if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
+        continue;
                                         ++rowIdx;
                                 }
                                 // Update rowYOffset for lower rows (children are hidden).
@@ -3692,6 +3830,8 @@ if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childC
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
 if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childCount, c))
+        continue;
+if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
         continue;
                                 const YGNodeRef cnode = rowNodes[rowIdx];
                                 const float crx = bodyX + YGNodeLayoutGetLeft(cnode);
