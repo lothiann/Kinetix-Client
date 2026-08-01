@@ -22,24 +22,25 @@
 #define GAME_CLIENT_COMPONENTS_KINETIX_BASIC_AVOID_FREEZE_H
 
 #include <game/client/component.h>
+#include <generated/protocol.h>
 
 class CBasicAvoidFreeze : public CComponent
 {
 public:
-	CBasicAvoidFreeze() = default;
-	~CBasicAvoidFreeze() override = default;
+        CBasicAvoidFreeze() = default;
+        ~CBasicAvoidFreeze() override = default;
 
-	int Sizeof() const override { return sizeof(*this); }
-	void OnReset() override;
-	void OnUpdate() override;
+        int Sizeof() const override { return sizeof(*this); }
+        void OnReset() override;
+        void OnUpdate() override;
 
 private:
-	// Simulate 'ticks' ticks with the given input on a fresh copy of the
-	// predicted world. Returns true if freeze occurs at any tick.
-	bool SimulateFreeze(int LocalId, const CNetObj_PlayerInput &Input, int Ticks) const;
+        // Simulate 'ticks' ticks with the given input on a fresh copy of the
+        // predicted world. Returns true if freeze occurs at any tick.
+        bool SimulateFreeze(int LocalId, const CNetObj_PlayerInput &Input, int Ticks) const;
 
-	// Count how many fields differ between two inputs (for scoring).
-	int InputDiff(const CNetObj_PlayerInput &A, const CNetObj_PlayerInput &B) const;
+        // Count how many fields differ between two inputs (for scoring).
+        int InputDiff(const CNetObj_PlayerInput &A, const CNetObj_PlayerInput &B) const;
 };
 
 #endif // GAME_CLIENT_COMPONENTS_KINETIX_BASIC_AVOID_FREEZE_H
