@@ -1009,15 +1009,8 @@ if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, ro
                                         // v1.56.108: Settings → Line rendering (per-component)
                                         else if(str_comp(row.pName, "Line rendering") == 0)
                                         {
-                                                int compIdx = 0;
-                                                for(int k = 0; k < row.childCount; ++k)
-                                                {
-                                                        if(str_comp(row.pChildren[k].pName, "Component") == 0)
-                                                        {
-                                                                compIdx = row.pChildren[k].valueIdx;
-                                                                break;
-                                                        }
-                                                }
+                                                // v1.56.111: read selected component from config (persisted)
+                                                int compIdx = g_Config.m_KxLineComponent;
                                                 EKxLineComponent comp = (EKxLineComponent)compIdx;
                                                 if(str_comp(child.pName, "Component") == 0)
                                                         child.valueIdx = compIdx;
@@ -1665,15 +1658,10 @@ if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, ro
                         // v1.56.108: Line rendering per-component writes
                         else if(str_comp(pTarget->pName, "Line size") == 0 || str_comp(pTarget->pName, "Line opacity") == 0)
                         {
-                                int compIdx = 0;
-                                for(int k = 0; k < row.childCount; ++k)
-                                {
-                                        if(str_comp(row.pChildren[k].pName, "Component") == 0)
-                                        {
-                                                compIdx = row.pChildren[k].valueIdx;
-                                                break;
-                                        }
-                                }
+                                // v1.56.111: read selected component from config (persisted)
+
+                                int compIdx = g_Config.m_KxLineComponent;
+
                                 EKxLineComponent comp = (EKxLineComponent)compIdx;
                                 if(str_comp(pTarget->pName, "Line size") == 0)
                                         {
@@ -2030,7 +2018,7 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 unsigned hex = 0;
                                 if(sscanf(pRow->m_aInputBuf, "%6x", &hex) == 1)
                                 {
-                                        int compIdx = g_LineRenderingChildren[0].valueIdx;
+                                        int compIdx = g_Config.m_KxLineComponent;
                                         EKxLineComponent comp = (EKxLineComponent)compIdx;
                                         switch(comp)
                                         {
@@ -2551,15 +2539,10 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 // v1.56.108: Line rendering per-component writes
                                 else if(str_comp(pTarget->pName, "Line size") == 0 || str_comp(pTarget->pName, "Line opacity") == 0)
                                 {
-                                        int compIdx = 0;
-                                        for(int k = 0; k < row.childCount; ++k)
-                                        {
-                                                if(str_comp(row.pChildren[k].pName, "Component") == 0)
-                                                {
-                                                        compIdx = row.pChildren[k].valueIdx;
-                                                        break;
-                                                }
-                                        }
+                                        // v1.56.111: read selected component from config (persisted)
+
+                                        int compIdx = g_Config.m_KxLineComponent;
+
                                         EKxLineComponent comp = (EKxLineComponent)compIdx;
                                         if(str_comp(pTarget->pName, "Line size") == 0)
                                                 {
@@ -2740,6 +2723,9 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                                         target.valueIdx = o;
                                         if(str_comp(target.pName, "Aim mode") == 0)
                                                 g_Config.m_KxDummyCopyAimMode = o;
+                                        // v1.56.111: Line rendering Component dropdown
+                                        else if(str_comp(target.pName, "Component") == 0)
+                                                g_Config.m_KxLineComponent = o;
                                         else if(str_comp(target.pName, "Client preset") == 0)
                                         {
                                         	g_Config.m_KxSpoofClientPreset = o;
@@ -2820,6 +2806,9 @@ if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, ro
                                                         target.valueIdx = o;
                                                         if(str_comp(target.pName, "Aim mode") == 0)
                                                                 g_Config.m_KxDummyCopyAimMode = o;
+                                                        // v1.56.111: Line rendering Component dropdown
+                                                        else if(str_comp(target.pName, "Component") == 0)
+                                                                g_Config.m_KxLineComponent = o;
                                                         else if(str_comp(target.pName, "Client preset") == 0)
                                                         {
                                                         	g_Config.m_KxSpoofClientPreset = o;
