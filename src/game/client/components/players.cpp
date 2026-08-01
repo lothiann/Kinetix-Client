@@ -28,6 +28,8 @@
 #include <game/gamecore.h>
 #include <game/mapitems.h>
 
+#include <game/client/components/kinetix/kinetix_internal.h>
+
 static float CalculateHandAngle(vec2 Dir, float AngleOffset)
 {
         const float Angle = angle(Dir);
