@@ -347,7 +347,7 @@ MACRO_CONFIG_INT(KxBafDirection, kx_baf_direction, 1, 0, 1, CFGFLAG_CLIENT | CFG
 MACRO_CONFIG_INT(KxBafJump, kx_baf_jump, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "BAF: allow jump toggle")
 MACRO_CONFIG_INT(KxBafHook, kx_baf_hook, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "BAF: allow hook toggle")
 MACRO_CONFIG_INT(KxBafTicks, kx_baf_ticks, 10, 1, 20, CFGFLAG_CLIENT | CFGFLAG_SAVE, "BAF: ticks to simulate per combination")
-MACRO_CONFIG_INT(KxBafTriggerTicks, kx_baf_trigger_ticks, 3, 1, 5, CFGFLAG_CLIENT | CFGFLAG_SAVE, "BAF: trigger prediction ticks (how far ahead to check for freeze)")
+MACRO_CONFIG_INT(KxBafTriggerTicks, kx_baf_trigger_ticks, 3, 1, 20, CFGFLAG_CLIENT | CFGFLAG_SAVE, "BAF: trigger prediction ticks (how far ahead to check for freeze)")
 
 // ESP — draw lines from a point to all players matching filters
 MACRO_CONFIG_INT(KxEsp, kx_esp, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ESP: draw lines from point A to all matching players")

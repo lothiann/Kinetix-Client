@@ -86,7 +86,7 @@ void CBasicAvoidFreeze::ApplyOverride()
 
         int triggerTicks = g_Config.m_KxBafTriggerTicks;
         if(triggerTicks < 1) triggerTicks = 1;
-        if(triggerTicks > 5) triggerTicks = 5;
+        if(triggerTicks > 20) triggerTicks = 20;
 
         // Step 1: check if freeze will happen with current input.
         if(!SimulateFreeze(LocalId, Current, triggerTicks))
