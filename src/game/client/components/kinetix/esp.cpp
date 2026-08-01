@@ -103,7 +103,7 @@ void CEsp::DrawArrowhead(const vec2 &p0, const vec2 &p1, ColorRGBA col, float ha
 	if(len < 0.001f)
 		return;
 	dir /= len;
-	float arrowLen = 8.0f + halfWidth * 2.0f;
+	float arrowLen = 8.0f; // fixed length, independent of line size
 	if(arrowLen > len * 0.4f)
 		arrowLen = len * 0.4f;
 	float angle = 30.0f * (pi / 180.0f);
@@ -166,7 +166,7 @@ void CEsp::EmitLine(const vec2 &p0, const vec2 &p1) const
 				if(alen > 0.001f)
 				{
 					adir /= alen;
-					float arrowLen = 8.0f + halfWidth * 2.0f;
+					float arrowLen = 8.0f; // fixed length, independent of line size
 					if(arrowLen > alen * 0.4f) arrowLen = alen * 0.4f;
 					float angle = 30.0f * (pi / 180.0f);
 					float ca = cosf(angle), sa = sinf(angle);
@@ -189,7 +189,7 @@ void CEsp::EmitLine(const vec2 &p0, const vec2 &p1) const
 				if(alen > 0.001f)
 				{
 					adir /= alen;
-					float arrowLen = 8.0f + halfWidth * 2.0f;
+					float arrowLen = 8.0f; // fixed length, independent of line size
 					if(arrowLen > alen * 0.4f) arrowLen = alen * 0.4f;
 					float angle = 30.0f * (pi / 180.0f);
 					float ca = cosf(angle), sa = sinf(angle);
