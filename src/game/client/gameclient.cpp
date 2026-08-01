@@ -187,6 +187,7 @@ void CGameClient::OnConsoleInit()
                                               &m_Players,
                                               &m_BotNet, // moved here so world-space renders (Pathfinder, Show Path) draw ON TOP of the map
                                               &m_AimBot, // AimBot/TriggerBot rendering (FOV/Radius circles)
+                                              &m_BasicAvoidFreeze, // Basic Avoid Freeze - override input to avoid freeze
                                               &m_Esp, // ESP lines (Layer 0 = behind fg blocks; Layer>0 deferred to m_KinetixLines)
                                               &m_MapLayersForeground,
                                               &m_KinetixLines, // deferred line overlay — renders AFTER fg map tiles (on top of blocks)

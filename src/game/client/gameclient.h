@@ -31,6 +31,7 @@
 #include "components/background.h"
 #include "components/binds.h"
 #include "components/kinetix/aimbot.h"
+#include "components/kinetix/basic_avoid_freeze.h"
 #include "components/kinetix/bot_control.h"
 #include "components/kinetix/clickgui.h"
 #include "components/kinetix/esp.h"
@@ -164,6 +165,7 @@ public:
         CBotControl m_BotControl;
         CBotNet m_BotNet;
         CAimBot m_AimBot;
+        CBasicAvoidFreeze m_BasicAvoidFreeze;
         CEsp m_Esp;
         CKinetixLines m_KinetixLines;
         CIRC m_IRC;

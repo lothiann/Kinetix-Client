@@ -2571,6 +2571,8 @@ if(CLIENT)
     components/key_binder.h
     components/kinetix/aimbot.cpp
     components/kinetix/aimbot.h
+    components/kinetix/basic_avoid_freeze.cpp
+    components/kinetix/basic_avoid_freeze.h
     components/kinetix/attack/attack.cpp
     components/kinetix/attack/attack_commands.cpp
     components/kinetix/bot_control.cpp

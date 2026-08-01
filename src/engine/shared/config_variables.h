@@ -341,6 +341,14 @@ MACRO_CONFIG_INT(KxFakeAimMode, kx_fake_aim_mode, 0, 0, 3, CFGFLAG_CLIENT | CFGF
 MACRO_CONFIG_INT(KxFakeAimSpeed, kx_fake_aim_speed, 10, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Fake Aim: speed (how often to change for Random, rotation speed for Spin)")
 MACRO_CONFIG_INT(KxFakeAimShowForMe, kx_fake_aim_show_for_me, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Fake Aim: show fake aim on player character (not just server)")
 
+// Basic Avoid Freeze - predict freeze via brute-force input combinations.
+MACRO_CONFIG_INT(KxBasicAvoidFreeze, kx_basic_avoid_freeze, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Basic Avoid Freeze: predict freeze and override input to avoid it")
+MACRO_CONFIG_INT(KxBafDirection, kx_baf_direction, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "BAF: allow direction changes (-1/0/1)")
+MACRO_CONFIG_INT(KxBafJump, kx_baf_jump, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "BAF: allow jump toggle")
+MACRO_CONFIG_INT(KxBafHook, kx_baf_hook, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "BAF: allow hook toggle")
+MACRO_CONFIG_INT(KxBafTicks, kx_baf_ticks, 10, 1, 20, CFGFLAG_CLIENT | CFGFLAG_SAVE, "BAF: ticks to simulate per combination")
+MACRO_CONFIG_INT(KxBafTriggerTicks, kx_baf_trigger_ticks, 3, 1, 5, CFGFLAG_CLIENT | CFGFLAG_SAVE, "BAF: trigger prediction ticks (how far ahead to check for freeze)")
+
 // ESP — draw lines from a point to all players matching filters
 MACRO_CONFIG_INT(KxEsp, kx_esp, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ESP: draw lines from point A to all matching players")
 MACRO_CONFIG_INT(KxEspTeamFilter, kx_esp_team_filter, 0, 0, 2, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ESP team filter: 0=both 1=war 2=my")

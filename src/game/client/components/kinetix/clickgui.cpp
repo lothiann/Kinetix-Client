@@ -279,11 +279,20 @@ static SRow g_EspChildren[] = {
         {ERowType::Slider, "ESP X", nullptr, false, false, 0.0f, 7680.0f, 1.0f, 0.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "ESP Y", nullptr, false, false, 0.0f, 4320.0f, 1.0f, 0.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
+// v1.56.121: "Basic Avoid Freeze" expandable.
+static SRow g_BasicAvoidFreezeChildren[] = {
+        {ERowType::Toggle, "Direction", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Jump", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Hook", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Ticks", nullptr, false, false, 1.0f, 20.0f, 1.0f, 10.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Trigger ticks", nullptr, false, false, 1.0f, 5.0f, 1.0f, 3.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
 static SRow g_AdvancedRows[] = {
         {ERowType::Expandable, "Trajectory", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TrajectoryChildren, 1},
         {ERowType::Expandable, "Laser unfreeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LaserUnfreezeChildren, 7},
         {ERowType::Expandable, "Fake Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_FakeAimChildren, 3},
         {ERowType::Expandable, "ESP", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_EspChildren, 9},
+        {ERowType::Expandable, "Basic Avoid Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BasicAvoidFreezeChildren, 5},
 };
 
 // ---------- Settings panel (6) ----------
@@ -916,6 +925,8 @@ void CClickGui::OnRender()
                                         row.on = g_Config.m_KxFakeAim != 0;
                                 else if(str_comp(row.pName, "ESP") == 0)
                                         row.on = g_Config.m_KxEsp != 0;
+                                else if(str_comp(row.pName, "Basic Avoid Freeze") == 0)
+                                        row.on = g_Config.m_KxBasicAvoidFreeze != 0;
                                 // Functions panel — Fly/Copy Moves sub-section
                                 else if(str_comp(row.pName, "Preserve input") == 0)
                                         row.on = g_Config.m_KxDummyHammerKeepInputs != 0;
@@ -967,6 +978,7 @@ void CClickGui::OnRender()
                                                 else if(str_comp(row.pName, "Copy Moves Filter") == 0) pCmd = "toggle kx_dummy_copy_moves_filter 1 0";
                                                 else if(str_comp(row.pName, "Trajectory") == 0) pCmd = "toggle kx_show_trajectory 1 0";
                                                 else if(str_comp(row.pName, "ESP") == 0) pCmd = "toggle kx_esp 1 0";
+                                                else if(str_comp(row.pName, "Basic Avoid Freeze") == 0) pCmd = "toggle kx_basic_avoid_freeze 1 0";
                                                 else if(str_comp(row.pName, "Block") == 0) pCmd = "toggle kx_attack 1 0";
                                                 if(pCmd)
                                                 {
@@ -1033,6 +1045,17 @@ if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, ro
                                                 child.on = g_Config.m_KxLaserUnfreezeSilent != 0;
                                         else if(str_comp(child.pName, "Show attempt") == 0)
                                                 child.on = g_Config.m_KxLaserUnfreezeShowAttempt != 0;
+                                        // Basic Avoid Freeze children
+                                        else if(str_comp(child.pName, "Direction") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
+                                                child.on = g_Config.m_KxBafDirection != 0;
+                                        else if(str_comp(child.pName, "Jump") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
+                                                child.on = g_Config.m_KxBafJump != 0;
+                                        else if(str_comp(child.pName, "Hook") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
+                                                child.on = g_Config.m_KxBafHook != 0;
+                                        else if(str_comp(child.pName, "Ticks") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
+                                                child.value = (float)g_Config.m_KxBafTicks;
+                                        else if(str_comp(child.pName, "Trigger ticks") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
+                                                child.value = (float)g_Config.m_KxBafTriggerTicks;
                                         // Fake Aim children
                                         else if(str_comp(child.pName, "Mode") == 0 && str_comp(row.pName, "Fake Aim") == 0)
                                                 child.valueIdx = g_Config.m_KxFakeAimMode;
@@ -1676,6 +1699,21 @@ if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, ro
                                 g_Config.m_KxLaserUnfreezeTicks = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Trigger ticks") == 0)
                                 g_Config.m_KxLaserUnfreezeTriggerTicks = (int)pTarget->value;
+else if(str_comp(pTarget->pName, "Trigger ticks") == 0)
+
+                        g_Config.m_KxLaserUnfreezeTriggerTicks = (int)pTarget->value;
+
+                        else if(str_comp(pTarget->pName, "Trigger ticks") == 0)
+                                g_Config.m_KxLaserUnfreezeTriggerTicks = (int)pTarget->value;
+else if(str_comp(pTarget->pName, "Ticks") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
+
+                        g_Config.m_KxBafTicks = (int)pTarget->value;
+
+                        else if(str_comp(pTarget->pName, "Trigger ticks") == 0)
+                                g_Config.m_KxLaserUnfreezeTriggerTicks = (int)pTarget->value;
+else if(str_comp(pTarget->pName, "Trigger ticks") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
+
+                        g_Config.m_KxBafTriggerTicks = (int)pTarget->value;
                         // v1.56.108: Line rendering per-component writes
                         else if(str_comp(pTarget->pName, "Line size") == 0 || str_comp(pTarget->pName, "Line opacity") == 0)
                         {
@@ -2262,6 +2300,8 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 g_Config.m_KxFakeAim = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "ESP") == 0)
                                                 g_Config.m_KxEsp = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Basic Avoid Freeze") == 0)
+                                                g_Config.m_KxBasicAvoidFreeze = pTarget->on ? 1 : 0;
                                         // Functions panel — Fly/Copy Moves sub-section
                                         else if(str_comp(pTarget->pName, "Preserve input") == 0)
                                                 g_Config.m_KxDummyHammerKeepInputs = pTarget->on ? 1 : 0;
@@ -2385,6 +2425,13 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 g_Config.m_KxLaserUnfreezeSilent = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Show attempt") == 0)
                                                 g_Config.m_KxLaserUnfreezeShowAttempt = pTarget->on ? 1 : 0;
+                                        // Basic Avoid Freeze toggles
+                                        else if(str_comp(pTarget->pName, "Direction") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
+                                                g_Config.m_KxBafDirection = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Jump") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
+                                                g_Config.m_KxBafJump = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Hook") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
+                                                g_Config.m_KxBafHook = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Show for me") == 0)
                                                 g_Config.m_KxFakeAimShowForMe = pTarget->on ? 1 : 0;
                                         // Pathfinder → Score method children
@@ -2558,6 +2605,21 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         g_Config.m_KxLaserUnfreezeTicks = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Trigger ticks") == 0)
                                         g_Config.m_KxLaserUnfreezeTriggerTicks = (int)pTarget->value;
+else if(str_comp(pTarget->pName, "Trigger ticks") == 0)
+
+                                g_Config.m_KxLaserUnfreezeTriggerTicks = (int)pTarget->value;
+
+                                else if(str_comp(pTarget->pName, "Trigger ticks") == 0)
+                                        g_Config.m_KxLaserUnfreezeTriggerTicks = (int)pTarget->value;
+else if(str_comp(pTarget->pName, "Ticks") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
+
+                                g_Config.m_KxBafTicks = (int)pTarget->value;
+
+                                else if(str_comp(pTarget->pName, "Trigger ticks") == 0)
+                                        g_Config.m_KxLaserUnfreezeTriggerTicks = (int)pTarget->value;
+else if(str_comp(pTarget->pName, "Trigger ticks") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
+
+                                g_Config.m_KxBafTriggerTicks = (int)pTarget->value;
                                 // Settings → Line rendering children
                                 // v1.56.108: Line rendering per-component writes
                                 else if(str_comp(pTarget->pName, "Line size") == 0 || str_comp(pTarget->pName, "Line opacity") == 0)
