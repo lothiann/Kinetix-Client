@@ -1,4 +1,4 @@
-#include <game/client/components/kinetix/aimbot/aimbot.h>
+#include <game/client/components/kinetix/aimbot.h>
 
 #include <base/color.h>
 #include <base/dbg.h>
@@ -7,6 +7,7 @@
 #include <engine/graphics.h>
 #include <engine/shared/config.h>
 #include <game/client/gameclient.h>
+#include <game/client/components/kinetix/kinetix_lines.h>
 #include <game/client/prediction/entities/character.h>
 #include <game/client/prediction/gameworld.h>
 #include <game/collision.h>
@@ -588,6 +589,17 @@ void CAimBot::RenderFov(const SWeaponSettings &Settings, const vec2 &MyPos, cons
                 segments.push_back({MyPos, MyPos + vec2(cosf(myAngle + halfFovRad), sinf(myAngle + halfFovRad)) * radius});
         }
 
+        // v1.56.104: Layer > 0 → defer to CKinetixLines (renders on top of fg blocks).
+        if(g_Config.m_KxLineRenderingLayer > 0)
+        {
+                ColorRGBA c = col;
+                c.a = Alpha;
+                float hw = LineSize > 0 ? HalfWidth : 0.0f;
+                for(const auto &seg : segments)
+                        KinetixEnqueueLine(seg.first, seg.second, c, hw);
+                return;
+        }
+
         Graphics()->TextureClear();
         if(LineSize > 0)
         {
@@ -645,6 +657,17 @@ void CAimBot::RenderRadius(const SWeaponSettings &Settings, const vec2 &MyPos, c
                                 p = hit;
                 }
                 points.push_back(p);
+        }
+
+        // v1.56.104: Layer > 0 → defer to CKinetixLines (renders on top of fg blocks).
+        if(g_Config.m_KxLineRenderingLayer > 0)
+        {
+                ColorRGBA c = col;
+                c.a = Alpha;
+                float hw = LineSize > 0 ? HalfWidth : 0.0f;
+                for(size_t i = 0; i + 1 < points.size(); i++)
+                        KinetixEnqueueLine(points[i], points[i + 1], c, hw);
+                return;
         }
 
         Graphics()->TextureClear();

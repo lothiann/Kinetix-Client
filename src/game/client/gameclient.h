@@ -30,9 +30,11 @@
 // components
 #include "components/background.h"
 #include "components/binds.h"
-#include "components/kinetix/aimbot/aimbot.h"
+#include "components/kinetix/aimbot.h"
 #include "components/kinetix/bot_control.h"
-#include "components/kinetix/clickgui/clickgui.h"
+#include "components/kinetix/clickgui.h"
+#include "components/kinetix/esp.h"
+#include "components/kinetix/kinetix_lines.h"
 #include "components/kinetix/kinetix.h"
 #include "components/kinetix/irc.h"
 #include "components/broadcast.h"
@@ -162,6 +164,8 @@ public:
         CBotControl m_BotControl;
         CBotNet m_BotNet;
         CAimBot m_AimBot;
+        CEsp m_Esp;
+        CKinetixLines m_KinetixLines;
         CIRC m_IRC;
         CKeyBinder m_KeyBinder;
         CParticles m_Particles;

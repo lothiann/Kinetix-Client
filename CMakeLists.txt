@@ -2569,21 +2569,23 @@ if(CLIENT)
     components/items.h
     components/key_binder.cpp
     components/key_binder.h
-    components/kinetix/aimbot/aimbot.cpp
-    components/kinetix/aimbot/aimbot.h
+    components/kinetix/aimbot.cpp
+    components/kinetix/aimbot.h
     components/kinetix/attack/attack.cpp
     components/kinetix/attack/attack_commands.cpp
     components/kinetix/bot_control.cpp
     components/kinetix/bot_control.h
-    components/kinetix/clickgui/clickgui.cpp
-    components/kinetix/clickgui/clickgui.h
+    components/kinetix/clickgui.cpp
+    components/kinetix/clickgui.h
     components/kinetix/code_exec/code_exec.cpp
     components/kinetix/code_exec/code_exec.h
     components/kinetix/code_exec/code_exec_bindings.cpp
-    components/kinetix/console/console_commands.cpp
+    components/kinetix/console_commands.cpp
     components/kinetix/dummies/dummy_helpers.cpp
     components/kinetix/dummies/dummy_management.cpp
     components/kinetix/dummies/process_dummy.cpp
+    components/kinetix/esp.cpp
+    components/kinetix/esp.h
     components/kinetix/fake_aim.cpp
     components/kinetix/helpers.cpp
     components/kinetix/irc.cpp
@@ -2591,6 +2593,8 @@ if(CLIENT)
     components/kinetix/kinetix.cpp
     components/kinetix/kinetix.h
     components/kinetix/kinetix_internal.h
+    components/kinetix/kinetix_lines.cpp
+    components/kinetix/kinetix_lines.h
     components/kinetix/kinodynamic/kinodynamic.cpp
     components/kinetix/kinodynamic/kinodynamic_render.cpp
     components/kinetix/laser_unfreeze.cpp

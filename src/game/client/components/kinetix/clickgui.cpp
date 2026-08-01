@@ -7,7 +7,7 @@
 // Layout: Yoga (flexbox) computes the body's row stack; we then draw each
 // row via IGraphics (rounded rects, gradient fills) and ITextRender (text).
 
-#include <game/client/components/kinetix/clickgui/clickgui.h>
+#include <game/client/components/kinetix/clickgui.h>
 #include <game/client/components/kinetix/kinetix.h>
 
 #include <yoga/Yoga.h>
@@ -263,10 +263,23 @@ static SRow g_FakeAimChildren[] = {
 static SRow g_TrajectoryChildren[] = {
         {ERowType::Slider, "Prediction Ticks", nullptr, false, false, 1.0f, 50.0f, 1.0f, 10.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
+// v1.56.104: "ESP" expandable — lines from point A to all players matching filters.
+// Filter option arrays reuse the AimBot ones (identical option strings).
+static const char *const g_EspModeOpts[] = {"Active player", "Screen coordinates"};
+static SRow g_EspChildren[] = {
+        {ERowType::Dropdown, "ESP Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTeamOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "ESP Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 2, 0, nullptr, 0},
+        {ERowType::Dropdown, "ESP Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 2, 0, nullptr, 0},
+        {ERowType::Dropdown, "ESP Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "ESP Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_EspModeOpts, 2, 0, nullptr, 0},
+        {ERowType::Slider, "ESP X", nullptr, false, false, 0.0f, 7680.0f, 1.0f, 0.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "ESP Y", nullptr, false, false, 0.0f, 4320.0f, 1.0f, 0.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
 static SRow g_AdvancedRows[] = {
         {ERowType::Expandable, "Trajectory", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TrajectoryChildren, 1},
         {ERowType::Expandable, "Laser unfreeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LaserUnfreezeChildren, 7},
         {ERowType::Expandable, "Fake Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_FakeAimChildren, 3},
+        {ERowType::Expandable, "ESP", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_EspChildren, 7},
 };
 
 // ---------- Settings panel (6) ----------
@@ -292,11 +305,12 @@ static SRow g_LineRenderingChildren[] = {
         {ERowType::Slider, "Line Margin", nullptr, false, false, 0.0f, 20.0f, 1.0f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Input, "Line color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ffbf00", "hex...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Line opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 80.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Layer", nullptr, false, false, 0.0f, 10.0f, 1.0f, 0.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 static SRow g_SettingsRows[] = {
         {ERowType::Input, "ClickGUI Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "9d4edd", "hex...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Expandable, "Rainbow color", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowChildren, 1},
-        {ERowType::Expandable, "Line rendering", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LineRenderingChildren, 3},
+        {ERowType::Expandable, "Line rendering", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LineRenderingChildren, 4},
         {ERowType::Expandable, "IRC", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_IrcChildren, 2},
         {ERowType::Expandable, "Spoofer", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_SpooferChildren, 3},
 };
@@ -466,6 +480,25 @@ static bool DummiesChildVisible(const SRow *pChildren, int childCount, int idx)
         const SRow &row = pChildren[idx];
         if(str_comp(row.pName, "Switch to Main") == 0)
                 return g_Config.m_ClDummy != 0; // visible only when on a dummy
+        return true;
+}
+// v1.56.104: ESP — "ESP X"/"ESP Y" visible only when ESP Mode = 1 (Screen coordinates).
+static bool EspChildVisible(const SRow *pChildren, int childCount, int idx)
+{
+        if(idx < 0 || idx >= childCount)
+                return false;
+        const SRow &row = pChildren[idx];
+        int modeIdx = 0;
+        for(int i = 0; i < childCount; ++i)
+        {
+                if(str_comp(pChildren[i].pName, "ESP Mode") == 0)
+                {
+                        modeIdx = pChildren[i].valueIdx;
+                        break;
+                }
+        }
+        if(str_comp(row.pName, "ESP X") == 0 || str_comp(row.pName, "ESP Y") == 0)
+                return modeIdx == 1; // Screen coordinates
         return true;
 }
 // Constants — colors and geometry from clickgui.html (box-shadow/blur dropped
@@ -831,6 +864,8 @@ void CClickGui::OnRender()
                                         row.on = g_Config.m_KxLaserUnfreeze != 0;
                                 else if(str_comp(row.pName, "Fake Aim") == 0)
                                         row.on = g_Config.m_KxFakeAim != 0;
+                                else if(str_comp(row.pName, "ESP") == 0)
+                                        row.on = g_Config.m_KxEsp != 0;
                                 // Functions panel — Fly/Copy Moves sub-section
                                 else if(str_comp(row.pName, "Preserve input") == 0)
                                         row.on = g_Config.m_KxDummyHammerKeepInputs != 0;
@@ -881,6 +916,7 @@ void CClickGui::OnRender()
                                                 else if(str_comp(row.pName, "Laser Unfreeze") == 0) pCmd = "toggle kx_laser_unfreeze 1 0";
                                                 else if(str_comp(row.pName, "Copy Moves Filter") == 0) pCmd = "toggle kx_dummy_copy_moves_filter 1 0";
                                                 else if(str_comp(row.pName, "Trajectory") == 0) pCmd = "toggle kx_show_trajectory 1 0";
+                                                else if(str_comp(row.pName, "ESP") == 0) pCmd = "toggle kx_esp 1 0";
                                                 else if(str_comp(row.pName, "Block") == 0) pCmd = "toggle kx_attack 1 0";
                                                 if(pCmd)
                                                 {
@@ -905,6 +941,8 @@ void CClickGui::OnRender()
                                                         if(str_comp(row.pName, "TriggerBot") == 0 && !TriggerBotChildVisible(row.pChildren, row.childCount, c))
                                                                 continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
+        continue;
+if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childCount, c))
         continue;
                                         if(str_comp(child.pName, "Latency (ms)") == 0)
                                                 child.value = (float)g_Config.m_KxDummyHammerLatencyMs;
@@ -938,6 +976,8 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                                         }
                                         else if(str_comp(child.pName, "Line opacity") == 0)
                                                 child.value = (float)g_Config.m_KxLineRenderingAlpha;
+                                        else if(str_comp(child.pName, "Layer") == 0)
+                                                child.value = (float)g_Config.m_KxLineRenderingLayer;
                                         // Advanced → Trajectory children
                                         else if(str_comp(child.pName, "Prediction Ticks") == 0)
                                                 child.value = (float)g_Config.m_KxTrajectoryTicks;
@@ -963,6 +1003,21 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                                                 child.value = (float)g_Config.m_KxFakeAimSpeed;
                                         else if(str_comp(child.pName, "Show for me") == 0)
                                                 child.on = g_Config.m_KxFakeAimShowForMe != 0;
+                                        // ESP children
+                                        else if(str_comp(child.pName, "ESP Team") == 0)
+                                                child.valueIdx = g_Config.m_KxEspTeamFilter;
+                                        else if(str_comp(child.pName, "ESP Friend") == 0)
+                                                child.valueIdx = g_Config.m_KxEspFriendFilter;
+                                        else if(str_comp(child.pName, "ESP Dummy") == 0)
+                                                child.valueIdx = g_Config.m_KxEspDummyFilter;
+                                        else if(str_comp(child.pName, "ESP Freeze") == 0)
+                                                child.valueIdx = g_Config.m_KxEspFreezeFilter;
+                                        else if(str_comp(child.pName, "ESP Mode") == 0)
+                                                child.valueIdx = g_Config.m_KxEspMode;
+                                        else if(str_comp(child.pName, "ESP X") == 0)
+                                                child.value = (float)g_Config.m_KxEspScreenX;
+                                        else if(str_comp(child.pName, "ESP Y") == 0)
+                                                child.value = (float)g_Config.m_KxEspScreenY;
                                         // Settings → Spoofer children
                                         else if(str_comp(child.pName, "Version ID") == 0)
                                                 child.value = (float)g_Config.m_KxVersionSpoofId;
@@ -1520,6 +1575,12 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                                 g_Config.m_KxLineRenderingSize = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Line opacity") == 0)
                                 g_Config.m_KxLineRenderingAlpha = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Layer") == 0)
+                                g_Config.m_KxLineRenderingLayer = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "ESP X") == 0)
+                                g_Config.m_KxEspScreenX = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "ESP Y") == 0)
+                                g_Config.m_KxEspScreenY = (int)pTarget->value;
                         // Advanced → Trajectory children
                         else if(str_comp(pTarget->pName, "Prediction Ticks") == 0)
                                 g_Config.m_KxTrajectoryTicks = (int)pTarget->value;
@@ -2044,6 +2105,8 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 g_Config.m_KxLaserUnfreeze = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Fake Aim") == 0)
                                                 g_Config.m_KxFakeAim = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "ESP") == 0)
+                                                g_Config.m_KxEsp = pTarget->on ? 1 : 0;
                                         // Functions panel — Fly/Copy Moves sub-section
                                         else if(str_comp(pTarget->pName, "Preserve input") == 0)
                                                 g_Config.m_KxDummyHammerKeepInputs = pTarget->on ? 1 : 0;
@@ -2342,6 +2405,12 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         g_Config.m_KxLineRenderingSize = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Line opacity") == 0)
                                         g_Config.m_KxLineRenderingAlpha = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Layer") == 0)
+                                        g_Config.m_KxLineRenderingLayer = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "ESP X") == 0)
+                                        g_Config.m_KxEspScreenX = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "ESP Y") == 0)
+                                        g_Config.m_KxEspScreenY = (int)pTarget->value;
                                 // Advanced → Trajectory children
                                 else if(str_comp(pTarget->pName, "Prediction Ticks") == 0)
                                         g_Config.m_KxTrajectoryTicks = (int)pTarget->value;
@@ -2494,6 +2563,17 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                                                 g_Config.m_KxSpoofClientPreset = o;
                                         else if(str_comp(target.pName, "Mode") == 0)
                                                 g_Config.m_KxFakeAimMode = o;
+                                        // ESP dropdowns
+                                        else if(str_comp(target.pName, "ESP Team") == 0)
+                                                g_Config.m_KxEspTeamFilter = o;
+                                        else if(str_comp(target.pName, "ESP Friend") == 0)
+                                                g_Config.m_KxEspFriendFilter = o;
+                                        else if(str_comp(target.pName, "ESP Dummy") == 0)
+                                                g_Config.m_KxEspDummyFilter = o;
+                                        else if(str_comp(target.pName, "ESP Freeze") == 0)
+                                                g_Config.m_KxEspFreezeFilter = o;
+                                        else if(str_comp(target.pName, "ESP Mode") == 0)
+                                                g_Config.m_KxEspMode = o;
                                         m_DropdownOpen = false;
                                         return true;
                                 }
@@ -2513,6 +2593,8 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                                                         if(str_comp(row.pName, "TriggerBot") == 0 && !TriggerBotChildVisible(row.pChildren, row.childCount, c))
                                                                 continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
+        continue;
+if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childCount, c))
         continue;
                                 const float crh = RowHeight(child.type);
                                 if(r == m_DropdownRow && c == m_DropdownChild)
@@ -2535,6 +2617,17 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                                                                 g_Config.m_KxSpoofClientPreset = o;
                                                         else if(str_comp(target.pName, "Mode") == 0)
                                                                 g_Config.m_KxFakeAimMode = o;
+                                                        // ESP dropdowns
+                                                        else if(str_comp(target.pName, "ESP Team") == 0)
+                                                                g_Config.m_KxEspTeamFilter = o;
+                                                        else if(str_comp(target.pName, "ESP Friend") == 0)
+                                                                g_Config.m_KxEspFriendFilter = o;
+                                                        else if(str_comp(target.pName, "ESP Dummy") == 0)
+                                                                g_Config.m_KxEspDummyFilter = o;
+                                                        else if(str_comp(target.pName, "ESP Freeze") == 0)
+                                                                g_Config.m_KxEspFreezeFilter = o;
+                                                        else if(str_comp(target.pName, "ESP Mode") == 0)
+                                                                g_Config.m_KxEspMode = o;
                                                         // v1.56.83: AimBot per-weapon dropdowns (parent = "AimBot")
                                                         else if(str_comp(row.pName, "AimBot") == 0)
                                                         {
@@ -2672,6 +2765,8 @@ void CClickGui::RenderDropdownPopup(float alpha)
                                                         if(str_comp(row.pName, "TriggerBot") == 0 && !TriggerBotChildVisible(row.pChildren, row.childCount, c))
                                                                 continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
+        continue;
+if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childCount, c))
         continue;
                                 const float crh = RowHeight(child.type);
                                 if(r == m_DropdownRow && c == m_DropdownChild)
@@ -2936,6 +3031,8 @@ bool CClickGui::HitTestRow(vec2 mousePos, int panelIdx, int &outRow, int &outChi
                                                                 continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
+if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childCount, c))
+        continue;
                                 const float crh = RowHeight(child.type);
                                 const float crw = rw - SUB_LIST_INDENT;
                                 if(PointInRect(mousePos, bodyX + SUB_LIST_INDENT, cursorY, crw, crh))
@@ -2996,6 +3093,8 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                                                 continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
+if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childCount, c))
+        continue;
                                 sig = sig * 31u + (unsigned)(c + 100);
                         }
                 }
@@ -3054,6 +3153,8 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                                                         if(str_comp(row.pName, "TriggerBot") == 0 && !TriggerBotChildVisible(row.pChildren, row.childCount, c))
                                                                 continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
+        continue;
+if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childCount, c))
         continue;
                                                 addRowNode(row.pChildren[c], true);
                                         }
@@ -3117,6 +3218,8 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                                                         if(str_comp(row.pName, "TriggerBot") == 0 && !TriggerBotChildVisible(row.pChildren, row.childCount, c))
                                                                 continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
+        continue;
+if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childCount, c))
         continue;
                                 childrenBlockH += RowHeight(row.pChildren[c].type);
                                 visibleCount++;
@@ -3551,6 +3654,8 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                                                                 continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
+if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childCount, c))
+        continue;
                                         ++rowIdx;
                                 }
                                 // Update rowYOffset for lower rows (children are hidden).
@@ -3579,6 +3684,8 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
                                                         if(str_comp(row.pName, "TriggerBot") == 0 && !TriggerBotChildVisible(row.pChildren, row.childCount, c))
                                                                 continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
+        continue;
+if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childCount, c))
         continue;
                                 const YGNodeRef cnode = rowNodes[rowIdx];
                                 const float crx = bodyX + YGNodeLayoutGetLeft(cnode);

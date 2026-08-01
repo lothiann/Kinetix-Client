@@ -300,6 +300,7 @@ MACRO_CONFIG_INT(KxTrajectoryTicks, kx_trajectory_ticks, 10, 1, 50, CFGFLAG_CLIE
 MACRO_CONFIG_INT(KxLineRenderingSize, kx_line_rendering_size, 1, 0, 20, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Trajectory line width in pixels (0=thin default)")
 MACRO_CONFIG_COL(KxLineRenderingColor, kx_line_rendering_color, 65471, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Trajectory line color")
 MACRO_CONFIG_INT(KxLineRenderingAlpha, kx_line_rendering_alpha, 80, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Trajectory line opacity (0-100)")
+MACRO_CONFIG_INT(KxLineRenderingLayer, kx_line_rendering_layer, 0, 0, 10, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Line render layer: 0=behind foreground blocks, 1+=on top of blocks (deferred overlay pass)")
 
 // Laser unfreeze — predictive laser self-unfreeze
 MACRO_CONFIG_INT(KxLaserUnfreeze, kx_laser_unfreeze, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Laser unfreeze: predict freeze and auto-fire laser to unfreeze self")
@@ -316,6 +317,16 @@ MACRO_CONFIG_INT(KxFakeAim, kx_fake_aim, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE 
 MACRO_CONFIG_INT(KxFakeAimMode, kx_fake_aim_mode, 0, 0, 3, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Fake Aim mode: 0=Random 1=Robot 2=Spin 3=Lag")
 MACRO_CONFIG_INT(KxFakeAimSpeed, kx_fake_aim_speed, 10, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Fake Aim: speed (how often to change for Random, rotation speed for Spin)")
 MACRO_CONFIG_INT(KxFakeAimShowForMe, kx_fake_aim_show_for_me, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Fake Aim: show fake aim on player character (not just server)")
+
+// ESP — draw lines from a point to all players matching filters
+MACRO_CONFIG_INT(KxEsp, kx_esp, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ESP: draw lines from point A to all matching players")
+MACRO_CONFIG_INT(KxEspTeamFilter, kx_esp_team_filter, 0, 0, 2, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ESP team filter: 0=both 1=war 2=my")
+MACRO_CONFIG_INT(KxEspFriendFilter, kx_esp_friend_filter, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ESP friend filter: 0=both 1=ignore")
+MACRO_CONFIG_INT(KxEspDummyFilter, kx_esp_dummy_filter, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ESP dummy filter: 0=both 1=ignore")
+MACRO_CONFIG_INT(KxEspFreezeFilter, kx_esp_freeze_filter, 0, 0, 2, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ESP freeze filter: 0=both 1=freeze 2=no_freeze")
+MACRO_CONFIG_INT(KxEspMode, kx_esp_mode, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ESP point A source: 0=active player 1=screen coordinates")
+MACRO_CONFIG_INT(KxEspScreenX, kx_esp_screen_x, 0, 0, 7680, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ESP screen X coordinate (used when mode=screen coordinates)")
+MACRO_CONFIG_INT(KxEspScreenY, kx_esp_screen_y, 0, 0, 4320, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ESP screen Y coordinate (used when mode=screen coordinates)")
 
 // Pathfinder parameter bounds — single source of truth for config limits + dynamic formulas.
 // Keep PF_CHUNK_SIZE_MAX / PF_HOOK_ANGLES_MAX in sync with the literals in the
