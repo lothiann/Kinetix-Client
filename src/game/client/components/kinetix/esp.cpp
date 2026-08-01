@@ -8,10 +8,9 @@
 #include <engine/graphics.h>
 #include <game/client/gameclient.h>
 #include <game/client/components/camera.h>
-#include <game/client/components/controls.h>
 #include <game/client/components/kinetix/kinetix_lines.h>
 
-#include <game/generated/protocol.h>
+#include <generated/protocol.h>
 
 void CEsp::OnReset()
 {
