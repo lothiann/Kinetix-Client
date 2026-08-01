@@ -122,14 +122,18 @@ void CEsp::OnRender()
 	if(g_Config.m_KxEspMode == 1)
 	{
 		// Screen coordinates → world space.
-		// MapScreenToInterface maps camera center to screen center; a screen
-		// pixel offset from center scales by 1/zoom to world units.
+		// DDNet's visible world region is [Center - W/2, Center - H/2] to
+		// [Center + W/2, Center + H/2] where W,H = CalcScreenParams(aspect, zoom).
+		// Convert screen pixel → normalized [0,1] → world offset from center.
 		float sw = (float)Graphics()->ScreenWidth();
 		float sh = (float)Graphics()->ScreenHeight();
-		float zoom = pGame->m_Camera.m_Zoom;
-		vec2 screenCenter(sw * 0.5f, sh * 0.5f);
-		vec2 screenPoint((float)g_Config.m_KxEspScreenX, (float)g_Config.m_KxEspScreenY);
-		pointA = pGame->m_Camera.m_Center + (screenPoint - screenCenter) / zoom;
+		float aspect = Graphics()->ScreenAspect();
+		float worldW, worldH;
+		Graphics()->CalcScreenParams(aspect, pGame->m_Camera.m_Zoom, &worldW, &worldH);
+		float nx = (float)g_Config.m_KxEspScreenX / sw;
+		float ny = (float)g_Config.m_KxEspScreenY / sh;
+		pointA.x = pGame->m_Camera.m_Center.x + (nx - 0.5f) * worldW;
+		pointA.y = pGame->m_Camera.m_Center.y + (ny - 0.5f) * worldH;
 	}
 	else
 	{

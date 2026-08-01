@@ -1015,9 +1015,15 @@ if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childC
                                         else if(str_comp(child.pName, "ESP Mode") == 0)
                                                 child.valueIdx = g_Config.m_KxEspMode;
                                         else if(str_comp(child.pName, "ESP X") == 0)
-                                                child.value = (float)g_Config.m_KxEspScreenX;
+                                                                                {
+                                                                                        child.value = (float)g_Config.m_KxEspScreenX;
+                                                                                        child.max = (float)Graphics()->ScreenWidth();
+                                                                                }
                                         else if(str_comp(child.pName, "ESP Y") == 0)
-                                                child.value = (float)g_Config.m_KxEspScreenY;
+                                                                                {
+                                                                                        child.value = (float)g_Config.m_KxEspScreenY;
+                                                                                        child.max = (float)Graphics()->ScreenHeight();
+                                                                                }
                                         // Settings → Spoofer children
                                         else if(str_comp(child.pName, "Version ID") == 0)
                                                 child.value = (float)g_Config.m_KxVersionSpoofId;
