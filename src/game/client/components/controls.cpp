@@ -548,6 +548,9 @@ int CControls::SnapInput(int *pData)
                 m_LaserUnfreezeAimActive = false;
         }
 
+        // v1.56.128: BAF — before fake aim + mem_copy. Only changes dir/jump/hook.
+        GameClient()->m_BasicAvoidFreeze.ApplyOverride();
+
         // ── Fake Aim ──────────────────────────────────────────────
         m_FakeAimRenderActive = false;
         bool fakeActive = false;
@@ -732,14 +735,6 @@ int CControls::SnapInput(int *pData)
                 pSend->m_TargetX = (int)fakeOffset.x;
                 pSend->m_TargetY = (int)fakeOffset.y;
         }
-
-        // v1.56.123: Basic Avoid Freeze — LAST input override.
-        // Called after all other manipulators (bot control, fake aim, laser
-        // unfreeze) so it can override any field including the player's own.
-        // Modifies m_aInputData (both server + prediction see the override).
-        GameClient()->m_BasicAvoidFreeze.ApplyOverride();
-        // Re-copy after override so server gets the modified input too.
-        mem_copy(pData, &m_aInputData[g_Config.m_ClDummy], sizeof(m_aInputData[0]));
 
         return sizeof(m_aInputData[0]);
 }
