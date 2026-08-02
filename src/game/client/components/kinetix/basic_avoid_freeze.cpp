@@ -280,14 +280,21 @@ void CBasicAvoidFreeze::ApplyOverride()
                 // Apply aim: silent or visible.
                 if(allowAim && (bestInput.m_TargetX != Current.m_TargetX || bestInput.m_TargetY != Current.m_TargetY))
                 {
-                        // Both silent and visible: set m_aInputData TargetX/Y directly.
-                        // BAF runs before mem_copy, so this goes to server + prediction.
-                        // Silent = don't move visible crosshair (m_aMousePos unchanged).
-                        // Visible = also move crosshair.
-                        pInput->m_TargetX = bestInput.m_TargetX;
-                        pInput->m_TargetY = bestInput.m_TargetY;
-                        if(!g_Config.m_KxBafSilent)
+                        if(g_Config.m_KxBafSilent)
                         {
+                                // Silent: use laser unfreeze aim channel (same as aimbot).
+                                // SnapInput reads m_LaserUnfreezeAimActive and applies offset
+                                // to m_aInputData.m_TargetX/Y right before sending to server.
+                                // Local prediction keeps the real aim (no visible crosshair move).
+                                // Fake aim is automatically blocked (checks !laserAimActive).
+                                pGame->m_Controls.m_LaserUnfreezeAimActive = true;
+                                pGame->m_Controls.m_LaserUnfreezeAimOffset = vec2((float)bestInput.m_TargetX, (float)bestInput.m_TargetY);
+                        }
+                        else
+                        {
+                                // Visible: move crosshair directly.
+                                pInput->m_TargetX = bestInput.m_TargetX;
+                                pInput->m_TargetY = bestInput.m_TargetY;
                                 pGame->m_Controls.m_aMousePos[g_Config.m_ClDummy] = vec2((float)bestInput.m_TargetX, (float)bestInput.m_TargetY);
                         }
                 }

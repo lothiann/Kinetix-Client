@@ -551,6 +551,17 @@ int CControls::SnapInput(int *pData)
         // v1.56.128: BAF — before fake aim + mem_copy. Only changes dir/jump/hook.
         GameClient()->m_BasicAvoidFreeze.ApplyOverride();
 
+        // BAF silent aim: if BAF set m_LaserUnfreezeAimActive above, consume it
+        // now (same tick) so the aim reaches the server without 1-tick delay.
+        // Also updates laserAimActive so fake aim is blocked when BAF silent is on.
+        if(m_LaserUnfreezeAimActive)
+        {
+                m_aInputData[g_Config.m_ClDummy].m_TargetX = (int)m_LaserUnfreezeAimOffset.x;
+                m_aInputData[g_Config.m_ClDummy].m_TargetY = (int)m_LaserUnfreezeAimOffset.y;
+                laserAimActive = true;
+                m_LaserUnfreezeAimActive = false;
+        }
+
         // ── Fake Aim ──────────────────────────────────────────────
         m_FakeAimRenderActive = false;
         bool fakeActive = false;
