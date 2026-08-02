@@ -343,6 +343,9 @@ MACRO_CONFIG_INT(KxFakeAimShowForMe, kx_fake_aim_show_for_me, 0, 0, 1, CFGFLAG_C
 
 // Basic Avoid Freeze - predict freeze via brute-force input combinations.
 MACRO_CONFIG_INT(KxBasicAvoidFreeze, kx_basic_avoid_freeze, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Basic Avoid Freeze: predict freeze and override input to avoid it")
+MACRO_CONFIG_INT(KxBafAvoidFreeze, kx_baf_avoid_freeze, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "BAF: avoid freeze tiles (m_FreezeTime > 0)")
+MACRO_CONFIG_INT(KxBafAvoidTeleport, kx_baf_avoid_teleport, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "BAF: avoid teleport tiles (IsTeleport/IsEvilTeleport)")
+MACRO_CONFIG_INT(KxBafAvoidDeath, kx_baf_avoid_death, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "BAF: avoid death tiles (TILE_DEATH / m_MarkedForDestroy)")
 MACRO_CONFIG_INT(KxBafDirection, kx_baf_direction, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "BAF: allow direction changes (-1/0/1)")
 MACRO_CONFIG_INT(KxBafJump, kx_baf_jump, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "BAF: allow jump toggle")
 MACRO_CONFIG_INT(KxBafHook, kx_baf_hook, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "BAF: allow hook toggle")

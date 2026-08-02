@@ -281,6 +281,9 @@ static SRow g_EspChildren[] = {
 };
 // v1.56.121: "Basic Avoid Freeze" expandable.
 static SRow g_BasicAvoidFreezeChildren[] = {
+        {ERowType::Toggle, "Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Teleport", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Death", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Direction", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Jump", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Hook", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
@@ -292,7 +295,7 @@ static SRow g_AdvancedRows[] = {
         {ERowType::Expandable, "Laser unfreeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LaserUnfreezeChildren, 7},
         {ERowType::Expandable, "Fake Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_FakeAimChildren, 3},
         {ERowType::Expandable, "ESP", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_EspChildren, 9},
-        {ERowType::Expandable, "Basic Avoid Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BasicAvoidFreezeChildren, 5},
+        {ERowType::Expandable, "Basic Avoid Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BasicAvoidFreezeChildren, 8},
 };
 
 // ---------- Settings panel (6) ----------
@@ -1046,6 +1049,12 @@ if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, ro
                                         else if(str_comp(child.pName, "Show attempt") == 0)
                                                 child.on = g_Config.m_KxLaserUnfreezeShowAttempt != 0;
                                         // Basic Avoid Freeze children
+                                        else if(str_comp(child.pName, "Freeze") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
+                                                child.on = g_Config.m_KxBafAvoidFreeze != 0;
+                                        else if(str_comp(child.pName, "Teleport") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
+                                                child.on = g_Config.m_KxBafAvoidTeleport != 0;
+                                        else if(str_comp(child.pName, "Death") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
+                                                child.on = g_Config.m_KxBafAvoidDeath != 0;
                                         else if(str_comp(child.pName, "Direction") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
                                                 child.on = g_Config.m_KxBafDirection != 0;
                                         else if(str_comp(child.pName, "Jump") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
@@ -2415,6 +2424,12 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         else if(str_comp(pTarget->pName, "Show attempt") == 0)
                                                 g_Config.m_KxLaserUnfreezeShowAttempt = pTarget->on ? 1 : 0;
                                         // Basic Avoid Freeze toggles
+                                        else if(str_comp(pTarget->pName, "Freeze") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
+                                                g_Config.m_KxBafAvoidFreeze = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Teleport") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
+                                                g_Config.m_KxBafAvoidTeleport = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Death") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
+                                                g_Config.m_KxBafAvoidDeath = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Direction") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
                                                 g_Config.m_KxBafDirection = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Jump") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)

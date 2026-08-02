@@ -7,6 +7,8 @@
 #include <game/client/gameclient.h>
 #include <game/client/prediction/entities/character.h>
 #include <game/client/prediction/gameworld.h>
+#include <game/collision.h>
+#include <game/mapitems.h>
 #include <generated/protocol.h>
 
 void CBasicAvoidFreeze::OnReset()
@@ -42,6 +44,11 @@ bool CBasicAvoidFreeze::SimulateFreeze(int LocalId, const CNetObj_PlayerInput &I
         if(!pChar)
                 return false;
 
+        bool avoidFreeze = g_Config.m_KxBafAvoidFreeze != 0;
+        bool avoidTeleport = g_Config.m_KxBafAvoidTeleport != 0;
+        bool avoidDeath = g_Config.m_KxBafAvoidDeath != 0;
+        CCollision *pCol = pChar->Collision();
+
         int StartTick = SimWorld.GameTick();
         for(int t = 0; t < Ticks; t++)
         {
@@ -50,11 +57,37 @@ bool CBasicAvoidFreeze::SimulateFreeze(int LocalId, const CNetObj_PlayerInput &I
                 pChar->OnPredictedInput(&Input);
                 SimWorld.Tick();
 
+                // Character removed from world = death
                 if(!SimWorld.GetCharacterById(LocalId))
-                        return false; // character died/removed — not freeze
+                        return avoidDeath;
 
-                if(pChar->m_FreezeTime > 0)
-                        return true; // freeze detected
+                // Freeze: m_FreezeTime > 0
+                if(avoidFreeze && pChar->m_FreezeTime > 0)
+                        return true;
+
+                // Death: TILE_DEATH at position
+                if(avoidDeath)
+                {
+                        int Idx = pCol->GetPureMapIndex(pChar->m_Pos);
+                        if(Idx >= 0)
+                        {
+                                int Tile = pCol->GetTileIndex(Idx);
+                                int FTile = pCol->GetFrontTileIndex(Idx);
+                                if(Tile == TILE_DEATH || FTile == TILE_DEATH)
+                                        return true;
+                        }
+                }
+
+                // Teleport: IsTeleport or IsEvilTeleport at position
+                if(avoidTeleport)
+                {
+                        int Idx = pCol->GetPureMapIndex(pChar->m_Pos);
+                        if(Idx >= 0)
+                        {
+                                if(pCol->IsTeleport(Idx) || pCol->IsEvilTeleport(Idx))
+                                        return true;
+                        }
+                }
         }
         return false;
 }
