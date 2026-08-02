@@ -39,12 +39,18 @@ public:
         void ApplyOverride();
 
 private:
-	// Returns tick (1-based) when danger first occurs, 0 if none.
-	int SimulateDangerTick(int LocalId, const CNetObj_PlayerInput &Input, int Ticks) const;
-	// First 'delay' ticks with delayInput, then comboInput. Returns danger tick.
-	int SimulateDangerTickDelayed(int LocalId, const CNetObj_PlayerInput &DelayInput,
-		int Delay, const CNetObj_PlayerInput &ComboInput, int Ticks) const;
-	int InputDiff(const CNetObj_PlayerInput &A, const CNetObj_PlayerInput &B) const;
+        // Returns tick (1-based) when danger first occurs, 0 if none.
+        int SimulateDangerTick(int LocalId, const CNetObj_PlayerInput &Input, int Ticks) const;
+        // First 'delay' ticks with delayInput, then comboInput. Returns danger tick.
+        int SimulateDangerTickDelayed(int LocalId, const CNetObj_PlayerInput &DelayInput,
+                int Delay, const CNetObj_PlayerInput &ComboInput, int Ticks) const;
+        int InputDiff(const CNetObj_PlayerInput &A, const CNetObj_PlayerInput &B) const;
+
+        // Hook release tracking. Set when ApplyOverride forces hook=1; consumed
+        // next tick when danger clears (NoHook simulation returns 0) so BAF can
+        // release the override hook and let the player's own hook state take over.
+        bool m_WasOverriding = false;
+        int m_OverrideHook = 0;
 };
 
 #endif // GAME_CLIENT_COMPONENTS_KINETIX_BASIC_AVOID_FREEZE_H

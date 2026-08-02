@@ -30,6 +30,8 @@
 
 void CBasicAvoidFreeze::OnReset()
 {
+        m_WasOverriding = false;
+        m_OverrideHook = 0;
 }
 
 int CBasicAvoidFreeze::InputDiff(const CNetObj_PlayerInput &A, const CNetObj_PlayerInput &B) const
@@ -144,7 +146,16 @@ void CBasicAvoidFreeze::ApplyOverride()
         NoHook.m_Hook = 0;
         int currentDanger = SimulateDangerTick(LocalId, NoHook, simTicks);
         if(currentDanger == 0)
+        {
+                // No danger without hook. If BAF overrode last tick with hook=1,
+                // release the hook now so the player's own hook state takes over.
+                if(m_WasOverriding && m_OverrideHook != 0)
+                {
+                        pInput->m_Hook = 0;
+                        m_WasOverriding = false;
+                }
                 return; // no danger at all — nothing to avoid
+        }
 
         // Build combo lists.
         bool allowDir = g_Config.m_KxBafDirection != 0;
@@ -282,6 +293,11 @@ void CBasicAvoidFreeze::ApplyOverride()
                 pInput->m_Direction = bestInput.m_Direction;
                 pInput->m_Jump = bestInput.m_Jump;
                 pInput->m_Hook = bestInput.m_Hook;
+
+                // Track hook override so next tick's NoHook danger check can release it
+                // once danger clears (see NoHook block at the top of ApplyOverride).
+                m_WasOverriding = true;
+                m_OverrideHook = bestInput.m_Hook;
 
                 // Apply aim: silent or visible.
                 if(allowAim && (bestInput.m_TargetX != Current.m_TargetX || bestInput.m_TargetY != Current.m_TargetY))
