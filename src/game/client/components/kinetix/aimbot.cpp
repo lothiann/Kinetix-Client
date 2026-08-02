@@ -350,6 +350,9 @@ void CAimBot::ApplyAim(int ClientId, const vec2 &MyPos, const SWeaponSettings &S
         }
         else // Trigger (1) or Always (2) — move visible crosshair
         {
+                // TODO: remove ghost when show for me — visible crosshair moves to
+                // aimbot aim, but for a few frames the player's real angle flickers
+                // through. Same issue as fake aim showForMe before v1.56.135 sync.
                 pGame->m_Controls.m_aMousePos[g_Config.m_ClDummy] = aimOffset;
         }
 }

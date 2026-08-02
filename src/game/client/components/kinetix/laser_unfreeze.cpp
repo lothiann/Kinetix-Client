@@ -309,6 +309,10 @@ void CBotNet::UpdateLaserUnfreeze()
     else
     {
         // Normal mode: set both m_aMousePos and m_TargetX/Y
+        // TODO: remove ghost when show for me — visible crosshair moves to
+        // laser bounce aim, but for a few frames the player's real angle
+        // flickers through. Same issue as fake aim showForMe before
+        // v1.56.135 sync.
         SetMousePos(pGame, g_Config.m_ClDummy, aimOffset);
     }
 
