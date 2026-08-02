@@ -26,6 +26,7 @@
 #include <game/collision.h>
 #include <game/mapitems.h>
 #include <generated/protocol.h>
+#include <game/client/components/kinetix/kinetix_internal.h> // SetMousePos
 
 void CBasicAvoidFreeze::OnReset()
 {
@@ -292,10 +293,11 @@ void CBasicAvoidFreeze::ApplyOverride()
                         }
                         else
                         {
-                                // Visible: move crosshair directly.
-                                pInput->m_TargetX = bestInput.m_TargetX;
-                                pInput->m_TargetY = bestInput.m_TargetY;
-                                pGame->m_Controls.m_aMousePos[g_Config.m_ClDummy] = vec2((float)bestInput.m_TargetX, (float)bestInput.m_TargetY);
+                                // Visible: move m_aMousePos + m_aInputData via SetMousePos helper,
+                                // exactly like Laser Unfreeze non-silent (laser_unfreeze.cpp:312)
+                                // and AimBot Trigger/Always (aimbot.cpp:353).
+                                // Fixes broken visible mode: Aim wasn't writing coordinates correctly.
+                                SetMousePos(pGame, g_Config.m_ClDummy, vec2((float)bestInput.m_TargetX, (float)bestInput.m_TargetY));
                         }
                 }
         }
