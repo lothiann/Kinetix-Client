@@ -1067,7 +1067,7 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
                                                 child.value = (float)g_Config.m_KxLaserUnfreezeTicks;
                                         else if(str_comp(child.pName, "Trigger ticks") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
                                                 child.value = (float)g_Config.m_KxLaserUnfreezeTriggerTicks;
-                                        else if(str_comp(child.pName, "Silent") == 0)
+                                        else if(str_comp(child.pName, "Silent") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
                                                 child.on = g_Config.m_KxLaserUnfreezeSilent != 0;
                                         else if(str_comp(child.pName, "Show attempt") == 0)
                                                 child.on = g_Config.m_KxLaserUnfreezeShowAttempt != 0;
@@ -2454,7 +2454,7 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         // Advanced → Laser unfreeze children
                                         else if(str_comp(pTarget->pName, "Auto laser") == 0)
                                                 g_Config.m_KxLaserUnfreezeAuto = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Silent") == 0)
+                                        else if(str_comp(pTarget->pName, "Silent") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
                                                 g_Config.m_KxLaserUnfreezeSilent = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Show attempt") == 0)
                                                 g_Config.m_KxLaserUnfreezeShowAttempt = pTarget->on ? 1 : 0;
