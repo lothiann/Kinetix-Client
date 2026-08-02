@@ -287,6 +287,10 @@ static SRow g_BasicAvoidFreezeChildren[] = {
         {ERowType::Toggle, "Direction", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Jump", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Hook", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "FOV", nullptr, false, false, 5.0f, 360.0f, 5.0f, 90.0f, "\xc2\xb0", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Angles", nullptr, false, false, 1.0f, 144.0f, 1.0f, 9.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Silent", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Ticks", nullptr, false, false, 1.0f, 20.0f, 1.0f, 10.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Trigger ticks", nullptr, false, false, 1.0f, 20.0f, 1.0f, 3.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
@@ -295,7 +299,7 @@ static SRow g_AdvancedRows[] = {
         {ERowType::Expandable, "Laser unfreeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LaserUnfreezeChildren, 7},
         {ERowType::Expandable, "Fake Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_FakeAimChildren, 3},
         {ERowType::Expandable, "ESP", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_EspChildren, 9},
-        {ERowType::Expandable, "Basic Avoid Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BasicAvoidFreezeChildren, 8},
+        {ERowType::Expandable, "Basic Avoid Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BasicAvoidFreezeChildren, 12},
 };
 
 // ---------- Settings panel (6) ----------
@@ -559,6 +563,23 @@ static bool SpooferChildVisible(const SRow *pChildren, int childCount, int idx)
                         }
                 }
                 return gitOn;
+        }
+        return true;
+}
+// v1.56.129: BAF — "Angles" + "Silent" visible only when Aim toggle is on.
+static bool BafChildVisible(const SRow *pChildren, int childCount, int idx)
+{
+        if(idx < 0 || idx >= childCount)
+                return false;
+        const SRow &row = pChildren[idx];
+        if(str_comp(row.pName, "FOV") == 0 || str_comp(row.pName, "Angles") == 0 || str_comp(row.pName, "Silent") == 0)
+        {
+                for(int i = 0; i < childCount; ++i)
+                {
+                        if(str_comp(pChildren[i].pName, "Aim") == 0)
+                                return pChildren[i].on;
+                }
+                return false;
         }
         return true;
 }
@@ -1011,6 +1032,8 @@ if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childC
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
         continue;
+if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
+        continue;
                                         if(str_comp(child.pName, "Latency (ms)") == 0)
                                                 child.value = (float)g_Config.m_KxDummyHammerLatencyMs;
                                         else if(str_comp(child.pName, "Filter: Jump") == 0)
@@ -1061,6 +1084,14 @@ if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, ro
                                                 child.on = g_Config.m_KxBafJump != 0;
                                         else if(str_comp(child.pName, "Hook") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
                                                 child.on = g_Config.m_KxBafHook != 0;
+                                        else if(str_comp(child.pName, "Aim") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
+                                                child.on = g_Config.m_KxBafAim != 0;
+                                        else if(str_comp(child.pName, "FOV") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
+                                                child.value = (float)g_Config.m_KxBafFov;
+                                        else if(str_comp(child.pName, "Angles") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
+                                                child.value = (float)g_Config.m_KxBafAngles;
+                                        else if(str_comp(child.pName, "Silent") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
+                                                child.on = g_Config.m_KxBafSilent != 0;
                                         else if(str_comp(child.pName, "Ticks") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
                                                 child.value = (float)g_Config.m_KxBafTicks;
                                         else if(str_comp(child.pName, "Trigger ticks") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
@@ -1712,6 +1743,10 @@ if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, ro
                                 g_Config.m_KxBafTicks = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Trigger ticks") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
                                 g_Config.m_KxBafTriggerTicks = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Angles") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
+                                g_Config.m_KxBafAngles = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "FOV") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
+                                g_Config.m_KxBafFov = (int)pTarget->value;
                         // v1.56.108: Line rendering per-component writes
                         else if(str_comp(pTarget->pName, "Line size") == 0 || str_comp(pTarget->pName, "Line opacity") == 0)
                         {
@@ -2436,6 +2471,10 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 g_Config.m_KxBafJump = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Hook") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
                                                 g_Config.m_KxBafHook = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Aim") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
+                                                g_Config.m_KxBafAim = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Silent") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
+                                                g_Config.m_KxBafSilent = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Show for me") == 0)
                                                 g_Config.m_KxFakeAimShowForMe = pTarget->on ? 1 : 0;
                                         // Pathfinder → Score method children
@@ -2613,6 +2652,10 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         g_Config.m_KxBafTicks = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Trigger ticks") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
                                         g_Config.m_KxBafTriggerTicks = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Angles") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
+                                        g_Config.m_KxBafAngles = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "FOV") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
+                                        g_Config.m_KxBafFov = (int)pTarget->value;
                                 // Settings → Line rendering children
                                 // v1.56.108: Line rendering per-component writes
                                 else if(str_comp(pTarget->pName, "Line size") == 0 || str_comp(pTarget->pName, "Line opacity") == 0)
@@ -2871,6 +2914,8 @@ if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childC
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
         continue;
+if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
+        continue;
                                 const float crh = RowHeight(child.type);
                                 if(r == m_DropdownRow && c == m_DropdownChild)
                                 {
@@ -3073,6 +3118,8 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
 if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childCount, c))
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
+        continue;
+if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
         continue;
                                 const float crh = RowHeight(child.type);
                                 if(r == m_DropdownRow && c == m_DropdownChild)
@@ -3360,6 +3407,8 @@ if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childC
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
         continue;
+if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
+        continue;
                                 const float crh = RowHeight(child.type);
                                 const float crw = rw - SUB_LIST_INDENT;
                                 if(PointInRect(mousePos, bodyX + SUB_LIST_INDENT, cursorY, crw, crh))
@@ -3424,6 +3473,8 @@ if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childC
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
         continue;
+if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
+        continue;
                                 sig = sig * 31u + (unsigned)(c + 100);
                         }
                 }
@@ -3486,6 +3537,8 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
 if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childCount, c))
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
+        continue;
+if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
         continue;
                                                 addRowNode(row.pChildren[c], true);
                                         }
@@ -3553,6 +3606,8 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
 if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childCount, c))
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
+        continue;
+if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
         continue;
                                 childrenBlockH += RowHeight(row.pChildren[c].type);
                                 visibleCount++;
@@ -3991,6 +4046,8 @@ if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childC
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
         continue;
+if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
+        continue;
                                         ++rowIdx;
                                 }
                                 // Update rowYOffset for lower rows (children are hidden).
@@ -4020,6 +4077,7 @@ if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, ro
                                 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c)) continue;
                                 if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childCount, c)) continue;
                                 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c)) continue;
+                                if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c)) continue;
                                 const YGNodeRef pn = rowNodes[preIdx];
                                 const float py2 = bodyY + YGNodeLayoutGetTop(pn) + rowYOffset;
                                 const float ph2 = YGNodeLayoutGetHeight(pn);
@@ -4056,6 +4114,8 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
 if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childCount, c))
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
+        continue;
+if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
         continue;
                                 const YGNodeRef cnode = rowNodes[rowIdx];
                                 const float crx = bodyX + YGNodeLayoutGetLeft(cnode);

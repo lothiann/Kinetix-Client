@@ -349,6 +349,10 @@ MACRO_CONFIG_INT(KxBafAvoidDeath, kx_baf_avoid_death, 0, 0, 1, CFGFLAG_CLIENT | 
 MACRO_CONFIG_INT(KxBafDirection, kx_baf_direction, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "BAF: allow direction changes (-1/0/1)")
 MACRO_CONFIG_INT(KxBafJump, kx_baf_jump, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "BAF: allow jump toggle")
 MACRO_CONFIG_INT(KxBafHook, kx_baf_hook, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "BAF: allow hook toggle")
+MACRO_CONFIG_INT(KxBafAim, kx_baf_aim, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "BAF: allow aim angle variation in brute-force")
+MACRO_CONFIG_INT(KxBafFov, kx_baf_fov, 90, 5, 360, CFGFLAG_CLIENT | CFGFLAG_SAVE, "BAF: aim FOV in degrees (spread angles within this cone)")
+MACRO_CONFIG_INT(KxBafAngles, kx_baf_angles, 9, 1, 144, CFGFLAG_CLIENT | CFGFLAG_SAVE, "BAF: number of aim angles to try (within FOV)")
+MACRO_CONFIG_INT(KxBafSilent, kx_baf_silent, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "BAF: silent aim (don't move visible crosshair)")
 MACRO_CONFIG_INT(KxBafTicks, kx_baf_ticks, 10, 1, 20, CFGFLAG_CLIENT | CFGFLAG_SAVE, "BAF: ticks to simulate per combination")
 MACRO_CONFIG_INT(KxBafTriggerTicks, kx_baf_trigger_ticks, 3, 1, 20, CFGFLAG_CLIENT | CFGFLAG_SAVE, "BAF: trigger prediction ticks (how far ahead to check for freeze)")
 
