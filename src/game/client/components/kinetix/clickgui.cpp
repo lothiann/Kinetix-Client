@@ -1059,9 +1059,9 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
                                         // Advanced → Laser unfreeze children
                                         else if(str_comp(child.pName, "Auto laser") == 0)
                                                 child.on = g_Config.m_KxLaserUnfreezeAuto != 0;
-                                        else if(str_comp(child.pName, "FOV") == 0)
+                                        else if(str_comp(child.pName, "FOV") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
                                                 child.value = (float)g_Config.m_KxLaserUnfreezeFov;
-                                        else if(str_comp(child.pName, "Angles") == 0)
+                                        else if(str_comp(child.pName, "Angles") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
                                                 child.value = (float)g_Config.m_KxLaserUnfreezeAngles;
                                         else if(str_comp(child.pName, "Ticks") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
                                                 child.value = (float)g_Config.m_KxLaserUnfreezeTicks;
@@ -1731,9 +1731,9 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
                                 g_Config.m_KxDummyHammerLatencyMs = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Version ID") == 0)
                                 g_Config.m_KxVersionSpoofId = (int)pTarget->value;
-                        else if(str_comp(pTarget->pName, "FOV") == 0)
+                        else if(str_comp(pTarget->pName, "FOV") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
                                 g_Config.m_KxLaserUnfreezeFov = (int)pTarget->value;
-                        else if(str_comp(pTarget->pName, "Angles") == 0)
+                        else if(str_comp(pTarget->pName, "Angles") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
                                 g_Config.m_KxLaserUnfreezeAngles = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Ticks") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
                                 g_Config.m_KxLaserUnfreezeTicks = (int)pTarget->value;
@@ -2640,9 +2640,9 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         g_Config.m_KxDummyHammerLatencyMs = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Version ID") == 0)
                                         g_Config.m_KxVersionSpoofId = (int)pTarget->value;
-                                else if(str_comp(pTarget->pName, "FOV") == 0)
+                                else if(str_comp(pTarget->pName, "FOV") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
                                         g_Config.m_KxLaserUnfreezeFov = (int)pTarget->value;
-                                else if(str_comp(pTarget->pName, "Angles") == 0)
+                                else if(str_comp(pTarget->pName, "Angles") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
                                         g_Config.m_KxLaserUnfreezeAngles = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Ticks") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
                                         g_Config.m_KxLaserUnfreezeTicks = (int)pTarget->value;
