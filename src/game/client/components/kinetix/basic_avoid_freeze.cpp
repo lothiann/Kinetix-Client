@@ -136,8 +136,13 @@ void CBasicAvoidFreeze::ApplyOverride()
         if(simTicks < 1) simTicks = 1;
         if(simTicks > 20) simTicks = 20;
 
-        // Optimization: only run if there's danger with current input within simTicks.
-        int currentDanger = SimulateDangerTick(LocalId, Current, simTicks);
+        // Danger check WITHOUT hook (m_Hook=0). This is the "natural" danger state —
+        // if the player isn't holding hook, are they in danger? This prevents BAF
+        // from staying inactive when the player holds hook that masks the danger
+        // (hook keeps them safe temporarily, but danger is still there without it).
+        CNetObj_PlayerInput NoHook = Current;
+        NoHook.m_Hook = 0;
+        int currentDanger = SimulateDangerTick(LocalId, NoHook, simTicks);
         if(currentDanger == 0)
                 return; // no danger at all — nothing to avoid
 
