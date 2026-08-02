@@ -39,12 +39,12 @@ public:
         void ApplyOverride();
 
 private:
-        // Simulate 'ticks' ticks with the given input on a fresh copy of the
-        // predicted world. Returns true if freeze occurs at any tick.
-        bool SimulateFreeze(int LocalId, const CNetObj_PlayerInput &Input, int Ticks) const;
-
-        // Count how many fields differ between two inputs (for scoring).
-        int InputDiff(const CNetObj_PlayerInput &A, const CNetObj_PlayerInput &B) const;
+	// Returns tick (1-based) when danger first occurs, 0 if none.
+	int SimulateDangerTick(int LocalId, const CNetObj_PlayerInput &Input, int Ticks) const;
+	// First 'delay' ticks with delayInput, then comboInput. Returns danger tick.
+	int SimulateDangerTickDelayed(int LocalId, const CNetObj_PlayerInput &DelayInput,
+		int Delay, const CNetObj_PlayerInput &ComboInput, int Ticks) const;
+	int InputDiff(const CNetObj_PlayerInput &A, const CNetObj_PlayerInput &B) const;
 };
 
 #endif // GAME_CLIENT_COMPONENTS_KINETIX_BASIC_AVOID_FREEZE_H
