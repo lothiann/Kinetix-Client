@@ -614,7 +614,13 @@ bool CBotNet::PfBacktrack()
                 m_PfVPath.resize(entry.vPathSize);
                 m_PfChunkCount = entry.chunkCount;
 
-                // Apply the alternative candidate
+                // Apply the alternative candidate.
+                // TODO(v1.56.153): on low FPS (8 FPS during Advanced Search), cand.traj[0]
+                // may not match m_PfVPath.back() (gap from incomplete simulation race).
+                // This causes the rendered visual path to break/jump at this chunk boundary.
+                // Need a continuity check: if distance(m_PfVPath.back(), cand.traj[0]) > 4px,
+                // bridge with cand.endPos before appending traj. Currently unfixed —
+                // happens rarely, only on low FPS, doesn't affect pathfinding logic.
                 PfBacktrackEntry::Candidate &cand = entry.candidates[nextIdx];
                 for(size_t i = 1; i < cand.traj.size(); i++)
                         m_PfVPath.push_back(cand.traj[i]);
