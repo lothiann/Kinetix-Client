@@ -396,8 +396,6 @@ public:
                 bool reachedFinish = false;
                 bool died = false;
                 int freezeTicks = 0;
-                std::vector<vec2> traj;        // cached trajectory from simulation
-                std::vector<PfHookSeg> hookSegs; // cached hook segments
         };
         std::vector<RheaIndividual> m_PfRHAPopulation;
         bool m_PfRHAInitialized = false; // shift buffer: population carried from prev chunk

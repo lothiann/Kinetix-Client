@@ -418,8 +418,6 @@ int CBotNet::PfAStarStep()
                         ind.died = res.died && !res.reachedFinish;
                         ind.freezeTicks = res.freezeTicks;
                         ind.fitness = PfScoreChunk(cur.Pos, res.endPos, res.reachedFinish, ind.died, res.freezeTicks);
-                        ind.traj = res.traj;
-                        ind.hookSegs = res.hookSegs;
                 };
 
                 // Push an individual as A* child node.
@@ -446,8 +444,19 @@ int CBotNet::PfAStarStep()
                         child.F = child.G + (float)W * child.H;
                         child.ParentIdx = curIdx; child.PrimIdx = 0; child.PrimTicks = ChunkSize;
                         child.TickOffset = cur.TickOffset + ChunkSize;
-                        // Use cached traj/hookSegs from fnEvaluate — no re-simulation needed.
-                        child.Traj = ind.traj; child.HookSegs = ind.hookSegs;
+                        // Re-simulate for traj/hookSegs (needed for rendering).
+                        PfChunkResult res;
+                        FutureWorld.m_GameTick = RootStartTick + cur.TickOffset;
+                        pBot = PfSpawnSimBot(&FutureWorld, LocalID, cur.Pos, cur.Core.m_Vel,
+                             cur.Core.m_HookState, cur.Core.m_HookPos,
+                             cur.Core.m_HookDir, cur.Core.m_HookTick,
+                             cur.FreezeTime, cur.Core.m_Jumped);
+                        if(pBot)
+                        {
+                                { CCharacterCore c = pBot->GetCore(); c.m_JumpedTotal = cur.Core.m_JumpedTotal; pBot->SetCore(c); }
+                                PfSimulateChunk(&FutureWorld, LocalID, pBot, ind.inputs, RootStartTick + cur.TickOffset, res);
+                                child.Traj = res.traj; child.HookSegs = res.hookSegs;
+                        }
                         child.Inputs = ind.inputs;
                         m_PfANodes.push_back(child);
                         PfAStarHeapPush(m_PfAOpen, m_PfANodes, (int)m_PfANodes.size() - 1);
