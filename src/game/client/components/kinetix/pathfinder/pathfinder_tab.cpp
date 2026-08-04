@@ -58,6 +58,8 @@ void CBotNet::PfResetRun()
         m_PfABestG.clear();
         m_PfAGoalIdx = -1;
         m_PfAStarted = false;
+        m_PfRHAInitialized = false;
+        m_PfRHAPopulation.clear();
         m_PfAPathReady = false;
         m_PfAExpandCount = 0;
         m_PfFullInputs.clear();

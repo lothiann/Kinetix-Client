@@ -378,6 +378,28 @@ public:
         std::vector<CNetObj_PlayerInput> m_PfFullInputs;
         size_t m_PfFullInputsIdx;
 
+        // RHEA (Rolling Horizon Evolutionary Algorithm) — replaces Advanced Search.
+        // Population of input sequences, evolved over generations.
+        struct RheaIndividual
+        {
+                std::vector<CNetObj_PlayerInput> inputs;
+                float fitness = -1e18f;
+                vec2 endPos = vec2(0, 0);
+                vec2 endVel = vec2(0, 0);
+                int endHookState = 0;
+                vec2 endHookPos = vec2(0, 0);
+                vec2 endHookDir = vec2(0, 0);
+                int endHookTick = 0;
+                int endJumped = 0;
+                int endJumpedTotal = 0;
+                int endFreezeTime = 0;
+                bool reachedFinish = false;
+                bool died = false;
+                int freezeTicks = 0;
+        };
+        std::vector<RheaIndividual> m_PfRHAPopulation;
+        bool m_PfRHAInitialized = false; // shift buffer: population carried from prev chunk
+
         // kx_pathfinder_go: playback m_PfFullInputs on real player.
         // m_PfGoActive = true → ApplyPfGoInput() called from SnapInput each tick.
         // m_PfGoIdx advances per tick; stops when reaches end of m_PfFullInputs.
