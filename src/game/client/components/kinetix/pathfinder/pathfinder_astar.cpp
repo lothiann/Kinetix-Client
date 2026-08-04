@@ -281,7 +281,8 @@ int CBotNet::PfAStarStep()
                 bool endGrounded = pColl->IsOnGround(res.endPos, CCharacterCore::PhysicalSize());
 
                 uint64_t newKey = PfAStarKey(endCore, res.endFreezeTime, endGrounded);
-                float newG = cur.G + (float)ft + PfAStarStuckPenalty(cur.Pos, res.endPos);
+                float score = PfScoreChunk(cur.Pos, res.endPos, res.reachedFinish, res.died, res.freezeTicks);
+                float newG = cur.G + (float)ft + PfAStarStuckPenalty(cur.Pos, res.endPos) - score;
                 auto it = m_PfABestG.find(newKey);
                 if(it != m_PfABestG.end() && it->second <= newG)
                         return 0;
@@ -370,7 +371,8 @@ int CBotNet::PfAStarStep()
                         bool endGrounded = pColl->IsOnGround(res.endPos, CCharacterCore::PhysicalSize());
 
                         uint64_t newKey = PfAStarKey(endCore, res.endFreezeTime, endGrounded);
-                        float newG = cur.G + (float)ChunkSize + PfAStarStuckPenalty(cur.Pos, res.endPos);
+                        float score = PfScoreChunk(cur.Pos, res.endPos, res.reachedFinish, res.died, res.freezeTicks);
+                        float newG = cur.G + (float)ChunkSize + PfAStarStuckPenalty(cur.Pos, res.endPos) - score;
                         auto it = m_PfABestG.find(newKey);
                         if(it != m_PfABestG.end() && it->second <= newG)
                                 return;
