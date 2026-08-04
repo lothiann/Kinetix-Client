@@ -2547,6 +2547,31 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         else if(BN.m_PfState == PF_STATE_RUNNING)
                                         {
                                                 BN.m_PfState = PF_STATE_FINISHED;
+                                                // Stop pressed: if A* hasn't reached goal yet, try to
+                                                // reconstruct best partial path so kx_pathfinder_go works.
+                                                if(!BN.m_PfAPathReady && !BN.m_PfAOpen.empty())
+                                                {
+                                                        // Find best open node (lowest H = closest to goal)
+                                                        int bestIdx = -1;
+                                                        float bestH = 1e18f;
+                                                        for(int idx : BN.m_PfAOpen)
+                                                        {
+                                                                if(idx < 0 || idx >= (int)BN.m_PfANodes.size())
+                                                                        continue;
+                                                                if(BN.m_PfANodes[idx].H < bestH)
+                                                                {
+                                                                        bestH = BN.m_PfANodes[idx].H;
+                                                                        bestIdx = idx;
+                                                                }
+                                                        }
+                                                        if(bestIdx >= 0)
+                                                        {
+                                                                BN.m_PfAGoalIdx = bestIdx;
+                                                                BN.PfAStarReconstruct();
+                                                                BN.m_PfAPathReady = true;
+                                                                BN.m_PfFullInputsIdx = 0;
+                                                        }
+                                                }
                                         }
                                         else // PF_STATE_FINISHED
                                         {

@@ -165,16 +165,17 @@ void CBotNet::ConPfGo(IConsole::IResult *pResult, void *pUserData)
         int s = pResult->GetInteger(0);
         if(s == 1)
         {
-                // Start playback: only allowed when pathfinder state is FINISHED
-                // (path is ready in m_PfFullInputs).
-                if(p->m_PfState != PF_STATE_FINISHED)
+                // Start playback when path is ready (m_PfAPathReady=true).
+                // This covers both: pathfinder finished on its own (reached goal)
+                // AND user pressed Stop (clickgui.cpp reconstructs best partial path).
+                if(!p->m_PfAPathReady)
                 {
-                        dbg_msg("pathfinder", "kx_pathfinder_go 1: path not ready (state=%d, need FINISHED=2)", p->m_PfState);
+                        dbg_msg("pathfinder", "kx_pathfinder_go 1: path not ready (run pathfinder first, or press Stop after it finds a path)");
                         return;
                 }
                 if(p->m_PfFullInputs.empty())
                 {
-                        dbg_msg("pathfinder", "kx_pathfinder_go 1: m_PfFullInputs is empty");
+                        dbg_msg("pathfinder", "kx_pathfinder_go 1: m_PfFullInputs is empty (path found but no inputs?)");
                         return;
                 }
                 p->m_PfGoActive = true;
