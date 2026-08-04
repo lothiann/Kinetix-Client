@@ -258,9 +258,73 @@ void CBotNet::PfComputeFlowField()
                         }
                 }
         }
-}
 
-// Score a candidate chunk.  Higher = better.
+        // === Score field: 4× resolution BFS (8px cells) for distance reduction. ===
+        // Same BFS as flow field but with 4× finer grid. Used only by PfScoreChunk
+        // for sub-tile distance scoring. Walls from m_pMapGrid/m_pFrontGrid are
+        // sampled at the sub-cell level.
+        m_PfScoreFieldW = m_MapWidth * 4;
+        m_PfScoreFieldH = m_MapHeight * 4;
+        int scoreSize = m_PfScoreFieldW * m_PfScoreFieldH;
+        if(m_PfScoreField)
+                delete[] m_PfScoreField;
+        m_PfScoreField = new float[scoreSize];
+        for(int i = 0; i < scoreSize; i++)
+                m_PfScoreField[i] = 1e18f;
+
+        // Check if an 8px sub-cell is walkable (not solid, not death).
+        auto subWalkable = [&](int scx, int scy) -> bool {
+                int tx = scx / 4;
+                int ty = scy / 4;
+                if(tx < 0 || ty < 0 || tx >= m_MapWidth || ty >= m_MapHeight)
+                        return false;
+                int idx = ty * m_MapWidth + tx;
+                unsigned char t = m_pMapGrid[idx];
+                unsigned char ft = m_pFrontGrid[idx];
+                return t != TILE_SOLID && t != TILE_DEATH && ft != TILE_DEATH;
+        };
+
+        std::priority_queue<PfNode, std::vector<PfNode>, std::greater<PfNode>> scoreOpen;
+        for(const vec2 &fp : m_PfFinishTiles)
+        {
+                int scx = (int)(fp.x / 8.0f);
+                int scy = (int)(fp.y / 8.0f);
+                if(!subWalkable(scx, scy))
+                        continue;
+                m_PfScoreField[scy * m_PfScoreFieldW + scx] = 0.0f;
+                scoreOpen.push({0.0f, 0.0f, scy, scx});
+        }
+        while(!scoreOpen.empty())
+        {
+                PfNode cur = scoreOpen.top();
+                scoreOpen.pop();
+                int cIdx = cur.r * m_PfScoreFieldW + cur.c;
+                if(cur.g > m_PfScoreField[cIdx])
+                        continue;
+                for(int d = 0; d < 8; d++)
+                {
+                        int nr = cur.r + dr[d];
+                        int nc = cur.c + dc[d];
+                        if(nc < 0 || nr < 0 || nc >= m_PfScoreFieldW || nr >= m_PfScoreFieldH)
+                                continue;
+                        if(!subWalkable(nc, nr))
+                                continue;
+                        if(abs(dr[d]) + abs(dc[d]) == 2)
+                        {
+                                if(!subWalkable(cur.c, cur.r + dr[d]) || !subWalkable(cur.c + dc[d], cur.r))
+                                        continue;
+                        }
+                        float moveCost = (abs(dr[d]) + abs(dc[d]) == 2) ? SQRT2 : 1.0f;
+                        float newG = cur.g + moveCost;
+                        int nIdx = nr * m_PfScoreFieldW + nc;
+                        if(newG < m_PfScoreField[nIdx])
+                        {
+                                m_PfScoreField[nIdx] = newG;
+                                scoreOpen.push({newG, newG, nr, nc});
+                        }
+                }
+        }
+}
 // Simplified: flowProgress + finishBonus - deathPenalty - freezePenalty - stallPenalty.
 
 float CBotNet::PfScoreChunk(const vec2 &startPos, const vec2 &endPos, bool reachedFinish, bool died,
@@ -312,24 +376,23 @@ float CBotNet::PfScoreChunk(const vec2 &startPos, const vec2 &endPos, bool reach
                 }
         }
 
-        // Score method: distance reduction (BFS flow-field distance to finish).
-        // Gated by KxPfScoreDist. Positive when chunk moved us closer to finish
-        // in the BFS distance field. Uses flow field (not euclidean) so walls
-        // are accounted for — same algorithm as the old always-on flow progress.
-        if(g_Config.m_KxPfScoreDist && m_PfFlowField && m_MapWidth > 0 && m_MapHeight > 0)
+        // Score method: distance reduction — uses 4× resolution score field (8px cells).
+        // Sub-tile precision: movement within one 32px tile still produces non-zero score.
+        // Walls accounted for (BFS through walkable sub-cells).
+        if(g_Config.m_KxPfScoreDist && m_PfScoreField && m_PfScoreFieldW > 0 && m_PfScoreFieldH > 0)
         {
-                int sx = pf_clamp((int)(startPos.x / 32.0f), 0, m_MapWidth - 1);
-                int sy = pf_clamp((int)(startPos.y / 32.0f), 0, m_MapHeight - 1);
-                int ex = pf_clamp((int)(endPos.x / 32.0f), 0, m_MapWidth - 1);
-                int ey = pf_clamp((int)(endPos.y / 32.0f), 0, m_MapHeight - 1);
-                float dStart = m_PfFlowField[sy * m_MapWidth + sx];
-                float dEnd = m_PfFlowField[ey * m_MapWidth + ex];
+                int sx = pf_clamp((int)(startPos.x / 8.0f), 0, m_PfScoreFieldW - 1);
+                int sy = pf_clamp((int)(startPos.y / 8.0f), 0, m_PfScoreFieldH - 1);
+                int ex = pf_clamp((int)(endPos.x / 8.0f), 0, m_PfScoreFieldW - 1);
+                int ey = pf_clamp((int)(endPos.y / 8.0f), 0, m_PfScoreFieldH - 1);
+                float dStart = m_PfScoreField[sy * m_PfScoreFieldW + sx];
+                float dEnd = m_PfScoreField[ey * m_PfScoreFieldW + ex];
                 if(dStart < INF && dEnd < INF)
                         score += (dStart - dEnd) * 10.0f;
                 else if(dEnd < INF && dStart >= INF)
-                        score += 50.0f; // escaped an unreachable tile
+                        score += 50.0f; // escaped an unreachable cell
                 else if(dEnd >= INF && dStart < INF)
-                        score -= 50.0f; // moved INTO an unreachable tile
+                        score -= 50.0f; // moved INTO an unreachable cell
         }
 
         // Finish bonus

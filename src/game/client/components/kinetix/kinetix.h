@@ -342,7 +342,10 @@ public:
         int m_PfTickCounter;            // throttle: counts ticks until next chunk (perf% spread)
         std::vector<vec2> m_PfVPath;    // accumulated trajectory (start..current)
         std::vector<vec2> m_PfFinishTiles; // cached finish tile centers (multi-source BFS sources)
-        float *m_PfFlowField;           // BFS distance field to nearest finish
+        float *m_PfFlowField;           // BFS distance field to nearest finish (32px tiles)
+        float *m_PfScoreField = nullptr; // BFS distance field 4× resolution (8px cells) for distance reduction scoring
+        int m_PfScoreFieldW = 0;        // score field width (m_MapWidth * 4)
+        int m_PfScoreFieldH = 0;        // score field height (m_MapHeight * 4)
         int m_PfTotalFreezeTicks;       // running total for dynamic freeze penalty
         PfBacktrackEntry m_PfBacktrack[PF_BACKTRACK_DEPTH];
         int m_PfBacktrackIdx;           // stack index (next write position, capped at PF_BACKTRACK_DEPTH)

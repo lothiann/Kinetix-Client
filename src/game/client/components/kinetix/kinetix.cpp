@@ -113,6 +113,7 @@ CBotNet::~CBotNet()
         if(m_pfVisited) delete[] m_pfVisited;
         if(m_PfPlayerPenalty) delete[] m_PfPlayerPenalty;
         if(m_PfFlowField) delete[] m_PfFlowField;
+        if(m_PfScoreField) delete[] m_PfScoreField;
 }
 
 // =========================================================
