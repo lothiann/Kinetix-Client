@@ -262,9 +262,9 @@ void CBotNet::PfComputeFlowField()
         }
 
         // === Score field: 4× resolution BFS (8px cells) for distance reduction. ===
-        // Same BFS as flow field but with 4× finer grid. Used only by PfScoreChunk
-        // for sub-tile distance scoring. Walls from m_pMapGrid/m_pFrontGrid are
-        // sampled at the sub-cell level.
+        // Same two-phase BFS as flow field but with 4× finer grid.
+        // Phase 1: skip freeze tiles (freeze = unreachable).
+        // Phase 2: if Phase 1 didn't reach start, redo with freeze passable (cost 1).
         m_PfScoreFieldW = m_MapWidth * 4;
         m_PfScoreFieldH = m_MapHeight * 4;
         int scoreSize = m_PfScoreFieldW * m_PfScoreFieldH;
@@ -286,6 +286,18 @@ void CBotNet::PfComputeFlowField()
                 return t != TILE_SOLID && t != TILE_DEATH && ft != TILE_DEATH;
         };
 
+        // Check if an 8px sub-cell is a freeze tile (mirrors fnIsFreeze from flow field).
+        auto subIsFreeze = [&](int scx, int scy) -> bool {
+                int tx = scx / 4;
+                int ty = scy / 4;
+                if(tx < 0 || ty < 0 || tx >= m_MapWidth || ty >= m_MapHeight)
+                        return false;
+                int idx = ty * m_MapWidth + tx;
+                return m_pMapGrid[idx] == TILE_FREEZE || m_pMapGrid[idx] == TILE_DFREEZE ||
+                       m_pFrontGrid[idx] == TILE_FREEZE || m_pFrontGrid[idx] == TILE_DFREEZE;
+        };
+
+        // ── Phase 1: BFS strictly skip freeze tiles. ──
         std::priority_queue<PfNode, std::vector<PfNode>, std::greater<PfNode>> scoreOpen;
         for(const vec2 &fp : m_PfFinishTiles)
         {
@@ -311,6 +323,8 @@ void CBotNet::PfComputeFlowField()
                                 continue;
                         if(!subWalkable(nc, nr))
                                 continue;
+                        if(subIsFreeze(nc, nr))
+                                continue; // Phase 1: strictly skip freeze
                         if(abs(dr[d]) + abs(dc[d]) == 2)
                         {
                                 if(!subWalkable(cur.c, cur.r + dr[d]) || !subWalkable(cur.c + dc[d], cur.r))
@@ -323,6 +337,66 @@ void CBotNet::PfComputeFlowField()
                         {
                                 m_PfScoreField[nIdx] = newG;
                                 scoreOpen.push({newG, newG, nr, nc});
+                        }
+                }
+        }
+
+        // ── Phase 1 reachability check: did Phase 1 reach the bot's start? ──
+        int startSCX = (int)(m_PfStartPos.x / 8.0f);
+        int startSCY = (int)(m_PfStartPos.y / 8.0f);
+        bool scorePhase1ReachedStart = false;
+        if(startSCX >= 0 && startSCY >= 0 && startSCX < m_PfScoreFieldW && startSCY < m_PfScoreFieldH &&
+           (m_PfStartPos.x != 0.0f || m_PfStartPos.y != 0.0f))
+        {
+                scorePhase1ReachedStart = m_PfScoreField[startSCY * m_PfScoreFieldW + startSCX] < 1e17f;
+        }
+
+        // ── Phase 2: full reset + BFS with freeze passable (cost 1). ──
+        // Only if Phase 1 did NOT reach the bot's start (path requires freeze).
+        if(!scorePhase1ReachedStart)
+        {
+                for(int i = 0; i < scoreSize; i++)
+                        m_PfScoreField[i] = 1e18f;
+
+                std::priority_queue<PfNode, std::vector<PfNode>, std::greater<PfNode>> scoreOpen2;
+                for(const vec2 &fp : m_PfFinishTiles)
+                {
+                        int scx = (int)(fp.x / 8.0f);
+                        int scy = (int)(fp.y / 8.0f);
+                        if(!subWalkable(scx, scy))
+                                continue;
+                        m_PfScoreField[scy * m_PfScoreFieldW + scx] = 0.0f;
+                        scoreOpen2.push({0.0f, 0.0f, scy, scx});
+                }
+                while(!scoreOpen2.empty())
+                {
+                        PfNode cur = scoreOpen2.top();
+                        scoreOpen2.pop();
+                        int cIdx = cur.r * m_PfScoreFieldW + cur.c;
+                        if(cur.g > m_PfScoreField[cIdx])
+                                continue;
+                        for(int d = 0; d < 8; d++)
+                        {
+                                int nr = cur.r + dr[d];
+                                int nc = cur.c + dc[d];
+                                if(nc < 0 || nr < 0 || nc >= m_PfScoreFieldW || nr >= m_PfScoreFieldH)
+                                        continue;
+                                if(!subWalkable(nc, nr))
+                                        continue;
+                                // Phase 2: freeze passable at cost 1 (same as normal tiles).
+                                if(abs(dr[d]) + abs(dc[d]) == 2)
+                                {
+                                        if(!subWalkable(cur.c, cur.r + dr[d]) || !subWalkable(cur.c + dc[d], cur.r))
+                                                continue;
+                                }
+                                float moveCost = (abs(dr[d]) + abs(dc[d]) == 2) ? SQRT2 : 1.0f;
+                                float newG = cur.g + moveCost;
+                                int nIdx = nr * m_PfScoreFieldW + nc;
+                                if(newG < m_PfScoreField[nIdx])
+                                {
+                                        m_PfScoreField[nIdx] = newG;
+                                        scoreOpen2.push({newG, newG, nr, nc});
+                                }
                         }
                 }
         }
