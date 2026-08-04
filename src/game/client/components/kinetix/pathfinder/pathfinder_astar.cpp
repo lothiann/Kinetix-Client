@@ -3,6 +3,20 @@
 #include <unordered_set>
 #include <algorithm>
 
+// Deterministic PRNG for RHEA — replaces rand() so pathfinder produces
+// the same path every time for the same input state.
+static uint32_t PfRheaState = 12345;
+static inline void PfRheaReset() { PfRheaState = 12345; }
+static inline uint32_t PfRheaNext()
+{
+        PfRheaState ^= PfRheaState << 13;
+        PfRheaState ^= PfRheaState >> 17;
+        PfRheaState ^= PfRheaState << 5;
+        return PfRheaState;
+}
+static inline int PfRheaRand(int max) { return (int)(PfRheaNext() % (uint32_t)max); }
+static inline float PfRheaChance() { return (float)PfRheaNext() / 4294967295.0f; }
+
 static uint64_t PfAStarKey(const CCharacterCore &core, int freezeTime, bool grounded)
 {
         int tx = (int)(core.m_Pos.x / 32.0f);
@@ -356,12 +370,12 @@ int CBotNet::PfAStarStep()
                 auto fnRandomInput = [&]() -> CNetObj_PlayerInput {
                         CNetObj_PlayerInput inp;
                         mem_zero(&inp, sizeof(inp));
-                        inp.m_Direction = aDirs[rand() % 3];
-                        inp.m_Jump = rand() % 2;
-                        int hookVal = rand() % 2;
+                        inp.m_Direction = aDirs[PfRheaRand(3)];
+                        inp.m_Jump = PfRheaRand(2);
+                        int hookVal = PfRheaRand(2);
                         if(hookVal == 1 && !hookIdle && !hookActive)
                                 hookVal = 0;
-                        int angleIdx = rand() % HookAngles;
+                        int angleIdx = PfRheaRand(HookAngles);
                         if(hookVal == 1 && hookIdle && !aHookRays[angleIdx].hasTarget)
                                 hookVal = 0;
                         inp.m_Hook = hookVal;
@@ -404,6 +418,8 @@ int CBotNet::PfAStarStep()
                         ind.died = res.died && !res.reachedFinish;
                         ind.freezeTicks = res.freezeTicks;
                         ind.fitness = PfScoreChunk(cur.Pos, res.endPos, res.reachedFinish, ind.died, res.freezeTicks);
+                        ind.traj = res.traj;
+                        ind.hookSegs = res.hookSegs;
                 };
 
                 // Push an individual as A* child node.
@@ -430,19 +446,8 @@ int CBotNet::PfAStarStep()
                         child.F = child.G + (float)W * child.H;
                         child.ParentIdx = curIdx; child.PrimIdx = 0; child.PrimTicks = ChunkSize;
                         child.TickOffset = cur.TickOffset + ChunkSize;
-                        // Re-simulate for traj/hookSegs (needed for rendering).
-                        PfChunkResult res;
-                        FutureWorld.m_GameTick = RootStartTick + cur.TickOffset;
-                        pBot = PfSpawnSimBot(&FutureWorld, LocalID, cur.Pos, cur.Core.m_Vel,
-                             cur.Core.m_HookState, cur.Core.m_HookPos,
-                             cur.Core.m_HookDir, cur.Core.m_HookTick,
-                             cur.FreezeTime, cur.Core.m_Jumped);
-                        if(pBot)
-                        {
-                                { CCharacterCore c = pBot->GetCore(); c.m_JumpedTotal = cur.Core.m_JumpedTotal; pBot->SetCore(c); }
-                                PfSimulateChunk(&FutureWorld, LocalID, pBot, ind.inputs, RootStartTick + cur.TickOffset, res);
-                                child.Traj = res.traj; child.HookSegs = res.hookSegs;
-                        }
+                        // Use cached traj/hookSegs from fnEvaluate — no re-simulation needed.
+                        child.Traj = ind.traj; child.HookSegs = ind.hookSegs;
                         child.Inputs = ind.inputs;
                         m_PfANodes.push_back(child);
                         PfAStarHeapPush(m_PfAOpen, m_PfANodes, (int)m_PfANodes.size() - 1);
@@ -541,8 +546,8 @@ int CBotNet::PfAStarStep()
                         std::sort(m_PfRHAPopulation.begin(), m_PfRHAPopulation.end(),
                                 [](const RheaIndividual &a, const RheaIndividual &b) { return a.fitness > b.fitness; });
                         auto fnTournament = [&]() -> int {
-                                int a = rand() % (popSize / 2 + 1);
-                                int b = rand() % (popSize / 2 + 1);
+                                int a = PfRheaRand(popSize / 2 + 1);
+                                int b = PfRheaRand(popSize / 2 + 1);
                                 return (m_PfRHAPopulation[a].fitness > m_PfRHAPopulation[b].fitness) ? a : b;
                         };
                         int offspringCount = popSize / 2;
@@ -552,14 +557,14 @@ int CBotNet::PfAStarStep()
                                 int p2 = fnTournament();
                                 RheaIndividual child;
                                 child.inputs.resize(ChunkSize);
-                                int xpoint = rand() % ChunkSize;
+                                int xpoint = PfRheaRand(ChunkSize);
                                 for(int t = 0; t < xpoint; t++)
                                         child.inputs[t] = m_PfRHAPopulation[p1].inputs[t];
                                 for(int t = xpoint; t < ChunkSize; t++)
                                         child.inputs[t] = m_PfRHAPopulation[p2].inputs[t];
-                                if(rand() % 100 < 30)
+                                if(PfRheaChance() < 0.3f)
                                 {
-                                        int mpoint = 1 + rand() % pf_max(1, ChunkSize - 1);
+                                        int mpoint = 1 + PfRheaRand(pf_max(1, ChunkSize - 1));
                                         for(int t = mpoint; t < ChunkSize; t++)
                                                 child.inputs[t] = fnRandomInput();
                                 }
