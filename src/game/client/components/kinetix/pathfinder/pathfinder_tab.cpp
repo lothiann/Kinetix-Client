@@ -405,7 +405,7 @@ float CBotNet::PfScoreChunk(const vec2 &startPos, const vec2 &endPos, bool reach
 
         // Dynamic freeze penalty (increases over time to discourage freeze routes)
         if(g_Config.m_KxPfFineFreeze)
-                score -= freezeTicks * (1.0f + m_PfTotalFreezeTicks / 64.0f);
+                score -= freezeTicks * (10.0f + m_PfTotalFreezeTicks / 8.0f);
 
         // Stall penalty
         if(distance(endPos, startPos) < 2.0f)
