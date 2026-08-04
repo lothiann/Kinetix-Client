@@ -448,7 +448,7 @@ int CBotNet::PfAStarStep()
                         PfAStarHeapPush(m_PfAOpen, m_PfANodes, (int)m_PfANodes.size() - 1);
                 };
 
-                int popSize = pf_clamp(g_Config.m_KxPfCandidates, CConfig::PF_CANDIDATES_MIN, PF_CANDIDATES_MAX);
+                int popSize = pf_clamp(g_Config.m_KxPfCandidates, CConfig::PF_CANDIDATES_MIN, CConfig::PF_CANDIDATES_MAX);
                 int numGenerations = pf_clamp(g_Config.m_KxPfRheaGenerations, 1, 100);
                 int pushCount = pf_clamp(g_Config.m_KxPfBacktrackCandidates, 1, popSize);
 
