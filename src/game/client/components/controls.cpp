@@ -551,16 +551,10 @@ int CControls::SnapInput(int *pData)
         // v1.56.128: BAF — before fake aim + mem_copy. Only changes dir/jump/hook.
         GameClient()->m_BasicAvoidFreeze.ApplyOverride();
 
-        // BAF silent aim: if BAF set m_LaserUnfreezeAimActive above, consume it
-        // now (same tick) so the aim reaches the server without 1-tick delay.
-        // Also updates laserAimActive so fake aim is blocked when BAF silent is on.
-        if(m_LaserUnfreezeAimActive)
-        {
-                m_aInputData[g_Config.m_ClDummy].m_TargetX = (int)m_LaserUnfreezeAimOffset.x;
-                m_aInputData[g_Config.m_ClDummy].m_TargetY = (int)m_LaserUnfreezeAimOffset.y;
-                laserAimActive = true;
-                m_LaserUnfreezeAimActive = false;
-        }
+        // kx_pathfinder_go: replay pathfinder path on real player input.
+        // Runs after BAF (BAF has priority for freeze avoidance) but before
+        // fake aim + mem_copy so the path input reaches the server.
+        GameClient()->m_BotNet.ApplyPfGoInput(&m_aInputData[g_Config.m_ClDummy]);
 
         // ── Fake Aim ──────────────────────────────────────────────
         m_FakeAimRenderActive = false;

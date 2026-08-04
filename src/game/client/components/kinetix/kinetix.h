@@ -375,6 +375,12 @@ public:
         std::vector<CNetObj_PlayerInput> m_PfFullInputs;
         size_t m_PfFullInputsIdx;
 
+        // kx_pathfinder_go: playback m_PfFullInputs on real player.
+        // m_PfGoActive = true → ApplyPfGoInput() called from SnapInput each tick.
+        // m_PfGoIdx advances per tick; stops when reaches end of m_PfFullInputs.
+        bool m_PfGoActive = false;
+        size_t m_PfGoIdx = 0;
+
         // Per-dummy runtime state
         CBotNetDummy m_aDummies[MAX_DUMMIES];
 
@@ -435,6 +441,9 @@ public:
         void UpdatePathfinder();            // called from OnUpdate; runs one chunk if RUNNING
         void RenderPathfinderPath();        // called from OnRender; draws m_PfVPath like RenderPackage
         void PfResetRun();                  // clear vPath + sim state (start fresh from active player)
+        // kx_pathfinder_go: apply next m_PfFullInputs tick to real player input.
+        // Called from CControls::SnapInput before mem_copy. Returns true if applied.
+        bool ApplyPfGoInput(CNetObj_PlayerInput *pInput);
         void UpdateLaserUnfreeze();         // called from OnUpdate; predictive laser self-unfreeze
         void RenderLaserUnfreezePath();     // called from OnRender; draws successful laser path with fade
         void UpdateFakeAim();               // called from OnUpdate; fake aim for fun
@@ -515,6 +524,7 @@ public:
         static void ConPfCandidates(IConsole::IResult *pResult, void *pUserData);
         static void ConPfHookAngles(IConsole::IResult *pResult, void *pUserData);
         static void ConPfHorizon(IConsole::IResult *pResult, void *pUserData);
+        static void ConPfGo(IConsole::IResult *pResult, void *pUserData);       // kx_pathfinder_go 0|1  (1=play path on real player, 0=stop)
 
         // Placeholder processing for c_send and UI Send Command
         static std::string ReplacePlaceholders(const std::string &Cmd, int DummyIndex, CGameClient *pGame);

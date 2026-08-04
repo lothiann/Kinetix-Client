@@ -80,6 +80,31 @@ void CBotNet::PfResetRun()
                 m_PfFlowField ? "ok" : "null");
 }
 
+// kx_pathfinder_go: apply next path tick to real player input.
+// Called from CControls::SnapInput each tick when m_PfGoActive is true.
+// Advances m_PfGoIdx; auto-stops when end of m_PfFullInputs reached.
+bool CBotNet::ApplyPfGoInput(CNetObj_PlayerInput *pInput)
+{
+        if(!m_PfGoActive || !pInput)
+                return false;
+        if(m_PfGoIdx >= m_PfFullInputs.size())
+        {
+                // Playback finished.
+                m_PfGoActive = false;
+                dbg_msg("pathfinder", "kx_pathfinder_go: playback finished (%d ticks)", (int)m_PfFullInputs.size());
+                return false;
+        }
+        const CNetObj_PlayerInput &In = m_PfFullInputs[m_PfGoIdx];
+        // Apply direction, jump, hook, aim — full input except fire/weapon (let player keep their own).
+        pInput->m_Direction = In.m_Direction;
+        pInput->m_Jump = In.m_Jump;
+        pInput->m_Hook = In.m_Hook;
+        pInput->m_TargetX = In.m_TargetX;
+        pInput->m_TargetY = In.m_TargetY;
+        m_PfGoIdx++;
+        return true;
+}
+
 // Multi-source BFS: distance field to the NEAREST finish tile.
 
 void CBotNet::PfComputeFlowField()

@@ -159,6 +159,35 @@ void CBotNet::ConPfLive(IConsole::IResult *pResult, void *pUserData)
                 p->m_PfVPath.clear();
 }
 
+void CBotNet::ConPfGo(IConsole::IResult *pResult, void *pUserData)
+{
+        CBotNet *p = (CBotNet *)pUserData;
+        int s = pResult->GetInteger(0);
+        if(s == 1)
+        {
+                // Start playback: only allowed when pathfinder state is FINISHED
+                // (path is ready in m_PfFullInputs).
+                if(p->m_PfState != PF_STATE_FINISHED)
+                {
+                        dbg_msg("pathfinder", "kx_pathfinder_go 1: path not ready (state=%d, need FINISHED=2)", p->m_PfState);
+                        return;
+                }
+                if(p->m_PfFullInputs.empty())
+                {
+                        dbg_msg("pathfinder", "kx_pathfinder_go 1: m_PfFullInputs is empty");
+                        return;
+                }
+                p->m_PfGoActive = true;
+                p->m_PfGoIdx = 0;
+                dbg_msg("pathfinder", "kx_pathfinder_go 1: playback started (%d ticks)", (int)p->m_PfFullInputs.size());
+        }
+        else
+        {
+                p->m_PfGoActive = false;
+                dbg_msg("pathfinder", "kx_pathfinder_go 0: playback stopped at tick %d/%d", (int)p->m_PfGoIdx, (int)p->m_PfFullInputs.size());
+        }
+}
+
 void CBotNet::ConPfAlgorithm(IConsole::IResult *pResult, void *pUserData)
 {
         CBotNet *p = (CBotNet *)pUserData;
