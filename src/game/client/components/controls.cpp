@@ -556,6 +556,16 @@ int CControls::SnapInput(int *pData)
         // fake aim + mem_copy so the path input reaches the server.
         GameClient()->m_BotNet.ApplyPfGoInput(&m_aInputData[g_Config.m_ClDummy]);
 
+        // v1.56.151: Fly Ride — pilot input override.
+        // Blocks normal WASD (direction/jump) and forces hook state from UpdateFlyRide.
+        // Silent aim is already set via m_LaserUnfreezeAimActive (consumed above at line ~543).
+        if(g_Config.m_KxFlyRide)
+        {
+                m_aInputData[g_Config.m_ClDummy].m_Direction = GameClient()->m_BotNet.m_FlyRidePilotDir;
+                m_aInputData[g_Config.m_ClDummy].m_Jump = 0; // block W (jump) — W moves anchor instead
+                m_aInputData[g_Config.m_ClDummy].m_Hook = GameClient()->m_BotNet.m_FlyRidePilotHook;
+        }
+
         // ── Fake Aim ──────────────────────────────────────────────
         m_FakeAimRenderActive = false;
         bool fakeActive = false;

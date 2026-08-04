@@ -196,6 +196,9 @@ void CBotNet::OnUpdate()
         // Runs on the active player's input (not dummies).
         UpdateLaserUnfreeze();
 
+        // v1.56.151: Fly Ride — pilot hooks/hammers nearest dummy, WASD moves anchor.
+        UpdateFlyRide();
+
         CGameClient *pGame = GameClient();
         if(!pGame->m_Snap.m_pLocalInfo)
                 return;
@@ -290,6 +293,9 @@ void CBotNet::OnRender()
 
         // Laser unfreeze: render successful laser path (Show attempt)
         RenderLaserUnfreezePath();
+
+        // v1.56.159: Fly Ride — render red tile at anchor (debug visual).
+        RenderFlyRideAnchor();
 
         if(!m_KinodynamicEnabled)
                 return;

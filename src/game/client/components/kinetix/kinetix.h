@@ -472,6 +472,16 @@ public:
         void UpdateLaserUnfreeze();         // called from OnUpdate; predictive laser self-unfreeze
         void RenderLaserUnfreezePath();     // called from OnRender; draws successful laser path with fade
         void UpdateFakeAim();               // called from OnUpdate; fake aim for fun
+        // v1.56.151: Fly Ride — pilot (active dummy) hooks/hammers nearest dummy.
+        // WASD moves anchor point. Called from OnUpdate (per-frame); anchor update gated per-tick.
+        void UpdateFlyRide();
+        void RenderFlyRideAnchor(); // called from OnRender — draws red semi-transparent tile at anchor
+        int m_FlyRideLastAnchorTick = -1;   // last tick anchor was updated (per-tick gate)
+        bool m_FlyRideWasActive = false;    // for init-on-enable + cleanup-on-disable
+        vec2 m_FlyRideAnchor = vec2(0, 0);  // anchor point (pilot pos at enable; WASD moves it)
+        int m_FlyRidePilotDir = 0;          // -1 left, 0 none, +1 right (read by CControls::SnapInput)
+        int m_FlyRidePilotHook = 0;         // 0 or 1 (read by CControls::SnapInput)
+        int m_FlyRideTargetDummy = -1;      // nearest dummy index (for cleanup)
 
         // Laser unfreeze path storage (for Show attempt rendering)
         std::vector<vec2> m_LaserUnfreezePath;

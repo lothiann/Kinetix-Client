@@ -256,6 +256,7 @@ MACRO_CONFIG_INT(KxDummyHammerKeepInputs, kx_dummy_hammer_keep_inputs, 0, 0, 1, 
 MACRO_CONFIG_INT(KxDummyHammerCustomLatency, kx_dummy_hammer_custom_latency, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Use custom hammer latency instead of default 500ms")
 MACRO_CONFIG_INT(KxDummyHammerLatencyMs, kx_dummy_hammer_latency_ms, 500, 50, 2000, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Hammer latency in milliseconds (only used when kx_dummy_hammer_custom_latency is on)")
 MACRO_CONFIG_INT(KxDummyHammerAuto, kx_dummy_hammer_auto, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Auto-hammer: dummy hammers the active player every tick when in hammer radius (overrides custom latency)")
+MACRO_CONFIG_INT(KxFlyRide, kx_fly_ride, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Fly Ride: pilot (active dummy) hooks/hammers nearest dummy, WASD moves anchor point")
 MACRO_CONFIG_INT(ClDummyResetOnSwitch, cl_dummy_resetonswitch, 0, 0, 2, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Whether dummy or player should stop pressing keys when you switch (0 = off, 1 = dummy, 2 = player)")
 MACRO_CONFIG_INT(ClDummyRestoreWeapon, cl_dummy_restore_weapon, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Whether dummy should switch to last weapon after hammerfly")
 MACRO_CONFIG_INT(ClDummyCopyMoves, cl_dummy_copy_moves, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_INSENSITIVE, "Whether dummy should copy your moves")

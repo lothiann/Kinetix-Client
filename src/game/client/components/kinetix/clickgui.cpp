@@ -240,6 +240,8 @@ static SRow g_FunctionsRows[] = {
         {ERowType::Toggle, "Mirror aim X", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Mirror aim Y", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Smart aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        // v1.56.151: Fly Ride — pilot hooks/hammers nearest dummy, WASD moves anchor.
+        {ERowType::Toggle, "Fly Ride", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 
 // ---------- Advanced panel (5) ----------
@@ -969,6 +971,9 @@ void CClickGui::OnRender()
                                         row.on = g_Config.m_KxDummyCopyMirrorAimY != 0;
                                 else if(str_comp(row.pName, "Smart aim") == 0)
                                         row.on = g_Config.m_KxDummyCopySmartAim != 0;
+                                // v1.56.151: Fly Ride
+                                else if(str_comp(row.pName, "Fly Ride") == 0)
+                                        row.on = g_Config.m_KxFlyRide != 0;
                                 // Functions → Copy Moves Filter expandable is master toggle.
                                 else if(str_comp(row.pName, "Copy Moves Filter") == 0)
                                         row.on = g_Config.m_KxDummyCopyMovesFilter != 0;
@@ -2351,6 +2356,9 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 g_Config.m_KxDummyCopyMirrorAimY = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Smart aim") == 0)
                                                 g_Config.m_KxDummyCopySmartAim = pTarget->on ? 1 : 0;
+                                        // v1.56.151: Fly Ride
+                                        else if(str_comp(pTarget->pName, "Fly Ride") == 0)
+                                                g_Config.m_KxFlyRide = pTarget->on ? 1 : 0;
                                         // v1.56.83: AimBot/TriggerBot expandable master toggles
                                         else if(str_comp(pTarget->pName, "AimBot") == 0)
                                                 GameClient()->m_AimBot.m_AimBotEnabled = pTarget->on;
@@ -2892,13 +2900,7 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                 SRow &row = panel.pRows[r];
                 // Conditional visibility: skip hidden rows in Functions panel.
                 if(str_comp(panel.pTitle, "Functions") == 0 && !FunctionsRowVisible(panel.pRows, panel.rowCount, r))
-                {
-                        cursorY += RowHeight(row.type) + ROW_GAP;
-                        if(row.type == ERowType::Expandable && row.expanded && row.pChildren)
-                                for(int c = 0; c < row.childCount; ++c)
-                                        cursorY += RowHeight(row.pChildren[c].type) + ROW_GAP;
                         continue;
-                }
                 const float rh = RowHeight(row.type);
                 if(r == m_DropdownRow && m_DropdownChild < 0)
                 {
@@ -3136,13 +3138,7 @@ void CClickGui::RenderDropdownPopup(float alpha)
                 SRow &row = panel.pRows[r];
                 // Conditional visibility: skip hidden rows in Functions panel.
                 if(str_comp(panel.pTitle, "Functions") == 0 && !FunctionsRowVisible(panel.pRows, panel.rowCount, r))
-                {
-                        cursorY += RowHeight(row.type) + ROW_GAP;
-                        if(row.type == ERowType::Expandable && row.expanded && row.pChildren)
-                                for(int c = 0; c < row.childCount; ++c)
-                                        cursorY += RowHeight(row.pChildren[c].type) + ROW_GAP;
                         continue;
-                }
                 const float rh = RowHeight(row.type);
                 if(r == m_DropdownRow && m_DropdownChild < 0)
                 {
@@ -3442,13 +3438,7 @@ bool CClickGui::HitTestRow(vec2 mousePos, int panelIdx, int &outRow, int &outChi
                 SRow &row = g_Panels[panelIdx].pRows[r];
                 // Conditional visibility: skip hidden rows in Functions panel.
                 if(str_comp(g_Panels[panelIdx].pTitle, "Functions") == 0 && !FunctionsRowVisible(g_Panels[panelIdx].pRows, g_Panels[panelIdx].rowCount, r))
-                {
-                        cursorY += RowHeight(row.type) + ROW_GAP;
-                        if(row.type == ERowType::Expandable && row.expanded && row.pChildren)
-                                for(int c = 0; c < row.childCount; ++c)
-                                        cursorY += RowHeight(row.pChildren[c].type) + ROW_GAP;
                         continue;
-                }
                 const float rh = RowHeight(row.type);
                 const float rw = PANEL_WIDTH - BODY_PADDING * 2;
                 if(PointInRect(mousePos, bodyX, cursorY, rw, rh))
