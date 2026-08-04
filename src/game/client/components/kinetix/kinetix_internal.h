@@ -144,7 +144,12 @@ static inline CCharacter *PfSpawnSimBot(CGameWorld *pWorld, int PredictedCharId,
         Core.m_HookDir = hookDir;
         Core.m_HookTick = hookTick;
         Core.m_Jumped = jumped;
-        Core.m_FreezeStart = 0; // reset anti-flicker so Freeze() always works in sim
+        // m_FreezeStart: if bot is already frozen, set to a recent tick so
+        // anti-flicker (m_FreezeStart < GameTick - GameTickSpeed) is FALSE —
+        // prevents Freeze() from resetting the timer every tick on freeze tiles.
+        // If not frozen, set to 0 so Freeze() works immediately on freeze tile entry.
+        Core.m_FreezeStart = (freezeTime > 0) ? 0x7FFFFFFF : 0;
+        Core.m_FreezeEnd = 0;
         pBot->SetCore(Core);
         pBot->m_Pos = pos;
         pBot->m_FreezeTime = freezeTime;
