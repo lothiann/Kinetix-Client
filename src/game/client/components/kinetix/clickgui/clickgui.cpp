@@ -813,7 +813,7 @@ void CClickGui::OnRender()
                         }
                 }
                 // Sync reference toggles with real subsystem state on open.
-                // (So if c_attack / c_random_aim / kx_show_trajectory were enabled
+                // (So if kx_attack / kx_random_aim / kx_show_trajectory were enabled
                 // via console before opening ClickGUI, the checkboxes reflect that.)
                 for(int p = 0; p < NUM_PANELS; ++p)
                 {

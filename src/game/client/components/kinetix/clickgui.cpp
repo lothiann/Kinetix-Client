@@ -374,7 +374,8 @@ static SRow g_PathfinderRows[] = {
         {ERowType::Expandable, "Score method", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ScoreMethodChildren, 2},
         {ERowType::Expandable, "Penalties", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_PenaltiesChildren, 7},
         {ERowType::Expandable, "Visuals", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_VisualsChildren, 4},
-        {ERowType::Button, "Pathfinding", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        // v1.56.150: DoubleButton — Pathfinding (left) + Play (right, visible only when FINISHED).
+        {ERowType::DoubleButton, "Pathfinding", "Play", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 
 struct SPanel
@@ -929,7 +930,7 @@ void CClickGui::OnRender()
                         }
                 }
                 // Sync reference toggles with real subsystem state on open.
-                // (So if c_attack / c_random_aim / kx_show_trajectory were enabled
+                // (So if kx_attack / kx_random_aim / kx_show_trajectory were enabled
                 // via console before opening ClickGUI, the checkboxes reflect that.)
                 for(int p = 0; p < NUM_PANELS; ++p)
                 {
@@ -2535,48 +2536,94 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                         }
                         if(pTarget->type == ERowType::Button || pTarget->type == ERowType::DoubleButton)
                         {
-                                // Button click — dispatch by name.
+                                // v1.56.150: Pathfinding is now DoubleButton (Pathfinding + Play).
+                                // Left zone = Pathfinding toggle, right zone = Play/Stop (kx_pf_play).
+                                // Right zone active only when m_PfState == FINISHED.
                                 if(str_comp(pTarget->pName, "Pathfinding") == 0)
                                 {
                                         CBotNet &BN = GameClient()->m_BotNet;
-                                        if(BN.m_PfState == PF_STATE_IDLE)
+                                        const bool playVisible = (BN.m_PfState == PF_STATE_FINISHED);
+                                        bool playClicked = false;
+                                        if(playVisible && pTarget->type == ERowType::DoubleButton)
                                         {
-                                                BN.m_PfState = PF_STATE_RUNNING;
-                                                BN.PfResetRun();
+                                                // Determine click zone: left half = Pathfinding, right half = Play.
+                                                const float btnW = (rw - 6.0f) * 0.5f;
+                                                const float zone1End = rx + 2.0f + btnW;
+                                                if(mousePos.x >= zone1End)
+                                                        playClicked = true;
                                         }
-                                        else if(BN.m_PfState == PF_STATE_RUNNING)
+
+                                        if(playClicked)
                                         {
-                                                BN.m_PfState = PF_STATE_FINISHED;
-                                                // Stop pressed: if A* hasn't reached goal yet, try to
-                                                // reconstruct best partial path so kx_pathfinder_go works.
-                                                if(!BN.m_PfAPathReady && !BN.m_PfAOpen.empty())
+                                                // Play/Stop toggle (kx_pf_play 1/0).
+                                                if(BN.m_PfGoActive)
                                                 {
-                                                        // Find best open node (lowest H = closest to goal)
-                                                        int bestIdx = -1;
-                                                        float bestH = 1e18f;
-                                                        for(int idx : BN.m_PfAOpen)
+                                                        BN.m_PfGoActive = false;
+                                                        dbg_msg("pathfinder", "kx_pf_play 0: playback stopped at tick %d/%d", (int)BN.m_PfGoIdx, (int)BN.m_PfFullInputs.size());
+                                                }
+                                                else
+                                                {
+                                                        if(!BN.m_PfAPathReady)
                                                         {
-                                                                if(idx < 0 || idx >= (int)BN.m_PfANodes.size())
-                                                                        continue;
-                                                                if(BN.m_PfANodes[idx].H < bestH)
-                                                                {
-                                                                        bestH = BN.m_PfANodes[idx].H;
-                                                                        bestIdx = idx;
-                                                                }
+                                                                dbg_msg("pathfinder", "kx_pf_play 1: path not ready");
                                                         }
-                                                        if(bestIdx >= 0)
+                                                        else if(BN.m_PfFullInputs.empty())
                                                         {
-                                                                BN.m_PfAGoalIdx = bestIdx;
-                                                                BN.PfAStarReconstruct();
-                                                                BN.m_PfAPathReady = true;
-                                                                BN.m_PfFullInputsIdx = 0;
+                                                                dbg_msg("pathfinder", "kx_pf_play 1: m_PfFullInputs is empty");
+                                                        }
+                                                        else
+                                                        {
+                                                                BN.m_PfGoActive = true;
+                                                                BN.m_PfGoIdx = 0;
+                                                                dbg_msg("pathfinder", "kx_pf_play 1: playback started (%d ticks)", (int)BN.m_PfFullInputs.size());
                                                         }
                                                 }
                                         }
-                                        else // PF_STATE_FINISHED
+                                        else
                                         {
-                                                BN.m_PfState = PF_STATE_IDLE;
-                                                BN.m_PfVPath.clear();
+                                                // Pathfinding state toggle (left zone, or full width when Play hidden).
+                                                if(BN.m_PfState == PF_STATE_IDLE)
+                                                {
+                                                        BN.m_PfState = PF_STATE_RUNNING;
+                                                        BN.PfResetRun();
+                                                }
+                                                else if(BN.m_PfState == PF_STATE_RUNNING)
+                                                {
+                                                        BN.m_PfState = PF_STATE_FINISHED;
+                                                        // Stop pressed: if A* hasn't reached goal yet, try to
+                                                        // reconstruct best partial path so kx_pf_play works.
+                                                        if(!BN.m_PfAPathReady && !BN.m_PfAOpen.empty())
+                                                        {
+                                                                // Find best open node (lowest H = closest to goal)
+                                                                int bestIdx = -1;
+                                                                float bestH = 1e18f;
+                                                                for(int idx : BN.m_PfAOpen)
+                                                                {
+                                                                        if(idx < 0 || idx >= (int)BN.m_PfANodes.size())
+                                                                                continue;
+                                                                        if(BN.m_PfANodes[idx].H < bestH)
+                                                                        {
+                                                                                bestH = BN.m_PfANodes[idx].H;
+                                                                                bestIdx = idx;
+                                                                        }
+                                                                }
+                                                                if(bestIdx >= 0)
+                                                                {
+                                                                        BN.m_PfAGoalIdx = bestIdx;
+                                                                        BN.PfAStarReconstruct();
+                                                                        BN.m_PfAPathReady = true;
+                                                                        BN.m_PfFullInputsIdx = 0;
+                                                                }
+                                                        }
+                                                }
+                                                else // PF_STATE_FINISHED
+                                                {
+                                                        BN.m_PfState = PF_STATE_IDLE;
+                                                        BN.m_PfVPath.clear();
+                                                        // Also stop playback if active.
+                                                        if(BN.m_PfGoActive)
+                                                                BN.m_PfGoActive = false;
+                                                }
                                         }
                                 }
                                 // v1.56.90: Dummies Button (Connect Dummy, Switch to Main)
@@ -4000,6 +4047,69 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
                         const float labelW = TextRender()->TextWidth(16.0f, pLabel);
                         DrawText(rx + (rw - labelW) * 0.5f, ry + 8.0f, 16.0f, pLabel,
                                 ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                        break;
+                }
+                case ERowType::DoubleButton:
+                {
+                        // v1.56.150: Pathfinder DoubleButton — Pathfinding (left) + Play (right).
+                        // Play visible only when m_PfState == FINISHED (path ready).
+                        // When Play hidden: Pathfinding takes full row width.
+                        // When m_PfGoActive: Play label = "Stop" (red), else "Play" (green).
+                        if(str_comp(row.pName, "Pathfinding") == 0)
+                        {
+                                CBotNet &BN = GameClient()->m_BotNet;
+                                // Left button colors (Pathfinding state).
+                                ColorRGBA leftCol = ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha);
+                                const char *pLeftLabel = "Pathfinding";
+                                if(BN.m_PfState == PF_STATE_IDLE)
+                                {
+                                        leftCol = ColorRGBA(0xff3da35a, true).WithAlpha(alpha); // green
+                                        pLeftLabel = "Pathfinding";
+                                }
+                                else if(BN.m_PfState == PF_STATE_RUNNING)
+                                {
+                                        leftCol = ColorRGBA(0xffc43d3d, true).WithAlpha(alpha); // red
+                                        pLeftLabel = "Stop";
+                                }
+                                else // FINISHED
+                                {
+                                        leftCol = ColorRGBA(0xffe69528, true).WithAlpha(alpha); // orange
+                                        pLeftLabel = "Finish";
+                                }
+
+                                const bool playVisible = (BN.m_PfState == PF_STATE_FINISHED);
+                                if(!playVisible)
+                                {
+                                        // Play hidden — Pathfinding full width.
+                                        DrawRoundedRect(rx + 2.0f, ry + 2.0f, rw - 4.0f, rh - 4.0f, 4.0f,
+                                                IGraphics::CORNER_ALL, leftCol);
+                                        const float lw = TextRender()->TextWidth(16.0f, pLeftLabel);
+                                        DrawText(rx + (rw - lw) * 0.5f, ry + 8.0f, 16.0f, pLeftLabel,
+                                                ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                                }
+                                else
+                                {
+                                        // Split: left (Pathfinding) + right (Play/Stop).
+                                        const float btnW = (rw - 6.0f) * 0.5f; // 2px padding each side + 2px gap
+                                        // Left button.
+                                        DrawRoundedRect(rx + 2.0f, ry + 2.0f, btnW, rh - 4.0f, 4.0f,
+                                                IGraphics::CORNER_ALL, leftCol);
+                                        const float lw = TextRender()->TextWidth(14.0f, pLeftLabel);
+                                        DrawText(rx + 2.0f + (btnW - lw) * 0.5f, ry + 8.0f, 14.0f, pLeftLabel,
+                                                ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                                        // Right button (Play/Stop).
+                                        ColorRGBA rightCol = BN.m_PfGoActive
+                                                ? ColorRGBA(0xffc43d3d, true).WithAlpha(alpha) // red (Stop)
+                                                : ColorRGBA(0xff3da35a, true).WithAlpha(alpha); // green (Play)
+                                        const char *pRightLabel = BN.m_PfGoActive ? "Stop" : "Play";
+                                        const float rx2 = rx + 2.0f + btnW + 2.0f;
+                                        DrawRoundedRect(rx2, ry + 2.0f, btnW, rh - 4.0f, 4.0f,
+                                                IGraphics::CORNER_ALL, rightCol);
+                                        const float rw2 = TextRender()->TextWidth(14.0f, pRightLabel);
+                                        DrawText(rx2 + (btnW - rw2) * 0.5f, ry + 8.0f, 14.0f, pRightLabel,
+                                                ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                                }
+                        }
                         break;
                 }
                 }

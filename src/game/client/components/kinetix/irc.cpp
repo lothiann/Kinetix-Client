@@ -141,7 +141,7 @@ void CIRC::OnReset()
 
 void CIRC::OnConsoleInit()
 {
-	Console()->Register("c_irc_send", "r[text]", CFGFLAG_CLIENT, ConSendIRC, this, "Send an encoded emoji message");
+	Console()->Register("kx_irc_send", "r[text]", CFGFLAG_CLIENT, ConSendIRC, this, "Send an encoded emoji message");
 }
 
 void CIRC::ConSendIRC(IConsole::IResult *pResult, void *pUserData)

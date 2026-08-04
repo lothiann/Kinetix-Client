@@ -98,8 +98,8 @@ CCodeExec::~CCodeExec()
 
 void CCodeExec::OnConsoleInit()
 {
-        Console()->Register("c_exec", "s[code]", CFGFLAG_CLIENT, ConExec, this, "Execute Lua code");
-        Console()->Register("c_exec_stop", "", CFGFLAG_CLIENT, ConStop, this, "Stop running Lua script");
+        Console()->Register("kx_exec", "s[code]", CFGFLAG_CLIENT, ConExec, this, "Execute Lua code");
+        Console()->Register("kx_exec_stop", "", CFGFLAG_CLIENT, ConStop, this, "Stop running Lua script");
 }
 
 void CCodeExec::OnInit()

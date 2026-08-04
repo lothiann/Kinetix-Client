@@ -4997,9 +4997,9 @@ void CMenus::RenderSettingsAdvanced(CUIRect MainView)
                         Ui()->DoLabel(&Label, Localize("Aim Control"), 16.0f, TEXTALIGN_ML);
                         Panel.HSplitTop(5.0f, nullptr, &Panel);
 
-                        // Relative aim (c_aim)
+                        // Relative aim (kx_aim)
                         Panel.HSplitTop(20.0f, &Row, &Panel);
-                        Ui()->DoLabel(&Row, Localize("Relative aim (c_aim)"), 11.0f, TEXTALIGN_ML);
+                        Ui()->DoLabel(&Row, Localize("Relative aim (kx_aim)"), 11.0f, TEXTALIGN_ML);
 
                         Panel.HSplitTop(RowGap, nullptr, &Panel);
 
@@ -5030,9 +5030,9 @@ void CMenus::RenderSettingsAdvanced(CUIRect MainView)
 
                         Panel.HSplitTop(5.0f, nullptr, &Panel);
 
-                        // Absolute aim (c_oaim)
+                        // Absolute aim (kx_oaim)
                         Panel.HSplitTop(20.0f, &Row, &Panel);
-                        Ui()->DoLabel(&Row, Localize("Absolute aim (c_oaim)"), 11.0f, TEXTALIGN_ML);
+                        Ui()->DoLabel(&Row, Localize("Absolute aim (kx_oaim)"), 11.0f, TEXTALIGN_ML);
 
                         Panel.HSplitTop(RowGap, nullptr, &Panel);
 
@@ -5293,7 +5293,7 @@ void CMenus::RenderSettingsAdvanced(CUIRect MainView)
                                 if(DoButton_Menu(&s_MacroRecordBtn, pRecLabel, IsRecording ? 1 : 0, &Row))
                                 {
                                         char aCmd[64];
-                                        str_format(aCmd, sizeof(aCmd), "c_macro_record %d", IsRecording ? 0 : 1);
+                                        str_format(aCmd, sizeof(aCmd), "kx_macro_record %d", IsRecording ? 0 : 1);
                                         Console()->ExecuteLine(aCmd, IConsole::CLIENT_ID_UNSPECIFIED);
                                 }
                         }
@@ -5311,7 +5311,7 @@ void CMenus::RenderSettingsAdvanced(CUIRect MainView)
                                 {
                                         int v = atoi(s_CaptureIDInput.GetString());
                                         char aCmd[64];
-                                        str_format(aCmd, sizeof(aCmd), "c_macro_capture %d", v);
+                                        str_format(aCmd, sizeof(aCmd), "kx_macro_capture %d", v);
                                         Console()->ExecuteLine(aCmd, IConsole::CLIENT_ID_UNSPECIFIED);
                                 }
 
@@ -5332,7 +5332,7 @@ void CMenus::RenderSettingsAdvanced(CUIRect MainView)
                                 if(DoButton_Menu(&s_MacroPlayBtn, pPlayLabel, IsPlaying ? 1 : 0, &Row))
                                 {
                                         char aCmd[64];
-                                        str_format(aCmd, sizeof(aCmd), "c_macro_play %d", IsPlaying ? 0 : 1);
+                                        str_format(aCmd, sizeof(aCmd), "kx_macro_play %d", IsPlaying ? 0 : 1);
                                         Console()->ExecuteLine(aCmd, IConsole::CLIENT_ID_UNSPECIFIED);
                                 }
                         }
@@ -5352,7 +5352,7 @@ void CMenus::RenderSettingsAdvanced(CUIRect MainView)
                                         if(s_MacroPathInput.GetString()[0] != '\0')
                                         {
                                                 char aCmd[512];
-                                                str_format(aCmd, sizeof(aCmd), "c_macro_load \"%s\"", s_MacroPathInput.GetString());
+                                                str_format(aCmd, sizeof(aCmd), "kx_macro_load \"%s\"", s_MacroPathInput.GetString());
                                                 Console()->ExecuteLine(aCmd, IConsole::CLIENT_ID_UNSPECIFIED);
                                         }
                                 }
@@ -5363,7 +5363,7 @@ void CMenus::RenderSettingsAdvanced(CUIRect MainView)
                                         if(s_MacroPathInput.GetString()[0] != '\0')
                                         {
                                                 char aCmd[512];
-                                                str_format(aCmd, sizeof(aCmd), "c_macro_save \"%s\"", s_MacroPathInput.GetString());
+                                                str_format(aCmd, sizeof(aCmd), "kx_macro_save \"%s\"", s_MacroPathInput.GetString());
                                                 Console()->ExecuteLine(aCmd, IConsole::CLIENT_ID_UNSPECIFIED);
                                         }
                                 }

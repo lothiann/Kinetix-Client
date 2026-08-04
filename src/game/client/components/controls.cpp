@@ -259,7 +259,7 @@ int CControls::SnapInput(int *pData)
                                         pInput->m_Fire &= INPUT_STATE_MASK;
                                 }
 
-                                // Aim: absolute (c_oaim) takes priority over relative (c_aim)
+                                // Aim: absolute (kx_oaim) takes priority over relative (kx_aim)
                                 if(Bot.IsBotActiveOverrideAim(D))
                                 {
                                         m_aMousePos[D].x = (float)Bot.State(D).m_OverrideTargetX;
@@ -463,7 +463,7 @@ int CControls::SnapInput(int *pData)
                                         pInput->m_Fire &= INPUT_STATE_MASK;
                                 }
 
-                                // Aim: absolute (c_oaim) takes priority over relative (c_aim)
+                                // Aim: absolute (kx_oaim) takes priority over relative (kx_aim)
                                 if(Bot.IsBotActiveOverrideAim(D))
                                 {
                                         m_aMousePos[D].x = (float)Bot.State(D).m_OverrideTargetX;
@@ -551,7 +551,7 @@ int CControls::SnapInput(int *pData)
         // v1.56.128: BAF — before fake aim + mem_copy. Only changes dir/jump/hook.
         GameClient()->m_BasicAvoidFreeze.ApplyOverride();
 
-        // kx_pathfinder_go: replay pathfinder path on real player input.
+        // kx_pf_play: replay pathfinder path on real player input.
         // Runs after BAF (BAF has priority for freeze avoidance) but before
         // fake aim + mem_copy so the path input reaches the server.
         GameClient()->m_BotNet.ApplyPfGoInput(&m_aInputData[g_Config.m_ClDummy]);

@@ -290,7 +290,7 @@ MACRO_CONFIG_INT(KxDummyAim, kx_dummy_aim, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_INS
 MACRO_CONFIG_INT(KxDummyDirection, kx_dummy_direction, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_INSENSITIVE, "Whether dummy is moving (requires cl_dummy_control 1)")
 
 // bot control
-MACRO_CONFIG_INT(KxBotActionDuration, kx_bot_action_duration, 500, 100, 10000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Duration in ms for bot input actions (c_input UI buttons)")
+MACRO_CONFIG_INT(KxBotActionDuration, kx_bot_action_duration, 500, 100, 10000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Duration in ms for bot input actions (kx_input UI buttons)")
 // Max value 7 = MAX_DUMMIES-1 — update when MAX_DUMMIES changes
 MACRO_CONFIG_INT(KxBotTargetDummy, kx_bot_target_dummy, 1, 0, 7, CFGFLAG_CLIENT | CFGFLAG_INSENSITIVE, "Target dummy for bot control UI (0=main, 1-7=dummies)")
 

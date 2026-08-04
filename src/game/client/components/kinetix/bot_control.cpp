@@ -7,10 +7,10 @@
 
 void CBotControl::OnConsoleInit()
 {
-        Console()->Register("c_input", "s[action] i[ms] ?i[dummy]", CFGFLAG_CLIENT, ConInput, this, "Send input to dummy (action: jump/hook/fire/left/right, ms duration, optional dummy id)");
-        Console()->Register("c_stop", "?i[dummy]", CFGFLAG_CLIENT, ConStop, this, "Stop all bot actions for dummy (optional dummy id, default current)");
-        Console()->Register("c_aim", "i[dx] i[dy] ?i[dummy]", CFGFLAG_CLIENT, ConAim, this, "Relative aim offset for dummy (optional dummy id, default current)");
-        Console()->Register("c_oaim", "i[x] i[y] ?i[dummy]", CFGFLAG_CLIENT, ConOverrideAim, this, "Absolute aim position for dummy (optional dummy id, default current)");
+        Console()->Register("kx_input", "s[action] i[ms] ?i[dummy]", CFGFLAG_CLIENT, ConInput, this, "Send input to dummy (action: jump/hook/fire/left/right, ms duration, optional dummy id)");
+        Console()->Register("kx_stop", "?i[dummy]", CFGFLAG_CLIENT, ConStop, this, "Stop all bot actions for dummy (optional dummy id, default current)");
+        Console()->Register("kx_aim", "i[dx] i[dy] ?i[dummy]", CFGFLAG_CLIENT, ConAim, this, "Relative aim offset for dummy (optional dummy id, default current)");
+        Console()->Register("kx_oaim", "i[x] i[y] ?i[dummy]", CFGFLAG_CLIENT, ConOverrideAim, this, "Absolute aim position for dummy (optional dummy id, default current)");
 }
 
 void CBotControl::OnReset()

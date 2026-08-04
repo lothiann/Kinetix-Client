@@ -15,11 +15,11 @@ struct CBotDummyState
 	bool m_Fire;
 	int m_Direction;
 
-	// Relative aim offset (c_aim)
+	// Relative aim offset (kx_aim)
 	int m_TargetX;
 	int m_TargetY;
 
-	// Absolute aim override (c_oaim)
+	// Absolute aim override (kx_oaim)
 	int m_OverrideTargetX;
 	int m_OverrideTargetY;
 

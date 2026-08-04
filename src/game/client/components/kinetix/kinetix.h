@@ -400,7 +400,7 @@ public:
         std::vector<RheaIndividual> m_PfRHAPopulation;
         bool m_PfRHAInitialized = false; // shift buffer: population carried from prev chunk
 
-        // kx_pathfinder_go: playback m_PfFullInputs on real player.
+        // kx_pf_play: playback m_PfFullInputs on real player.
         // m_PfGoActive = true → ApplyPfGoInput() called from SnapInput each tick.
         // m_PfGoIdx advances per tick; stops when reaches end of m_PfFullInputs.
         bool m_PfGoActive = false;
@@ -466,7 +466,7 @@ public:
         void UpdatePathfinder();            // called from OnUpdate; runs one chunk if RUNNING
         void RenderPathfinderPath();        // called from OnRender; draws m_PfVPath like RenderPackage
         void PfResetRun();                  // clear vPath + sim state (start fresh from active player)
-        // kx_pathfinder_go: apply next m_PfFullInputs tick to real player input.
+        // kx_pf_play: apply next m_PfFullInputs tick to real player input.
         // Called from CControls::SnapInput before mem_copy. Returns true if applied.
         bool ApplyPfGoInput(CNetObj_PlayerInput *pInput);
         void UpdateLaserUnfreeze();         // called from OnUpdate; predictive laser self-unfreeze
@@ -517,7 +517,7 @@ public:
         static void ConMacroSave(IConsole::IResult *pResult, void *pUserData);
         static void ConMacroCapture(IConsole::IResult *pResult, void *pUserData);
 
-        // Individual toggle commands (easier than c_atk_set with 15 params)
+        // Individual toggle commands (easier than kx_atk_set with 15 params)
         static void ConStand(IConsole::IResult *pResult, void *pUserData);
         static void ConAutoAim(IConsole::IResult *pResult, void *pUserData);
         static void ConAutoFire(IConsole::IResult *pResult, void *pUserData);
@@ -543,15 +543,15 @@ public:
         static void ConSendDummy(IConsole::IResult *pResult, void *pUserData);
 
         // Pathfinder tab (Kinetix→Pathfinder) console commands
-        static void ConPfLive(IConsole::IResult *pResult, void *pUserData);     // c_pf_live 0|1|2  (0=idle, 1=running, 2=finished)
+        static void ConPfLive(IConsole::IResult *pResult, void *pUserData);     // kx_pf_live 0|1|2  (0=idle, 1=running, 2=finished)
         static void ConPfAlgorithm(IConsole::IResult *pResult, void *pUserData);
         static void ConPfChunkSize(IConsole::IResult *pResult, void *pUserData);
         static void ConPfCandidates(IConsole::IResult *pResult, void *pUserData);
         static void ConPfHookAngles(IConsole::IResult *pResult, void *pUserData);
         static void ConPfHorizon(IConsole::IResult *pResult, void *pUserData);
-        static void ConPfGo(IConsole::IResult *pResult, void *pUserData);       // kx_pathfinder_go 0|1  (1=play path on real player, 0=stop)
+        static void ConPfGo(IConsole::IResult *pResult, void *pUserData);       // kx_pf_play 0|1  (1=play path on real player, 0=stop)
 
-        // Placeholder processing for c_send and UI Send Command
+        // Placeholder processing for kx_send and UI Send Command
         static std::string ReplacePlaceholders(const std::string &Cmd, int DummyIndex, CGameClient *pGame);
 
 private:

@@ -82,7 +82,7 @@ void CBotNet::PfResetRun()
                 m_PfFlowField ? "ok" : "null");
 }
 
-// kx_pathfinder_go: apply next path tick to real player input.
+// kx_pf_play: apply next path tick to real player input.
 // Called from CControls::SnapInput each tick when m_PfGoActive is true.
 // Advances m_PfGoIdx; auto-stops when end of m_PfFullInputs reached.
 bool CBotNet::ApplyPfGoInput(CNetObj_PlayerInput *pInput)
@@ -93,7 +93,7 @@ bool CBotNet::ApplyPfGoInput(CNetObj_PlayerInput *pInput)
         {
                 // Playback finished.
                 m_PfGoActive = false;
-                dbg_msg("pathfinder", "kx_pathfinder_go: playback finished (%d ticks)", (int)m_PfFullInputs.size());
+                dbg_msg("pathfinder", "kx_pf_play: playback finished (%d ticks)", (int)m_PfFullInputs.size());
                 return false;
         }
         const CNetObj_PlayerInput &In = m_PfFullInputs[m_PfGoIdx];
