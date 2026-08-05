@@ -19,8 +19,11 @@ static inline float PfRheaChance() { return (float)PfRheaNext() / 4294967295.0f;
 
 static uint64_t PfAStarKey(const CCharacterCore &core, int freezeTime, bool grounded)
 {
-        int tx = (int)(core.m_Pos.x / 32.0f);
-        int ty = (int)(core.m_Pos.y / 32.0f);
+        // v1.56.154: position at tile/8 (4px) instead of tile (32px).
+        // Small ChunkSize moves <1 tile/chunk → tile dedup collapsed all
+        // candidates into one key → A* gave up. 4px gives 64 sub-cells/tile.
+        int tx = (int)(core.m_Pos.x / 4.0f);
+        int ty = (int)(core.m_Pos.y / 4.0f);
         int vbx = pf_clamp((int)(core.m_Vel.x / 5.0f) + 3, 0, 6);
         int vby = pf_clamp((int)(core.m_Vel.y / 5.0f) + 3, 0, 6);
         int frozen = (freezeTime > 0) ? 1 : 0;
