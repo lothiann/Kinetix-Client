@@ -107,6 +107,140 @@ bool CBotNet::ApplyPfGoInput(CNetObj_PlayerInput *pInput)
         return true;
 }
 
+// v1.56.155: PfPlaybackDebugLog — run m_PfFullInputs through a cloned pathfinder
+// sim world (NOT the real world) and log each tick's line/freeze state.
+// Called once at kx_pf_play 1 start. Mirrors PfAStarSetupWorld + PfSimulateChunk
+// flow, but with per-tick logging.
+//
+// Log format (per tick):
+//   Tick #X-1 - #X | Line = Y px | Line freeze = True/False | Freeze = True/False
+//
+// Tick #X-1 - #X : interval between tick X-1 (prev) and tick X (cur), 0-indexed
+// Line = Y px    : pixel length of prevTickPos -> curTickPos segment
+// Line freeze    : whether GetMapIndices(prev, cur) found any FREEZE/DFREEZE tile
+// Freeze         : whether bot m_FreezeTime > 0 in sim after this tick
+void CBotNet::PfPlaybackDebugLog()
+{
+        CGameClient *pGame = GameClient();
+        if(!pGame || !pGame->m_Snap.m_pLocalInfo)
+        {
+                dbg_msg("pathfinder", "PfPlaybackDebugLog: no game/local info");
+                return;
+        }
+        int LocalID = pGame->m_Snap.m_LocalClientId;
+        if(LocalID < 0)
+        {
+                dbg_msg("pathfinder", "PfPlaybackDebugLog: no local client id");
+                return;
+        }
+        if(m_PfFullInputs.empty())
+        {
+                dbg_msg("pathfinder", "PfPlaybackDebugLog: m_PfFullInputs empty");
+                return;
+        }
+        if(!pGame->m_PredictedWorld.GetCharacterById(LocalID))
+        {
+                dbg_msg("pathfinder", "PfPlaybackDebugLog: no predicted character");
+                return;
+        }
+
+        // Setup cloned world (same as PfAStarSetupWorld in pathfinder_astar.cpp):
+        // CopyWorld from PredictedWorld, then remove all non-character entities
+        // and all characters except LocalID. This isolates the sim bot.
+        CGameWorld FutureWorld;
+        FutureWorld.CopyWorld(&pGame->m_PredictedWorld);
+        for(int Type = 0; Type < CGameWorld::NUM_ENTTYPES; Type++)
+        {
+                if(Type == CGameWorld::ENTTYPE_CHARACTER)
+                        continue;
+                std::vector<CEntity *> vRemove;
+                for(CEntity *pEnt = FutureWorld.FindLast(Type); pEnt; pEnt = pEnt->TypePrev())
+                        vRemove.push_back(pEnt);
+                for(CEntity *pEnt : vRemove)
+                        FutureWorld.RemoveEntity(pEnt);
+        }
+        for(int i = 0; i < MAX_CLIENTS; i++)
+        {
+                if(i == LocalID)
+                        continue;
+                if(CCharacter *pChar = FutureWorld.GetCharacterById(i))
+                        FutureWorld.RemoveEntity(pChar);
+        }
+
+        CCollision *pColl = FutureWorld.Collision();
+        if(!pColl)
+        {
+                dbg_msg("pathfinder", "PfPlaybackDebugLog: no collision");
+                return;
+        }
+
+        int RootStartTick = FutureWorld.GameTick();
+
+        // Spawn sim bot from m_PfStartPos + m_PfCur* state (saved at PfResetRun).
+        // This is the EXACT state A* started from, so the sim mirrors what A* saw.
+        CCharacter *pBot = PfSpawnSimBot(&FutureWorld, LocalID,
+                m_PfStartPos, m_PfCurVel, m_PfCurHookState,
+                m_PfCurHookPos, m_PfCurHookDir, m_PfCurHookTick,
+                m_PfCurFreezeTime, m_PfCurJumped);
+        if(!pBot)
+        {
+                dbg_msg("pathfinder", "PfPlaybackDebugLog: PfSpawnSimBot failed");
+                return;
+        }
+
+        dbg_msg("pathfinder", "=== PfPlaybackDebugLog START: %d ticks, start=(%.0f,%.0f) freezeTime=%d ===",
+                (int)m_PfFullInputs.size(), m_PfStartPos.x, m_PfStartPos.y, m_PfCurFreezeTime);
+
+        vec2 prevPos = pBot->m_Pos;
+
+        for(size_t t = 0; t < m_PfFullInputs.size(); t++)
+        {
+                int Tick = RootStartTick + (int)t + 1;
+                const CNetObj_PlayerInput &In = m_PfFullInputs[t];
+
+                pBot->OnDirectInput(&In);
+                FutureWorld.m_GameTick = Tick;
+                pBot->OnPredictedInput(&In);
+                FutureWorld.Tick();
+
+                if(!FutureWorld.GetCharacterById(LocalID))
+                {
+                        dbg_msg("pathfinder", "Tick #%d - #%d | DIED (bot removed from sim)", (int)t, (int)t + 1);
+                        break;
+                }
+
+                vec2 curPos = pBot->m_Pos;
+                float lineLen = distance(prevPos, curPos);
+
+                // Check freeze on line prevPos -> curPos (same logic as DDNet GetMapIndices)
+                bool lineFreeze = false;
+                std::vector<int> indices = pColl->GetMapIndices(prevPos, curPos);
+                for(int idx : indices)
+                {
+                        int tile = pColl->GetTileIndex(idx);
+                        int ftile = pColl->GetFrontTileIndex(idx);
+                        if(tile == TILE_FREEZE || tile == TILE_DFREEZE ||
+                                ftile == TILE_FREEZE || ftile == TILE_DFREEZE)
+                        {
+                                lineFreeze = true;
+                                break;
+                        }
+                }
+
+                bool freeze = pBot->m_FreezeTime > 0;
+
+                dbg_msg("pathfinder", "Tick #%d - #%d | Line = %.1f px | Line freeze = %s | Freeze = %s",
+                        (int)t, (int)t + 1, lineLen,
+                        lineFreeze ? "True" : "False",
+                        freeze ? "True" : "False");
+
+                prevPos = curPos;
+        }
+
+        dbg_msg("pathfinder", "=== PfPlaybackDebugLog END: final pos=(%.0f,%.0f) freezeTime=%d ===",
+                pBot->m_Pos.x, pBot->m_Pos.y, pBot->m_FreezeTime);
+}
+
 // Multi-source BFS: distance field to the NEAREST finish tile.
 
 void CBotNet::PfComputeFlowField()
