@@ -1424,6 +1424,16 @@ bool CMenus::RenderLanguageSelection(CUIRect MainView)
 
 void CMenus::RenderSettings(CUIRect MainView)
 {
+        // v1.56.167 BUG5: clamp ui_settings_page. The config max in config_variables.h
+        // was left at 10 after SETTINGS_KINETIX was removed in v1.56.166 (SETTINGS_LENGTH
+        // shrunk 11→10, valid range is now 0-9). Subscribers with ui_settings_page=10 in
+        // their saved settings_ddnet.cfg (from an older Kinetix build that had the Kinetix
+        // tab) would crash on Settings open via dbg_assert_failed("ui_settings_page invalid").
+        // Even after fixing the config max to 9, clamp here as defense-in-depth so any future
+        // enum shrink cannot crash the client — the worst case is a silent reset to LANGUAGE.
+        if(g_Config.m_UiSettingsPage < 0 || g_Config.m_UiSettingsPage >= SETTINGS_LENGTH)
+                g_Config.m_UiSettingsPage = SETTINGS_LANGUAGE;
+
         // render background
         CUIRect Button, TabBar, RestartBar;
         MainView.VSplitRight(120.0f, &MainView, &TabBar);
