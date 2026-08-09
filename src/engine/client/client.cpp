@@ -248,6 +248,43 @@ void CClient::SendInfo(int Conn)
         MsgVer.AddString(GameClient()->DDNetVersionStr());
         SendMsg(Conn, &MsgVer, MSGFLAG_VITAL);
 
+        // v1.56.174: BestClient extra identification NETMSGs.
+        // Fire-and-forget, ignored by stock DDNet servers but emitted by real
+        // BestClient on connect for identification. Only sent when preset=BestClient
+        // (2) and the "Extra NETMSGs" checkbox is enabled.
+        if(!IsSixup() && g_Config.m_KxSpoofClientPreset == 2 && g_Config.m_KxSpoofBestClientExtraNetmsgs)
+        {
+                char aBcVer[64];
+                str_format(aBcVer, sizeof(aBcVer), "%s built on %s, %s", g_Config.m_KxSpoofClientVersion, __DATE__, __TIME__);
+                // NETMSG_IAMBESTCLIENT — "<ver> built on <date>, <time>"
+                {
+                        CMsgPacker Msg(NETMSG_IAMBESTCLIENT, true);
+                        Msg.AddString(aBcVer);
+                        SendMsg(Conn, &Msg, MSGFLAG_VITAL);
+                }
+                // NETMSG_IAMTATER — same payload format as IAMBESTCLIENT
+                {
+                        CMsgPacker Msg(NETMSG_IAMTATER, true);
+                        Msg.AddString(aBcVer);
+                        SendMsg(Conn, &Msg, MSGFLAG_VITAL);
+                }
+                // NETMSG_BESTCLIENT_EXESIZE — decimal exe size string
+                {
+                        int64_t ExeSize = -1;
+                        IOHANDLE Cur = io_current_exe();
+                        if(Cur)
+                        {
+                                ExeSize = io_length(Cur);
+                                io_close(Cur);
+                        }
+                        char aSize[32];
+                        str_format(aSize, sizeof(aSize), "%lld", (long long)ExeSize);
+                        CMsgPacker Msg(NETMSG_BESTCLIENT_EXESIZE, true);
+                        Msg.AddString(aSize);
+                        SendMsg(Conn, &Msg, MSGFLAG_VITAL);
+                }
+        }
+
         if(IsSixup())
         {
                 CMsgPacker Msg(NETMSG_INFO, true);

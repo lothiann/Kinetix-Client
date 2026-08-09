@@ -45,3 +45,10 @@ UUID(NETMSG_RECONNECT, "reconnect@ddnet.org")
 UUID(NETMSG_MAPLIST_ADD, "sv-maplist-add@ddnet.org")
 UUID(NETMSG_MAPLIST_GROUP_START, "sv-maplist-start@ddnet.org")
 UUID(NETMSG_MAPLIST_GROUP_END, "sv-maplist-end@ddnet.org")
+// v1.56.174: BestClient extra identification NETMSGs (fire-and-forget, ignored
+// by stock DDNet servers but emitted by real BestClient on connect for
+// identification). Payload: "<ver> built on <date>, <time>" for IAMBESTCLIENT
+// and IAMTATER; decimal exe size string for BESTCLIENT_EXESIZE.
+UUID(NETMSG_IAMBESTCLIENT, "i-am-bestclient@bestclient.fun")
+UUID(NETMSG_IAMTATER, "iamtater@sjrc6.github.io")
+UUID(NETMSG_BESTCLIENT_EXESIZE, "exe-size@bestclient.fun")

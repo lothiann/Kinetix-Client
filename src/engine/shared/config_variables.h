@@ -278,9 +278,10 @@ MACRO_CONFIG_INT(KxVersionSpoofId, kx_version_spoof_id, 20000, 10000, 21000, CFG
 MACRO_CONFIG_INT(KxSpoofClientStr, kx_spoof_client_str, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Spoof client name/version string sent to server")
 MACRO_CONFIG_INT(KxSpoofClientPreset, kx_spoof_client_preset, 0, 0, 3, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Client preset: 0=DDNet, 1=TClient, 2=BestClient, 3=Custom")
 MACRO_CONFIG_STR(KxSpoofClientName, kx_spoof_client_name, 24, "TClient", CFGFLAG_CLIENT | CFGFLAG_SAVE, "Client name to spoof (replaces GAME_NAME in DDNetVersionStr)")
-MACRO_CONFIG_STR(KxSpoofClientVersion, kx_spoof_client_version, 16, "10.8.7", CFGFLAG_CLIENT | CFGFLAG_SAVE, "Client version string to spoof (replaces GAME_RELEASE_VERSION)")
+MACRO_CONFIG_STR(KxSpoofClientVersion, kx_spoof_client_version, 32, "10.8.7", CFGFLAG_CLIENT | CFGFLAG_SAVE, "Client version string to spoof (replaces GAME_RELEASE_VERSION). v1.56.174: bumped 16->32 to fit '2.1.1 stable-beta' (17 chars + null = 18).")
 MACRO_CONFIG_INT(KxSpoofGitHashEnabled, kx_spoof_git_hash_enabled, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Enable custom git hash spoof")
-MACRO_CONFIG_STR(KxSpoofGitHash, kx_spoof_git_hash, 24, "", CFGFLAG_CLIENT | CFGFLAG_SAVE, "Git hash to spoof (empty = use real, 'none' = hide)")
+MACRO_CONFIG_STR(KxSpoofGitHash, kx_spoof_git_hash, 40, "", CFGFLAG_CLIENT | CFGFLAG_SAVE, "Git hash to spoof (empty = use real, 'none' = hide). v1.56.174: bumped 24->40 to fit 32-char BestClient hash (--short=32 format).")
+MACRO_CONFIG_INT(KxSpoofBestClientExtraNetmsgs, kx_spoof_bestclient_extra_netmsgs, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Send BestClient extra identification NETMSGs on connect (BestClient preset only)")
 
 // more controllable dummy command
 MACRO_CONFIG_INT(ClDummyControl, cl_dummy_control, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_INSENSITIVE, "Whether you can control dummy at the same time (cl_dummy_jump, cl_dummy_fire, cl_dummy_hook)")

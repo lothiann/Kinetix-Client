@@ -319,6 +319,8 @@ static SRow g_SpooferChildren[] = {
         {ERowType::Input, "Client version", nullptr, false, false, 0, 0, 0, 0, nullptr, "20.0", "version...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Git hash", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Input, "Git hash value", nullptr, false, false, 0, 0, 0, 0, nullptr, "abc1234", "hash...", nullptr, 0, 0, nullptr, 0},
+        // v1.56.174: BestClient extra NETMSGs toggle (visible only when preset=BestClient, see SpooferChildVisible).
+        {ERowType::Toggle, "Extra NETMSGs", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 // v1.56.77: "Rainbow color" expandable: toggle + speed slider.
 static SRow g_RainbowChildren[] = {
@@ -341,7 +343,7 @@ static SRow g_SettingsRows[] = {
         {ERowType::Expandable, "Rainbow color", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowChildren, 1},
         {ERowType::Expandable, "Line rendering", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LineRenderingChildren, 5},
         {ERowType::Expandable, "IRC", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_IrcChildren, 2},
-        {ERowType::Expandable, "Spoofer", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_SpooferChildren, 6},
+        {ERowType::Expandable, "Spoofer", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_SpooferChildren, 7},
 };
 
 // ---------- Pathfinder panel (7) ----------
@@ -566,6 +568,20 @@ static bool SpooferChildVisible(const SRow *pChildren, int childCount, int idx)
                         }
                 }
                 return gitOn;
+        }
+        // v1.56.174: "Extra NETMSGs" visible only when preset=BestClient (2).
+        if(str_comp(row.pName, "Extra NETMSGs") == 0)
+        {
+                int presetIdx = 0;
+                for(int i = 0; i < childCount; ++i)
+                {
+                        if(str_comp(pChildren[i].pName, "Client preset") == 0)
+                        {
+                                presetIdx = pChildren[i].valueIdx;
+                                break;
+                        }
+                }
+                return presetIdx == 2;
         }
         return true;
 }
@@ -1165,6 +1181,9 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
                                                         child.m_InputInitialized = true;
                                                 }
                                         }
+                                        // v1.56.174: BestClient "Extra NETMSGs" checkbox sync.
+                                        else if(str_comp(child.pName, "Extra NETMSGs") == 0)
+                                                child.on = g_Config.m_KxSpoofBestClientExtraNetmsgs != 0;
                                         // Pathfinder → Score method children
                                         else if(str_comp(child.pName, "Distance reduction") == 0)
                                                 child.on = g_Config.m_KxPfScoreDist != 0;
@@ -1339,6 +1358,63 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
                                                                 ch.m_InputInitialized = true;
                                                         }
                                                 }
+                                        }
+                                }
+                        }
+                }
+        }
+        // v1.56.174: per-frame sync of Spoofer UI from config.
+        // Runs every frame while open (not just on open) so switching the
+        // "Client preset" dropdown immediately updates name/version/version_id/
+        // git_hash/extra-netmsgs fields. Mirrors the AimBot/TriggerBot per-frame
+        // sync pattern (see v1.56.83 above).
+        if(isOpen)
+        {
+                for(int p = 0; p < NUM_PANELS; ++p)
+                {
+                        for(int r = 0; r < g_Panels[p].rowCount; ++r)
+                        {
+                                SRow &row = g_Panels[p].pRows[r];
+                                if(row.type != ERowType::Expandable)
+                                continue;
+                                if(str_comp(row.pName, "Spoofer") == 0)
+                                {
+                                        row.on = (g_Config.m_KxVersionSpoof != 0 || g_Config.m_KxSpoofClientStr != 0);
+                                        for(int c = 0; c < row.childCount; ++c)
+                                        {
+                                                SRow &ch = row.pChildren[c];
+                                                if(str_comp(ch.pName, "Version ID") == 0)
+                                                        ch.value = (float)g_Config.m_KxVersionSpoofId;
+                                                else if(str_comp(ch.pName, "Client preset") == 0)
+                                                        ch.valueIdx = g_Config.m_KxSpoofClientPreset;
+                                                else if(str_comp(ch.pName, "Custom client name") == 0)
+                                                {
+                                                        if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                        {
+                                                                str_copy(ch.m_aInputBuf, g_Config.m_KxSpoofClientName, sizeof(ch.m_aInputBuf));
+                                                                ch.m_InputInitialized = true;
+                                                        }
+                                                }
+                                                else if(str_comp(ch.pName, "Client version") == 0)
+                                                {
+                                                        if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                        {
+                                                                str_copy(ch.m_aInputBuf, g_Config.m_KxSpoofClientVersion, sizeof(ch.m_aInputBuf));
+                                                                ch.m_InputInitialized = true;
+                                                        }
+                                                }
+                                                else if(str_comp(ch.pName, "Git hash") == 0)
+                                                        ch.on = g_Config.m_KxSpoofGitHashEnabled != 0;
+                                                else if(str_comp(ch.pName, "Git hash value") == 0)
+                                                {
+                                                        if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                        {
+                                                                str_copy(ch.m_aInputBuf, g_Config.m_KxSpoofGitHash, sizeof(ch.m_aInputBuf));
+                                                                ch.m_InputInitialized = true;
+                                                        }
+                                                }
+                                                else if(str_comp(ch.pName, "Extra NETMSGs") == 0)
+                                                        ch.on = g_Config.m_KxSpoofBestClientExtraNetmsgs != 0;
                                         }
                                 }
                         }
@@ -2389,6 +2465,9 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         // v1.56.107: Spoofer → Git hash toggle (child)
                                         else if(str_comp(pTarget->pName, "Git hash") == 0 && str_comp(row.pName, "Spoofer") == 0)
                                                 g_Config.m_KxSpoofGitHashEnabled = pTarget->on ? 1 : 0;
+                                        // v1.56.174: Spoofer → Extra NETMSGs toggle (BestClient preset only)
+                                        else if(str_comp(pTarget->pName, "Extra NETMSGs") == 0 && str_comp(row.pName, "Spoofer") == 0)
+                                                g_Config.m_KxSpoofBestClientExtraNetmsgs = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Rainbow color") == 0)
                                         {
                                                 // v1.56.78: save color before enabling rainbow,
@@ -2808,8 +2887,13 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                                                         else if(o == 2)
                                                         {
                                                                 str_copy(g_Config.m_KxSpoofClientName, "BestClient", sizeof(g_Config.m_KxSpoofClientName));
-                                                                str_copy(g_Config.m_KxSpoofClientVersion, "1.9 beta", sizeof(g_Config.m_KxSpoofClientVersion));
+                                                                str_copy(g_Config.m_KxSpoofClientVersion, "2.1.1 stable-beta", sizeof(g_Config.m_KxSpoofClientVersion));
                                                                 g_Config.m_KxVersionSpoofId = 19080;
+                                                                // v1.56.174: BestClient uses --short=32 git hash format (see
+                                                                // BestClient/scripts/git_revision.py). Auto-fill official
+                                                                // BestProjectTeam/BestClient main HEAD so user doesn't have to guess.
+                                                                str_copy(g_Config.m_KxSpoofGitHash, "0df5194057d68a7708b282c5c8245308", sizeof(g_Config.m_KxSpoofGitHash));
+                                                                g_Config.m_KxSpoofGitHashEnabled = 1;
                                                         }
                                                 }
                                         }
@@ -2895,8 +2979,13 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
                                                                         else if(o == 2)
                                                                         {
                                                                                 str_copy(g_Config.m_KxSpoofClientName, "BestClient", sizeof(g_Config.m_KxSpoofClientName));
-                                                                                str_copy(g_Config.m_KxSpoofClientVersion, "1.9 beta", sizeof(g_Config.m_KxSpoofClientVersion));
+                                                                                str_copy(g_Config.m_KxSpoofClientVersion, "2.1.1 stable-beta", sizeof(g_Config.m_KxSpoofClientVersion));
                                                                                 g_Config.m_KxVersionSpoofId = 19080;
+                                                                                // v1.56.174: BestClient uses --short=32 git hash format (see
+                                                                                // BestClient/scripts/git_revision.py). Auto-fill official
+                                                                                // BestProjectTeam/BestClient main HEAD so user doesn't have to guess.
+                                                                                str_copy(g_Config.m_KxSpoofGitHash, "0df5194057d68a7708b282c5c8245308", sizeof(g_Config.m_KxSpoofGitHash));
+                                                                                g_Config.m_KxSpoofGitHashEnabled = 1;
                                                                         }
                                                                 }
                                                         }
