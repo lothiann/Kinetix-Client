@@ -396,6 +396,19 @@ public:
                 bool reachedFinish = false;
                 bool died = false;
                 int freezeTicks = 0;
+                // v1.56.161 (BUG2 root cause): cache traj + hookSegs from fnEvaluate
+                // so fnPushToAStar does NOT need to re-simulate. Re-simulation was
+                // racy — FutureWorld state (switchers, tune) drifts between fnEvaluate
+                // and fnPushToAStar, so the two simulations could diverge:
+                //   child.Pos = ind.endPos      (from fnEvaluate)
+                //   child.Traj[end] = res.endPos (from re-simulate in fnPushToAStar)
+                // If they differ → discontinuity in m_PfVPath at this chunk boundary
+                // → "sharp line at chunk boundary" + "stale chunk hanging" (only
+                // visible at low FPS because the broken chunk flashes 1 frame at
+                // high FPS). Caching traj eliminates the second simulation entirely,
+                // so child.Pos and child.Traj[end] always come from the SAME run.
+                std::vector<vec2> traj;
+                std::vector<PfHookSeg> hookSegs;
         };
         std::vector<RheaIndividual> m_PfRHAPopulation;
         bool m_PfRHAInitialized = false; // shift buffer: population carried from prev chunk

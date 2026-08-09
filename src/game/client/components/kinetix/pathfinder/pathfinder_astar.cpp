@@ -421,6 +421,10 @@ int CBotNet::PfAStarStep()
                         ind.died = res.died && !res.reachedFinish;
                         ind.freezeTicks = res.freezeTicks;
                         ind.fitness = PfScoreChunk(cur.Pos, res.endPos, res.reachedFinish, ind.died, res.freezeTicks);
+                        // v1.56.161 (BUG2): cache traj + hookSegs here so fnPushToAStar
+                        // does NOT re-simulate (re-sim was racy → discontinuity).
+                        ind.traj = res.traj;
+                        ind.hookSegs = res.hookSegs;
                 };
 
                 // Push an individual as A* child node.
@@ -447,19 +451,21 @@ int CBotNet::PfAStarStep()
                         child.F = child.G + (float)W * child.H;
                         child.ParentIdx = curIdx; child.PrimIdx = 0; child.PrimTicks = ChunkSize;
                         child.TickOffset = cur.TickOffset + ChunkSize;
-                        // Re-simulate for traj/hookSegs (needed for rendering).
-                        PfChunkResult res;
-                        FutureWorld.m_GameTick = RootStartTick + cur.TickOffset;
-                        pBot = PfSpawnSimBot(&FutureWorld, LocalID, cur.Pos, cur.Core.m_Vel,
-                             cur.Core.m_HookState, cur.Core.m_HookPos,
-                             cur.Core.m_HookDir, cur.Core.m_HookTick,
-                             cur.FreezeTime, cur.Core.m_Jumped);
-                        if(pBot)
-                        {
-                                { CCharacterCore c = pBot->GetCore(); c.m_JumpedTotal = cur.Core.m_JumpedTotal; pBot->SetCore(c); }
-                                PfSimulateChunk(&FutureWorld, LocalID, pBot, ind.inputs, RootStartTick + cur.TickOffset, res);
-                                child.Traj = res.traj; child.HookSegs = res.hookSegs;
-                        }
+                        // v1.56.161 (BUG2): use cached traj/hookSegs from fnEvaluate.
+                        // Previously this re-simulated the chunk to obtain traj/hookSegs
+                        // for rendering. But FutureWorld state drifts between fnEvaluate
+                        // and fnPushToAStar (switchers, tune, hook interactions), so the
+                        // re-simulation could diverge from the original:
+                        //   child.Pos = ind.endPos        (from fnEvaluate)
+                        //   child.Traj[end] = res.endPos  (from re-simulate)
+                        // If they differ → discontinuity in m_PfVPath at this chunk
+                        // boundary → "sharp line at chunk boundary" + "stale chunk
+                        // hanging" (only visible at low FPS because the broken chunk
+                        // flashes 1 frame at high FPS). Using the cached traj guarantees
+                        // child.Pos and child.Traj[end] come from the SAME simulation.
+                        // Bonus: 1 simulation per pushed individual instead of 2.
+                        child.Traj = ind.traj;
+                        child.HookSegs = ind.hookSegs;
                         child.Inputs = ind.inputs;
                         m_PfANodes.push_back(child);
                         PfAStarHeapPush(m_PfAOpen, m_PfANodes, (int)m_PfANodes.size() - 1);
