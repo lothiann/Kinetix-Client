@@ -101,6 +101,7 @@ CBotNet::CBotNet()
         m_MapGridLoaded = false;
         m_pfDist = nullptr;
         m_pfVisited = nullptr;
+        m_aLastMapName[0] = '\0';
 
         // Per-dummy state is auto-initialized by CBotNetDummy constructor
 }
@@ -180,6 +181,76 @@ void CBotNet::OnConsoleInit()
         Console()->Register("kx_pf_hook_angles", "i[angles]", CFGFLAG_CLIENT, ConPfHookAngles, this, "Pathfinder tab: hook fan-raycast rays (4-32)");
         Console()->Register("kx_pf_horizon", "i[ticks]", CFGFLAG_CLIENT, ConPfHorizon, this, "Pathfinder tab: ticks applied per chunk (1-50)");
         Console()->Register("kx_pf_play", "i[on]", CFGFLAG_CLIENT, ConPfGo, this, "Pathfinder: 1=replay path on real player (needs FINISHED state), 0=stop");
+}
+
+// =========================================================
+// ENGINE LIFECYCLE (CComponent virtuals)
+// =========================================================
+
+// OnReset: called by CGameClient::OnConnected() right after OnMapLoad()
+// (gameclient.cpp:810-811), and on full client reset. Disables all active
+// botnet modes and resets every dummy's state machine + input buffer.
+void CBotNet::OnReset()
+{
+        m_AttackEnabled = false;
+        m_CopyMoves = false;
+        m_RandomAim = false;
+        m_KinodynamicEnabled = false;
+        for(int D = 0; D < MAX_DUMMIES; D++)
+        {
+                m_aDummies[D].Reset();
+                ResetDummyInputs(D);
+        }
+}
+
+// OnMapLoad (v1.56.164): called by CGameClient::OnConnected() after
+// m_Layers.Init() + m_Collision.Init() on EVERY map load (map vote,
+// reconnect, demo start). The engine has already swapped in the new map —
+// our cached pathfinder map data (grid, flow field, BFS score field,
+// finish tiles, A* search state, trajectory) is now stale and must be
+// invalidated.
+//
+// Previously pathfinder only reloaded the grid via MaybeReloadMapGrid()
+// (called from dummies/attack) which compared GameLayer W/H. That misses:
+//   - same-size map swaps (vote to a different map with identical W*H)
+//   - PathfinderGo/Attack branches that don't call MaybeReloadMapGrid
+// And even when LoadMapGrid() DID run, it left m_PfFlowField alive
+// (fixed in LoadMapGrid itself — see map_grid.cpp).
+//
+// Here we just flag the grid as unloaded; the next UpdatePathfinder() /
+// MaybeReloadMapGrid() / PfResetRun() call will lazy-reload via the
+// existing `if(!m_MapGridLoaded) LoadMapGrid();` guards. We also stop
+// any in-flight search (its nodes reference old tile coords) and clear
+// playback so kx_pf_play can't replay a stale path.
+void CBotNet::OnMapLoad()
+{
+        // Force lazy grid reload on next access. LoadMapGrid() frees the old
+        // buffers (including m_PfFlowField/m_PfScoreField — see map_grid.cpp)
+        // and re-reads tile data from the freshly-loaded IMap.
+        m_MapGridLoaded = false;
+
+        // Abort any in-flight A* search — its nodes reference old tile coords.
+        m_PfState = PF_STATE_IDLE;
+        m_PfAPathReady = false;
+        m_PfAStarted = false;
+        m_PfAGoalIdx = -1;
+        m_PfANodes.clear();
+        m_PfAOpen.clear();
+        m_PfABestG.clear();
+        m_PfRHAInitialized = false;
+        m_PfRHAPopulation.clear();
+        m_PfAExpandCount = 0;
+
+        // Drop any cached trajectory + playback buffer (points into old map).
+        m_PfVPath.clear();
+        m_PfFullInputs.clear();
+        m_PfFullInputsIdx = 0;
+        m_PfGoActive = false;
+        m_PfGoIdx = 0;
+
+        // m_PfFlowField / m_PfScoreField / m_PfFinishTiles are freed inside
+        // LoadMapGrid() on next call; no need to touch them here (and doing
+        // so would risk a double-free if LoadMapGrid hasn't run yet).
 }
 
 void CBotNet::OnUpdate()

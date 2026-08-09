@@ -26,20 +26,3 @@ void CBotNet::ResetDummyInputs(int Dummy)
         CNetObj_PlayerInput *pInput = &pGame->m_aDummyInput[Dummy];
         ResetAndCommitInput(pGame, pInput, Dummy);
 }
-
-// =========================================================
-// ON RESET
-// =========================================================
-
-void CBotNet::OnReset()
-{
-        m_AttackEnabled = false;
-        m_CopyMoves = false;
-        m_RandomAim = false;
-        m_KinodynamicEnabled = false;
-        for(int D = 0; D < MAX_DUMMIES; D++)
-        {
-                m_aDummies[D].Reset();
-                ResetDummyInputs(D);
-        }
-}

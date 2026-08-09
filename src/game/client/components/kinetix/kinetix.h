@@ -441,6 +441,7 @@ public:
         void OnUpdate() override;
         void OnRender() override;
         void OnReset() override;
+        void OnMapLoad() override;
 
         // Process one inactive dummy
         void ProcessDummy(int Dummy);

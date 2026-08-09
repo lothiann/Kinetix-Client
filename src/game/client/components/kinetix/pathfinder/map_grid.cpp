@@ -42,6 +42,31 @@ void CBotNet::LoadMapGrid()
         if(m_PfPlayerPenalty)
                 delete[] m_PfPlayerPenalty;
 
+        // v1.56.164: invalidate dependent BFS caches. Previously these survived
+        // a grid reload — m_PfFlowField kept its OLD buffer (allocated for the
+        // previous map's W*H) while m_MapWidth/m_MapHeight updated to the new
+        // map. PfComputeFlowField's lazy guard (if(!m_PfFlowField || ...))
+        // then SKIPPED reallocation, and the subsequent
+        //   for(int i=0; i<Size; i++) m_PfFlowField[i] = 1e18f;
+        // wrote Size=new_W*new_H floats into a buffer of old_W*old_H →
+        // HEAP OVERFLOW if the new map is bigger. Even at equal size, the
+        // BFS sources (m_PfFinishTiles) were stale → flow field pointed
+        // toward the old map's finishes. Clearing here forces a clean
+        // recomputation in PfComputeFlowField on next access.
+        if(m_PfFlowField)
+        {
+                delete[] m_PfFlowField;
+                m_PfFlowField = nullptr;
+        }
+        if(m_PfScoreField)
+        {
+                delete[] m_PfScoreField;
+                m_PfScoreField = nullptr;
+        }
+        m_PfScoreFieldW = 0;
+        m_PfScoreFieldH = 0;
+        m_PfFinishTiles.clear();
+
         m_MapWidth = Width;
         m_MapHeight = Height;
         int Size = Width * Height;
