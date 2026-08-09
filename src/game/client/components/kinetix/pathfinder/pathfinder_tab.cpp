@@ -107,18 +107,25 @@ bool CBotNet::ApplyPfGoInput(CNetObj_PlayerInput *pInput)
         return true;
 }
 
-// v1.56.155: PfPlaybackDebugLog — run m_PfFullInputs through a cloned pathfinder
-// sim world (NOT the real world) and log each tick's line/freeze state.
-// Called once at kx_pf_play 1 start. Mirrors PfAStarSetupWorld + PfSimulateChunk
-// flow, but with per-tick logging.
+// v1.56.159: PfPlaybackDebugLog — READ-ONLY debug. Reads the already-built
+// pathfinder path (m_PfVPath, vector<vec2>) and runs the SAME anti-skip line
+// check the engine uses (GetMapIndices + GetTileIndex/GetFrontTileIndex) on each
+// segment. Does NOT simulate, does NOT clone the world, does NOT spawn a bot,
+// does NOT call Freeze()/Tick()/SetCore() — zero side effects on game state.
 //
-// Log format (per tick):
-//   Tick #X-1 - #X | Line = Y px | Line freeze = True/False | Freeze = True/False
+// This only READS tile data under the path's anti-skip line, exactly like
+// DDRacePostCoreTick does for m_PrevPos -> m_Pos, but applied to the pathfinder's
+// recorded trajectory.
 //
-// Tick #X-1 - #X : interval between tick X-1 (prev) and tick X (cur), 0-indexed
-// Line = Y px    : pixel length of prevTickPos -> curTickPos segment
-// Line freeze    : whether GetMapIndices(prev, cur) found any FREEZE/DFREEZE tile
-// Freeze         : whether bot m_FreezeTime > 0 in sim after this tick
+// Log format (per segment i, prev=m_PfVPath[i] cur=m_PfVPath[i+1]):
+//   Seg #i | L=Y px n=N rawF=T/F | prev=(x,y) cur=(x,y) | tiles[g/f]=[t/t ...]
+//
+// L      : pixel length of segment
+// n      : how many tile indices GetMapIndices returned on this line
+// rawF   : whether ANY tile on the line is TILE_FREEZE(9) or TILE_DFREEZE(12)
+//          on game OR front layer (ignores Super/Invincible/DeepFrozen — pure
+//          "does the line cross a freeze tile" check)
+// tiles  : up to 6 pairs of (game_tile, front_tile) values on the line
 void CBotNet::PfPlaybackDebugLog()
 {
         CGameClient *pGame = GameClient();
@@ -127,109 +134,71 @@ void CBotNet::PfPlaybackDebugLog()
                 dbg_msg("pathfinder", "PfPlaybackDebugLog: no game/local info");
                 return;
         }
-        int LocalID = pGame->m_Snap.m_LocalClientId;
-        if(LocalID < 0)
+
+        if(m_PfVPath.size() < 2)
         {
-                dbg_msg("pathfinder", "PfPlaybackDebugLog: no local client id");
-                return;
-        }
-        if(m_PfFullInputs.empty())
-        {
-                dbg_msg("pathfinder", "PfPlaybackDebugLog: m_PfFullInputs empty");
-                return;
-        }
-        if(!pGame->m_PredictedWorld.GetCharacterById(LocalID))
-        {
-                dbg_msg("pathfinder", "PfPlaybackDebugLog: no predicted character");
+                dbg_msg("pathfinder", "PfPlaybackDebugLog: m_PfVPath has %d points (need >=2)",
+                        (int)m_PfVPath.size());
                 return;
         }
 
-        // Setup cloned world (same as PfAStarSetupWorld in pathfinder_astar.cpp):
-        // CopyWorld from PredictedWorld, then remove all non-character entities
-        // and all characters except LocalID. This isolates the sim bot.
-        CGameWorld FutureWorld;
-        FutureWorld.CopyWorld(&pGame->m_PredictedWorld);
-        for(int Type = 0; Type < CGameWorld::NUM_ENTTYPES; Type++)
-        {
-                if(Type == CGameWorld::ENTTYPE_CHARACTER)
-                        continue;
-                std::vector<CEntity *> vRemove;
-                for(CEntity *pEnt = FutureWorld.FindLast(Type); pEnt; pEnt = pEnt->TypePrev())
-                        vRemove.push_back(pEnt);
-                for(CEntity *pEnt : vRemove)
-                        FutureWorld.RemoveEntity(pEnt);
-        }
-        for(int i = 0; i < MAX_CLIENTS; i++)
-        {
-                if(i == LocalID)
-                        continue;
-                if(CCharacter *pChar = FutureWorld.GetCharacterById(i))
-                        FutureWorld.RemoveEntity(pChar);
-        }
-
-        CCollision *pColl = FutureWorld.Collision();
+        // Use the REAL game collision (same map tiles the engine sees). No clone.
+        CCollision *pColl = pGame->Collision();
         if(!pColl)
         {
                 dbg_msg("pathfinder", "PfPlaybackDebugLog: no collision");
                 return;
         }
 
-        int RootStartTick = FutureWorld.GameTick();
+        dbg_msg("pathfinder", "=== PfPlaybackDebugLog START: %d path points, start=(%.0f,%.0f) ===",
+                (int)m_PfVPath.size(), m_PfVPath[0].x, m_PfVPath[0].y);
 
-        // Spawn sim bot from m_PfStartPos + m_PfCur* state (saved at PfResetRun).
-        // This is the EXACT state A* started from, so the sim mirrors what A* saw.
-        CCharacter *pBot = PfSpawnSimBot(&FutureWorld, LocalID,
-                m_PfStartPos, m_PfCurVel, m_PfCurHookState,
-                m_PfCurHookPos, m_PfCurHookDir, m_PfCurHookTick,
-                m_PfCurFreezeTime, m_PfCurJumped);
-        if(!pBot)
+        int totalFreezeSegs = 0;
+
+        for(size_t i = 0; i + 1 < m_PfVPath.size(); i++)
         {
-                dbg_msg("pathfinder", "PfPlaybackDebugLog: PfSpawnSimBot failed");
-                return;
-        }
-
-        dbg_msg("pathfinder", "=== PfPlaybackDebugLog START: %d ticks, start=(%.0f,%.0f) freezeTime=%d ===",
-                (int)m_PfFullInputs.size(), m_PfStartPos.x, m_PfStartPos.y, m_PfCurFreezeTime);
-
-        vec2 prevPos = pBot->m_Pos;
-
-        for(size_t t = 0; t < m_PfFullInputs.size(); t++)
-        {
-                int Tick = RootStartTick + (int)t + 1;
-                const CNetObj_PlayerInput &In = m_PfFullInputs[t];
-
-                pBot->OnDirectInput(&In);
-                FutureWorld.m_GameTick = Tick;
-                pBot->OnPredictedInput(&In);
-                FutureWorld.Tick();
-
-                if(!FutureWorld.GetCharacterById(LocalID))
-                {
-                        dbg_msg("pathfinder", "Tick #%d - #%d | DIED (bot removed from sim)", (int)t, (int)t + 1);
-                        break;
-                }
-
-                vec2 curPos = pBot->m_Pos;
+                vec2 prevPos = m_PfVPath[i];
+                vec2 curPos = m_PfVPath[i + 1];
                 float lineLen = distance(prevPos, curPos);
 
-                // v1.56.157: Use PfCheckFreeze — exact 1:1 copy of DDNet's
-                // HandleTiles + DDRacePostCoreTick anti-skip logic. If the engine
-                // finds freeze on this line, this finds it too. Calls pBot->Freeze()
-                // like HandleTiles does.
-                bool lineFreeze = PfCheckFreeze(&FutureWorld, pBot, prevPos, curPos);
+                // Anti-skip line — same call the engine makes in DDRacePostCoreTick.
+                std::vector<int> vIndices = pColl->GetMapIndices(prevPos, curPos);
+                int n = (int)vIndices.size();
 
-                bool freeze = pBot->m_FreezeTime > 0;
+                bool rawFreeze = false;
+                char aTiles[128];
+                aTiles[0] = '\0';
+                int shown = 0;
+                for(int idx : vIndices)
+                {
+                        int ti = pColl->GetTileIndex(idx);
+                        int tf = pColl->GetFrontTileIndex(idx);
+                        if(ti == TILE_FREEZE || ti == TILE_DFREEZE ||
+                           tf == TILE_FREEZE || tf == TILE_DFREEZE)
+                                rawFreeze = true;
+                        if(shown < 6)
+                        {
+                                str_format(aTiles + str_length(aTiles),
+                                        (int)sizeof(aTiles) - str_length(aTiles),
+                                        "%s%d/%d", shown ? " " : "", ti, tf);
+                                shown++;
+                        }
+                }
+                if(shown == 0)
+                        str_copy(aTiles, "-", sizeof(aTiles));
 
-                dbg_msg("pathfinder", "Tick #%d - #%d | Line = %.1f px | Line freeze = %s | Freeze = %s",
-                        (int)t, (int)t + 1, lineLen,
-                        lineFreeze ? "True" : "False",
-                        freeze ? "True" : "False");
+                if(rawFreeze)
+                        totalFreezeSegs++;
 
-                prevPos = curPos;
+                dbg_msg("pathfinder", "Seg #%d | L=%.1f n=%d rawF=%s | prev=(%.0f,%.0f) cur=(%.0f,%.0f) | tiles[g/f]=%s",
+                        (int)i, lineLen, n,
+                        rawFreeze ? "T" : "F",
+                        prevPos.x, prevPos.y, curPos.x, curPos.y,
+                        aTiles);
         }
 
-        dbg_msg("pathfinder", "=== PfPlaybackDebugLog END: final pos=(%.0f,%.0f) freezeTime=%d ===",
-                pBot->m_Pos.x, pBot->m_Pos.y, pBot->m_FreezeTime);
+        dbg_msg("pathfinder", "=== PfPlaybackDebugLog END: %d/%d segments cross freeze ===",
+                totalFreezeSegs, (int)m_PfVPath.size() - 1);
 }
 
 // Multi-source BFS: distance field to the NEAREST finish tile.
