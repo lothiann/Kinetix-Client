@@ -571,7 +571,18 @@ void CBotNet::ProcessDummy(int Dummy)
                                 if(!m_PfHookEnabled || standActive || pInput->m_Hook != 0 ||
                                         (State.m_PfHookTile.x == 0 && State.m_PfHookTile.y == 0))
                                 {
-                                        State.m_HookTickTimer = 0;
+                                        // v1.56.168 BUG6: do NOT reset m_HookTickTimer here.
+                                        // This if-branch runs every tick when pathfinder hook is inactive
+                                        // (m_PfHookEnabled=false, or standActive, or AutoHook already
+                                        // set pInput->m_Hook, or no PfHookTile). The timer is SHARED with
+                                        // AutoHook above (line 550 increments it, line 553 derives
+                                        // pInput->m_Hook from it). Resetting it here every tick killed
+                                        // AutoHook's pulse cycle: timer never reached TicksCycle, so
+                                        // pInput->m_Hook stayed 1 forever and the dummy hooked once and
+                                        // never re-hooked. The timer is owned by AutoHook (which resets
+                                        // it in its own else-branches on lines 558/564) and by the
+                                        // pathfinder-hook else-branch below (lines 591-600) when
+                                        // pathfinder hook is actually active. Doing nothing here is safe.
                                 }
                                 else
                                 {
