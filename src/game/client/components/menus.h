@@ -686,7 +686,6 @@ public:
                 SETTINGS_SOUND,
                 SETTINGS_DDNET,
                 SETTINGS_ASSETS,
-                SETTINGS_KINETIX,
 
                 SETTINGS_LENGTH,
         };
@@ -734,16 +733,6 @@ public:
         void RefreshFilteredDemos();
         void DemoSeekTick(IDemoPlayer::ETickOffset TickOffset);
         bool m_Dummy;
-
-        // Dummies tab buttons
-        CButtonContainer m_aDummyButtons[MAX_DUMMIES];
-        CButtonContainer m_aDummySwitchButtons[MAX_DUMMIES];
-        CButtonContainer m_MainSwitchButton;
-
-        // Dummies tab: Send command
-        bool m_aDummySendCmdEnabled[MAX_DUMMIES] = {};
-        CLineInputBuffered<256> m_SendCommandInput;
-        CButtonContainer m_SendCommandButton;
 
         const char *GetCurrentDemoFolder() const { return m_aCurrentDemoFolder; }
 
@@ -846,12 +835,6 @@ private:
         // found in menus_settings.cpp
         void RenderSettingsDDNet(CUIRect MainView);
         void RenderSettingsAppearance(CUIRect MainView);
-        void RenderSettingsDummies(CUIRect MainView);
-        void RenderSettingsKinetix(CUIRect MainView);
-        void RenderSettingsFunctions(CUIRect MainView);
-        void RenderSettingsAdvanced(CUIRect MainView);
-        void RenderSettingsBotSettings(CUIRect MainView);
-        void RenderSettingsPathfinder(CUIRect MainView);
         bool RenderHslaScrollbars(CUIRect *pRect, unsigned int *pColor, bool Alpha, float DarkestLight);
 };
 #endif
