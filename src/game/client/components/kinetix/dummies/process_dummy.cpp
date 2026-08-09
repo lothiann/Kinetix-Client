@@ -27,12 +27,12 @@ void CBotNet::ProcessDummy(int Dummy)
         if(ProcessMacroRecording(pGame, pInput, Dummy, State, LocalID, CurTick))
                 return;
 
-        // Throttle actions to one per m_ClientDelay ms (per-dummy static timer).
+        // Throttle actions to one per g_Config.m_KxClientDelay ms (per-dummy static timer).
         if(ApplyClientDelayGate(pGame, pInput, Dummy))
                 return;
 
         // Kill-on-freeze (fall-through — does NOT return; later stages still run).
-        if(m_KillOnFreeze && pGame->m_aClients[LocalID].m_FreezeEnd > 0)
+        if(g_Config.m_KxKillFrz && pGame->m_aClients[LocalID].m_FreezeEnd > 0)
                 IssueKillForDummy(Dummy);
 
         // Mirror another client's input.  Falls through when target inactive.
@@ -44,7 +44,7 @@ void CBotNet::ProcessDummy(int Dummy)
                 return;
 
         // ===== ATTACK =====
-        if(m_AttackEnabled)
+        if(g_Config.m_KxAttack)
         {
                 int TargetID = -1;
                 float MinDist = 1000000.0f;
@@ -54,7 +54,7 @@ void CBotNet::ProcessDummy(int Dummy)
 
                 // ===== RESCUE FROZEN + SMART RESCUE =====
                 bool usingSmartRescue = false;
-                if(m_RescueFrozen)
+                if(g_Config.m_KxRescue)
                 {
                         int rescueCandidates[128];
                         float rescueDist[128];
@@ -68,13 +68,13 @@ void CBotNet::ProcessDummy(int Dummy)
                                         continue;
 
                                 bool canRescue = false;
-                                if(i == m_MainID)
+                                if(i == g_Config.m_KxMain)
                                         canRescue = true;
                                 else if(m_BotsList[i])
                                         canRescue = true;
-                                else if(m_RescueAll)
+                                else if(g_Config.m_KxRescueAll)
                                 {
-                                        canRescue = m_AllTarget ? m_TargetList[i] : !m_TargetList[i];
+                                        canRescue = g_Config.m_KxTargetAll ? m_TargetList[i] : !m_TargetList[i];
                                         if(m_RescueList[i])
                                                 canRescue = false;
                                 }
@@ -85,13 +85,13 @@ void CBotNet::ProcessDummy(int Dummy)
                                         continue;
 
                                 vec2 TPos((float)pGame->m_Snap.m_aCharacters[i].m_Cur.m_X, (float)pGame->m_Snap.m_aCharacters[i].m_Cur.m_Y);
-                                if(!m_SmartDetect)
+                                if(!g_Config.m_KxSmartDetect)
                                 {
                                         if(pGame->Collision()->IntersectLine(MyPos, TPos, NULL, NULL) > 0)
                                                 continue;
                                 }
                                 float d = distance(MyPos, TPos);
-                                if(d < m_RescueRadius)
+                                if(d < g_Config.m_KxRescueRadius)
                                 {
                                         rescueCandidates[numCandidates] = i;
                                         rescueDist[numCandidates] = d;
@@ -117,7 +117,7 @@ void CBotNet::ProcessDummy(int Dummy)
                                 TargetID = i;
                                 TargetIsRescue = true;
 
-                                if(m_SmartRescue && m_PathfinderEnabled && m_MapGridLoaded)
+                                if(g_Config.m_KxSmartRescue && g_Config.m_KxAtkPathfinder && m_MapGridLoaded)
                                 {
                                         int botTX = (int)(MyPos.x / 32.0f);
                                         int botTY = (int)(MyPos.y / 32.0f);
@@ -148,14 +148,14 @@ void CBotNet::ProcessDummy(int Dummy)
                 {
                         for(int i = 0; i < 128; i++)
                         {
-                                if(i == LocalID || i == m_MainID || !pGame->m_aClients[i].m_Active)
+                                if(i == LocalID || i == g_Config.m_KxMain || !pGame->m_aClients[i].m_Active)
                                         continue;
                                 if(m_BotsList[i])
                                         continue;
                                 if(pGame->m_aClients[i].m_FreezeEnd != 0)
                                         continue;
 
-                                bool isEnemy = (m_AllTarget ? !m_TargetList[i] : m_TargetList[i]);
+                                bool isEnemy = (g_Config.m_KxTargetAll ? !m_TargetList[i] : m_TargetList[i]);
                                 if(!isEnemy)
                                         continue;
 
@@ -164,7 +164,7 @@ void CBotNet::ProcessDummy(int Dummy)
                                         continue;
                                 float d = distance(MyPos, TPos);
 
-                                if(m_TargetDist > 0 && d > m_TargetDist)
+                                if(g_Config.m_KxTargetDist > 0 && d > g_Config.m_KxTargetDist)
                                         continue;
 
                                 if(d < MinDist)
@@ -175,15 +175,15 @@ void CBotNet::ProcessDummy(int Dummy)
                         }
                 }
 
-                if(TargetID == -1 && m_MainID >= 0 && m_MainID < 128)
+                if(TargetID == -1 && g_Config.m_KxMain >= 0 && g_Config.m_KxMain < 128)
                 {
-                        if(pGame->m_aClients[m_MainID].m_Active)
+                        if(pGame->m_aClients[g_Config.m_KxMain].m_Active)
                         {
-                                vec2 MainPos((float)pGame->m_Snap.m_aCharacters[m_MainID].m_Cur.m_X, (float)pGame->m_Snap.m_aCharacters[m_MainID].m_Cur.m_Y);
+                                vec2 MainPos((float)pGame->m_Snap.m_aCharacters[g_Config.m_KxMain].m_Cur.m_X, (float)pGame->m_Snap.m_aCharacters[g_Config.m_KxMain].m_Cur.m_Y);
                                 float MainDist = distance(MyPos, MainPos);
-                                if(MainDist <= m_MainDist)
+                                if(MainDist <= g_Config.m_KxMainDist)
                                 {
-                                        TargetID = m_MainID;
+                                        TargetID = g_Config.m_KxMain;
                                         TargetIsMain = true;
                                 }
                         }
@@ -196,16 +196,16 @@ void CBotNet::ProcessDummy(int Dummy)
                         float dy = (float)TChar.m_Y - MyPos.y;
                         float Dist = distance(MyPos, vec2((float)TChar.m_X, (float)TChar.m_Y));
 
-                        if(m_AutoAim)
+                        if(g_Config.m_KxAutoAim)
                                 SetMousePos(pGame, Dummy, vec2(dx, dy));
 
                         bool standActive = false;
 
-                        if(m_MoveEnabled)
+                        if(g_Config.m_KxMove)
                         {
                                 bool left = false, right = false, jump = false;
 
-                                if(m_PathfinderEnabled && !usingSmartRescue)
+                                if(g_Config.m_KxAtkPathfinder && !usingSmartRescue)
                                 {
                                         // --- PATHFINDER MOVEMENT ---
                                         // Shared 5s reload slot with PathfinderGo (legacy behaviour).
@@ -230,7 +230,7 @@ void CBotNet::ProcessDummy(int Dummy)
                                                         if(m_pfDist[botTY * m_MapWidth + botTX] >= 1e17f)
                                                                 needRecalc = true;
                                                 }
-                                                if(m_PfSimulatePlayers)
+                                                if(g_Config.m_KxPfSimulatePlayers)
                                                         needRecalc = true;
 
                                                 if(needRecalc && IsTileWalkable(targetTX, targetTY))
@@ -247,7 +247,7 @@ void CBotNet::ProcessDummy(int Dummy)
                                                 // Cache near-freeze once: shared by the kinodynamic gate and the stand check.
                                                 bool nearFreeze = IsNearFreeze(botTX, botTY);
 
-                                                if(m_KinodynamicEnabled && State.m_PathFound && !nearFreeze)
+                                                if(g_Config.m_KxKinodynamic && State.m_PathFound && !nearFreeze)
                                                 {
                                                         CKinodynamicCache &kinoCache = State.m_KinoCache;
 
@@ -255,7 +255,7 @@ void CBotNet::ProcessDummy(int Dummy)
                                                         bool kinoNeedRecompute = false;
                                                         if(!kinoCache.IsValid())
                                                                 kinoNeedRecompute = true;
-                                                        else if(kinoCache.IsExpired(m_KinoCacheTicks))
+                                                        else if(kinoCache.IsExpired(g_Config.m_KxKinoCacheTicks))
                                                                 kinoNeedRecompute = true;
                                                         else if(kinoCache.TargetTX != targetTX || kinoCache.TargetTY != targetTY)
                                                                 kinoNeedRecompute = true;
@@ -281,9 +281,9 @@ void CBotNet::ProcessDummy(int Dummy)
                                                                 // Check if bot should stand (close enough to target)
                                                                 bool kinoStandActive = false;
                                                                 float standDist = EffectiveStandDist(TargetIsMain, TargetIsRescue);
-                                                                if(m_StandEnabled && !nearFreeze &&
-                                                                        ((!m_StandOnXOnly && Dist < standDist) ||
-                                                                                (m_StandOnXOnly && absolute(dx) < standDist)))
+                                                                if(g_Config.m_KxStand && !nearFreeze &&
+                                                                        ((!g_Config.m_KxStandOnX && Dist < standDist) ||
+                                                                                (g_Config.m_KxStandOnX && absolute(dx) < standDist)))
                                                                 {
                                                                         kinoStandActive = true;
                                                                 }
@@ -312,23 +312,23 @@ void CBotNet::ProcessDummy(int Dummy)
                                                 // 1. Kinodynamic is disabled
                                                 // 2. Bot is near freeze (kinodynamic skips to let avoid-freeze logic work)
                                                 // 3. Kinodynamic cache is invalid (no valid path found by simulation)
-                                                if(!m_KinodynamicEnabled || nearFreeze || !State.m_KinoCache.IsValid())
+                                                if(!g_Config.m_KxKinodynamic || nearFreeze || !State.m_KinoCache.IsValid())
                                                 {
                                                         GetMovementFromFlow(State, left, right, jump);
                                                         // When falling back from kinodynamic to normal movement, clear hook
                                                         // because auto-hook code below is skipped when kinodynamic is enabled
-                                                        if(m_KinodynamicEnabled)
+                                                        if(g_Config.m_KxKinodynamic)
                                                                 pInput->m_Hook = 0;
                                                 }
 
-                                                if(m_PfSnap && State.m_PathFound && !left && !right)
+                                                if(g_Config.m_KxAtkPathfinderSnap && State.m_PathFound && !left && !right)
                                                         ApplyPfSnap(MyPos, left, right);
 
                                                 // nearFreeze cached above (shared with the kinodynamic gate).
                                                 float standDist = EffectiveStandDist(TargetIsMain, TargetIsRescue);
-                                                if(m_StandEnabled && !nearFreeze &&
-                                                        ((!m_StandOnXOnly && Dist < standDist) ||
-                                                                (m_StandOnXOnly && absolute(dx) < standDist)))
+                                                if(g_Config.m_KxStand && !nearFreeze &&
+                                                        ((!g_Config.m_KxStandOnX && Dist < standDist) ||
+                                                                (g_Config.m_KxStandOnX && absolute(dx) < standDist)))
                                                 {
                                                         left = false;
                                                         right = false;
@@ -338,7 +338,7 @@ void CBotNet::ProcessDummy(int Dummy)
                                                 {
                                                         bool doJump = jump;
 
-                                                        if(!m_PfSimulatePlayers)
+                                                        if(!g_Config.m_KxPfSimulatePlayers)
                                                         {
                                                                 vec2 IntersectPos;
                                                                 int HitPlayer = pGame->IntersectCharacter(MyPos, MyPos + vec2((dx > 0 ? 1.0f : -1.0f) * 40.0f, 0), IntersectPos, LocalID);
@@ -350,7 +350,7 @@ void CBotNet::ProcessDummy(int Dummy)
                                                 }
                                         }
                                 }
-                                else if(m_PathfinderEnabled && usingSmartRescue)
+                                else if(g_Config.m_KxAtkPathfinder && usingSmartRescue)
                                 {
                                         // --- SMART RESCUE PATHFINDER MOVEMENT ---
                                         // Separate 5s reload slot (BranchB keeps its own timer, legacy behaviour).
@@ -374,7 +374,7 @@ void CBotNet::ProcessDummy(int Dummy)
                                                         if(m_pfDist[botTY * m_MapWidth + botTX] >= 1e17f)
                                                                 needRecalc = true;
                                                 }
-                                                if(m_PfSimulatePlayers)
+                                                if(g_Config.m_KxPfSimulatePlayers)
                                                         needRecalc = true;
 
                                                 UpdatePlayerPenalty(botTX, botTY, -1, -1, LocalID);
@@ -393,23 +393,23 @@ void CBotNet::ProcessDummy(int Dummy)
 
                                                 bool nearFreeze = IsNearFreeze(botTX, botTY);
                                                 float standDist = EffectiveStandDist(TargetIsMain, TargetIsRescue);
-                                                if(m_StandEnabled && !nearFreeze &&
-                                                        ((!m_StandOnXOnly && Dist < standDist) ||
-                                                                (m_StandOnXOnly && absolute(dx) < standDist)))
+                                                if(g_Config.m_KxStand && !nearFreeze &&
+                                                        ((!g_Config.m_KxStandOnX && Dist < standDist) ||
+                                                                (g_Config.m_KxStandOnX && absolute(dx) < standDist)))
                                                 {
                                                         left = false;
                                                         right = false;
                                                         standActive = true;
                                                 }
 
-                                                if(m_PfSnap && State.m_PathFound && !left && !right)
+                                                if(g_Config.m_KxAtkPathfinderSnap && State.m_PathFound && !left && !right)
                                                         ApplyPfSnap(MyPos, left, right);
                                         }
                                 }
                                 else
                                 {
                                         float standDist = EffectiveStandDist(TargetIsMain, TargetIsRescue);
-                                        if(!m_StandEnabled || (!m_StandOnXOnly && Dist >= standDist) || (m_StandOnXOnly && absolute(dx) >= standDist))
+                                        if(!g_Config.m_KxStand || (!g_Config.m_KxStandOnX && Dist >= standDist) || (g_Config.m_KxStandOnX && absolute(dx) >= standDist))
                                         {
                                                 left = (dx < -20.0f);
                                                 right = (dx > 20.0f);
@@ -483,13 +483,13 @@ void CBotNet::ProcessDummy(int Dummy)
         after_kino_movement:
                 after_movement:
 
-                        bool CanShoot = !TargetIsMain || m_AttackMain;
-                        if(m_AutoFire && Dist < m_FireDist && CanShoot)
+                        bool CanShoot = !TargetIsMain || g_Config.m_KxAtkMain;
+                        if(g_Config.m_KxAutoFire && Dist < g_Config.m_KxFireDist && CanShoot)
                                 pInput->m_Fire++;
 
                         // Laser rescue: skip when Kinodynamic A* is active (it manages hook/aim itself)
                         bool usingLaserRescue = false;
-                        if(!m_KinodynamicEnabled && m_LaserRescue)
+                        if(!g_Config.m_KxKinodynamic && g_Config.m_KxLaserRescue)
                         {
                                 if(TargetIsRescue)
                                 {
@@ -514,7 +514,7 @@ void CBotNet::ProcessDummy(int Dummy)
                                                                         blocked = true;
                                                         }
 
-                                                        if(!blocked && Dist < m_LaserRescueDist)
+                                                        if(!blocked && Dist < g_Config.m_KxLaserRescueDist)
                                                         {
                                                                 SetMousePos(pGame, Dummy, vec2(dx, dy));
                                                                 pInput->m_WantedWeapon = 5; // WEAPON_LASER + 1 (1-based)
@@ -526,13 +526,13 @@ void CBotNet::ProcessDummy(int Dummy)
                                 }
                         }
 
-                        if(m_AutoHammer && pInput->m_Fire > 0 && !usingLaserRescue)
+                        if(g_Config.m_KxHammer && pInput->m_Fire > 0 && !usingLaserRescue)
                                 pInput->m_WantedWeapon = 1;
 
                         // Auto-hook: skip when Kinodynamic A* is active (it manages hook itself)
-                        if(!m_KinodynamicEnabled)
+                        if(!g_Config.m_KxKinodynamic)
                         {
-                                if(m_AutoHook && Dist < m_HookDist && CanShoot)
+                                if(g_Config.m_KxAutoHook && Dist < g_Config.m_KxHookDist && CanShoot)
                                 {
                                         vec2 TPos((float)TChar.m_X, (float)TChar.m_Y);
                                         bool canHook = (pGame->Collision()->IntersectLine(MyPos, TPos, NULL, NULL) == 0);
@@ -566,14 +566,14 @@ void CBotNet::ProcessDummy(int Dummy)
                         }
 
                         // === Pathfinder Hook === (skipped when Kinodynamic A* is active — it manages hook itself)
-                        if(!m_KinodynamicEnabled)
+                        if(!g_Config.m_KxKinodynamic)
                         {
-                                if(!m_PfHookEnabled || standActive || pInput->m_Hook != 0 ||
+                                if(!g_Config.m_KxPfHook || standActive || pInput->m_Hook != 0 ||
                                         (State.m_PfHookTile.x == 0 && State.m_PfHookTile.y == 0))
                                 {
                                         // v1.56.168 BUG6: do NOT reset m_HookTickTimer here.
                                         // This if-branch runs every tick when pathfinder hook is inactive
-                                        // (m_PfHookEnabled=false, or standActive, or AutoHook already
+                                        // (g_Config.m_KxPfHook=false, or standActive, or AutoHook already
                                         // set pInput->m_Hook, or no PfHookTile). The timer is SHARED with
                                         // AutoHook above (line 550 increments it, line 553 derives
                                         // pInput->m_Hook from it). Resetting it here every tick killed
@@ -591,7 +591,7 @@ void CBotNet::ProcessDummy(int Dummy)
                                         float hDx = State.m_PfHookTile.x - MyPos.x;
                                         float hDy = State.m_PfHookTile.y - MyPos.y;
                                         float hDist = sqrtf(hDx * hDx + hDy * hDy);
-                                        if(hDist > 0.001f && hDist < m_HookDist)
+                                        if(hDist > 0.001f && hDist < g_Config.m_KxHookDist)
                                         {
                                                 SetMousePos(pGame, Dummy, vec2(hDx, hDy));
                                                 pInput->m_Hook = 1;

@@ -4,7 +4,7 @@
 void CBotNet::ConAttackHookDelay(IConsole::IResult *pResult, void *pUserData)
 {
         CBotNet *p = (CBotNet *)pUserData;
-        p->m_HookDelay = pResult->GetInteger(0);
+        g_Config.m_KxAtkHookDelay = pResult->GetInteger(0);
         for(int D = 0; D < MAX_DUMMIES; D++)
                 p->m_aDummies[D].m_HookTickTimer = 0;
 }
@@ -12,17 +12,18 @@ void CBotNet::ConAttackHookDelay(IConsole::IResult *pResult, void *pUserData)
 void CBotNet::ConAttackDists(IConsole::IResult *pResult, void *pUserData)
 {
         CBotNet *p = (CBotNet *)pUserData;
-        p->m_FireDist = pResult->GetFloat(0);
-        p->m_HookDist = pResult->GetFloat(1);
-        p->m_RescueRadius = pResult->GetFloat(2);
+        (void)p;
+        g_Config.m_KxFireDist = (int)pResult->GetFloat(0);
+        g_Config.m_KxHookDist = (int)pResult->GetFloat(1);
+        g_Config.m_KxRescueRadius = (int)pResult->GetFloat(2);
         if(pResult->NumArguments() > 3)
-                p->m_TargetDist = pResult->GetFloat(3);
+                g_Config.m_KxTargetDist = (int)pResult->GetFloat(3);
         if(pResult->NumArguments() > 4)
-                p->m_MainDist = pResult->GetFloat(4);
+                g_Config.m_KxMainDist = (int)pResult->GetFloat(4);
         if(pResult->NumArguments() > 5)
-                p->m_StandDist = pResult->GetFloat(5);
+                g_Config.m_KxStandDist = (int)pResult->GetFloat(5);
         if(pResult->NumArguments() > 6)
-                p->m_MainStandDist = pResult->GetFloat(6);
+                g_Config.m_KxMainStandDist = (int)pResult->GetFloat(6);
 }
 
 void CBotNet::ConSetTargets(IConsole::IResult *pResult, void *pUserData)
@@ -94,29 +95,29 @@ void CBotNet::ConRescueIds(IConsole::IResult *pResult, void *pUserData)
 void CBotNet::ConSetTargetAll(IConsole::IResult *pResult, void *pUserData)
 {
         CBotNet *p = (CBotNet *)pUserData;
-        p->m_AllTarget = pResult->GetInteger(0) != 0;
+        g_Config.m_KxTargetAll = pResult->GetInteger(0) != 0;
 }
 
 void CBotNet::ConAttackSettings(IConsole::IResult *pResult, void *pUserData)
 {
         CBotNet *p = (CBotNet *)pUserData;
-        p->m_AutoAim = pResult->GetInteger(0) != 0;
-        p->m_AutoFire = pResult->GetInteger(1) != 0;
-        p->m_AutoHook = pResult->GetInteger(2) != 0;
-        p->m_MoveEnabled = pResult->GetInteger(3) != 0;
-        p->m_StandEnabled = pResult->GetInteger(4) != 0;
-        p->m_RescueFrozen = pResult->GetInteger(5) != 0;
-        p->m_RescueAll = pResult->GetInteger(6) != 0;
-        p->m_SmartDetect = pResult->GetInteger(7) != 0;
-        p->m_SmartRescue = pResult->GetInteger(8) != 0;
-        p->m_KillOnFreeze = pResult->GetInteger(9) != 0;
-        p->m_AttackMain = pResult->GetInteger(10) != 0;
-        p->m_AutoHammer = pResult->GetInteger(11) != 0;
+        g_Config.m_KxAutoAim = pResult->GetInteger(0) != 0;
+        g_Config.m_KxAutoFire = pResult->GetInteger(1) != 0;
+        g_Config.m_KxAutoHook = pResult->GetInteger(2) != 0;
+        g_Config.m_KxMove = pResult->GetInteger(3) != 0;
+        g_Config.m_KxStand = pResult->GetInteger(4) != 0;
+        g_Config.m_KxRescue = pResult->GetInteger(5) != 0;
+        g_Config.m_KxRescueAll = pResult->GetInteger(6) != 0;
+        g_Config.m_KxSmartDetect = pResult->GetInteger(7) != 0;
+        g_Config.m_KxSmartRescue = pResult->GetInteger(8) != 0;
+        g_Config.m_KxKillFrz = pResult->GetInteger(9) != 0;
+        g_Config.m_KxAtkMain = pResult->GetInteger(10) != 0;
+        g_Config.m_KxHammer = pResult->GetInteger(11) != 0;
         {
                 bool newSim = pResult->GetInteger(12) != 0;
-                if(newSim != p->m_PfSimulatePlayers)
+                if(newSim != g_Config.m_KxPfSimulatePlayers)
                 {
-                        p->m_PfSimulatePlayers = newSim;
+                        g_Config.m_KxPfSimulatePlayers = newSim;
                         for(int D = 0; D < MAX_DUMMIES; D++)
                         {
                                 p->m_aDummies[D].m_LastTargetTX = -1;
@@ -125,21 +126,21 @@ void CBotNet::ConAttackSettings(IConsole::IResult *pResult, void *pUserData)
                         }
                 }
         }
-        p->m_AvoidFreeze = pResult->GetInteger(13) != 0;
+        g_Config.m_KxAvoidFreeze = pResult->GetInteger(13) != 0;
         {
                 bool newPfHook = pResult->GetInteger(14) != 0;
-                if(newPfHook != p->m_PfHookEnabled)
+                if(newPfHook != g_Config.m_KxPfHook)
                 {
-                        p->m_PfHookEnabled = newPfHook;
+                        g_Config.m_KxPfHook = newPfHook;
                         for(int D = 0; D < MAX_DUMMIES; D++)
                                 p->m_aDummies[D].m_PfHookTile = vec2(0, 0);
                 }
         }
         {
                 bool newKino = pResult->GetInteger(15) != 0;
-                if(newKino != p->m_KinodynamicEnabled)
+                if(newKino != g_Config.m_KxKinodynamic)
                 {
-                        p->m_KinodynamicEnabled = newKino;
+                        g_Config.m_KxKinodynamic = newKino;
                         for(int D = 0; D < MAX_DUMMIES; D++)
                         {
                                 p->m_aDummies[D].m_KinoCache.Reset();
@@ -152,8 +153,8 @@ void CBotNet::ConAttackSettings(IConsole::IResult *pResult, void *pUserData)
 void CBotNet::ConAttackEnable(IConsole::IResult *pResult, void *pUserData)
 {
         CBotNet *p = (CBotNet *)pUserData;
-        p->m_AttackEnabled = pResult->GetInteger(0) != 0;
-        if(!p->m_AttackEnabled)
+        g_Config.m_KxAttack = pResult->GetInteger(0) != 0;
+        if(!g_Config.m_KxAttack)
         {
                 for(int D = 0; D < MAX_DUMMIES; D++)
                         p->ResetDummyInputs(D);
@@ -162,41 +163,41 @@ void CBotNet::ConAttackEnable(IConsole::IResult *pResult, void *pUserData)
 
 void CBotNet::ConSetMain(IConsole::IResult *pResult, void *pUserData)
 {
-        ((CBotNet *)pUserData)->m_MainID = pResult->GetInteger(0);
+        g_Config.m_KxMain = pResult->GetInteger(0);
 }
 
 void CBotNet::ConRandomAim(IConsole::IResult *pResult, void *pUserData)
 {
         CBotNet *pSelf = (CBotNet *)pUserData;
-        pSelf->m_RandomAim = pResult->GetInteger(0) != 0;
+        g_Config.m_KxRandomAim = pResult->GetInteger(0) != 0;
         if(pResult->NumArguments() > 1)
-                pSelf->m_RandomAimInterval = pResult->GetInteger(1);
+                g_Config.m_KxRandomAimInterval = pResult->GetInteger(1);
 }
 
 void CBotNet::ConCopyMoves(IConsole::IResult *pResult, void *pUserData)
 {
         CBotNet *pSelf = (CBotNet *)pUserData;
         int ID = pResult->GetInteger(0);
-        pSelf->m_CopyTargetID = ID;
-        pSelf->m_CopyMoves = (ID >= 0);
+        g_Config.m_KxCopyTargetId = ID;
+        g_Config.m_KxCopyMoves = (ID >= 0);
         for(int D = 0; D < MAX_DUMMIES; D++)
                 pSelf->m_aDummies[D].m_LastTargetAttackTick = -1;
 }
 
 void CBotNet::ConClientDelay(IConsole::IResult *pResult, void *pUserData)
 {
-        ((CBotNet *)pUserData)->m_ClientDelay = pResult->GetInteger(0);
+        g_Config.m_KxClientDelay = pResult->GetInteger(0);
 }
 
 void CBotNet::ConStandOnX(IConsole::IResult *pResult, void *pUserData)
 {
-        ((CBotNet *)pUserData)->m_StandOnXOnly = pResult->GetInteger(0) != 0;
+        g_Config.m_KxStandOnX = pResult->GetInteger(0) != 0;
 }
 
 void CBotNet::ConPathfinder(IConsole::IResult *pResult, void *pUserData)
 {
         CBotNet *p = (CBotNet *)pUserData;
-        p->m_PathfinderEnabled = pResult->GetInteger(0) != 0;
+        g_Config.m_KxAtkPathfinder = pResult->GetInteger(0) != 0;
         for(int D = 0; D < MAX_DUMMIES; D++)
         {
                 p->m_aDummies[D].m_LastTargetTX = -1;
@@ -208,25 +209,25 @@ void CBotNet::ConPathfinder(IConsole::IResult *pResult, void *pUserData)
 void CBotNet::ConPathfinderRays(IConsole::IResult *pResult, void *pUserData)
 {
         CBotNet *p = (CBotNet *)pUserData;
-        p->m_PfRays = pf_clamp(pResult->GetInteger(0), 12, 90);
+        g_Config.m_KxAtkPathfinderRays = pf_clamp(pResult->GetInteger(0), 12, 90);
 }
 
 void CBotNet::ConPathfinderRaysDist(IConsole::IResult *pResult, void *pUserData)
 {
         CBotNet *p = (CBotNet *)pUserData;
-        p->m_PfViewRadius = pf_clamp(pResult->GetInteger(0), 1, 128);
+        g_Config.m_KxAtkPathfinderRaysDist = pf_clamp(pResult->GetInteger(0), 1, 128);
 }
 
 void CBotNet::ConPathfinderSnap(IConsole::IResult *pResult, void *pUserData)
 {
         CBotNet *p = (CBotNet *)pUserData;
-        p->m_PfSnap = pResult->GetInteger(0) != 0;
+        g_Config.m_KxAtkPathfinderSnap = pResult->GetInteger(0) != 0;
 }
 
 void CBotNet::ConPathfinderSps(IConsole::IResult *pResult, void *pUserData)
 {
         CBotNet *p = (CBotNet *)pUserData;
-        p->m_PfSimulateMethod = pResult->GetInteger(0);
+        g_Config.m_KxAtkPathfinderSps = pResult->GetInteger(0);
 }
 
 void CBotNet::ConPathfinderGo(IConsole::IResult *pResult, void *pUserData)
@@ -268,8 +269,8 @@ void CBotNet::ConPathfinderGo(IConsole::IResult *pResult, void *pUserData)
 void CBotNet::ConStand(IConsole::IResult *pResult, void *pUserData)
 {
         CBotNet *p = (CBotNet *)pUserData;
-        p->m_StandEnabled = pResult->GetInteger(0) != 0;
-        if(!p->m_StandEnabled)
+        g_Config.m_KxStand = pResult->GetInteger(0) != 0;
+        if(!g_Config.m_KxStand)
         {
                 for(int D = 0; D < MAX_DUMMIES; D++)
                         p->ResetDummyInputs(D);
@@ -279,8 +280,8 @@ void CBotNet::ConStand(IConsole::IResult *pResult, void *pUserData)
 void CBotNet::ConAutoAim(IConsole::IResult *pResult, void *pUserData)
 {
         CBotNet *p = (CBotNet *)pUserData;
-        p->m_AutoAim = pResult->GetInteger(0) != 0;
-        if(!p->m_AutoAim)
+        g_Config.m_KxAutoAim = pResult->GetInteger(0) != 0;
+        if(!g_Config.m_KxAutoAim)
         {
                 for(int D = 0; D < MAX_DUMMIES; D++)
                         p->ResetDummyInputs(D);
@@ -290,8 +291,8 @@ void CBotNet::ConAutoAim(IConsole::IResult *pResult, void *pUserData)
 void CBotNet::ConAutoFire(IConsole::IResult *pResult, void *pUserData)
 {
         CBotNet *p = (CBotNet *)pUserData;
-        p->m_AutoFire = pResult->GetInteger(0) != 0;
-        if(!p->m_AutoFire)
+        g_Config.m_KxAutoFire = pResult->GetInteger(0) != 0;
+        if(!g_Config.m_KxAutoFire)
         {
                 for(int D = 0; D < MAX_DUMMIES; D++)
                         p->ResetDummyInputs(D);
@@ -301,8 +302,8 @@ void CBotNet::ConAutoFire(IConsole::IResult *pResult, void *pUserData)
 void CBotNet::ConAutoHook(IConsole::IResult *pResult, void *pUserData)
 {
         CBotNet *p = (CBotNet *)pUserData;
-        p->m_AutoHook = pResult->GetInteger(0) != 0;
-        if(!p->m_AutoHook)
+        g_Config.m_KxAutoHook = pResult->GetInteger(0) != 0;
+        if(!g_Config.m_KxAutoHook)
         {
                 for(int D = 0; D < MAX_DUMMIES; D++)
                         p->ResetDummyInputs(D);
@@ -312,8 +313,8 @@ void CBotNet::ConAutoHook(IConsole::IResult *pResult, void *pUserData)
 void CBotNet::ConMove(IConsole::IResult *pResult, void *pUserData)
 {
         CBotNet *p = (CBotNet *)pUserData;
-        p->m_MoveEnabled = pResult->GetInteger(0) != 0;
-        if(!p->m_MoveEnabled)
+        g_Config.m_KxMove = pResult->GetInteger(0) != 0;
+        if(!g_Config.m_KxMove)
         {
                 for(int D = 0; D < MAX_DUMMIES; D++)
                         p->ResetDummyInputs(D);
@@ -323,8 +324,8 @@ void CBotNet::ConMove(IConsole::IResult *pResult, void *pUserData)
 void CBotNet::ConRescue(IConsole::IResult *pResult, void *pUserData)
 {
         CBotNet *p = (CBotNet *)pUserData;
-        p->m_RescueFrozen = pResult->GetInteger(0) != 0;
-        if(!p->m_RescueFrozen)
+        g_Config.m_KxRescue = pResult->GetInteger(0) != 0;
+        if(!g_Config.m_KxRescue)
         {
                 for(int D = 0; D < MAX_DUMMIES; D++)
                         p->ResetDummyInputs(D);
@@ -334,8 +335,8 @@ void CBotNet::ConRescue(IConsole::IResult *pResult, void *pUserData)
 void CBotNet::ConKillFrz(IConsole::IResult *pResult, void *pUserData)
 {
         CBotNet *p = (CBotNet *)pUserData;
-        p->m_KillOnFreeze = pResult->GetInteger(0) != 0;
-        if(!p->m_KillOnFreeze)
+        g_Config.m_KxKillFrz = pResult->GetInteger(0) != 0;
+        if(!g_Config.m_KxKillFrz)
         {
                 for(int D = 0; D < MAX_DUMMIES; D++)
                         p->ResetDummyInputs(D);
@@ -345,8 +346,8 @@ void CBotNet::ConKillFrz(IConsole::IResult *pResult, void *pUserData)
 void CBotNet::ConAtkMain(IConsole::IResult *pResult, void *pUserData)
 {
         CBotNet *p = (CBotNet *)pUserData;
-        p->m_AttackMain = pResult->GetInteger(0) != 0;
-        if(!p->m_AttackMain)
+        g_Config.m_KxAtkMain = pResult->GetInteger(0) != 0;
+        if(!g_Config.m_KxAtkMain)
         {
                 for(int D = 0; D < MAX_DUMMIES; D++)
                         p->ResetDummyInputs(D);
@@ -356,14 +357,14 @@ void CBotNet::ConAtkMain(IConsole::IResult *pResult, void *pUserData)
 void CBotNet::ConAutoMain(IConsole::IResult *pResult, void *pUserData)
 {
         CBotNet *p = (CBotNet *)pUserData;
-        p->m_AutoMain = pResult->GetInteger(0) != 0;
+        g_Config.m_KxAutoMain = pResult->GetInteger(0) != 0;
 }
 
 void CBotNet::ConHammer(IConsole::IResult *pResult, void *pUserData)
 {
         CBotNet *p = (CBotNet *)pUserData;
-        p->m_AutoHammer = pResult->GetInteger(0) != 0;
-        if(!p->m_AutoHammer)
+        g_Config.m_KxHammer = pResult->GetInteger(0) != 0;
+        if(!g_Config.m_KxHammer)
         {
                 for(int D = 0; D < MAX_DUMMIES; D++)
                         p->ResetDummyInputs(D);
@@ -373,8 +374,8 @@ void CBotNet::ConHammer(IConsole::IResult *pResult, void *pUserData)
 void CBotNet::ConSmartDetect(IConsole::IResult *pResult, void *pUserData)
 {
         CBotNet *p = (CBotNet *)pUserData;
-        p->m_SmartDetect = pResult->GetInteger(0) != 0;
-        if(!p->m_SmartDetect)
+        g_Config.m_KxSmartDetect = pResult->GetInteger(0) != 0;
+        if(!g_Config.m_KxSmartDetect)
         {
                 for(int D = 0; D < MAX_DUMMIES; D++)
                         p->ResetDummyInputs(D);
@@ -384,8 +385,8 @@ void CBotNet::ConSmartDetect(IConsole::IResult *pResult, void *pUserData)
 void CBotNet::ConSmartRescue(IConsole::IResult *pResult, void *pUserData)
 {
         CBotNet *p = (CBotNet *)pUserData;
-        p->m_SmartRescue = pResult->GetInteger(0) != 0;
-        if(!p->m_SmartRescue)
+        g_Config.m_KxSmartRescue = pResult->GetInteger(0) != 0;
+        if(!g_Config.m_KxSmartRescue)
         {
                 for(int D = 0; D < MAX_DUMMIES; D++)
                         p->ResetDummyInputs(D);
@@ -395,8 +396,8 @@ void CBotNet::ConSmartRescue(IConsole::IResult *pResult, void *pUserData)
 void CBotNet::ConAvoidFreeze(IConsole::IResult *pResult, void *pUserData)
 {
         CBotNet *p = (CBotNet *)pUserData;
-        p->m_AvoidFreeze = pResult->GetInteger(0) != 0;
-        if(!p->m_AvoidFreeze)
+        g_Config.m_KxAvoidFreeze = pResult->GetInteger(0) != 0;
+        if(!g_Config.m_KxAvoidFreeze)
         {
                 for(int D = 0; D < MAX_DUMMIES; D++)
                         p->ResetDummyInputs(D);
@@ -406,8 +407,8 @@ void CBotNet::ConAvoidFreeze(IConsole::IResult *pResult, void *pUserData)
 void CBotNet::ConPfHook(IConsole::IResult *pResult, void *pUserData)
 {
         CBotNet *p = (CBotNet *)pUserData;
-        p->m_PfHookEnabled = pResult->GetInteger(0) != 0;
-        if(!p->m_PfHookEnabled)
+        g_Config.m_KxPfHook = pResult->GetInteger(0) != 0;
+        if(!g_Config.m_KxPfHook)
         {
                 for(int D = 0; D < MAX_DUMMIES; D++)
                         p->ResetDummyInputs(D);
@@ -417,8 +418,8 @@ void CBotNet::ConPfHook(IConsole::IResult *pResult, void *pUserData)
 void CBotNet::ConKinodynamic(IConsole::IResult *pResult, void *pUserData)
 {
         CBotNet *p = (CBotNet *)pUserData;
-        p->m_KinodynamicEnabled = pResult->GetInteger(0) != 0;
-        if(!p->m_KinodynamicEnabled)
+        g_Config.m_KxKinodynamic = pResult->GetInteger(0) != 0;
+        if(!g_Config.m_KxKinodynamic)
         {
                 for(int D = 0; D < MAX_DUMMIES; D++)
                 {
@@ -433,7 +434,7 @@ void CBotNet::ConKinoCandidates(IConsole::IResult *pResult, void *pUserData)
         CBotNet *p = (CBotNet *)pUserData;
         int v = pResult->GetInteger(0);
         if(v >= 100 && v <= 2000)
-                p->m_KinoCandidates = v;
+                g_Config.m_KxKinoCandidates = v;
 }
 
 void CBotNet::ConKinoTicks(IConsole::IResult *pResult, void *pUserData)
@@ -441,7 +442,7 @@ void CBotNet::ConKinoTicks(IConsole::IResult *pResult, void *pUserData)
         CBotNet *p = (CBotNet *)pUserData;
         int v = pResult->GetInteger(0);
         if(v >= 3 && v <= 20)
-                p->m_KinoTicks = v;
+                g_Config.m_KxKinoTicks = v;
 }
 
 void CBotNet::ConKinoHookAngles(IConsole::IResult *pResult, void *pUserData)
@@ -449,7 +450,7 @@ void CBotNet::ConKinoHookAngles(IConsole::IResult *pResult, void *pUserData)
         CBotNet *p = (CBotNet *)pUserData;
         int v = pResult->GetInteger(0);
         if(v >= 4 && v <= 32)
-                p->m_KinoHookAngles = v;
+                g_Config.m_KxKinoHookAngles = v;
 }
 
 void CBotNet::ConKinoCacheTicks(IConsole::IResult *pResult, void *pUserData)
@@ -457,25 +458,25 @@ void CBotNet::ConKinoCacheTicks(IConsole::IResult *pResult, void *pUserData)
         CBotNet *p = (CBotNet *)pUserData;
         int v = pResult->GetInteger(0);
         if(v >= 1 && v <= 128)
-                p->m_KinoCacheTicks = v;
+                g_Config.m_KxKinoCacheTicks = v;
 }
 
 void CBotNet::ConKinoShowPath(IConsole::IResult *pResult, void *pUserData)
 {
         CBotNet *p = (CBotNet *)pUserData;
-        p->m_KinoShowPath = pResult->GetInteger(0) != 0;
+        g_Config.m_KxKinoShowPath = pResult->GetInteger(0) != 0;
 }
 
 void CBotNet::ConKinoShowField(IConsole::IResult *pResult, void *pUserData)
 {
         CBotNet *p = (CBotNet *)pUserData;
-        p->m_KinoShowField = pResult->GetInteger(0) != 0;
+        g_Config.m_KxKinoShowField = pResult->GetInteger(0) != 0;
 }
 
 void CBotNet::ConKinoAggressive(IConsole::IResult *pResult, void *pUserData)
 {
         CBotNet *p = (CBotNet *)pUserData;
-        p->m_KinoAggressive = pResult->GetInteger(0) != 0;
+        g_Config.m_KxKinoAggressive = pResult->GetInteger(0) != 0;
 }
 
 // =========================================================

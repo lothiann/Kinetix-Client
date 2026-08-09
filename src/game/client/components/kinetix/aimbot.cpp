@@ -21,14 +21,14 @@
 
 void CAimBot::OnConsoleInit()
 {
-        Console()->Register("kx_aimbot", "i[0/1]", CFGFLAG_CLIENT, ConAimBot, this, "AimBot: 1=on 0=off");
-        Console()->Register("kx_triggerbot", "i[0/1]", CFGFLAG_CLIENT, ConTriggerBot, this, "TriggerBot: 1=on 0=off");
+        // v1.56.171 BUG9: kx_aimbot and kx_triggerbot are now MACRO_CONFIG_INT cvars
+        // (KxAimBot, KxTriggerBot). `toggle kx_aimbot 1 0` works in binds.
 }
 
 void CAimBot::OnReset()
 {
-        m_AimBotEnabled = false;
-        m_TriggerBotEnabled = false;
+        g_Config.m_KxAimBot = false;
+        g_Config.m_KxTriggerBot = false;
         m_LatencyCounter = 0;
         m_PrevFire = false;
         m_PrevHook = false;
@@ -57,9 +57,9 @@ void CAimBot::OnUpdate()
 {
         // AimBot/TriggerBot logic runs in OnUpdate (BEFORE SnapInput) so silent aim
         // via m_LaserUnfreezeAimActive is applied to m_TargetX/Y in SnapInput.
-        if(m_AimBotEnabled)
+        if(g_Config.m_KxAimBot)
                 UpdateAimBot();
-        if(m_TriggerBotEnabled)
+        if(g_Config.m_KxTriggerBot)
                 UpdateTriggerBot();
 }
 
@@ -88,7 +88,7 @@ void CAimBot::OnRender()
 
         float alpha = KxLineAlpha(KX_LINE_AIMBOT); // v1.56.108: per-component
 
-        if(m_AimBotEnabled)
+        if(g_Config.m_KxAimBot)
         {
                 // Active weapon (0-5)
                 if(weapon >= 0 && weapon < NUM_WEAPONS_AIM - 1 && m_AimBotWeapons[weapon].m_Enabled)
@@ -107,7 +107,7 @@ void CAimBot::OnRender()
                                 RenderRadius(m_AimBotWeapons[6], MyPos, AimDir, alpha);
                 }
         }
-        if(m_TriggerBotEnabled && weapon >= 0 && weapon < NUM_WEAPONS_TRIGGER && m_TriggerBotWeapons[weapon].m_Enabled)
+        if(g_Config.m_KxTriggerBot && weapon >= 0 && weapon < NUM_WEAPONS_TRIGGER && m_TriggerBotWeapons[weapon].m_Enabled)
         {
                 if(m_TriggerBotShowFov)
                         RenderFov(m_TriggerBotWeapons[weapon], MyPos, AimDir, alpha * 0.7f);
@@ -176,11 +176,11 @@ void CAimBot::OnRender()
                 }
                 Graphics()->LinesEnd();
         };
-        if(m_AimBotEnabled && weapon >= 0 && weapon < NUM_WEAPONS_AIM - 1 && m_AimBotWeapons[weapon].m_Enabled)
+        if(g_Config.m_KxAimBot && weapon >= 0 && weapon < NUM_WEAPONS_AIM - 1 && m_AimBotWeapons[weapon].m_Enabled)
                 renderRays(m_AimBotWeapons[weapon]);
-        if(m_AimBotEnabled && m_AimBotWeapons[6].m_Enabled && (hookHeld || m_AimBotWeapons[6].m_AimMode == 2))
+        if(g_Config.m_KxAimBot && m_AimBotWeapons[6].m_Enabled && (hookHeld || m_AimBotWeapons[6].m_AimMode == 2))
                 renderRays(m_AimBotWeapons[6]);
-        if(m_TriggerBotEnabled && weapon >= 0 && weapon < NUM_WEAPONS_TRIGGER && m_TriggerBotWeapons[weapon].m_Enabled)
+        if(g_Config.m_KxTriggerBot && weapon >= 0 && weapon < NUM_WEAPONS_TRIGGER && m_TriggerBotWeapons[weapon].m_Enabled)
                 renderRays(m_TriggerBotWeapons[weapon]);
 }
 
@@ -707,12 +707,18 @@ void CAimBot::RenderRadius(const SWeaponSettings &Settings, const vec2 &MyPos, c
         }
 }
 
+// v1.56.171 BUG9: ConAimBot/ConTriggerBot removed — kx_aimbot/kx_triggerbot
+// are now MACRO_CONFIG_INT cvars (KxAimBot, KxTriggerBot). These dead stubs
+// remain only to satisfy the static declarations in aimbot.h. They are never
+// called (OnConsoleInit no longer registers them).
 void CAimBot::ConAimBot(IConsole::IResult *pResult, void *pUserData)
 {
-        static_cast<CAimBot *>(pUserData)->m_AimBotEnabled = pResult->GetInteger(0) != 0;
+        (void)pUserData;
+        g_Config.m_KxAimBot = pResult->GetInteger(0) != 0;
 }
 
 void CAimBot::ConTriggerBot(IConsole::IResult *pResult, void *pUserData)
 {
-        static_cast<CAimBot *>(pUserData)->m_TriggerBotEnabled = pResult->GetInteger(0) != 0;
+        (void)pUserData;
+        g_Config.m_KxTriggerBot = pResult->GetInteger(0) != 0;
 }

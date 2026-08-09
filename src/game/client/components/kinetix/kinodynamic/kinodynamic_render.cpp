@@ -3,7 +3,7 @@
 
 void CBotNet::RenderPackage(int Dummy)
 {
-        if(!m_KinodynamicEnabled)
+        if(!g_Config.m_KxKinodynamic)
                 return;
         if(Dummy < 0 || Dummy >= MAX_DUMMIES)
                 return;
@@ -51,7 +51,7 @@ void CBotNet::RenderPackage(int Dummy)
 
 void CBotNet::RenderVectorField()
 {
-        if(!m_KinodynamicEnabled || !m_PathfinderEnabled || !m_MapGridLoaded)
+        if(!g_Config.m_KxKinodynamic || !g_Config.m_KxAtkPathfinder || !m_MapGridLoaded)
                 return;
         if(!m_pfDist)
                 return;

@@ -60,7 +60,7 @@ void CBotNet::ComputePathfinderRescue(int botTX, int botTY, int targetTX, int ta
 
         // Ray-fan around the (frozen) target to find nearby walkable, non-freeze
         // tiles — these are candidate "safe spots" the bot can pull the target to.
-        int hookRadiusTiles = (int)(m_HookDist / 32.0f);
+        int hookRadiusTiles = (int)(g_Config.m_KxHookDist / 32.0f);
         if(hookRadiusTiles < 1)
                 hookRadiusTiles = 1;
 
@@ -72,9 +72,9 @@ void CBotNet::ComputePathfinderRescue(int botTX, int botTY, int targetTX, int ta
         SafeTile safeTiles[1024];
         int numSafe = 0;
 
-        for(int i = 0; i < m_PfRays; i++)
+        for(int i = 0; i < g_Config.m_KxAtkPathfinderRays; i++)
         {
-                float angle = 2.0f * pi * i / m_PfRays;
+                float angle = 2.0f * pi * i / g_Config.m_KxAtkPathfinderRays;
                 float rayDX = cosf(angle);
                 float rayDY = sinf(angle);
 
@@ -175,15 +175,15 @@ void CBotNet::ComputeFlowForTile(int r, int c, CBotNetDummy &State)
         float bestDX = 0, bestDY = 0;
 
         // === Step 1: A* rays ===
-        for(int i = 0; i < m_PfRays; i++)
+        for(int i = 0; i < g_Config.m_KxAtkPathfinderRays; i++)
         {
-                float angle = 2.0f * pi * i / m_PfRays;
+                float angle = 2.0f * pi * i / g_Config.m_KxAtkPathfinderRays;
                 float rayDX = cosf(angle);
                 float rayDY = sinf(angle);
 
                 float rayFreezePenalty = 0;
 
-                for(int step = 1; step <= m_PfViewRadius; step++)
+                for(int step = 1; step <= g_Config.m_KxAtkPathfinderRaysDist; step++)
                 {
                         int tr = r + (int)roundf(rayDY * step);
                         int tc = c + (int)roundf(rayDX * step);
@@ -194,9 +194,9 @@ void CBotNet::ComputeFlowForTile(int r, int c, CBotNetDummy &State)
 
                         int fIdx = tr * m_MapWidth + tc;
 
-                        if(m_PfSimulatePlayers && m_PfPlayerPenalty && m_PfPlayerPenalty[fIdx] > 0)
+                        if(g_Config.m_KxPfSimulatePlayers && m_PfPlayerPenalty && m_PfPlayerPenalty[fIdx] > 0)
                         {
-                                if(m_PfSimulateMethod == 0)
+                                if(g_Config.m_KxAtkPathfinderSps == 0)
                                         break;
                                 else
                                         rayFreezePenalty += m_PfPlayerPenalty[fIdx];
@@ -229,7 +229,7 @@ void CBotNet::ComputeFlowForTile(int r, int c, CBotNetDummy &State)
         }
 
         // === Step 2: Freeze repulsion ===
-        if(m_AvoidFreeze)
+        if(g_Config.m_KxAvoidFreeze)
         {
                 vec2 repel = ComputeFreezeRepel(c, r);
                 float repelLen = sqrtf(repel.x * repel.x + repel.y * repel.y);
@@ -251,19 +251,19 @@ void CBotNet::ComputeFlowForTile(int r, int c, CBotNetDummy &State)
         }
 
         // === Step 3: Pathfinder Hook ===
-        if(m_PfHookEnabled)
+        if(g_Config.m_KxPfHook)
         {
                 float flLen = sqrtf(bestDX * bestDX + bestDY * bestDY);
                 if(flLen > 0.001f)
                 {
                         float fDirX = bestDX / flLen;
                         float fDirY = bestDY / flLen;
-                        int hookRange = pf_min(m_PfViewRadius, (int)(m_HookDist / 32.0f));
+                        int hookRange = pf_min(g_Config.m_KxAtkPathfinderRaysDist, (int)(g_Config.m_KxHookDist / 32.0f));
                         int bestStep = 999999;
 
-                        for(int i = 0; i < m_PfRays; i++)
+                        for(int i = 0; i < g_Config.m_KxAtkPathfinderRays; i++)
                         {
-                                float angle = 2.0f * pi * i / m_PfRays;
+                                float angle = 2.0f * pi * i / g_Config.m_KxAtkPathfinderRays;
                                 float rdx = cosf(angle);
                                 float rdy = sinf(angle);
 
@@ -315,11 +315,11 @@ void CBotNet::ComputeFlowForTile(int r, int c, CBotNetDummy &State)
 vec2 CBotNet::ComputeFreezeRepel(int botTX, int botTY)
 {
         vec2 repel = vec2(0, 0);
-        const int scanRadius = m_AvoidFreezeRadius;
+        const int scanRadius = g_Config.m_KxAvoidFreezeRadius;
 
-        for(int i = 0; i < m_PfRays; i++)
+        for(int i = 0; i < g_Config.m_KxAtkPathfinderRays; i++)
         {
-                float angle = 2.0f * pi * i / m_PfRays;
+                float angle = 2.0f * pi * i / g_Config.m_KxAtkPathfinderRays;
                 float rayDX = cosf(angle);
                 float rayDY = sinf(angle);
 
@@ -357,7 +357,7 @@ void CBotNet::UpdatePlayerPenalty(int botTX, int botTY, int excludeTX, int exclu
 
         mem_zero(m_PfPlayerPenalty, m_MapWidth * m_MapHeight * sizeof(float));
 
-        if(!m_PfSimulatePlayers && !m_PfHookEnabled)
+        if(!g_Config.m_KxPfSimulatePlayers && !g_Config.m_KxPfHook)
                 return;
 
         CGameClient *pGame = GameClient();
@@ -377,15 +377,15 @@ void CBotNet::UpdatePlayerPenalty(int botTX, int botTY, int excludeTX, int exclu
 
                 bool isTarget = (ptx == excludeTX && pty == excludeTY);
 
-                if(m_PfSimulatePlayers && !isTarget)
+                if(g_Config.m_KxPfSimulatePlayers && !isTarget)
                 {
-                        if(m_PfSimulateMethod == 1)
-                                m_PfPlayerPenalty[idx] += m_PfSimulateScore;
+                        if(g_Config.m_KxAtkPathfinderSps == 1)
+                                m_PfPlayerPenalty[idx] += g_Config.m_KxPfSimulateScore;
                         else
                                 m_PfPlayerPenalty[idx] += PF_PLAYER_COST;
                 }
 
-                if(m_PfHookEnabled)
+                if(g_Config.m_KxPfHook)
                         m_PfPlayerPenalty[idx] += 1.0f;
         }
 }

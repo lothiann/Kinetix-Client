@@ -253,75 +253,39 @@ class CBotNet : public CComponent
 {
 public:
         // --- Shared settings (same for all dummies) ---
-        bool m_AttackEnabled;
-        bool m_AutoAim;
-        bool m_AutoFire;
-        bool m_AutoHook;
-        bool m_MoveEnabled;
-        bool m_StandEnabled;
-        bool m_RescueFrozen;
-        bool m_RescueAll;
-        bool m_KillOnFreeze;
-        bool m_AttackMain;
-        bool m_AutoMain; // automatically set main ID to active dummy
-        bool m_AutoHammer;
-        bool m_SmartDetect;
-        bool m_SmartRescue;
-        bool m_AvoidFreeze;
-
-        int m_MainID;
-        bool m_AllTarget;
+        // v1.56.171 BUG9: all kx_ on/off + numeric settings moved to MACRO_CONFIG_INT
+        // cvars in config_variables.h. CBotNet no longer holds them as members.
         bool m_TargetList[128];
         bool m_BotsList[128];
         bool m_RescueList[128];
+
+        // v1.56.171 BUG9: previous cvar values for change-detection in OnUpdate.
+        // When a cvar transitions 1→0, we run the side effects that used to live
+        // in the old Con-handlers (ResetDummyInputs, KinoCache.Reset, etc.).
+        int m_PrevKxAttack = 0;
+        int m_PrevKxStand = 0;
+        int m_PrevKxAutoAim = 0;
+        int m_PrevKxAutoFire = 0;
+        int m_PrevKxAutoHook = 0;
+        int m_PrevKxMove = 0;
+        int m_PrevKxRescue = 0;
+        int m_PrevKxKillFrz = 0;
+        int m_PrevKxAtkMain = 0;
+        int m_PrevKxHammer = 0;
+        int m_PrevKxSmartDetect = 0;
+        int m_PrevKxSmartRescue = 0;
+        int m_PrevKxAvoidFreeze = 0;
+        int m_PrevKxPfHook = 0;
+        int m_PrevKxKinodynamic = 0;
+        int m_PrevKxAtkPathfinder = 0;
+        int m_PrevKxPfSimulatePlayers = 0;
+        int m_PrevKxAtkHookDelay = 0;
+        int m_PrevKxCopyMoves = 0;
 
         // String buffers for UI input fields (comma-separated IDs)
         char m_aTargetIDsStr[256];
         char m_aBotsIDsStr[256];
         char m_aRescueIDsStr[256];
-
-        float m_FireDist;
-        float m_HookDist;
-        float m_RescueRadius;
-        float m_TargetDist;
-        float m_MainDist;
-        float m_StandDist;
-        float m_MainStandDist;
-
-        bool m_LaserRescue;
-        float m_LaserRescueDist;
-
-        int m_AvoidFreezeRadius;
-
-        int m_HookDelay;
-        int m_ClientDelay;
-        bool m_StandOnXOnly;
-
-        bool m_CopyMoves;
-        int m_CopyTargetID;
-
-        bool m_RandomAim;
-        int m_RandomAimInterval;
-
-        // Pathfinder settings (shared)
-        bool m_PathfinderEnabled;
-        bool m_PfSimulatePlayers;
-        int m_PfSimulateMethod;
-        float m_PfSimulateScore;
-        int m_PfRays;
-        int m_PfViewRadius;
-        bool m_PfSnap;
-        bool m_PfHookEnabled;
-
-        // Kinodynamic A* (State-Lattice) settings (shared)
-        bool m_KinodynamicEnabled;
-        int m_KinoCandidates;   // A* node budget — max nodes to expand (100-2000)
-        int m_KinoTicks;        // max search depth — primitives in a plan (3-12)
-        int m_KinoHookAngles;   // number of hook-angle primitives (4-32)
-        int m_KinoCacheTicks;   // receding horizon: ticks to apply before replanning (1-30)
-        bool m_KinoShowPath;    // render kinodynamic predicted path
-        bool m_KinoShowField;   // render pathfinder vector field
-        bool m_KinoAggressive;  // force-apply best partial plan even when no primitive improved on the start (never bail out to legacy flow pathfinder)
 
         // Pathfinder tab (Kinetix→Pathfinder) — chunk-based mini TAS maker.
         // State machine driven by m_PfState; trajectory in m_PfVPath.
@@ -603,7 +567,7 @@ private:
         bool MaybeReloadMapGrid(int reloadSlot);
 
         // The stand-distance used by the "stand when close" check, depending
-        // on whether the current target is the main player (and m_AttackMain
+        // on whether the current target is the main player (and g_Config.m_KxAtkMain
         // is off) and not a rescue target.  Replaces the 6x duplicated ternary.
         float EffectiveStandDist(bool TargetIsMain, bool TargetIsRescue) const;
 
@@ -615,7 +579,7 @@ private:
         // left/right toward the current tile's center.  Replaces 2x 10-line dup.
         void ApplyPfSnap(const vec2 &MyPos, bool &left, bool &right) const;
 
-        // Hook pulse cycle (ticks) from m_HookDelay.  Replaces 2x identical calc.
+        // Hook pulse cycle (ticks) from g_Config.m_KxAtkHookDelay.  Replaces 2x identical calc.
         int ComputeHookTicksCycle() const;
 
         // --- ProcessDummy sub-steps (each returns true when it handled the

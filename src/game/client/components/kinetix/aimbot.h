@@ -48,8 +48,8 @@ public:
                 int m_RandomLatency = 0; // TriggerBot only (ticks)
         };
 
-        bool m_AimBotEnabled = false;
-        bool m_TriggerBotEnabled = false;
+        bool g_Config.m_KxAimBot = false;
+        bool g_Config.m_KxTriggerBot = false;
         bool m_AimBotShowFov = false;
         bool m_AimBotShowRadius = false;
         bool m_AimBotUseRaycastShow = false;

@@ -75,16 +75,16 @@ bool CBotNet::MaybeReloadMapGrid(int reloadSlot)
 float CBotNet::EffectiveStandDist(bool TargetIsMain, bool TargetIsRescue) const
 {
         // When targeting the main player and not in attack-main mode (and not a
-        // rescue target), use the larger m_MainStandDist so the bot keeps some
-        // distance; otherwise m_StandDist.
-        return (TargetIsMain && !m_AttackMain && !TargetIsRescue) ? m_MainStandDist : m_StandDist;
+        // rescue target), use the larger g_Config.m_KxMainStandDist so the bot keeps some
+        // distance; otherwise g_Config.m_KxStandDist.
+        return (TargetIsMain && !g_Config.m_KxAtkMain && !TargetIsRescue) ? (float)g_Config.m_KxMainStandDist : (float)g_Config.m_KxStandDist;
 }
 
 bool CBotNet::IsNearFreeze(int botTX, int botTY) const
 {
         // ComputeFreezeRepel returns a unit-ish vec2 pointing away from nearby
         // freeze tiles; nonzero => at least one freeze neighbour is exerting force.
-        if(!m_AvoidFreeze || !m_MapGridLoaded)
+        if(!g_Config.m_KxAvoidFreeze || !m_MapGridLoaded)
                 return false;
         vec2 repel = const_cast<CBotNet *>(this)->ComputeFreezeRepel(botTX, botTY);
         return (repel.x * repel.x + repel.y * repel.y) > 0.0001f;
@@ -105,8 +105,8 @@ void CBotNet::ApplyPfSnap(const vec2 &MyPos, bool &left, bool &right) const
 
 int CBotNet::ComputeHookTicksCycle() const
 {
-        // Hook pulse period in ticks, derived from m_HookDelay (ms).  Min 2 ticks.
-        int cycle = (50 * m_HookDelay / 1000);
+        // Hook pulse period in ticks, derived from g_Config.m_KxAtkHookDelay (ms).  Min 2 ticks.
+        int cycle = (50 * g_Config.m_KxAtkHookDelay / 1000);
         return cycle < 2 ? 2 : cycle;
 }
 

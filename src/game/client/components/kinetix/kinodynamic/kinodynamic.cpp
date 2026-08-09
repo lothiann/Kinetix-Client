@@ -301,9 +301,9 @@ void CBotNet::ComputeKinodynamic(int Dummy, const vec2 &MyPos, int botTX, int bo
 
         CGameClient *pGame = GameClient();
 
-        int maxNodes = pf_clamp(m_KinoCandidates, 100, LATTICE_MAX_NODES);
-        int maxDepth = pf_clamp(m_KinoTicks, 3, LATTICE_MAX_DEPTH);
-        int hookAngles = pf_clamp(m_KinoHookAngles, 4, 32);
+        int maxNodes = pf_clamp(g_Config.m_KxKinoCandidates, 100, LATTICE_MAX_NODES);
+        int maxDepth = pf_clamp(g_Config.m_KxKinoTicks, 3, LATTICE_MAX_DEPTH);
+        int hookAngles = pf_clamp(g_Config.m_KxKinoHookAngles, 4, 32);
 
         // Score the start position using the pathfinder distance field
         int startIdx = botTY * m_MapWidth + botTX;
@@ -616,7 +616,7 @@ void CBotNet::ComputeKinodynamic(int Dummy, const vec2 &MyPos, int botTX, int bo
                         // the bot closer to the goal.
                         resultNodeIdx = bestIdx;
                 }
-                else if(m_KinoAggressive)
+                else if(g_Config.m_KxKinoAggressive)
                 {
                         // Aggressive mode: no primitive improved on the start,
                         // but the user wants us to force-apply the best partial

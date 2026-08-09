@@ -7,7 +7,7 @@ bool CBotNet::HandleFrozenDummy(CGameClient *pGame, CNetObj_PlayerInput *pInput,
         // then zero inputs and bail for the rest of the tick.
         if(pGame->m_aClients[LocalID].m_FreezeEnd > 0 || pGame->m_aClients[LocalID].m_DeepFrozen)
         {
-                if(m_KillOnFreeze && pGame->m_aClients[LocalID].m_FreezeEnd > 0)
+                if(g_Config.m_KxKillFrz && pGame->m_aClients[LocalID].m_FreezeEnd > 0)
                         IssueKillForDummy(Dummy);
                 ResetAndCommitInput(pGame, pInput, Dummy);
                 return true;
@@ -18,7 +18,7 @@ bool CBotNet::HandleFrozenDummy(CGameClient *pGame, CNetObj_PlayerInput *pInput,
 bool CBotNet::HandleNoFeatureIdle(CGameClient *pGame, CNetObj_PlayerInput *pInput, int Dummy, CBotNetDummy &State)
 {
         // Nothing to do this tick — clear inputs and return.
-        if(!m_AttackEnabled && !m_CopyMoves && !m_RandomAim && !State.m_MacroPlaying && !State.m_PathfinderGoActive)
+        if(!g_Config.m_KxAttack && !g_Config.m_KxCopyMoves && !g_Config.m_KxRandomAim && !State.m_MacroPlaying && !State.m_PathfinderGoActive)
         {
                 ResetAndCommitInput(pGame, pInput, Dummy);
                 return true;
@@ -234,13 +234,13 @@ bool CBotNet::ProcessMacroRecording(CGameClient *pGame, CNetObj_PlayerInput *pIn
 
 bool CBotNet::ApplyClientDelayGate(CGameClient *pGame, CNetObj_PlayerInput *pInput, int Dummy)
 {
-        // Throttle dummy actions to one per m_ClientDelay ms (per-dummy timer).
-        if(m_ClientDelay <= 0)
+        // Throttle dummy actions to one per g_Config.m_KxClientDelay ms (per-dummy timer).
+        if(g_Config.m_KxClientDelay <= 0)
                 return false;
 
         static int64_t s_LastActionTick[MAX_DUMMIES] = {};
         int64_t Now = Client()->GameTick(0);
-        int64_t TickDelay = ((int64_t)m_ClientDelay * Client()->GameTickSpeed()) / 1000;
+        int64_t TickDelay = ((int64_t)g_Config.m_KxClientDelay * Client()->GameTickSpeed()) / 1000;
         if(TickDelay < 1)
                 TickDelay = 1;
         if(Now - s_LastActionTick[Dummy] < TickDelay)
@@ -257,11 +257,11 @@ bool CBotNet::ProcessCopyMoves(CGameClient *pGame, CNetObj_PlayerInput *pInput, 
         // Mirror another client's input onto this dummy.  Falls through (returns
         // false) when the target is valid but inactive — preserves the ability to
         // fall back to Attack/RandomAim.
-        if(!(m_CopyMoves && m_CopyTargetID >= 0 && m_CopyTargetID < 128))
+        if(!(g_Config.m_KxCopyMoves && g_Config.m_KxCopyTargetId >= 0 && g_Config.m_KxCopyTargetId < 128))
                 return false;
 
-        const auto &TChar = pGame->m_Snap.m_aCharacters[m_CopyTargetID];
-        if(!(pGame->m_aClients[m_CopyTargetID].m_Active && TChar.m_Active))
+        const auto &TChar = pGame->m_Snap.m_aCharacters[g_Config.m_KxCopyTargetId];
+        if(!(pGame->m_aClients[g_Config.m_KxCopyTargetId].m_Active && TChar.m_Active))
                 return false; // fall through
 
         SetDirection(pGame, Dummy, TChar.m_Cur.m_Direction == -1, TChar.m_Cur.m_Direction == 1);
@@ -303,7 +303,7 @@ bool CBotNet::ProcessPathfinderGo(CGameClient *pGame, CNetObj_PlayerInput *pInpu
                 return true;
         }
 
-        if(m_PathfinderEnabled)
+        if(g_Config.m_KxAtkPathfinder)
         {
                 // Shared 5s reload slot with Attack-BranchA (legacy behaviour).
                 MaybeReloadMapGrid(0);
@@ -346,16 +346,16 @@ bool CBotNet::ProcessPathfinderGo(CGameClient *pGame, CNetObj_PlayerInput *pInpu
 void CBotNet::ProcessRandomAim(int Dummy, CBotNetDummy &State, int64_t CurTick)
 {
         // Fall-through (no return): override aim to a random point on a schedule.
-        // Guarded by !m_AttackEnabled && !m_CopyMoves — not redundant with the
+        // Guarded by !g_Config.m_KxAttack && !g_Config.m_KxCopyMoves — not redundant with the
         // no-feature-idle check because CopyMoves may fall through with an inactive
-        // target while m_CopyMoves is still true.
-        if(!(m_RandomAim && !m_AttackEnabled && !m_CopyMoves))
+        // target while g_Config.m_KxCopyMoves is still true.
+        if(!(g_Config.m_KxRandomAim && !g_Config.m_KxAttack && !g_Config.m_KxCopyMoves))
                 return;
 
         if(CurTick >= State.m_NextRandomAimTick)
         {
                 GameClient()->m_BotControl.ActionOverrideAim((rand() % 2001) - 1000, (rand() % 2001) - 1000, Dummy);
                 int TS = Client()->GameTickSpeed();
-                State.m_NextRandomAimTick = CurTick + (int64_t)(TS != 0 ? TS : 50) * m_RandomAimInterval / 1000;
+                State.m_NextRandomAimTick = CurTick + (int64_t)(TS != 0 ? TS : 50) * g_Config.m_KxRandomAimInterval / 1000;
         }
 }

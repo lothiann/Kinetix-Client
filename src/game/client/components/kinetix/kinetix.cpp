@@ -7,63 +7,19 @@
 
 CBotNet::CBotNet()
 {
-        // Shared settings — defaults match user's reference layout
-        m_AttackEnabled = false;
-        m_AutoAim = m_AutoFire = m_AutoHook = m_MoveEnabled = m_StandEnabled = m_PathfinderEnabled = true;
-        m_RescueFrozen = m_AutoHammer = m_SmartDetect = m_SmartRescue = m_AvoidFreeze = m_PfSimulatePlayers = true;
-        m_PfSimulateMethod = 1; // SPS on by default
-        m_RescueAll = m_KillOnFreeze = m_AttackMain = m_AutoMain = false;
-        m_SmartDetect = true;
-        m_SmartRescue = true;
-        m_AvoidFreeze = true;
-        m_StandOnXOnly = false;
-        m_AllTarget = false;
-        m_RandomAim = m_CopyMoves = false;
-        m_MainID = -1;
-        m_RandomAimInterval = 100;
-        m_FireDist = 65.0f;
-        m_HookDist = 400.0f;
-        m_RescueRadius = 500.0f;
-        m_TargetDist = 300.0f;
-        m_MainDist = INFINITY;
-        m_StandDist = 64.0f;
-        m_MainStandDist = 128.0f;
-        m_LaserRescue = false;
-        m_LaserRescueDist = 800.0f;
-        m_AvoidFreezeRadius = 2;
-        m_HookDelay = 1000;
-        m_ClientDelay = 0;
+        // v1.56.171 BUG9: all kx_ on/off + numeric settings are now MACRO_CONFIG_INT
+        // cvars (defaults in config_variables.h). Constructor no longer initializes them.
         for(int i = 0; i < 128; i++)
         {
                 m_TargetList[i] = false;
                 m_BotsList[i] = false;
                 m_RescueList[i] = false;
         }
-        m_CopyTargetID = -1;
 
         // String buffers for UI input fields
         m_aTargetIDsStr[0] = '\0';
         m_aBotsIDsStr[0] = '\0';
         m_aRescueIDsStr[0] = '\0';
-
-        // Pathfinder init (shared)
-        m_PfSimulateScore = 25.0f;
-        m_PfRays = 24;
-        m_PfViewRadius = 6;
-        m_PfSnap = false;
-        m_PfHookEnabled = false;
-
-        // Kinodynamic A* (State-Lattice) defaults
-        m_KinodynamicEnabled = false;
-        m_KinoCandidates = 800; // A* node budget — enough for hook-swing maneuvers
-        m_KinoTicks = 15;       // max search depth (primitives) — covers full jump+hook+hold sequences
-        m_KinoHookAngles = 8;   // hook-fire primitives (angles in [pi/6, 5pi/6])
-        m_KinoCacheTicks = 128; // receding horizon window — 128 = KINO_MAX_TICKS = apply full plan
-        // (was 10, which cut plans mid-maneuver and caused the bot to oscillate
-        //  in hook-swing scenarios.  Drift check (48px) is the real invalidation.)
-        m_KinoShowPath = true;
-        m_KinoShowField = false;
-        m_KinoAggressive = false;
 
         // Pathfinder tab (Kinetix→Pathfinder) — chunk-based mini TAS maker.
         m_PfState = PF_STATE_IDLE;
@@ -123,63 +79,25 @@ CBotNet::~CBotNet()
 
 void CBotNet::OnConsoleInit()
 {
-        Console()->Register("kx_random_aim", "i[on] ?i[ms]", CFGFLAG_CLIENT, ConRandomAim, this, "Random Aim");
-        Console()->Register("kx_copy_moves", "i[target_id]", CFGFLAG_CLIENT, ConCopyMoves, this, "Copy Moves");
-        Console()->Register("kx_attack", "i[on]", CFGFLAG_CLIENT, ConAttackEnable, this, "Attack Mode");
-        Console()->Register("kx_main", "i[id]", CFGFLAG_CLIENT, ConSetMain, this, "Main ID");
+        // v1.56.171 BUG9: most kx_ commands converted to MACRO_CONFIG_INT cvars.
+        // Only complex/temporal commands remain registered here. The cvar-converted
+        // commands (kx_attack, kx_aimbot, kx_autoaim, etc.) are now accessible via
+        // `toggle kx_attack 1 0` in binds and via direct `kx_attack 1` in console.
         Console()->Register("kx_targets", "s[ids]", CFGFLAG_CLIENT, ConSetTargets, this, "Targets");
         Console()->Register("kx_bots", "s[ids]", CFGFLAG_CLIENT, ConSetBots, this, "Bots (allies)");
-        Console()->Register("kx_target_all", "i[on]", CFGFLAG_CLIENT, ConSetTargetAll, this, "Attack all (targets become blacklist)");
         Console()->Register("kx_atk_set", "iiiiiiiiiiiiiiii", CFGFLAG_CLIENT, ConAttackSettings, this, "Settings (16 params: aim,fire,hook,move,stand,rescue,rescueAll,smartDetect,smartRescue,killFrz,atkMain,hammer,simPlayers,avoidFreeze,pfHook,kinodynamic)");
         Console()->Register("kx_atk_dists", "fffffff", CFGFLAG_CLIENT, ConAttackDists, this, "Radii (fire, hook, rescue, target, main, stand, main stand)");
-        Console()->Register("kx_atk_hook_delay", "i[ms]", CFGFLAG_CLIENT, ConAttackHookDelay, this, "Hook Delay");
-        Console()->Register("kx_client_delay", "i[ms]", CFGFLAG_CLIENT, ConClientDelay, this, "Client delay in ms (0 to disable)");
-        Console()->Register("kx_stand_on_x", "i[on]", CFGFLAG_CLIENT, ConStandOnX, this, "Stand only on X axis");
         Console()->Register("kx_rescue_ids", "s[ids]", CFGFLAG_CLIENT, ConRescueIds, this, "Rescue/Unrescue IDs");
-        Console()->Register("kx_atk_pathfinder", "i[on]", CFGFLAG_CLIENT, ConPathfinder, this, "Enable A* pathfinder movement");
-        Console()->Register("kx_atk_pathfinder_rays", "i[rays]", CFGFLAG_CLIENT, ConPathfinderRays, this, "Number of raycast rays (12-90)");
-        Console()->Register("kx_atk_pathfinder_rays_dist", "i[tiles]", CFGFLAG_CLIENT, ConPathfinderRaysDist, this, "Raycast view radius (1-128 tiles)");
-        Console()->Register("kx_atk_pathfinder_snap", "i[on]", CFGFLAG_CLIENT, ConPathfinderSnap, this, "Snap to tile center when flow is vertical");
-        Console()->Register("kx_atk_pathfinder_sps", "i[method]", CFGFLAG_CLIENT, ConPathfinderSps, this, "Simulate players method: 0=walls, 1=score(push)");
         Console()->Register("kx_pathfinder_go", "i[on] ?i[x] ?i[y]", CFGFLAG_CLIENT, ConPathfinderGo, this, "Move to position: 0=disable, 1 x y=enable and set target");
         Console()->Register("kx_macro_load", "s[path]", CFGFLAG_CLIENT, ConMacroLoad, this, "Load macro from file");
         Console()->Register("kx_macro_play", "i[on]", CFGFLAG_CLIENT, ConMacroPlay, this, "Play loaded macro (1=start, 0=stop)");
         Console()->Register("kx_macro_record", "i[on]", CFGFLAG_CLIENT, ConMacroRecord, this, "Record macro (1=start, 0=stop)");
         Console()->Register("kx_macro_save", "s[path]", CFGFLAG_CLIENT, ConMacroSave, this, "Save recorded macro to file");
         Console()->Register("kx_macro_capture", "i[id]", CFGFLAG_CLIENT, ConMacroCapture, this, "Set capture ID for macro recording");
-
-        // Individual toggle commands
-        Console()->Register("kx_stand", "i[on]", CFGFLAG_CLIENT, ConStand, this, "Stand when close");
-        Console()->Register("kx_autoaim", "i[on]", CFGFLAG_CLIENT, ConAutoAim, this, "Auto aim at target");
-        Console()->Register("kx_autofire", "i[on]", CFGFLAG_CLIENT, ConAutoFire, this, "Auto fire at target");
-        Console()->Register("kx_autohook", "i[on]", CFGFLAG_CLIENT, ConAutoHook, this, "Auto hook target");
-        Console()->Register("kx_move", "i[on]", CFGFLAG_CLIENT, ConMove, this, "Move towards target");
-        Console()->Register("kx_rescue", "i[on]", CFGFLAG_CLIENT, ConRescue, this, "Rescue frozen allies");
-        Console()->Register("kx_kill_frz", "i[on]", CFGFLAG_CLIENT, ConKillFrz, this, "Kill on freeze");
-        Console()->Register("kx_atk_main", "i[on]", CFGFLAG_CLIENT, ConAtkMain, this, "Attack main target");
-        Console()->Register("kx_auto_main", "i[on]", CFGFLAG_CLIENT, ConAutoMain, this, "Auto-set main to active dummy");
-        Console()->Register("kx_hammer", "i[on]", CFGFLAG_CLIENT, ConHammer, this, "Auto hammer");
-        Console()->Register("kx_smart_detect", "i[on]", CFGFLAG_CLIENT, ConSmartDetect, this, "Smart detect for rescue");
-        Console()->Register("kx_smart_rescue", "i[on]", CFGFLAG_CLIENT, ConSmartRescue, this, "Smart rescue pathfinder");
-        Console()->Register("kx_avoid_freeze", "i[on]", CFGFLAG_CLIENT, ConAvoidFreeze, this, "Avoid freeze tiles");
-        Console()->Register("kx_pf_hook", "i[on]", CFGFLAG_CLIENT, ConPfHook, this, "Pathfinder hook to walls");
-        Console()->Register("kx_kinodynamic", "i[on]", CFGFLAG_CLIENT, ConKinodynamic, this, "Enable Kinodynamic A* movement");
-        Console()->Register("kx_kino_candidates", "i[count]", CFGFLAG_CLIENT, ConKinoCandidates, this, "Kinodynamic: A* node budget (100-2000)");
-        Console()->Register("kx_kino_ticks", "i[depth]", CFGFLAG_CLIENT, ConKinoTicks, this, "Kinodynamic: max search depth in primitives (3-12)");
-        Console()->Register("kx_kino_hook_angles", "i[angles]", CFGFLAG_CLIENT, ConKinoHookAngles, this, "Kinodynamic: number of hook angles (4-32)");
-        Console()->Register("kx_kino_cache_ticks", "i[ticks]", CFGFLAG_CLIENT, ConKinoCacheTicks, this, "Kinodynamic: cache duration in ticks (1-128, 128=full plan)");
-        Console()->Register("kx_kino_show_path", "i[on]", CFGFLAG_CLIENT, ConKinoShowPath, this, "Kinodynamic: show predicted path");
-        Console()->Register("kx_kino_show_field", "i[on]", CFGFLAG_CLIENT, ConKinoShowField, this, "Kinodynamic: show vector field");
-        Console()->Register("kx_kino_aggressive", "i[on]", CFGFLAG_CLIENT, ConKinoAggressive, this, "Kinodynamic: force-apply best partial plan even when no primitive improved on start");
         Console()->Register("kx_send", "s[dummyids] r[command]", CFGFLAG_CLIENT, ConSendDummy, this, "Execute command on dummies (-1=all, 0,1,2=specific)");
 
         // Pathfinder tab (Kinetix→Pathfinder) — chunk-based mini TAS maker
         Console()->Register("kx_pf_live", "i[state]", CFGFLAG_CLIENT, ConPfLive, this, "Pathfinder tab: 0=idle, 1=running, 2=finished");
-        Console()->Register("kx_pf_algorithm", "i[algo]", CFGFLAG_CLIENT, ConPfAlgorithm, this, "Pathfinder tab: algorithm index 0-14");
-        Console()->Register("kx_pf_chunk_size", "i[ticks]", CFGFLAG_CLIENT, ConPfChunkSize, this, "Pathfinder tab: ticks per chunk (1-50)");
-        Console()->Register("kx_pf_candidates", "i[n]", CFGFLAG_CLIENT, ConPfCandidates, this, "Pathfinder tab: max search nodes (50-2000)");
-        Console()->Register("kx_pf_hook_angles", "i[angles]", CFGFLAG_CLIENT, ConPfHookAngles, this, "Pathfinder tab: hook fan-raycast rays (4-32)");
-        Console()->Register("kx_pf_horizon", "i[ticks]", CFGFLAG_CLIENT, ConPfHorizon, this, "Pathfinder tab: ticks applied per chunk (1-50)");
         Console()->Register("kx_pf_play", "i[on]", CFGFLAG_CLIENT, ConPfGo, this, "Pathfinder: 1=replay path on real player (needs FINISHED state), 0=stop");
 }
 
@@ -192,10 +110,10 @@ void CBotNet::OnConsoleInit()
 // botnet modes and resets every dummy's state machine + input buffer.
 void CBotNet::OnReset()
 {
-        m_AttackEnabled = false;
-        m_CopyMoves = false;
-        m_RandomAim = false;
-        m_KinodynamicEnabled = false;
+        g_Config.m_KxAttack = false;
+        g_Config.m_KxCopyMoves = false;
+        g_Config.m_KxRandomAim = false;
+        g_Config.m_KxKinodynamic = false;
         for(int D = 0; D < MAX_DUMMIES; D++)
         {
                 m_aDummies[D].Reset();
@@ -248,6 +166,82 @@ void CBotNet::OnUpdate()
         if(Client()->State() != IClient::STATE_ONLINE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
                 return;
 
+        // v1.56.171 BUG9: cvar change-detection. Since kx_ commands are now cvars,
+        // there's no Con-handler to run side effects. We poll the cvar each tick
+        // and run the side effects (ResetDummyInputs, KinoCache.Reset, etc.) when
+        // a value transitions. This replaces the old ConStand/ConAutoAim/... handlers.
+        #define KX_CVAR_FALL(prev, cvar) do { \
+                int cur = g_Config.cvar; \
+                if(prev != cur) { \
+                        if(prev && !cur) { for(int D = 0; D < MAX_DUMMIES; D++) ResetDummyInputs(D); } \
+                        prev = cur; \
+                } } while(0)
+        KX_CVAR_FALL(m_PrevKxAttack, m_KxAttack);
+        KX_CVAR_FALL(m_PrevKxStand, m_KxStand);
+        KX_CVAR_FALL(m_PrevKxAutoAim, m_KxAutoAim);
+        KX_CVAR_FALL(m_PrevKxAutoFire, m_KxAutoFire);
+        KX_CVAR_FALL(m_PrevKxAutoHook, m_KxAutoHook);
+        KX_CVAR_FALL(m_PrevKxMove, m_KxMove);
+        KX_CVAR_FALL(m_PrevKxRescue, m_KxRescue);
+        KX_CVAR_FALL(m_PrevKxKillFrz, m_KxKillFrz);
+        KX_CVAR_FALL(m_PrevKxAtkMain, m_KxAtkMain);
+        KX_CVAR_FALL(m_PrevKxHammer, m_KxHammer);
+        KX_CVAR_FALL(m_PrevKxSmartDetect, m_KxSmartDetect);
+        KX_CVAR_FALL(m_PrevKxSmartRescue, m_KxSmartRescue);
+        KX_CVAR_FALL(m_PrevKxAvoidFreeze, m_KxAvoidFreeze);
+        KX_CVAR_FALL(m_PrevKxPfHook, m_KxPfHook);
+        KX_CVAR_FALL(m_PrevKxCopyMoves, m_KxCopyMoves);
+        // Kinodynamic: also reset KinoCache on transition.
+        if(m_PrevKxKinodynamic != g_Config.m_KxKinodynamic)
+        {
+                if(m_PrevKxKinodynamic && !g_Config.m_KxKinodynamic)
+                {
+                        for(int D = 0; D < MAX_DUMMIES; D++)
+                        {
+                                m_aDummies[D].m_KinoCache.Reset();
+                                ResetDummyInputs(D);
+                        }
+                }
+                m_PrevKxKinodynamic = g_Config.m_KxKinodynamic;
+        }
+        // Pathfinder (kx_atk_pathfinder): reset target cache on any change.
+        if(m_PrevKxAtkPathfinder != g_Config.m_KxAtkPathfinder)
+        {
+                for(int D = 0; D < MAX_DUMMIES; D++)
+                {
+                        m_aDummies[D].m_LastTargetTX = -1;
+                        m_aDummies[D].m_LastTargetTY = -1;
+                        m_aDummies[D].m_PathFound = false;
+                }
+                m_PrevKxAtkPathfinder = g_Config.m_KxAtkPathfinder;
+        }
+        // Simulate players: reset target cache on any change.
+        if(m_PrevKxPfSimulatePlayers != g_Config.m_KxPfSimulatePlayers)
+        {
+                for(int D = 0; D < MAX_DUMMIES; D++)
+                {
+                        m_aDummies[D].m_LastTargetTX = -1;
+                        m_aDummies[D].m_LastTargetTY = -1;
+                        m_aDummies[D].m_PathFound = false;
+                }
+                m_PrevKxPfSimulatePlayers = g_Config.m_KxPfSimulatePlayers;
+        }
+        // Hook delay: reset hook tick timer on any change.
+        if(m_PrevKxAtkHookDelay != g_Config.m_KxAtkHookDelay)
+        {
+                for(int D = 0; D < MAX_DUMMIES; D++)
+                        m_aDummies[D].m_HookTickTimer = 0;
+                m_PrevKxAtkHookDelay = g_Config.m_KxAtkHookDelay;
+        }
+        // PfHook: reset PfHookTile on any change.
+        if(m_PrevKxPfHook != g_Config.m_KxPfHook)
+        {
+                for(int D = 0; D < MAX_DUMMIES; D++)
+                        m_aDummies[D].m_PfHookTile = vec2(0, 0);
+                m_PrevKxPfHook = g_Config.m_KxPfHook;
+        }
+        #undef KX_CVAR_FALL
+
         // Pathfinder tab: run one chunk per update if RUNNING.  Placed before the
         // dummy loop so it never interferes with the active dummy's inputs (the
         // tab only simulates + renders; it does NOT write inputs to any dummy).
@@ -266,7 +260,7 @@ void CBotNet::OnUpdate()
 
         // Auto-bots: automatically add all local dummies to bots list
         // so they don't attack each other and will rescue each other
-        if(m_AttackEnabled)
+        if(g_Config.m_KxAttack)
         {
                 for(int d = 0; d < MAX_DUMMIES; d++)
                 {
@@ -277,11 +271,11 @@ void CBotNet::OnUpdate()
         }
 
         // Auto main: automatically set main ID to the currently active dummy
-        if(m_AutoMain && m_AttackEnabled)
+        if(g_Config.m_KxAutoMain && g_Config.m_KxAttack)
         {
                 int ActiveID = pGame->m_aLocalIds[g_Config.m_ClDummy];
-                if(ActiveID >= 0 && m_MainID != ActiveID)
-                        m_MainID = ActiveID;
+                if(ActiveID >= 0 && g_Config.m_KxMain != ActiveID)
+                        g_Config.m_KxMain = ActiveID;
         }
 
         // ── DDNet-compatibility gate ──────────────────────────────────────────
@@ -298,7 +292,7 @@ void CBotNet::OnUpdate()
         //
         // Solution: skip the entire ProcessDummy loop when no botnet features are
         // active. This makes the default dummy input pipeline byte-identical to DDNet.
-        bool anyBotnetFeature = m_AttackEnabled || m_CopyMoves || m_RandomAim;
+        bool anyBotnetFeature = g_Config.m_KxAttack || g_Config.m_KxCopyMoves || g_Config.m_KxRandomAim;
         if(!anyBotnetFeature)
         {
                 for(int D = 0; D < MAX_DUMMIES; D++)
@@ -348,7 +342,7 @@ void CBotNet::OnRender()
 {
         // Pathfinder tab: render the accumulated trajectory whenever the state
         // machine has produced a path (RUNNING or FINISHED).  This is INDEPENDENT
-        // of m_KinodynamicEnabled so the tab works even when kinodynamic A* is off.
+        // of g_Config.m_KxKinodynamic so the tab works even when kinodynamic A* is off.
         if(m_PfState != PF_STATE_IDLE)
                 RenderPathfinderPath();
 
@@ -358,13 +352,13 @@ void CBotNet::OnRender()
         // v1.56.159: Fly Ride — render red tile at anchor (debug visual).
         RenderFlyRideAnchor();
 
-        if(!m_KinodynamicEnabled)
+        if(!g_Config.m_KxKinodynamic)
                 return;
 
         // Render kinodynamic package trajectory and vector field
-        if(m_KinoShowField)
+        if(g_Config.m_KxKinoShowField)
                 RenderVectorField();
-        if(m_KinoShowPath)
+        if(g_Config.m_KxKinoShowPath)
         {
                 for(int D = 0; D < MAX_DUMMIES; D++)
                 {

@@ -940,9 +940,9 @@ void CClickGui::OnRender()
                         {
                                 SRow &row = g_Panels[p].pRows[r];
                                 if(str_comp(row.pName, "Block") == 0)
-                                        row.on = GameClient()->m_BotNet.m_AttackEnabled;
+                                        row.on = g_Config.m_KxAttack;
                                 else if(str_comp(row.pName, "Random Aim") == 0)
-                                        row.on = GameClient()->m_BotNet.m_RandomAim;
+                                        row.on = g_Config.m_KxRandomAim;
                                 else if(str_comp(row.pName, "Trajectory") == 0)
                                         row.on = g_Config.m_KxShowTrajectory != 0;
                                 // Advanced → Laser unfreeze expandable is master toggle.
@@ -1213,7 +1213,7 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
                                 continue;
                                 if(str_comp(row.pName, "AimBot") == 0)
                                 {
-                                        row.on = aimbot.m_AimBotEnabled;
+                                        row.on = g_Config.m_KxAimBot;
                                         int w = aimbot.m_AimBotSelectedWeapon;
                                         if(w < 0 || w >= CAimBot::NUM_WEAPONS_AIM)
                                                 w = 0;
@@ -1277,7 +1277,7 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
                                 }
                                 else if(str_comp(row.pName, "TriggerBot") == 0)
                                 {
-                                        row.on = aimbot.m_TriggerBotEnabled;
+                                        row.on = g_Config.m_KxTriggerBot;
                                         int w = aimbot.m_TriggerBotSelectedWeapon;
                                         if(w < 0 || w >= CAimBot::NUM_WEAPONS_TRIGGER)
                                                 w = 0;
@@ -1357,17 +1357,17 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
                                         continue;
                                 if(str_comp(row.pName, "Block") == 0)
                                 {
-                                        row.on = bn.m_AttackEnabled;
+                                        row.on = g_Config.m_KxAttack;
                                         for(int c = 0; c < row.childCount; ++c)
                                         {
                                                 SRow &ch = row.pChildren[c];
-                                                if(str_comp(ch.pName, "Attack Main") == 0) ch.on = bn.m_AttackMain;
-                                                else if(str_comp(ch.pName, "Auto Main") == 0) ch.on = bn.m_AutoMain;
+                                                if(str_comp(ch.pName, "Attack Main") == 0) ch.on = g_Config.m_KxAtkMain;
+                                                else if(str_comp(ch.pName, "Auto Main") == 0) ch.on = g_Config.m_KxAutoMain;
                                                 else if(str_comp(ch.pName, "Main ID") == 0)
                                                 {
                                                         if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
                                                         {
-                                                                char b[16]; str_format(b, sizeof(b), "%d", bn.m_MainID);
+                                                                char b[16]; str_format(b, sizeof(b), "%d", g_Config.m_KxMain);
                                                                 str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
                                                                 ch.m_InputInitialized = true;
                                                         }
@@ -1388,35 +1388,35 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
                                                                 ch.m_InputInitialized = true;
                                                         }
                                                 }
-                                                else if(str_comp(ch.pName, "All Target") == 0) ch.on = bn.m_AllTarget;
-                                                else if(str_comp(ch.pName, "Auto Aim") == 0) ch.on = bn.m_AutoAim;
-                                                else if(str_comp(ch.pName, "Auto Fire") == 0) ch.on = bn.m_AutoFire;
-                                                else if(str_comp(ch.pName, "Auto Hook") == 0) ch.on = bn.m_AutoHook;
-                                                else if(str_comp(ch.pName, "Auto Hammer") == 0) ch.on = bn.m_AutoHammer;
-                                                else if(str_comp(ch.pName, "Move Enabled") == 0) ch.on = bn.m_MoveEnabled;
-                                                else if(str_comp(ch.pName, "Stand Enabled") == 0) ch.on = bn.m_StandEnabled;
-                                                else if(str_comp(ch.pName, "Stand On X Only") == 0) ch.on = bn.m_StandOnXOnly;
-                                                else if(str_comp(ch.pName, "Smart Detect") == 0) ch.on = bn.m_SmartDetect;
-                                                else if(str_comp(ch.pName, "Smart Rescue") == 0) ch.on = bn.m_SmartRescue;
-                                                else if(str_comp(ch.pName, "Rescue Frozen") == 0) ch.on = bn.m_RescueFrozen;
-                                                else if(str_comp(ch.pName, "Rescue All") == 0) ch.on = bn.m_RescueAll;
-                                                else if(str_comp(ch.pName, "Kill On Freeze") == 0) ch.on = bn.m_KillOnFreeze;
-                                                else if(str_comp(ch.pName, "Avoid Freeze") == 0) ch.on = bn.m_AvoidFreeze;
+                                                else if(str_comp(ch.pName, "All Target") == 0) ch.on = g_Config.m_KxTargetAll;
+                                                else if(str_comp(ch.pName, "Auto Aim") == 0) ch.on = g_Config.m_KxAutoAim;
+                                                else if(str_comp(ch.pName, "Auto Fire") == 0) ch.on = g_Config.m_KxAutoFire;
+                                                else if(str_comp(ch.pName, "Auto Hook") == 0) ch.on = g_Config.m_KxAutoHook;
+                                                else if(str_comp(ch.pName, "Auto Hammer") == 0) ch.on = g_Config.m_KxHammer;
+                                                else if(str_comp(ch.pName, "Move Enabled") == 0) ch.on = g_Config.m_KxMove;
+                                                else if(str_comp(ch.pName, "Stand Enabled") == 0) ch.on = g_Config.m_KxStand;
+                                                else if(str_comp(ch.pName, "Stand On X Only") == 0) ch.on = g_Config.m_KxStandOnX;
+                                                else if(str_comp(ch.pName, "Smart Detect") == 0) ch.on = g_Config.m_KxSmartDetect;
+                                                else if(str_comp(ch.pName, "Smart Rescue") == 0) ch.on = g_Config.m_KxSmartRescue;
+                                                else if(str_comp(ch.pName, "Rescue Frozen") == 0) ch.on = g_Config.m_KxRescue;
+                                                else if(str_comp(ch.pName, "Rescue All") == 0) ch.on = g_Config.m_KxRescueAll;
+                                                else if(str_comp(ch.pName, "Kill On Freeze") == 0) ch.on = g_Config.m_KxKillFrz;
+                                                else if(str_comp(ch.pName, "Avoid Freeze") == 0) ch.on = g_Config.m_KxAvoidFreeze;
                                                 else if(str_comp(ch.pName, "Avoid Freeze Radius") == 0)
                                                                                         {
                                                                                                 if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
                                                                                                 {
-                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", bn.m_AvoidFreezeRadius);
+                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", g_Config.m_KxAvoidFreezeRadius);
                                                                                                         str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
                                                                                                         ch.m_InputInitialized = true;
                                                                                                 }
                                                                                         }
-                                                else if(str_comp(ch.pName, "Laser Rescue") == 0) ch.on = bn.m_LaserRescue;
+                                                else if(str_comp(ch.pName, "Laser Rescue") == 0) ch.on = g_Config.m_KxLaserRescue;
                                                 else if(str_comp(ch.pName, "Fire Dist") == 0)
                                                                                         {
                                                                                                 if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
                                                                                                 {
-                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", (int)bn.m_FireDist);
+                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", (int)g_Config.m_KxFireDist);
                                                                                                         str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
                                                                                                         ch.m_InputInitialized = true;
                                                                                                 }
@@ -1425,7 +1425,7 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
                                                                                         {
                                                                                                 if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
                                                                                                 {
-                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", (int)bn.m_HookDist);
+                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", (int)g_Config.m_KxHookDist);
                                                                                                         str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
                                                                                                         ch.m_InputInitialized = true;
                                                                                                 }
@@ -1434,7 +1434,7 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
                                                                                         {
                                                                                                 if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
                                                                                                 {
-                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", (int)bn.m_RescueRadius);
+                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", (int)g_Config.m_KxRescueRadius);
                                                                                                         str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
                                                                                                         ch.m_InputInitialized = true;
                                                                                                 }
@@ -1443,7 +1443,7 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
                                                                                         {
                                                                                                 if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
                                                                                                 {
-                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", (int)bn.m_TargetDist);
+                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", (int)g_Config.m_KxTargetDist);
                                                                                                         str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
                                                                                                         ch.m_InputInitialized = true;
                                                                                                 }
@@ -1452,7 +1452,7 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
                                                                                         {
                                                                                                 if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
                                                                                                 {
-                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", (int)bn.m_MainDist);
+                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", (int)g_Config.m_KxMainDist);
                                                                                                         str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
                                                                                                         ch.m_InputInitialized = true;
                                                                                                 }
@@ -1461,7 +1461,7 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
                                                                                         {
                                                                                                 if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
                                                                                                 {
-                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", (int)bn.m_StandDist);
+                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", (int)g_Config.m_KxStandDist);
                                                                                                         str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
                                                                                                         ch.m_InputInitialized = true;
                                                                                                 }
@@ -1470,7 +1470,7 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
                                                                                         {
                                                                                                 if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
                                                                                                 {
-                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", (int)bn.m_MainStandDist);
+                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", (int)g_Config.m_KxMainStandDist);
                                                                                                         str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
                                                                                                         ch.m_InputInitialized = true;
                                                                                                 }
@@ -1479,19 +1479,19 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
                                                                                         {
                                                                                                 if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
                                                                                                 {
-                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", (int)bn.m_LaserRescueDist);
+                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", (int)g_Config.m_KxLaserRescueDist);
                                                                                                         str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
                                                                                                         ch.m_InputInitialized = true;
                                                                                                 }
                                                                                         }
-                                                else if(str_comp(ch.pName, "Pathfinder Enabled") == 0) ch.on = bn.m_PathfinderEnabled;
-                                                else if(str_comp(ch.pName, "Simulate Players") == 0) ch.on = bn.m_PfSimulatePlayers;
-                                                else if(str_comp(ch.pName, "SPS (Push)") == 0) ch.on = (bn.m_PfSimulateMethod != 0);
+                                                else if(str_comp(ch.pName, "Pathfinder Enabled") == 0) ch.on = g_Config.m_KxAtkPathfinder;
+                                                else if(str_comp(ch.pName, "Simulate Players") == 0) ch.on = g_Config.m_KxPfSimulatePlayers;
+                                                else if(str_comp(ch.pName, "SPS (Push)") == 0) ch.on = (g_Config.m_KxAtkPathfinderSps != 0);
                                                 else if(str_comp(ch.pName, "Simulate Score") == 0)
                                                                                         {
                                                                                                 if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
                                                                                                 {
-                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", (int)bn.m_PfSimulateScore);
+                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", (int)g_Config.m_KxPfSimulateScore);
                                                                                                         str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
                                                                                                         ch.m_InputInitialized = true;
                                                                                                 }
@@ -1500,7 +1500,7 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
                                                                                         {
                                                                                                 if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
                                                                                                 {
-                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", bn.m_PfRays);
+                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", g_Config.m_KxAtkPathfinderRays);
                                                                                                         str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
                                                                                                         ch.m_InputInitialized = true;
                                                                                                 }
@@ -1509,13 +1509,13 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
                                                                                         {
                                                                                                 if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
                                                                                                 {
-                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", bn.m_PfViewRadius);
+                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", g_Config.m_KxAtkPathfinderRaysDist);
                                                                                                         str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
                                                                                                         ch.m_InputInitialized = true;
                                                                                                 }
                                                                                         }
-                                                else if(str_comp(ch.pName, "Fix Snap") == 0) ch.on = bn.m_PfSnap;
-                                                else if(str_comp(ch.pName, "Hook Enabled") == 0) ch.on = bn.m_PfHookEnabled;
+                                                else if(str_comp(ch.pName, "Fix Snap") == 0) ch.on = g_Config.m_KxAtkPathfinderSnap;
+                                                else if(str_comp(ch.pName, "Hook Enabled") == 0) ch.on = g_Config.m_KxPfHook;
                                         }
                                 }
                                 // Dummies: hide "Switch to Main" if already on main player.
@@ -2187,9 +2187,9 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         pTarget->on = !pTarget->on;
                                         // Wire reference toggles to real subsystems.
                                         if(str_comp(pTarget->pName, "Block") == 0)
-                                                GameClient()->m_BotNet.m_AttackEnabled = pTarget->on;
+                                                g_Config.m_KxAttack = pTarget->on;
                                         else if(str_comp(pTarget->pName, "Random Aim") == 0)
-                                                GameClient()->m_BotNet.m_RandomAim = pTarget->on;
+                                                g_Config.m_KxRandomAim = pTarget->on;
                                         else if(str_comp(pTarget->pName, "Trajectory") == 0)
                                                 g_Config.m_KxShowTrajectory = pTarget->on ? 1 : 0;
                                         // Advanced → Laser unfreeze expandable is master toggle.
@@ -2221,9 +2221,9 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 g_Config.m_KxFlyRide = pTarget->on ? 1 : 0;
                                         // v1.56.83: AimBot/TriggerBot expandable master toggles
                                         else if(str_comp(pTarget->pName, "AimBot") == 0)
-                                                GameClient()->m_AimBot.m_AimBotEnabled = pTarget->on;
+                                                g_Config.m_KxAimBot = pTarget->on;
                                         else if(str_comp(pTarget->pName, "TriggerBot") == 0)
-                                                GameClient()->m_AimBot.m_TriggerBotEnabled = pTarget->on;
+                                                g_Config.m_KxTriggerBot = pTarget->on;
                                         // v1.56.83: AimBot per-weapon child toggles (parent = "AimBot")
                                         else if(str_comp(row.pName, "AimBot") == 0)
                                         {
@@ -2278,28 +2278,28 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         else if(str_comp(row.pName, "Block") == 0 && pTarget != &row)
                                         {
                                                 CBotNet &bn = GameClient()->m_BotNet;
-                                                if(str_comp(pTarget->pName, "Attack Main") == 0) bn.m_AttackMain = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Auto Main") == 0) bn.m_AutoMain = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "All Target") == 0) bn.m_AllTarget = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Auto Aim") == 0) bn.m_AutoAim = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Auto Fire") == 0) bn.m_AutoFire = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Auto Hook") == 0) bn.m_AutoHook = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Auto Hammer") == 0) bn.m_AutoHammer = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Move Enabled") == 0) bn.m_MoveEnabled = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Stand Enabled") == 0) bn.m_StandEnabled = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Stand On X Only") == 0) bn.m_StandOnXOnly = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Smart Detect") == 0) bn.m_SmartDetect = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Smart Rescue") == 0) bn.m_SmartRescue = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Rescue Frozen") == 0) bn.m_RescueFrozen = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Rescue All") == 0) bn.m_RescueAll = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Kill On Freeze") == 0) bn.m_KillOnFreeze = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Avoid Freeze") == 0) bn.m_AvoidFreeze = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Laser Rescue") == 0) bn.m_LaserRescue = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Pathfinder Enabled") == 0) bn.m_PathfinderEnabled = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Simulate Players") == 0) bn.m_PfSimulatePlayers = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Fix Snap") == 0) bn.m_PfSnap = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Hook Enabled") == 0) bn.m_PfHookEnabled = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "SPS (Push)") == 0) bn.m_PfSimulateMethod = pTarget->on ? 1 : 0;
+                                                if(str_comp(pTarget->pName, "Attack Main") == 0) g_Config.m_KxAtkMain = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Auto Main") == 0) g_Config.m_KxAutoMain = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "All Target") == 0) g_Config.m_KxTargetAll = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Auto Aim") == 0) g_Config.m_KxAutoAim = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Auto Fire") == 0) g_Config.m_KxAutoFire = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Auto Hook") == 0) g_Config.m_KxAutoHook = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Auto Hammer") == 0) g_Config.m_KxHammer = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Move Enabled") == 0) g_Config.m_KxMove = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Stand Enabled") == 0) g_Config.m_KxStand = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Stand On X Only") == 0) g_Config.m_KxStandOnX = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Smart Detect") == 0) g_Config.m_KxSmartDetect = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Smart Rescue") == 0) g_Config.m_KxSmartRescue = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Rescue Frozen") == 0) g_Config.m_KxRescue = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Rescue All") == 0) g_Config.m_KxRescueAll = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Kill On Freeze") == 0) g_Config.m_KxKillFrz = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Avoid Freeze") == 0) g_Config.m_KxAvoidFreeze = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Laser Rescue") == 0) g_Config.m_KxLaserRescue = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Pathfinder Enabled") == 0) g_Config.m_KxAtkPathfinder = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Simulate Players") == 0) g_Config.m_KxPfSimulatePlayers = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Fix Snap") == 0) g_Config.m_KxAtkPathfinderSnap = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "Hook Enabled") == 0) g_Config.m_KxPfHook = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "SPS (Push)") == 0) g_Config.m_KxAtkPathfinderSps = pTarget->on ? 1 : 0;
                                         }
                                         // Copy Moves Filter expandable is master toggle.
                                         else if(str_comp(pTarget->pName, "Copy Moves Filter") == 0)
@@ -3403,73 +3403,60 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
         }
         // Block children: string IDs.
         else if(str_comp(pRow->pName, "Main ID") == 0)
-                GameClient()->m_BotNet.m_MainID = atoi(pRow->m_aInputBuf);
+                g_Config.m_KxMain = atoi(pRow->m_aInputBuf);
         else if(str_comp(pRow->pName, "Target IDs") == 0)
                 str_copy(GameClient()->m_BotNet.m_aTargetIDsStr, pRow->m_aInputBuf, sizeof(GameClient()->m_BotNet.m_aTargetIDsStr));
         else if(str_comp(pRow->pName, "Rescue IDs") == 0)
                 str_copy(GameClient()->m_BotNet.m_aRescueIDsStr, pRow->m_aInputBuf, sizeof(GameClient()->m_BotNet.m_aRescueIDsStr));
         // Block children: numeric distances.
-        else if(str_comp(pRow->pName, "Avoid Freeze Radius") == 0) GameClient()->m_BotNet.m_AvoidFreezeRadius = atoi(pRow->m_aInputBuf);
-        else if(str_comp(pRow->pName, "Fire Dist") == 0) GameClient()->m_BotNet.m_FireDist = (float)atof(pRow->m_aInputBuf);
-        else if(str_comp(pRow->pName, "Hook Dist") == 0) GameClient()->m_BotNet.m_HookDist = (float)atof(pRow->m_aInputBuf);
-        else if(str_comp(pRow->pName, "Rescue Radius") == 0) GameClient()->m_BotNet.m_RescueRadius = (float)atof(pRow->m_aInputBuf);
-        else if(str_comp(pRow->pName, "Target Dist") == 0) GameClient()->m_BotNet.m_TargetDist = (float)atof(pRow->m_aInputBuf);
-        else if(str_comp(pRow->pName, "Main Dist") == 0) GameClient()->m_BotNet.m_MainDist = (float)atof(pRow->m_aInputBuf);
-        else if(str_comp(pRow->pName, "Stand Dist") == 0) GameClient()->m_BotNet.m_StandDist = (float)atof(pRow->m_aInputBuf);
-        else if(str_comp(pRow->pName, "Main Stand Dist") == 0) GameClient()->m_BotNet.m_MainStandDist = (float)atof(pRow->m_aInputBuf);
-        else if(str_comp(pRow->pName, "Laser Rescue Dist") == 0) GameClient()->m_BotNet.m_LaserRescueDist = (float)atof(pRow->m_aInputBuf);
-        else if(str_comp(pRow->pName, "Simulate Score") == 0) GameClient()->m_BotNet.m_PfSimulateScore = (float)atof(pRow->m_aInputBuf);
-        else if(str_comp(pRow->pName, "Rays") == 0) GameClient()->m_BotNet.m_PfRays = atoi(pRow->m_aInputBuf);
-        else if(str_comp(pRow->pName, "Dist") == 0) GameClient()->m_BotNet.m_PfViewRadius = atoi(pRow->m_aInputBuf);
-        // Binds panel — execute "bind <key> toggle <cmd> 1 0". m_InputPanel==4 guards
-        // against name collisions with non-Binds input rows.
-        else if(str_comp(pRow->pName, "ClickGUI") == 0 && m_InputPanel == 4)
+        else if(str_comp(pRow->pName, "Avoid Freeze Radius") == 0) g_Config.m_KxAvoidFreezeRadius = atoi(pRow->m_aInputBuf);
+        else if(str_comp(pRow->pName, "Fire Dist") == 0) g_Config.m_KxFireDist = (int)atof(pRow->m_aInputBuf);
+        else if(str_comp(pRow->pName, "Hook Dist") == 0) g_Config.m_KxHookDist = (int)atof(pRow->m_aInputBuf);
+        else if(str_comp(pRow->pName, "Rescue Radius") == 0) g_Config.m_KxRescueRadius = (int)atof(pRow->m_aInputBuf);
+        else if(str_comp(pRow->pName, "Target Dist") == 0) g_Config.m_KxTargetDist = (int)atof(pRow->m_aInputBuf);
+        else if(str_comp(pRow->pName, "Main Dist") == 0) g_Config.m_KxMainDist = (int)atof(pRow->m_aInputBuf);
+        else if(str_comp(pRow->pName, "Stand Dist") == 0) g_Config.m_KxStandDist = (int)atof(pRow->m_aInputBuf);
+        else if(str_comp(pRow->pName, "Main Stand Dist") == 0) g_Config.m_KxMainStandDist = (int)atof(pRow->m_aInputBuf);
+        else if(str_comp(pRow->pName, "Laser Rescue Dist") == 0) g_Config.m_KxLaserRescueDist = (int)atof(pRow->m_aInputBuf);
+        else if(str_comp(pRow->pName, "Simulate Score") == 0) g_Config.m_KxPfSimulateScore = (int)atof(pRow->m_aInputBuf);
+        else if(str_comp(pRow->pName, "Rays") == 0) g_Config.m_KxAtkPathfinderRays = atoi(pRow->m_aInputBuf);
+        else if(str_comp(pRow->pName, "Dist") == 0) g_Config.m_KxAtkPathfinderRaysDist = atoi(pRow->m_aInputBuf);
+        // v1.56.171 BUG9: Binds panel — unified bind/unbind logic.
+        // For each bind row: look up the command string, find the currently bound key
+        // (if any), unbind it, then bind the new key (if non-empty). When the field is
+        // emptied, only the unbind runs. All kx_ targets are now cvars, so
+        // `toggle kx_X 1 0` works (no more "Invalid command: 'kx_attack'").
+        else if(m_InputPanel == 4 && pRow->type == ERowType::Input)
         {
-                char cmd[256];
-                str_format(cmd, sizeof(cmd), "bind \"%s\" toggle cl_clickgui 1 0", pRow->m_aInputBuf);
-                Console()->ExecuteLine(cmd, -1, false);
-        }
-        else if(str_comp(pRow->pName, "AimBot") == 0 && m_InputPanel == 4)
-        {
-                char cmd[256];
-                str_format(cmd, sizeof(cmd), "bind \"%s\" toggle kx_aimbot 1 0", pRow->m_aInputBuf);
-                Console()->ExecuteLine(cmd, -1, false);
-        }
-        else if(str_comp(pRow->pName, "TriggerBot") == 0 && m_InputPanel == 4)
-        {
-                char cmd[256];
-                str_format(cmd, sizeof(cmd), "bind \"%s\" toggle kx_triggerbot 1 0", pRow->m_aInputBuf);
-                Console()->ExecuteLine(cmd, -1, false);
-        }
-        else if(str_comp(pRow->pName, "Fake Aim") == 0 && m_InputPanel == 4)
-        {
-                char cmd[256];
-                str_format(cmd, sizeof(cmd), "bind \"%s\" toggle kx_fake_aim 1 0", pRow->m_aInputBuf);
-                Console()->ExecuteLine(cmd, -1, false);
-        }
-        else if(str_comp(pRow->pName, "Laser Unfreeze") == 0 && m_InputPanel == 4)
-        {
-                char cmd[256];
-                str_format(cmd, sizeof(cmd), "bind \"%s\" toggle kx_laser_unfreeze 1 0", pRow->m_aInputBuf);
-                Console()->ExecuteLine(cmd, -1, false);
-        }
-        else if(str_comp(pRow->pName, "Copy Moves Filter") == 0 && m_InputPanel == 4)
-        {
-                char cmd[256];
-                str_format(cmd, sizeof(cmd), "bind \"%s\" toggle kx_dummy_copy_moves_filter 1 0", pRow->m_aInputBuf);
-                Console()->ExecuteLine(cmd, -1, false);
-        }
-        else if(str_comp(pRow->pName, "Trajectory") == 0 && m_InputPanel == 4)
-        {
-                char cmd[256];
-                str_format(cmd, sizeof(cmd), "bind \"%s\" toggle kx_show_trajectory 1 0", pRow->m_aInputBuf);
-                Console()->ExecuteLine(cmd, -1, false);
-        }
-        else if(str_comp(pRow->pName, "Block") == 0 && m_InputPanel == 4)
-        {
-                char cmd[256];
-                str_format(cmd, sizeof(cmd), "bind \"%s\" toggle kx_attack 1 0", pRow->m_aInputBuf);
-                Console()->ExecuteLine(cmd, -1, false);
+                const char *pCmd = nullptr;
+                if(str_comp(pRow->pName, "ClickGUI") == 0) pCmd = "toggle cl_clickgui 1 0";
+                else if(str_comp(pRow->pName, "AimBot") == 0) pCmd = "toggle kx_aimbot 1 0";
+                else if(str_comp(pRow->pName, "TriggerBot") == 0) pCmd = "toggle kx_triggerbot 1 0";
+                else if(str_comp(pRow->pName, "Fake Aim") == 0) pCmd = "toggle kx_fake_aim 1 0";
+                else if(str_comp(pRow->pName, "Laser Unfreeze") == 0) pCmd = "toggle kx_laser_unfreeze 1 0";
+                else if(str_comp(pRow->pName, "Copy Moves Filter") == 0) pCmd = "toggle kx_dummy_copy_moves_filter 1 0";
+                else if(str_comp(pRow->pName, "Trajectory") == 0) pCmd = "toggle kx_show_trajectory 1 0";
+                else if(str_comp(pRow->pName, "Block") == 0) pCmd = "toggle kx_attack 1 0";
+                if(pCmd)
+                {
+                        // Find the currently bound key for this command (if any).
+                        char aOldKey[64];
+                        GameClient()->m_Binds.GetKey(pCmd, aOldKey, sizeof(aOldKey));
+                        // If the old key differs from the new one, unbind the old key.
+                        if(aOldKey[0] && str_comp(aOldKey, pRow->m_aInputBuf) != 0)
+                        {
+                                char ub[80];
+                                str_format(ub, sizeof(ub), "unbind \"%s\"", aOldKey);
+                                Console()->ExecuteLine(ub, -1, false);
+                        }
+                        // If the new key is non-empty, bind it.
+                        if(pRow->m_aInputBuf[0])
+                        {
+                                char cmd[256];
+                                str_format(cmd, sizeof(cmd), "bind \"%s\" %s", pRow->m_aInputBuf, pCmd);
+                                Console()->ExecuteLine(cmd, -1, false);
+                        }
+                }
         }
 }
 

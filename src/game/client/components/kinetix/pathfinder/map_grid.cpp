@@ -181,7 +181,7 @@ float CBotNet::GetTileCost(int tx, int ty)
         if(ftile == TILE_FREEZE || ftile == TILE_DFREEZE)
                 cost += PF_FREEZE_COST;
 
-        if(m_PfSimulatePlayers && m_PfPlayerPenalty)
+        if(g_Config.m_KxPfSimulatePlayers && m_PfPlayerPenalty)
         {
                 cost += m_PfPlayerPenalty[idx];
         }
