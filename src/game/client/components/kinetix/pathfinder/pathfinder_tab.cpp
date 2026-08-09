@@ -107,99 +107,20 @@ bool CBotNet::ApplyPfGoInput(CNetObj_PlayerInput *pInput)
         return true;
 }
 
-// v1.56.159: PfPlaybackDebugLog — READ-ONLY debug. Reads the already-built
-// pathfinder path (m_PfVPath, vector<vec2>) and runs the SAME anti-skip line
-// check the engine uses (GetMapIndices + GetTileIndex/GetFrontTileIndex) on each
-// segment. Does NOT simulate, does NOT clone the world, does NOT spawn a bot,
-// does NOT call Freeze()/Tick()/SetCore() — zero side effects on game state.
+// TODO(bug1-resolved): The original DDNet engine's freeze detection
+// (HandleTiles + DDRacePostCoreTick) does NOT reliably fire inside the
+// pathfinder's cloned CGameWorld sim. PfCheckFreeze (kinetix_internal.h)
+// was added as a 1:1 manual copy of that logic and is run after each sim
+// tick in PfSimulateChunk to guarantee freeze is detected.
 //
-// This only READS tile data under the path's anti-skip line, exactly like
-// DDRacePostCoreTick does for m_PrevPos -> m_Pos, but applied to the pathfinder's
-// recorded trajectory.
+// After a FULL clean recompile (not incremental), the original engine
+// logic started working correctly — strongly suggesting the earlier
+// failures were due to an incremental-build artifact (stale .o / .pdb
+// picked up an outdated struct layout), NOT a logic bug.
 //
-// Log format (per segment i, prev=m_PfVPath[i] cur=m_PfVPath[i+1]):
-//   Seg #i | L=Y px n=N rawF=T/F | prev=(x,y) cur=(x,y) | tiles[g/f]=[t/t ...]
-//
-// L      : pixel length of segment
-// n      : how many tile indices GetMapIndices returned on this line
-// rawF   : whether ANY tile on the line is TILE_FREEZE(9) or TILE_DFREEZE(12)
-//          on game OR front layer (ignores Super/Invincible/DeepFrozen — pure
-//          "does the line cross a freeze tile" check)
-// tiles  : up to 6 pairs of (game_tile, front_tile) values on the line
-void CBotNet::PfPlaybackDebugLog()
-{
-        CGameClient *pGame = GameClient();
-        if(!pGame || !pGame->m_Snap.m_pLocalInfo)
-        {
-                dbg_msg("pathfinder", "PfPlaybackDebugLog: no game/local info");
-                return;
-        }
-
-        if(m_PfVPath.size() < 2)
-        {
-                dbg_msg("pathfinder", "PfPlaybackDebugLog: m_PfVPath has %d points (need >=2)",
-                        (int)m_PfVPath.size());
-                return;
-        }
-
-        // Use the REAL game collision (same map tiles the engine sees). No clone.
-        CCollision *pColl = pGame->Collision();
-        if(!pColl)
-        {
-                dbg_msg("pathfinder", "PfPlaybackDebugLog: no collision");
-                return;
-        }
-
-        dbg_msg("pathfinder", "=== PfPlaybackDebugLog START: %d path points, start=(%.0f,%.0f) ===",
-                (int)m_PfVPath.size(), m_PfVPath[0].x, m_PfVPath[0].y);
-
-        int totalFreezeSegs = 0;
-
-        for(size_t i = 0; i + 1 < m_PfVPath.size(); i++)
-        {
-                vec2 prevPos = m_PfVPath[i];
-                vec2 curPos = m_PfVPath[i + 1];
-                float lineLen = distance(prevPos, curPos);
-
-                // Anti-skip line — same call the engine makes in DDRacePostCoreTick.
-                std::vector<int> vIndices = pColl->GetMapIndices(prevPos, curPos);
-                int n = (int)vIndices.size();
-
-                bool rawFreeze = false;
-                char aTiles[128];
-                aTiles[0] = '\0';
-                int shown = 0;
-                for(int idx : vIndices)
-                {
-                        int ti = pColl->GetTileIndex(idx);
-                        int tf = pColl->GetFrontTileIndex(idx);
-                        if(ti == TILE_FREEZE || ti == TILE_DFREEZE ||
-                           tf == TILE_FREEZE || tf == TILE_DFREEZE)
-                                rawFreeze = true;
-                        if(shown < 6)
-                        {
-                                str_format(aTiles + str_length(aTiles),
-                                        (int)sizeof(aTiles) - str_length(aTiles),
-                                        "%s%d/%d", shown ? " " : "", ti, tf);
-                                shown++;
-                        }
-                }
-                if(shown == 0)
-                        str_copy(aTiles, "-", sizeof(aTiles));
-
-                if(rawFreeze)
-                        totalFreezeSegs++;
-
-                dbg_msg("pathfinder", "Seg #%d | L=%.1f n=%d rawF=%s | prev=(%.0f,%.0f) cur=(%.0f,%.0f) | tiles[g/f]=%s",
-                        (int)i, lineLen, n,
-                        rawFreeze ? "T" : "F",
-                        prevPos.x, prevPos.y, curPos.x, curPos.y,
-                        aTiles);
-        }
-
-        dbg_msg("pathfinder", "=== PfPlaybackDebugLog END: %d/%d segments cross freeze ===",
-                totalFreezeSegs, (int)m_PfVPath.size() - 1);
-}
+// Investigate later: confirm whether the original HandleTiles path can
+// now be relied on in sim (so PfCheckFreeze can be removed), or keep
+// PfCheckFreeze as a permanent safety net.
 
 // Multi-source BFS: distance field to the NEAREST finish tile.
 

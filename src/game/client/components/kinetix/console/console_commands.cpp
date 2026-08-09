@@ -181,8 +181,6 @@ void CBotNet::ConPfGo(IConsole::IResult *pResult, void *pUserData)
                 p->m_PfGoActive = true;
                 p->m_PfGoIdx = 0;
                 dbg_msg("pathfinder", "kx_pf_play 1: playback started (%d ticks)", (int)p->m_PfFullInputs.size());
-                // v1.56.155: dump per-tick line/freeze debug log from pathfinder sim.
-                p->PfPlaybackDebugLog();
         }
         else
         {

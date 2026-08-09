@@ -2584,8 +2584,6 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                                 BN.m_PfGoActive = true;
                                                                 BN.m_PfGoIdx = 0;
                                                                 dbg_msg("pathfinder", "kx_pf_play 1: playback started (%d ticks)", (int)BN.m_PfFullInputs.size());
-                                                                // v1.56.155: dump per-tick line/freeze debug log from pathfinder sim.
-                                                                BN.PfPlaybackDebugLog();
                                                         }
                                                 }
                                         }

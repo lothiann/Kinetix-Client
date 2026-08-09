@@ -469,11 +469,6 @@ public:
         // kx_pf_play: apply next m_PfFullInputs tick to real player input.
         // Called from CControls::SnapInput before mem_copy. Returns true if applied.
         bool ApplyPfGoInput(CNetObj_PlayerInput *pInput);
-        // v1.56.155: PfPlaybackDebugLog — when kx_pf_play 1 starts, run the full
-        // m_PfFullInputs through a cloned pathfinder sim world (NOT the real world)
-        // and log each tick: line length, line-freeze detection, sim freeze state.
-        // Helps diagnose mismatch between pathfinder sim and real server behavior.
-        void PfPlaybackDebugLog();
         void UpdateLaserUnfreeze();         // called from OnUpdate; predictive laser self-unfreeze
         void RenderLaserUnfreezePath();     // called from OnRender; draws successful laser path with fade
         void UpdateFakeAim();               // called from OnUpdate; fake aim for fun
