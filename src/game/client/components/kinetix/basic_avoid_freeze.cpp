@@ -309,8 +309,16 @@ void CBasicAvoidFreeze::ApplyOverride()
                                 // to m_aInputData.m_TargetX/Y right before sending to server.
                                 // Local prediction keeps the real aim (no visible crosshair move).
                                 // Fake aim is automatically blocked (checks !laserAimActive).
-                                pGame->m_Controls.m_LaserUnfreezeAimActive = true;
-                                pGame->m_Controls.m_LaserUnfreezeAimOffset = vec2((float)bestInput.m_TargetX, (float)bestInput.m_TargetY);
+                                //
+                                // v1.56.169 BUG7: guard !m_LaserUnfreezeAimActive — Laser Unfreeze
+                                // and AimBot run in OnUpdate (before SnapInput), so if they already
+                                // claimed the channel this tick, don't overwrite their offset.
+                                // BAF still applies dir/jump/hook (those are separate fields).
+                                if(!pGame->m_Controls.m_LaserUnfreezeAimActive)
+                                {
+                                        pGame->m_Controls.m_LaserUnfreezeAimActive = true;
+                                        pGame->m_Controls.m_LaserUnfreezeAimOffset = vec2((float)bestInput.m_TargetX, (float)bestInput.m_TargetY);
+                                }
                         }
                         else
                         {

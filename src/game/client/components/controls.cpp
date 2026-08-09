@@ -539,7 +539,21 @@ int CControls::SnapInput(int *pData)
         if(!Send)
                 return 0;
 
-        // Laser unfreeze silent aim — highest priority.
+        // v1.56.169 BUG7: BAF.ApplyOverride MUST run before the laserAimActive
+        // check below. BAF silent sets m_LaserUnfreezeAimActive (same channel as
+        // Laser Unfreeze + AimBot). If BAF runs AFTER the check (as it did since
+        // v1.56.130), the flag is deferred to next tick — Fake Aim is not blocked
+        // in the current tick and overwrites m_TargetX/Y. Moving BAF here makes
+        // the flag visible immediately: line 543 reads it, applies BAF's aim, and
+        // line 669 (!laserAimActive) blocks Fake Aim. BAF also modifies
+        // dir/jump/hook directly — those go to server via mem_copy at the end.
+        // (AimBot + Laser Unfreeze run in OnUpdate before SnapInput, so their
+        // flags are already set when BAF runs here — BAF checks !m_LaserUnfreezeAimActive
+        // before overwriting, giving Laser Unfreeze/AimBot priority on the aim channel.)
+        GameClient()->m_BasicAvoidFreeze.ApplyOverride();
+
+        // Laser unfreeze silent aim — highest priority (consumes flag set by
+        // Laser Unfreeze, AimBot, or BAF above).
         bool laserAimActive = m_LaserUnfreezeAimActive;
         if(laserAimActive)
         {
@@ -547,9 +561,6 @@ int CControls::SnapInput(int *pData)
                 m_aInputData[g_Config.m_ClDummy].m_TargetY = (int)m_LaserUnfreezeAimOffset.y;
                 m_LaserUnfreezeAimActive = false;
         }
-
-        // v1.56.128: BAF — before fake aim + mem_copy. Only changes dir/jump/hook.
-        GameClient()->m_BasicAvoidFreeze.ApplyOverride();
 
         // kx_pf_play: replay pathfinder path on real player input.
         // Runs after BAF (BAF has priority for freeze avoidance) but before
