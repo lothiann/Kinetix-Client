@@ -480,6 +480,7 @@ public:
         void UpdatePathfinder();            // called from OnUpdate; runs one chunk if RUNNING
         void RenderPathfinderPath();        // called from OnRender; draws m_PfVPath like RenderPackage
         void PfResetRun();                  // clear vPath + sim state (start fresh from active player)
+        void PfClearSearchState();          // BUG4 v1.56.165: release A*/RHEA buffers (safe from any state)
         // kx_pf_play: apply next m_PfFullInputs tick to real player input.
         // Called from CControls::SnapInput before mem_copy. Returns true if applied.
         bool ApplyPfGoInput(CNetObj_PlayerInput *pInput);

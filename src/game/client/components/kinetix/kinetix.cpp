@@ -230,23 +230,13 @@ void CBotNet::OnMapLoad()
         m_MapGridLoaded = false;
 
         // Abort any in-flight A* search — its nodes reference old tile coords.
+        // PfClearSearchState (v1.56.165) releases all A*/RHEA buffers +
+        // playback state in one shot (also fixes BUG4 — heavy buffers were
+        // previously left alive across the idle period, leading to crash on
+        // restart when their vector headers got corrupted by sibling OOB writes).
         m_PfState = PF_STATE_IDLE;
-        m_PfAPathReady = false;
-        m_PfAStarted = false;
-        m_PfAGoalIdx = -1;
-        m_PfANodes.clear();
-        m_PfAOpen.clear();
-        m_PfABestG.clear();
-        m_PfRHAInitialized = false;
-        m_PfRHAPopulation.clear();
-        m_PfAExpandCount = 0;
-
-        // Drop any cached trajectory + playback buffer (points into old map).
+        PfClearSearchState();
         m_PfVPath.clear();
-        m_PfFullInputs.clear();
-        m_PfFullInputsIdx = 0;
-        m_PfGoActive = false;
-        m_PfGoIdx = 0;
 
         // m_PfFlowField / m_PfScoreField / m_PfFinishTiles are freed inside
         // LoadMapGrid() on next call; no need to touch them here (and doing

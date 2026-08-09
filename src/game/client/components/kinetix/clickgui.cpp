@@ -2628,9 +2628,13 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 {
                                                         BN.m_PfState = PF_STATE_IDLE;
                                                         BN.m_PfVPath.clear();
-                                                        // Also stop playback if active.
-                                                        if(BN.m_PfGoActive)
-                                                                BN.m_PfGoActive = false;
+                                                        // BUG4 v1.56.165: release heavy A*/RHEA search buffers
+                                                        // (m_PfANodes, m_PfRHAPopulation, m_PfFullInputs, ...)
+                                                        // before going idle. They were left alive across the
+                                                        // idle period before, and any heap corruption from the
+                                                        // long Advanced Search sim landed inside their vector
+                                                        // control blocks → crash on next PfResetRun.
+                                                        BN.PfClearSearchState();
                                                 }
                                         }
                                 }

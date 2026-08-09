@@ -1,6 +1,62 @@
 #include <game/client/components/kinetix/kinetix.h>
 #include <game/client/components/kinetix/kinetix_internal.h>
 
+// PfClearSearchState (v1.56.165, BUG4): release ALL A*/RHEA search buffers.
+//
+// Root cause of BUG4 (crash on pathfinder restart after idle):
+//   The FINISHED→IDLE transitions in clickgui.cpp (Pathfinding button click)
+//   and ConPfLive (kx_pf_live 0) were clearing ONLY m_PfVPath — the heavy
+//   search buffers (m_PfANodes with per-node Traj/Inputs/HookSegs vectors,
+//   m_PfRHAPopulation with per-individual inputs/traj/hookSegs vectors)
+//   were left alive across the entire idle period.
+//
+//   During the search those buffers grew to hundreds of MB (RHEA can hold
+//   popSize * (inputs + traj + hookSegs) per individual × thousands of nodes
+//   in m_PfANodes). Their internal vector headers live next to other heap
+//   allocations; any heap-metadata corruption elsewhere (e.g. an OOB write
+//   in a sibling allocation during the long sim) lands inside those vector
+//   control blocks. When the user clicks "Pathfinding" again to restart,
+//   PfResetRun() → m_PfRHAPopulation.clear() walks the corrupted vector
+//   headers and crashes in ~vector<CNetObj_PlayerInput> reading
+//   [r8-8] = 0x00000004FFFFFFF8 (the 0x500000000 in r8 is a corrupted
+//   _Myfirst pointer — small integer value that landed in the high 32 bits).
+//
+//   Disassembly confirms it: the crash path runs the deallocation branch
+//   only when capacity*40 >= 0x1000 (i.e. capacity >= 103). A well-formed
+//   RheaIndividual::inputs has capacity <= ChunkSize (max 50) → never hits
+//   that branch. Only a corrupted vector with garbage capacity value does.
+//
+// Fix: free the search buffers the moment the state machine leaves the
+//   search lifecycle (RUNNING/FINISHED) — not only when PfResetRun snaps
+//   to the player position. This keeps no stale heavy buffers alive across
+//   idle, so nothing is left to corrupt.
+//
+// Why a separate method (not inlined into PfResetRun):
+//   PfResetRun needs the player's current position + map grid loaded
+//   before it can rebuild the flow field and seed m_PfVPath. The IDLE
+//   transition can run at any time (including right after a map vote
+//   before OnMapLoad finishes) — calling PfResetRun there would log
+//   spurious "no predicted character" / "map grid failed" errors and
+//   skip the cleanup we actually need. PfClearSearchState is safe to
+//   call from any state — it touches only the search buffers, never
+//   the player or the map.
+void CBotNet::PfClearSearchState()
+{
+        m_PfANodes.clear();
+        m_PfAOpen.clear();
+        m_PfABestG.clear();
+        m_PfAGoalIdx = -1;
+        m_PfAStarted = false;
+        m_PfAPathReady = false;
+        m_PfAExpandCount = 0;
+        m_PfRHAInitialized = false;
+        m_PfRHAPopulation.clear();
+        m_PfFullInputs.clear();
+        m_PfFullInputsIdx = 0;
+        m_PfGoActive = false;
+        m_PfGoIdx = 0;
+}
+
 void CBotNet::PfResetRun()
 {
         m_PfVPath.clear();
@@ -52,18 +108,10 @@ void CBotNet::PfResetRun()
         for(int i = 0; i < PF_BACKTRACK_DEPTH; i++)
                 m_PfBacktrack[i].Reset();
 
-        // Reset State-Lattice A* state
-        m_PfANodes.clear();
-        m_PfAOpen.clear();
-        m_PfABestG.clear();
-        m_PfAGoalIdx = -1;
-        m_PfAStarted = false;
-        m_PfRHAInitialized = false;
-        m_PfRHAPopulation.clear();
-        m_PfAPathReady = false;
-        m_PfAExpandCount = 0;
-        m_PfFullInputs.clear();
-        m_PfFullInputsIdx = 0;
+        // Reset all A*/RHEA search buffers (shared with PfClearSearchState —
+        // see BUG4 comment below). Rebuild is mandatory here because PfResetRun
+        // starts a fresh search from the player's CURRENT position.
+        PfClearSearchState();
 
         m_PfVPath.push_back(Core.m_Pos);
 

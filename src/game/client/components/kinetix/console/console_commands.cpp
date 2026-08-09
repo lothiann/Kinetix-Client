@@ -156,7 +156,12 @@ void CBotNet::ConPfLive(IConsole::IResult *pResult, void *pUserData)
                 p->PfResetRun();
         p->m_PfState = s;
         if(s == PF_STATE_IDLE)
+        {
                 p->m_PfVPath.clear();
+                // BUG4 v1.56.165: match clickgui.cpp — release heavy search
+                // buffers when going idle via console, not just via ClickGui.
+                p->PfClearSearchState();
+        }
 }
 
 void CBotNet::ConPfGo(IConsole::IResult *pResult, void *pUserData)
