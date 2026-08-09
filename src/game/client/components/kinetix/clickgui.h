@@ -226,6 +226,15 @@ private:
         void *GetEditingInputRowPtr();
         void HandleTextInput(const IInput::CEvent &Event);
 
+        // v1.56.170 BUG8: unified input commit. Applies the row's m_aInputBuf
+        // to the corresponding config/botnet field. Called from BOTH the
+        // mouse-click commit path (focus loss) AND HandleTextInput (Enter/Escape).
+        // Before this, only the mouse-click path applied Spoofer/Block/Binds/Dist
+        // fields — pressing Enter left them unapplied (only ClickGUI Color and
+        // Line color were handled in HandleTextInput). pRow is the SRow being
+        // edited (already has m_aInputBuf synced from m_InputBuf by the caller).
+        void ApplyInputCommit(void *pRow);
+
         // Low-level draw helpers (all screen-space px).
         void DrawRoundedRect(float x, float y, float w, float h, float radius, int corners, ColorRGBA color);
         void DrawText(float x, float y, float size, const char *pText, ColorRGBA color, int align = 0);

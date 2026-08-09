@@ -2100,153 +2100,13 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 pRow->m_InputInitialized = true;
                         }
                         mem_copy(pRow->m_aInputBuf, m_InputBuf, m_InputLen + 1);
-                        // v1.56.77: parse HEX color for "ClickGUI Color" input.
-                        if(str_comp(pRow->pName, "ClickGUI Color") == 0)
-                        {
-                                unsigned hex = 0;
-                                if(sscanf(pRow->m_aInputBuf, "%6x", &hex) == 1)
-                                {
-                                        m_AccentColorRGBA = 0xff000000u | (hex & 0xffffff);
-                                        m_RainbowEnabled = false; // manual color disables rainbow
-                                        // v1.56.78: color already set from HEX above, update saved too.
-                                        m_SavedAccentColorRGBA = m_AccentColorRGBA;
-                                }
-                        }
-                        // v1.56.89: parse HEX color for "Line color" input (Line rendering expandable).
-                        else if(str_comp(pRow->pName, "Line color") == 0)
-                        {
-                                unsigned hex = 0;
-                                if(sscanf(pRow->m_aInputBuf, "%6x", &hex) == 1)
-                                {
-                                        int compIdx = g_Config.m_KxLineComponent;
-                                        EKxLineComponent comp = (EKxLineComponent)compIdx;
-                                        switch(comp)
-                                        {
-                                        case KX_LINE_AIMBOT: g_Config.m_KxLineAimBotColor = 0xff000000u | (hex & 0xffffff); break;
-                                        case KX_LINE_TRIGGERBOT: g_Config.m_KxLineTriggerBotColor = 0xff000000u | (hex & 0xffffff); break;
-                                        case KX_LINE_TRAJECTORY: g_Config.m_KxLineTrajectoryColor = 0xff000000u | (hex & 0xffffff); break;
-                                        case KX_LINE_LASER_UNFREEZE: g_Config.m_KxLineLaserUnfreezeColor = 0xff000000u | (hex & 0xffffff); break;
-                                        case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderColor = 0xff000000u | (hex & 0xffffff); break;
-                                        case KX_LINE_ESP: g_Config.m_KxLineEspColor = 0xff000000u | (hex & 0xffffff); break;
-                                        }
-                                }
-                        }
-                        // v1.56.107: Spoofer string inputs (commit on focus loss)
-                        else if(str_comp(pRow->pName, "Custom client name") == 0)
-                                str_copy(g_Config.m_KxSpoofClientName, pRow->m_aInputBuf, sizeof(g_Config.m_KxSpoofClientName));
-                        else if(str_comp(pRow->pName, "Client version") == 0)
-                                str_copy(g_Config.m_KxSpoofClientVersion, pRow->m_aInputBuf, sizeof(g_Config.m_KxSpoofClientVersion));
-                        else if(str_comp(pRow->pName, "Git hash value") == 0)
-                                str_copy(g_Config.m_KxSpoofGitHash, pRow->m_aInputBuf, sizeof(g_Config.m_KxSpoofGitHash));
-                        else if(str_comp(pRow->pName, "Success color") == 0 || str_comp(pRow->pName, "TB Success color") == 0)
-                        {
-                                unsigned hex = 0;
-                                if(sscanf(pRow->m_aInputBuf, "%6x", &hex) == 1)
-                                {
-                                        CAimBot &ab = GameClient()->m_AimBot;
-                                        if(str_comp(pRow->pName, "Success color") == 0)
-                                        {
-                                                int w = ab.m_AimBotSelectedWeapon;
-                                                if(w >= 0 && w < CAimBot::NUM_WEAPONS_AIM)
-                                                        ab.m_AimBotWeapons[w].m_SuccessColor = 0xff000000u | (hex & 0xffffff); // 0xAARRGGBB
-                                        }
-                                        else
-                                        {
-                                                int w = ab.m_TriggerBotSelectedWeapon;
-                                                if(w >= 0 && w < CAimBot::NUM_WEAPONS_TRIGGER)
-                                                        ab.m_TriggerBotWeapons[w].m_SuccessColor = 0xff000000u | (hex & 0xffffff); // 0xAARRGGBB
-                                        }
-                                }
-                        }
-                        // v1.56.90: Block children input commits
-                        else if(str_comp(pRow->pName, "Main ID") == 0)
-                                GameClient()->m_BotNet.m_MainID = atoi(pRow->m_aInputBuf);
-                        else if(str_comp(pRow->pName, "Target IDs") == 0)
-                                str_copy(GameClient()->m_BotNet.m_aTargetIDsStr, pRow->m_aInputBuf, sizeof(GameClient()->m_BotNet.m_aTargetIDsStr));
-                        else if(str_comp(pRow->pName, "Rescue IDs") == 0)
-                                str_copy(GameClient()->m_BotNet.m_aRescueIDsStr, pRow->m_aInputBuf, sizeof(GameClient()->m_BotNet.m_aRescueIDsStr));
-                        // v1.56.90: Block children numeric input commits
-                        else if(str_comp(pRow->pName, "Avoid Freeze Radius") == 0) GameClient()->m_BotNet.m_AvoidFreezeRadius = atoi(pRow->m_aInputBuf);
-                        else if(str_comp(pRow->pName, "Fire Dist") == 0) GameClient()->m_BotNet.m_FireDist = (float)atof(pRow->m_aInputBuf);
-                        else if(str_comp(pRow->pName, "Hook Dist") == 0) GameClient()->m_BotNet.m_HookDist = (float)atof(pRow->m_aInputBuf);
-                        else if(str_comp(pRow->pName, "Rescue Radius") == 0) GameClient()->m_BotNet.m_RescueRadius = (float)atof(pRow->m_aInputBuf);
-                        else if(str_comp(pRow->pName, "Target Dist") == 0) GameClient()->m_BotNet.m_TargetDist = (float)atof(pRow->m_aInputBuf);
-                        else if(str_comp(pRow->pName, "Main Dist") == 0) GameClient()->m_BotNet.m_MainDist = (float)atof(pRow->m_aInputBuf);
-                        else if(str_comp(pRow->pName, "Stand Dist") == 0) GameClient()->m_BotNet.m_StandDist = (float)atof(pRow->m_aInputBuf);
-                        else if(str_comp(pRow->pName, "Success color") == 0 || str_comp(pRow->pName, "TB Success color") == 0)
-                        {
-                                unsigned hex = 0;
-                                if(sscanf(pRow->m_aInputBuf, "%6x", &hex) == 1)
-                                {
-                                        CAimBot &ab = GameClient()->m_AimBot;
-                                        if(str_comp(pRow->pName, "Success color") == 0)
-                                        {
-                                                int w = ab.m_AimBotSelectedWeapon;
-                                                if(w >= 0 && w < CAimBot::NUM_WEAPONS_AIM)
-                                                        ab.m_AimBotWeapons[w].m_SuccessColor = 0xff000000u | (hex & 0xffffff); // 0xAARRGGBB
-                                        }
-                                        else
-                                        {
-                                                int w = ab.m_TriggerBotSelectedWeapon;
-                                                if(w >= 0 && w < CAimBot::NUM_WEAPONS_TRIGGER)
-                                                        ab.m_TriggerBotWeapons[w].m_SuccessColor = 0xff000000u | (hex & 0xffffff); // 0xAARRGGBB
-                                        }
-                                }
-                        }
-                        else if(str_comp(pRow->pName, "Main Stand Dist") == 0) GameClient()->m_BotNet.m_MainStandDist = (float)atof(pRow->m_aInputBuf);
-                        else if(str_comp(pRow->pName, "Laser Rescue Dist") == 0) GameClient()->m_BotNet.m_LaserRescueDist = (float)atof(pRow->m_aInputBuf);
-                        else if(str_comp(pRow->pName, "Simulate Score") == 0) GameClient()->m_BotNet.m_PfSimulateScore = (float)atof(pRow->m_aInputBuf);
-                        else if(str_comp(pRow->pName, "Rays") == 0) GameClient()->m_BotNet.m_PfRays = atoi(pRow->m_aInputBuf);
-                        else if(str_comp(pRow->pName, "Dist") == 0) GameClient()->m_BotNet.m_PfViewRadius = atoi(pRow->m_aInputBuf);
-                        // v1.56.89: Binds panel — execute "bind <input> toggle <cmd> 1 0"
-                        else if(str_comp(pRow->pName, "ClickGUI") == 0 && m_InputPanel == 4)
-                        {
-                                char cmd[256];
-                                str_format(cmd, sizeof(cmd), "bind \"%s\" toggle cl_clickgui 1 0", pRow->m_aInputBuf);
-                                Console()->ExecuteLine(cmd, -1, false);
-                        }
-                        else if(str_comp(pRow->pName, "AimBot") == 0 && m_InputPanel == 4)
-                        {
-                                char cmd[256];
-                                str_format(cmd, sizeof(cmd), "bind \"%s\" toggle kx_aimbot 1 0", pRow->m_aInputBuf);
-                                Console()->ExecuteLine(cmd, -1, false);
-                        }
-                        else if(str_comp(pRow->pName, "TriggerBot") == 0 && m_InputPanel == 4)
-                        {
-                                char cmd[256];
-                                str_format(cmd, sizeof(cmd), "bind \"%s\" toggle kx_triggerbot 1 0", pRow->m_aInputBuf);
-                                Console()->ExecuteLine(cmd, -1, false);
-                        }
-                        else if(str_comp(pRow->pName, "Fake Aim") == 0 && m_InputPanel == 4)
-                        {
-                                char cmd[256];
-                                str_format(cmd, sizeof(cmd), "bind \"%s\" toggle kx_fake_aim 1 0", pRow->m_aInputBuf);
-                                Console()->ExecuteLine(cmd, -1, false);
-                        }
-                        else if(str_comp(pRow->pName, "Laser Unfreeze") == 0 && m_InputPanel == 4)
-                        {
-                                char cmd[256];
-                                str_format(cmd, sizeof(cmd), "bind \"%s\" toggle kx_laser_unfreeze 1 0", pRow->m_aInputBuf);
-                                Console()->ExecuteLine(cmd, -1, false);
-                        }
-                        else if(str_comp(pRow->pName, "Copy Moves Filter") == 0 && m_InputPanel == 4)
-                        {
-                                char cmd[256];
-                                str_format(cmd, sizeof(cmd), "bind \"%s\" toggle kx_dummy_copy_moves_filter 1 0", pRow->m_aInputBuf);
-                                Console()->ExecuteLine(cmd, -1, false);
-                        }
-                        else if(str_comp(pRow->pName, "Trajectory") == 0 && m_InputPanel == 4)
-                        {
-                                char cmd[256];
-                                str_format(cmd, sizeof(cmd), "bind \"%s\" toggle kx_show_trajectory 1 0", pRow->m_aInputBuf);
-                                Console()->ExecuteLine(cmd, -1, false);
-                        }
-                        else if(str_comp(pRow->pName, "Block") == 0 && m_InputPanel == 4)
-                        {
-                                char cmd[256];
-                                str_format(cmd, sizeof(cmd), "bind \"%s\" toggle kx_attack 1 0", pRow->m_aInputBuf);
-                                Console()->ExecuteLine(cmd, -1, false);
-                        }
+                        // v1.56.170 BUG8: apply input value via unified commit handler.
+                        // Previously this block had all the if/else if application logic
+                        // inline (full coverage), but HandleTextInput's CommitToRow lambda
+                        // had only ClickGUI Color + Line color. Pressing Enter on Spoofer/
+                        // Block/Binds/Dist fields left them unapplied. Now both paths call
+                        // ApplyInputCommit for consistent behavior.
+                        ApplyInputCommit(pRow);
                 }
                 m_InputEditing = false; Input()->StopTextInput();
         }
@@ -3247,36 +3107,11 @@ void CClickGui::HandleTextInput(const IInput::CEvent &Event)
                         pRow->m_InputInitialized = true;
                 }
                 mem_copy(pRow->m_aInputBuf, m_InputBuf, m_InputLen + 1);
-                // v1.56.77: parse HEX color for "ClickGUI Color" input.
-                if(str_comp(pRow->pName, "ClickGUI Color") == 0)
-                {
-                        unsigned hex = 0;
-                        if(sscanf(pRow->m_aInputBuf, "%6x", &hex) == 1)
-                        {
-                                m_AccentColorRGBA = 0xff000000u | (hex & 0xffffff);
-                                m_RainbowEnabled = false;
-                                m_SavedAccentColorRGBA = m_AccentColorRGBA; // v1.56.78
-                        }
-                }
-                // v1.56.117: Line color input - write to per-component config on Enter.
-                else if(str_comp(pRow->pName, "Line color") == 0)
-                {
-                        unsigned hex = 0;
-                        if(sscanf(pRow->m_aInputBuf, "%6x", &hex) == 1)
-                        {
-                                int compIdx = g_Config.m_KxLineComponent;
-                                EKxLineComponent comp = (EKxLineComponent)compIdx;
-                                switch(comp)
-                                {
-                                case KX_LINE_AIMBOT: g_Config.m_KxLineAimBotColor = 0xff000000u | (hex & 0xffffff); break;
-                                case KX_LINE_TRIGGERBOT: g_Config.m_KxLineTriggerBotColor = 0xff000000u | (hex & 0xffffff); break;
-                                case KX_LINE_TRAJECTORY: g_Config.m_KxLineTrajectoryColor = 0xff000000u | (hex & 0xffffff); break;
-                                case KX_LINE_LASER_UNFREEZE: g_Config.m_KxLineLaserUnfreezeColor = 0xff000000u | (hex & 0xffffff); break;
-                                case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderColor = 0xff000000u | (hex & 0xffffff); break;
-                                case KX_LINE_ESP: g_Config.m_KxLineEspColor = 0xff000000u | (hex & 0xffffff); break;
-                                }
-                        }
-                }
+                // v1.56.170 BUG8: delegate to unified commit handler so Enter/Escape
+                // applies the SAME field handlers as mouse-click focus loss. Before this,
+                // CommitToRow only handled ClickGUI Color + Line color — all other input
+                // fields (Spoofer, Block, Binds, Dists, etc.) were silently dropped on Enter.
+                ApplyInputCommit(pRow);
         };
 
         // Helper: delete the current selection (if any). Returns true if deleted.
@@ -3492,6 +3327,150 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
                 }
         }
         return false;
+}
+
+// v1.56.170 BUG8: unified input commit handler. Applies pRow->m_aInputBuf to the
+// corresponding config/botnet field. Called from BOTH:
+//   - HandleMouseDown (focus loss / click elsewhere) — was the only path applying
+//     Spoofer/Block/Binds/Dist fields before this fix.
+//   - HandleTextInput CommitToRow lambda (Enter/Escape) — was only applying
+//     ClickGUI Color + Line color before this fix.
+// Consolidating here guarantees both paths apply the SAME set of fields.
+// pRow is void* because SRow is in an anonymous namespace (not visible in .h).
+void CClickGui::ApplyInputCommit(void *pRowVoid)
+{
+        SRow *pRow = (SRow *)pRowVoid;
+        if(!pRow)
+                return;
+
+        // ClickGUI Color (hex, e.g. "ff8800").
+        if(str_comp(pRow->pName, "ClickGUI Color") == 0)
+        {
+                unsigned hex = 0;
+                if(sscanf(pRow->m_aInputBuf, "%6x", &hex) == 1)
+                {
+                        m_AccentColorRGBA = 0xff000000u | (hex & 0xffffff);
+                        m_RainbowEnabled = false; // manual color disables rainbow
+                        m_SavedAccentColorRGBA = m_AccentColorRGBA;
+                }
+        }
+        // Line color (per-component via m_KxLineComponent).
+        else if(str_comp(pRow->pName, "Line color") == 0)
+        {
+                unsigned hex = 0;
+                if(sscanf(pRow->m_aInputBuf, "%6x", &hex) == 1)
+                {
+                        int compIdx = g_Config.m_KxLineComponent;
+                        EKxLineComponent comp = (EKxLineComponent)compIdx;
+                        switch(comp)
+                        {
+                        case KX_LINE_AIMBOT: g_Config.m_KxLineAimBotColor = 0xff000000u | (hex & 0xffffff); break;
+                        case KX_LINE_TRIGGERBOT: g_Config.m_KxLineTriggerBotColor = 0xff000000u | (hex & 0xffffff); break;
+                        case KX_LINE_TRAJECTORY: g_Config.m_KxLineTrajectoryColor = 0xff000000u | (hex & 0xffffff); break;
+                        case KX_LINE_LASER_UNFREEZE: g_Config.m_KxLineLaserUnfreezeColor = 0xff000000u | (hex & 0xffffff); break;
+                        case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderColor = 0xff000000u | (hex & 0xffffff); break;
+                        case KX_LINE_ESP: g_Config.m_KxLineEspColor = 0xff000000u | (hex & 0xffffff); break;
+                        }
+                }
+        }
+        // Spoofer string inputs.
+        else if(str_comp(pRow->pName, "Custom client name") == 0)
+                str_copy(g_Config.m_KxSpoofClientName, pRow->m_aInputBuf, sizeof(g_Config.m_KxSpoofClientName));
+        else if(str_comp(pRow->pName, "Client version") == 0)
+                str_copy(g_Config.m_KxSpoofClientVersion, pRow->m_aInputBuf, sizeof(g_Config.m_KxSpoofClientVersion));
+        else if(str_comp(pRow->pName, "Git hash value") == 0)
+                str_copy(g_Config.m_KxSpoofGitHash, pRow->m_aInputBuf, sizeof(g_Config.m_KxSpoofGitHash));
+        // AimBot / TriggerBot success color (hex).
+        else if(str_comp(pRow->pName, "Success color") == 0 || str_comp(pRow->pName, "TB Success color") == 0)
+        {
+                unsigned hex = 0;
+                if(sscanf(pRow->m_aInputBuf, "%6x", &hex) == 1)
+                {
+                        CAimBot &ab = GameClient()->m_AimBot;
+                        if(str_comp(pRow->pName, "Success color") == 0)
+                        {
+                                int w = ab.m_AimBotSelectedWeapon;
+                                if(w >= 0 && w < CAimBot::NUM_WEAPONS_AIM)
+                                        ab.m_AimBotWeapons[w].m_SuccessColor = 0xff000000u | (hex & 0xffffff);
+                        }
+                        else
+                        {
+                                int w = ab.m_TriggerBotSelectedWeapon;
+                                if(w >= 0 && w < CAimBot::NUM_WEAPONS_TRIGGER)
+                                        ab.m_TriggerBotWeapons[w].m_SuccessColor = 0xff000000u | (hex & 0xffffff);
+                        }
+                }
+        }
+        // Block children: string IDs.
+        else if(str_comp(pRow->pName, "Main ID") == 0)
+                GameClient()->m_BotNet.m_MainID = atoi(pRow->m_aInputBuf);
+        else if(str_comp(pRow->pName, "Target IDs") == 0)
+                str_copy(GameClient()->m_BotNet.m_aTargetIDsStr, pRow->m_aInputBuf, sizeof(GameClient()->m_BotNet.m_aTargetIDsStr));
+        else if(str_comp(pRow->pName, "Rescue IDs") == 0)
+                str_copy(GameClient()->m_BotNet.m_aRescueIDsStr, pRow->m_aInputBuf, sizeof(GameClient()->m_BotNet.m_aRescueIDsStr));
+        // Block children: numeric distances.
+        else if(str_comp(pRow->pName, "Avoid Freeze Radius") == 0) GameClient()->m_BotNet.m_AvoidFreezeRadius = atoi(pRow->m_aInputBuf);
+        else if(str_comp(pRow->pName, "Fire Dist") == 0) GameClient()->m_BotNet.m_FireDist = (float)atof(pRow->m_aInputBuf);
+        else if(str_comp(pRow->pName, "Hook Dist") == 0) GameClient()->m_BotNet.m_HookDist = (float)atof(pRow->m_aInputBuf);
+        else if(str_comp(pRow->pName, "Rescue Radius") == 0) GameClient()->m_BotNet.m_RescueRadius = (float)atof(pRow->m_aInputBuf);
+        else if(str_comp(pRow->pName, "Target Dist") == 0) GameClient()->m_BotNet.m_TargetDist = (float)atof(pRow->m_aInputBuf);
+        else if(str_comp(pRow->pName, "Main Dist") == 0) GameClient()->m_BotNet.m_MainDist = (float)atof(pRow->m_aInputBuf);
+        else if(str_comp(pRow->pName, "Stand Dist") == 0) GameClient()->m_BotNet.m_StandDist = (float)atof(pRow->m_aInputBuf);
+        else if(str_comp(pRow->pName, "Main Stand Dist") == 0) GameClient()->m_BotNet.m_MainStandDist = (float)atof(pRow->m_aInputBuf);
+        else if(str_comp(pRow->pName, "Laser Rescue Dist") == 0) GameClient()->m_BotNet.m_LaserRescueDist = (float)atof(pRow->m_aInputBuf);
+        else if(str_comp(pRow->pName, "Simulate Score") == 0) GameClient()->m_BotNet.m_PfSimulateScore = (float)atof(pRow->m_aInputBuf);
+        else if(str_comp(pRow->pName, "Rays") == 0) GameClient()->m_BotNet.m_PfRays = atoi(pRow->m_aInputBuf);
+        else if(str_comp(pRow->pName, "Dist") == 0) GameClient()->m_BotNet.m_PfViewRadius = atoi(pRow->m_aInputBuf);
+        // Binds panel — execute "bind <key> toggle <cmd> 1 0". m_InputPanel==4 guards
+        // against name collisions with non-Binds input rows.
+        else if(str_comp(pRow->pName, "ClickGUI") == 0 && m_InputPanel == 4)
+        {
+                char cmd[256];
+                str_format(cmd, sizeof(cmd), "bind \"%s\" toggle cl_clickgui 1 0", pRow->m_aInputBuf);
+                Console()->ExecuteLine(cmd, -1, false);
+        }
+        else if(str_comp(pRow->pName, "AimBot") == 0 && m_InputPanel == 4)
+        {
+                char cmd[256];
+                str_format(cmd, sizeof(cmd), "bind \"%s\" toggle kx_aimbot 1 0", pRow->m_aInputBuf);
+                Console()->ExecuteLine(cmd, -1, false);
+        }
+        else if(str_comp(pRow->pName, "TriggerBot") == 0 && m_InputPanel == 4)
+        {
+                char cmd[256];
+                str_format(cmd, sizeof(cmd), "bind \"%s\" toggle kx_triggerbot 1 0", pRow->m_aInputBuf);
+                Console()->ExecuteLine(cmd, -1, false);
+        }
+        else if(str_comp(pRow->pName, "Fake Aim") == 0 && m_InputPanel == 4)
+        {
+                char cmd[256];
+                str_format(cmd, sizeof(cmd), "bind \"%s\" toggle kx_fake_aim 1 0", pRow->m_aInputBuf);
+                Console()->ExecuteLine(cmd, -1, false);
+        }
+        else if(str_comp(pRow->pName, "Laser Unfreeze") == 0 && m_InputPanel == 4)
+        {
+                char cmd[256];
+                str_format(cmd, sizeof(cmd), "bind \"%s\" toggle kx_laser_unfreeze 1 0", pRow->m_aInputBuf);
+                Console()->ExecuteLine(cmd, -1, false);
+        }
+        else if(str_comp(pRow->pName, "Copy Moves Filter") == 0 && m_InputPanel == 4)
+        {
+                char cmd[256];
+                str_format(cmd, sizeof(cmd), "bind \"%s\" toggle kx_dummy_copy_moves_filter 1 0", pRow->m_aInputBuf);
+                Console()->ExecuteLine(cmd, -1, false);
+        }
+        else if(str_comp(pRow->pName, "Trajectory") == 0 && m_InputPanel == 4)
+        {
+                char cmd[256];
+                str_format(cmd, sizeof(cmd), "bind \"%s\" toggle kx_show_trajectory 1 0", pRow->m_aInputBuf);
+                Console()->ExecuteLine(cmd, -1, false);
+        }
+        else if(str_comp(pRow->pName, "Block") == 0 && m_InputPanel == 4)
+        {
+                char cmd[256];
+                str_format(cmd, sizeof(cmd), "bind \"%s\" toggle kx_attack 1 0", pRow->m_aInputBuf);
+                Console()->ExecuteLine(cmd, -1, false);
+        }
 }
 
 // ============================================================================
