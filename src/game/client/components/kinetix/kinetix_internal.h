@@ -156,6 +156,90 @@ static inline CCharacter *PfSpawnSimBot(CGameWorld *pWorld, int PredictedCharId,
         return pBot;
 }
 
+// =========================================================
+// PfCheckFreeze — exact copy of DDNet freeze-detection logic.
+// Source: src/game/client/prediction/entities/character.cpp
+//   DDRacePostCoreTick() line 1108-1161 (anti-skip line)
+//   HandleTiles()          line 759-807  (freeze tile check)
+// This is a 1:1 copy of the engine's logic — no improvements,
+// no switch layer, no LFREEZE, no 0.5px sampling. If the engine
+// finds freeze on this line, this function finds it too.
+//
+// Returns true if a freeze tile was found on the line prevPos->curPos
+// (or at curPos if the line had no special tiles). Calls pBot->Freeze()
+// exactly like HandleTiles does when freeze is found.
+// =========================================================
+static inline bool PfCheckFreeze(CGameWorld *pWorld, CCharacter *pBot, vec2 prevPos, vec2 curPos)
+{
+        if(!pBot || !pWorld)
+                return false;
+        CCollision *pColl = pWorld->Collision();
+        if(!pColl)
+                return false;
+
+        // === Exact copy of DDRacePostCoreTick line 1149-1160 ===
+        int CurrentIndex = pColl->GetMapIndex(curPos);
+
+        // === Exact copy of HandleTiles line 759-807 (freeze + dfreeze only) ===
+        // anti-skip: GetMapIndices(prevPos, curPos) — no MaxIndices
+        std::vector<int> vIndices = pColl->GetMapIndices(prevPos, curPos);
+
+        bool foundFreeze = false;
+
+        if(!vIndices.empty())
+        {
+                for(int Index : vIndices)
+                {
+                        int MapIndex = Index;
+                        int TileIndex = pColl->GetTileIndex(MapIndex);
+                        int TileFIndex = pColl->GetFrontTileIndex(MapIndex);
+
+                        // freeze (HandleTiles line 780-783)
+                        if(((TileIndex == TILE_FREEZE) || (TileFIndex == TILE_FREEZE))
+                                && !pBot->m_Core.m_Super
+                                && !pBot->m_Core.m_Invincible
+                                && !pBot->m_Core.m_DeepFrozen)
+                        {
+                                pBot->Freeze();
+                                foundFreeze = true;
+                        }
+                        // deep freeze (HandleTiles line 790-793)
+                        else if(((TileIndex == TILE_DFREEZE) || (TileFIndex == TILE_DFREEZE))
+                                && !pBot->m_Core.m_Super
+                                && !pBot->m_Core.m_Invincible
+                                && !pBot->m_Core.m_DeepFrozen)
+                        {
+                                pBot->m_Core.m_DeepFrozen = true;
+                        }
+                }
+        }
+        else
+        {
+                // HandleTiles(CurrentIndex) — line 1159
+                int MapIndex = CurrentIndex;
+                int TileIndex = pColl->GetTileIndex(MapIndex);
+                int TileFIndex = pColl->GetFrontTileIndex(MapIndex);
+
+                if(((TileIndex == TILE_FREEZE) || (TileFIndex == TILE_FREEZE))
+                        && !pBot->m_Core.m_Super
+                        && !pBot->m_Core.m_Invincible
+                        && !pBot->m_Core.m_DeepFrozen)
+                {
+                        pBot->Freeze();
+                        foundFreeze = true;
+                }
+                else if(((TileIndex == TILE_DFREEZE) || (TileFIndex == TILE_DFREEZE))
+                        && !pBot->m_Core.m_Super
+                        && !pBot->m_Core.m_Invincible
+                        && !pBot->m_Core.m_DeepFrozen)
+                {
+                        pBot->m_Core.m_DeepFrozen = true;
+                }
+        }
+
+        return foundFreeze;
+}
+
 // Simulate one candidate input sequence through the REAL CCharacter in a cloned
 // CGameWorld.  Freeze/finish/death are detected by DDNet's own logic, not by
 // hand-rolled tile checks.
@@ -173,6 +257,7 @@ static inline void PfSimulateChunk(CGameWorld *pWorld, int PredictedCharId, CCha
         out.endFreezeTime = 0;
 
         int prevHookState = pBot->GetCore().m_HookState; // state at start of chunk (before tick 0)
+        vec2 prevSimPos = pBot->m_Pos; // v1.56.157: for PfCheckFreeze anti-skip line
 
         for(size_t t = 0; t < inputs.size(); t++)
         {
@@ -186,6 +271,17 @@ static inline void PfSimulateChunk(CGameWorld *pWorld, int PredictedCharId, CCha
                         out.died = true;
                         break;
                 }
+
+                // v1.56.157: PfCheckFreeze — exact 1:1 copy of DDNet's HandleTiles
+                // + DDRacePostCoreTick anti-skip logic. Run AFTER engine Tick() so
+                // if the engine's own HandleTiles missed freeze (e.g. due to gate
+                // or m_PrevPos issues), our check catches it. Only if bot is not
+                // already frozen (avoids double-freeze / anti-flicker conflict).
+                if(pBot->m_FreezeTime <= 0)
+                {
+                        PfCheckFreeze(pWorld, pBot, prevSimPos, pBot->m_Pos);
+                }
+
                 out.traj.push_back(pBot->m_Pos);
 
                 // Record hook segment ONLY at the moment of grab — i.e. when hook state
@@ -197,6 +293,7 @@ static inline void PfSimulateChunk(CGameWorld *pWorld, int PredictedCharId, CCha
                         out.hookSegs.push_back({pBot->m_Pos, core.m_HookPos});
                 }
                 prevHookState = core.m_HookState;
+                prevSimPos = pBot->m_Pos; // v1.56.157: update for next tick's anti-skip line
 
                 if(pBot->m_FreezeTime > 0)
                         out.freezeTicks++;
@@ -249,13 +346,13 @@ static inline void PfSimulateChunk(CGameWorld *pWorld, int PredictedCharId, CCha
 // =========================================================
 enum EKxLineComponent
 {
-	KX_LINE_AIMBOT = 0,
-	KX_LINE_TRIGGERBOT = 1,
-	KX_LINE_TRAJECTORY = 2,
-	KX_LINE_LASER_UNFREEZE = 3,
-	KX_LINE_PATHFINDER = 4,
-	KX_LINE_ESP = 5,
-	KX_LINE_COUNT = 6,
+        KX_LINE_AIMBOT = 0,
+        KX_LINE_TRIGGERBOT = 1,
+        KX_LINE_TRAJECTORY = 2,
+        KX_LINE_LASER_UNFREEZE = 3,
+        KX_LINE_PATHFINDER = 4,
+        KX_LINE_ESP = 5,
+        KX_LINE_COUNT = 6,
 };
 
 // Read per-component line rendering settings from g_Config.
@@ -263,44 +360,44 @@ enum EKxLineComponent
 // applies the global Layer check separately.
 inline int KxLineSize(EKxLineComponent c)
 {
-	switch(c)
-	{
-	case KX_LINE_AIMBOT: return g_Config.m_KxLineAimBotSize;
-	case KX_LINE_TRIGGERBOT: return g_Config.m_KxLineTriggerBotSize;
-	case KX_LINE_TRAJECTORY: return g_Config.m_KxLineTrajectorySize;
-	case KX_LINE_LASER_UNFREEZE: return g_Config.m_KxLineLaserUnfreezeSize;
-	case KX_LINE_PATHFINDER: return g_Config.m_KxLinePathfinderSize;
-	case KX_LINE_ESP: return g_Config.m_KxLineEspSize;
-	}
-	return g_Config.m_KxLineRenderingSize; // fallback
+        switch(c)
+        {
+        case KX_LINE_AIMBOT: return g_Config.m_KxLineAimBotSize;
+        case KX_LINE_TRIGGERBOT: return g_Config.m_KxLineTriggerBotSize;
+        case KX_LINE_TRAJECTORY: return g_Config.m_KxLineTrajectorySize;
+        case KX_LINE_LASER_UNFREEZE: return g_Config.m_KxLineLaserUnfreezeSize;
+        case KX_LINE_PATHFINDER: return g_Config.m_KxLinePathfinderSize;
+        case KX_LINE_ESP: return g_Config.m_KxLineEspSize;
+        }
+        return g_Config.m_KxLineRenderingSize; // fallback
 }
 
 inline unsigned KxLineColor(EKxLineComponent c)
 {
-	switch(c)
-	{
-	case KX_LINE_AIMBOT: return g_Config.m_KxLineAimBotColor;
-	case KX_LINE_TRIGGERBOT: return g_Config.m_KxLineTriggerBotColor;
-	case KX_LINE_TRAJECTORY: return g_Config.m_KxLineTrajectoryColor;
-	case KX_LINE_LASER_UNFREEZE: return g_Config.m_KxLineLaserUnfreezeColor;
-	case KX_LINE_PATHFINDER: return g_Config.m_KxLinePathfinderColor;
-	case KX_LINE_ESP: return g_Config.m_KxLineEspColor;
-	}
-	return g_Config.m_KxLineRenderingColor;
+        switch(c)
+        {
+        case KX_LINE_AIMBOT: return g_Config.m_KxLineAimBotColor;
+        case KX_LINE_TRIGGERBOT: return g_Config.m_KxLineTriggerBotColor;
+        case KX_LINE_TRAJECTORY: return g_Config.m_KxLineTrajectoryColor;
+        case KX_LINE_LASER_UNFREEZE: return g_Config.m_KxLineLaserUnfreezeColor;
+        case KX_LINE_PATHFINDER: return g_Config.m_KxLinePathfinderColor;
+        case KX_LINE_ESP: return g_Config.m_KxLineEspColor;
+        }
+        return g_Config.m_KxLineRenderingColor;
 }
 
 inline float KxLineAlpha(EKxLineComponent c)
 {
-	switch(c)
-	{
-	case KX_LINE_AIMBOT: return (float)g_Config.m_KxLineAimBotAlpha / 100.0f;
-	case KX_LINE_TRIGGERBOT: return (float)g_Config.m_KxLineTriggerBotAlpha / 100.0f;
-	case KX_LINE_TRAJECTORY: return (float)g_Config.m_KxLineTrajectoryAlpha / 100.0f;
-	case KX_LINE_LASER_UNFREEZE: return (float)g_Config.m_KxLineLaserUnfreezeAlpha / 100.0f;
-	case KX_LINE_PATHFINDER: return (float)g_Config.m_KxLinePathfinderAlpha / 100.0f;
-	case KX_LINE_ESP: return (float)g_Config.m_KxLineEspAlpha / 100.0f;
-	}
-	return (float)g_Config.m_KxLineRenderingAlpha / 100.0f;
+        switch(c)
+        {
+        case KX_LINE_AIMBOT: return (float)g_Config.m_KxLineAimBotAlpha / 100.0f;
+        case KX_LINE_TRIGGERBOT: return (float)g_Config.m_KxLineTriggerBotAlpha / 100.0f;
+        case KX_LINE_TRAJECTORY: return (float)g_Config.m_KxLineTrajectoryAlpha / 100.0f;
+        case KX_LINE_LASER_UNFREEZE: return (float)g_Config.m_KxLineLaserUnfreezeAlpha / 100.0f;
+        case KX_LINE_PATHFINDER: return (float)g_Config.m_KxLinePathfinderAlpha / 100.0f;
+        case KX_LINE_ESP: return (float)g_Config.m_KxLineEspAlpha / 100.0f;
+        }
+        return (float)g_Config.m_KxLineRenderingAlpha / 100.0f;
 }
 
 #endif // GAME_CLIENT_COMPONENTS_KINETIX_INTERNAL_H

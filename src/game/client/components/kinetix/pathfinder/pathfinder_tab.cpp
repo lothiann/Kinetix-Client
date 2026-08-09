@@ -212,20 +212,11 @@ void CBotNet::PfPlaybackDebugLog()
                 vec2 curPos = pBot->m_Pos;
                 float lineLen = distance(prevPos, curPos);
 
-                // Check freeze on line prevPos -> curPos (same logic as DDNet GetMapIndices)
-                bool lineFreeze = false;
-                std::vector<int> indices = pColl->GetMapIndices(prevPos, curPos);
-                for(int idx : indices)
-                {
-                        int tile = pColl->GetTileIndex(idx);
-                        int ftile = pColl->GetFrontTileIndex(idx);
-                        if(tile == TILE_FREEZE || tile == TILE_DFREEZE ||
-                                ftile == TILE_FREEZE || ftile == TILE_DFREEZE)
-                        {
-                                lineFreeze = true;
-                                break;
-                        }
-                }
+                // v1.56.157: Use PfCheckFreeze — exact 1:1 copy of DDNet's
+                // HandleTiles + DDRacePostCoreTick anti-skip logic. If the engine
+                // finds freeze on this line, this finds it too. Calls pBot->Freeze()
+                // like HandleTiles does.
+                bool lineFreeze = PfCheckFreeze(&FutureWorld, pBot, prevPos, curPos);
 
                 bool freeze = pBot->m_FreezeTime > 0;
 
