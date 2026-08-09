@@ -177,6 +177,13 @@ static inline bool PfCheckFreeze(CGameWorld *pWorld, CCharacter *pBot, vec2 prev
         if(!pColl)
                 return false;
 
+        // m_Core is private in CCharacter — use GetCore() (returns copy) for reads
+        // and SetCore() for writes. IsSuper() is a public getter for m_Core.m_Super.
+        CCharacterCore Core = pBot->GetCore();
+        bool Super = pBot->IsSuper();
+        bool Invincible = Core.m_Invincible;
+        bool DeepFrozen = Core.m_DeepFrozen;
+
         // === Exact copy of DDRacePostCoreTick line 1149-1160 ===
         int CurrentIndex = pColl->GetMapIndex(curPos);
 
@@ -185,6 +192,7 @@ static inline bool PfCheckFreeze(CGameWorld *pWorld, CCharacter *pBot, vec2 prev
         std::vector<int> vIndices = pColl->GetMapIndices(prevPos, curPos);
 
         bool foundFreeze = false;
+        bool deepFrozenChanged = false;
 
         if(!vIndices.empty())
         {
@@ -196,20 +204,17 @@ static inline bool PfCheckFreeze(CGameWorld *pWorld, CCharacter *pBot, vec2 prev
 
                         // freeze (HandleTiles line 780-783)
                         if(((TileIndex == TILE_FREEZE) || (TileFIndex == TILE_FREEZE))
-                                && !pBot->m_Core.m_Super
-                                && !pBot->m_Core.m_Invincible
-                                && !pBot->m_Core.m_DeepFrozen)
+                                && !Super && !Invincible && !DeepFrozen)
                         {
                                 pBot->Freeze();
                                 foundFreeze = true;
                         }
                         // deep freeze (HandleTiles line 790-793)
                         else if(((TileIndex == TILE_DFREEZE) || (TileFIndex == TILE_DFREEZE))
-                                && !pBot->m_Core.m_Super
-                                && !pBot->m_Core.m_Invincible
-                                && !pBot->m_Core.m_DeepFrozen)
+                                && !Super && !Invincible && !DeepFrozen)
                         {
-                                pBot->m_Core.m_DeepFrozen = true;
+                                DeepFrozen = true;
+                                deepFrozenChanged = true;
                         }
                 }
         }
@@ -221,20 +226,24 @@ static inline bool PfCheckFreeze(CGameWorld *pWorld, CCharacter *pBot, vec2 prev
                 int TileFIndex = pColl->GetFrontTileIndex(MapIndex);
 
                 if(((TileIndex == TILE_FREEZE) || (TileFIndex == TILE_FREEZE))
-                        && !pBot->m_Core.m_Super
-                        && !pBot->m_Core.m_Invincible
-                        && !pBot->m_Core.m_DeepFrozen)
+                        && !Super && !Invincible && !DeepFrozen)
                 {
                         pBot->Freeze();
                         foundFreeze = true;
                 }
                 else if(((TileIndex == TILE_DFREEZE) || (TileFIndex == TILE_DFREEZE))
-                        && !pBot->m_Core.m_Super
-                        && !pBot->m_Core.m_Invincible
-                        && !pBot->m_Core.m_DeepFrozen)
+                        && !Super && !Invincible && !DeepFrozen)
                 {
-                        pBot->m_Core.m_DeepFrozen = true;
+                        DeepFrozen = true;
+                        deepFrozenChanged = true;
                 }
+        }
+
+        // Write back m_DeepFrozen if it changed (m_Core is private, use SetCore).
+        if(deepFrozenChanged)
+        {
+                Core.m_DeepFrozen = true;
+                pBot->SetCore(Core);
         }
 
         return foundFreeze;
