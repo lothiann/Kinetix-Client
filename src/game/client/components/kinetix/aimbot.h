@@ -48,8 +48,8 @@ public:
                 int m_RandomLatency = 0; // TriggerBot only (ticks)
         };
 
-        bool g_Config.m_KxAimBot = false;
-        bool g_Config.m_KxTriggerBot = false;
+        // v1.56.171 BUG9: m_AimBotEnabled/m_TriggerBotEnabled removed — now cvars
+        // (g_Config.m_KxAimBot, g_Config.m_KxTriggerBot).
         bool m_AimBotShowFov = false;
         bool m_AimBotShowRadius = false;
         bool m_AimBotUseRaycastShow = false;
