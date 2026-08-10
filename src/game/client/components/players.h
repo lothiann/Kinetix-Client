@@ -31,7 +31,8 @@ class CPlayers : public CComponent
                 const CNetObj_Character *pPrevChar,
                 const CNetObj_Character *pPlayerChar,
                 int ClientId);
-        void RenderTrajectory();
+        // v1.56.178: RenderTrajectory() removed — moved to CTrajectory component
+        // (GameClient()->m_Trajectory.OnRender) which supports per-type prediction.
         bool IsPlayerInfoAvailable(int ClientId) const;
 
         int m_WeaponEmoteQuadContainerIndex;

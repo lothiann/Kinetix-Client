@@ -38,6 +38,7 @@
 #include "components/kinetix/kinetix_lines.h"
 #include "components/kinetix/kinetix.h"
 #include "components/kinetix/irc.h"
+#include "components/kinetix/trajectory.h" // v1.56.178: per-type trajectory prediction component
 #include "components/broadcast.h"
 #include "components/camera.h"
 #include "components/censor.h"
@@ -167,6 +168,7 @@ public:
         CAimBot m_AimBot;
         CBasicAvoidFreeze m_BasicAvoidFreeze;
         CEsp m_Esp;
+        CTrajectory m_Trajectory; // v1.56.178: per-type trajectory prediction (Tee/Pistol/Shotgun/Grenade/Laser)
         CKinetixLines m_KinetixLines;
         CIRC m_IRC;
         CKeyBinder m_KeyBinder;

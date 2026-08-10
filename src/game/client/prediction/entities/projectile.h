@@ -37,6 +37,8 @@ public:
 	const vec2 &GetDirection() const { return m_Direction; }
 	const int &GetOwner() const { return m_Owner; }
 	const int &GetStartTick() const { return m_StartTick; }
+	// v1.56.178: trajectory component reads the weapon type to filter projectiles.
+	int GetType() const { return m_Type; }
 	CProjectile(CGameWorld *pGameWorld, int Id, const CProjectileData *pProj);
 
 private:

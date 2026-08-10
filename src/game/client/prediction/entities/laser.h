@@ -17,6 +17,7 @@ public:
 	void Tick() override;
 
 	const vec2 &GetFrom() const { return m_From; }
+	const vec2 &GetDir() const { return m_Dir; } // v1.56.178: trajectory component reads direction for bounce prediction
 	const int &GetOwner() const { return m_Owner; }
 	const int &GetEvalTick() const { return m_EvalTick; }
 	CLaser(CGameWorld *pGameWorld, int Id, CLaserData *pLaser);

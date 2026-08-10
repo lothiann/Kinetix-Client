@@ -189,6 +189,7 @@ void CGameClient::OnConsoleInit()
                                               &m_AimBot, // AimBot/TriggerBot rendering (FOV/Radius circles)
                                               &m_BasicAvoidFreeze, // Basic Avoid Freeze - override input to avoid freeze
                                               &m_Esp, // ESP lines (Layer 0 = behind fg blocks; Layer>0 deferred to m_KinetixLines)
+                                              &m_Trajectory, // v1.56.178: per-type trajectory prediction (replaces old RenderTrajectory in players.cpp)
                                               &m_MapLayersForeground,
                                               &m_KinetixLines, // deferred line overlay — renders AFTER fg map tiles (on top of blocks)
                                               &m_Particles.m_RenderExplosions,

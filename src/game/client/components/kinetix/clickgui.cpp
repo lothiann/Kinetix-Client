@@ -269,9 +269,20 @@ static SRow g_FakeAimChildren[] = {
         {ERowType::Slider, "Speed", nullptr, false, false, 1.0f, 100.0f, 1.0f, 10.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Show for me", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
-// v1.56.89: "Trajectory" expandable: toggle + Prediction Ticks slider.
+// v1.56.178: "Trajectory" expandable — per-type settings (Tee/Pistol/Shotgun/Grenade/Laser).
+// Type dropdown selects which type's settings are being edited (same pattern as
+// AimBot per-weapon dropdown). All toggles/sliders read/write the selected type's
+// STypeSettings in CTrajectory. "Show for current" is hidden when Type=Tee (no
+// projectiles for the tee type — it predicts tee movement only).
+static const char *const g_TrajTypeOpts[] = {"Tee", "Pistol", "Shotgun", "Grenade", "Laser"};
 static SRow g_TrajectoryChildren[] = {
+        {ERowType::Dropdown, "Type", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TrajTypeOpts, 5, 0, nullptr, 0},
+        {ERowType::Toggle, "Show", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Prediction Ticks", nullptr, false, false, 1.0f, 50.0f, 1.0f, 10.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Alpha Gradient", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Simulate Players", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Show for other players", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Show for current", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 // v1.56.104: "ESP" expandable — lines from point A to all players matching filters.
 // Filter option arrays reuse the AimBot ones (identical option strings).
@@ -304,7 +315,7 @@ static SRow g_BasicAvoidFreezeChildren[] = {
         {ERowType::Slider, "Trigger ticks", nullptr, false, false, 1.0f, 20.0f, 1.0f, 3.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 static SRow g_AdvancedRows[] = {
-        {ERowType::Expandable, "Trajectory", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TrajectoryChildren, 1},
+        {ERowType::Expandable, "Trajectory", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TrajectoryChildren, 7},
         {ERowType::Expandable, "Laser unfreeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LaserUnfreezeChildren, 7},
         {ERowType::Expandable, "Fake Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_FakeAimChildren, 3},
         {ERowType::Expandable, "ESP", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_EspChildren, 9},
@@ -653,6 +664,33 @@ static bool BafChildVisible(const SRow *pChildren, int childCount, int idx)
                 }
                 return false;
         }
+        return true;
+}
+// v1.56.178: Trajectory — "Show for current" hidden when Type=Tee (no projectiles
+// for the tee type — it predicts tee movement only). "Simulate Players" and
+// "Show for other players" hidden when Type!=Tee (they only apply to tee prediction).
+static bool TrajectoryChildVisible(const SRow *pChildren, int childCount, int idx)
+{
+        if(idx < 0 || idx >= childCount)
+                return false;
+        const SRow &row = pChildren[idx];
+        // Find the Type dropdown's current value.
+        int typeIdx = 0; // default Tee
+        for(int i = 0; i < childCount; ++i)
+        {
+                if(str_comp(pChildren[i].pName, "Type") == 0)
+                {
+                        typeIdx = pChildren[i].valueIdx;
+                        break;
+                }
+        }
+        const bool isTee = (typeIdx == 0);
+        if(str_comp(row.pName, "Show for current") == 0)
+                return !isTee; // only for weapon types
+        if(str_comp(row.pName, "Simulate Players") == 0)
+                return isTee; // only for tee prediction
+        if(str_comp(row.pName, "Show for other players") == 0)
+                return isTee; // only for tee prediction
         return true;
 }
 // Constants — colors and geometry from clickgui.html (box-shadow/blur dropped
@@ -1203,6 +1241,8 @@ if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, ro
         continue;
 if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
         continue;
+if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
+        continue;
                                         if(str_comp(child.pName, "Latency (ms)") == 0)
                                                 child.value = (float)g_Config.m_KxDummyHammerLatencyMs;
                                         else if(str_comp(child.pName, "Filter: Jump") == 0)
@@ -1222,9 +1262,31 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
                                                 child.on = g_Config.m_KxIrcNameplateTag != 0;
                                         // v1.56.112: Line rendering sync moved to dedicated block below
                                         // (per-component, reads g_Config.m_KxLineComponent every frame).
-                                        // Advanced → Trajectory children
-                                        else if(str_comp(child.pName, "Prediction Ticks") == 0)
-                                                child.value = (float)g_Config.m_KxTrajectoryTicks;
+                                        // v1.56.178: Trajectory children now sync from CTrajectory per-type settings.
+                                        // The selected type is read from the Trajectory.Type dropdown value (which
+                                        // is set by the dropdown handler below).
+                                        else if(str_comp(row.pName, "Trajectory") == 0)
+                                        {
+                                                CTrajectory &traj = GameClient()->m_Trajectory;
+                                                int sel = traj.m_SelectedType;
+                                                if(sel < 0 || sel >= CTrajectory::NUM_TRAJ_TYPES)
+                                                        sel = 0;
+                                                const CTrajectory::STypeSettings &ts = traj.m_aTypes[sel];
+                                                if(str_comp(child.pName, "Type") == 0)
+                                                        child.valueIdx = sel;
+                                                else if(str_comp(child.pName, "Show") == 0)
+                                                        child.on = ts.m_Show;
+                                                else if(str_comp(child.pName, "Prediction Ticks") == 0)
+                                                        child.value = (float)ts.m_PredictionTicks;
+                                                else if(str_comp(child.pName, "Alpha Gradient") == 0)
+                                                        child.on = ts.m_AlphaGradient;
+                                                else if(str_comp(child.pName, "Simulate Players") == 0)
+                                                        child.on = ts.m_SimulatePlayers;
+                                                else if(str_comp(child.pName, "Show for other players") == 0)
+                                                        child.on = ts.m_ShowForOtherPlayers;
+                                                else if(str_comp(child.pName, "Show for current") == 0)
+                                                        child.on = ts.m_ShowForCurrent;
+                                        }
                                         // Advanced → Laser unfreeze children
                                         else if(str_comp(child.pName, "Auto laser") == 0)
                                                 child.on = g_Config.m_KxLaserUnfreezeAuto != 0;
@@ -2049,9 +2111,14 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
                                 g_Config.m_KxEspScreenY = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Speed") == 0 && str_comp(row.pName, "ESP") == 0)
                                 g_Config.m_KxEspSpeed = (int)pTarget->value;
-                        // Advanced → Trajectory children
-                        else if(str_comp(pTarget->pName, "Prediction Ticks") == 0)
-                                g_Config.m_KxTrajectoryTicks = (int)pTarget->value;
+                        // v1.56.178: Trajectory per-type slider — writes to CTrajectory.m_aTypes[sel].
+                        else if(str_comp(pTarget->pName, "Prediction Ticks") == 0 && str_comp(row.pName, "Trajectory") == 0)
+                        {
+                                CTrajectory &traj = GameClient()->m_Trajectory;
+                                int sel = traj.m_SelectedType;
+                                if(sel >= 0 && sel < CTrajectory::NUM_TRAJ_TYPES)
+                                        traj.m_aTypes[sel].m_PredictionTicks = (int)pTarget->value;
+                        }
                         else if(str_comp(pTarget->pName, "Speed") == 0)
                         {
                                 // v1.56.77: "Speed" is used by both Fake Aim and Rainbow.
@@ -2545,6 +2612,26 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                             s.m_ShowSuccess = pTarget->on;
                                                 }
                                         }
+                                        // v1.56.178: Trajectory per-type child toggles (parent = "Trajectory")
+                                        else if(str_comp(row.pName, "Trajectory") == 0 && pTarget != &row)
+                                        {
+                                                CTrajectory &traj = GameClient()->m_Trajectory;
+                                                int sel = traj.m_SelectedType;
+                                                if(sel >= 0 && sel < CTrajectory::NUM_TRAJ_TYPES)
+                                                {
+                                                        auto &ts = traj.m_aTypes[sel];
+                                                        if(str_comp(pTarget->pName, "Show") == 0)
+                                                                ts.m_Show = pTarget->on;
+                                                        else if(str_comp(pTarget->pName, "Alpha Gradient") == 0)
+                                                                ts.m_AlphaGradient = pTarget->on;
+                                                        else if(str_comp(pTarget->pName, "Simulate Players") == 0)
+                                                                ts.m_SimulatePlayers = pTarget->on;
+                                                        else if(str_comp(pTarget->pName, "Show for other players") == 0)
+                                                                ts.m_ShowForOtherPlayers = pTarget->on;
+                                                        else if(str_comp(pTarget->pName, "Show for current") == 0)
+                                                                ts.m_ShowForCurrent = pTarget->on;
+                                                }
+                                        }
                                         // v1.56.90: Block children toggles
                                         else if(str_comp(row.pName, "Block") == 0 && pTarget != &row)
                                         {
@@ -2927,9 +3014,14 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         g_Config.m_KxEspScreenY = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Speed") == 0 && str_comp(row.pName, "ESP") == 0)
                                         g_Config.m_KxEspSpeed = (int)pTarget->value;
-                                // Advanced → Trajectory children
-                                else if(str_comp(pTarget->pName, "Prediction Ticks") == 0)
-                                        g_Config.m_KxTrajectoryTicks = (int)pTarget->value;
+                                // v1.56.178: Trajectory per-type slider (drag path) — writes to CTrajectory.m_aTypes[sel].
+                                else if(str_comp(pTarget->pName, "Prediction Ticks") == 0 && str_comp(row.pName, "Trajectory") == 0)
+                                {
+                                        CTrajectory &traj = GameClient()->m_Trajectory;
+                                        int sel = traj.m_SelectedType;
+                                        if(sel >= 0 && sel < CTrajectory::NUM_TRAJ_TYPES)
+                                                traj.m_aTypes[sel].m_PredictionTicks = (int)pTarget->value;
+                                }
                                 else if(str_comp(pTarget->pName, "Chunk size") == 0)
                                         g_Config.m_KxPfChunkSize = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Hook angles") == 0)
@@ -3144,6 +3236,8 @@ if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, ro
         continue;
 if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
         continue;
+if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
+        continue;
                                 const float crh = RowHeight(child.type);
                                 if(r == m_DropdownRow && c == m_DropdownChild)
                                 {
@@ -3270,6 +3364,16 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
                                                                         }
                                                                 }
                                                         }
+                                                        // v1.56.178: Trajectory Type dropdown — selects which type's settings are edited.
+                                                        else if(str_comp(row.pName, "Trajectory") == 0)
+                                                        {
+                                                                CTrajectory &traj = GameClient()->m_Trajectory;
+                                                                if(str_comp(target.pName, "Type") == 0)
+                                                                {
+                                                                        if(o >= 0 && o < CTrajectory::NUM_TRAJ_TYPES)
+                                                                                traj.m_SelectedType = o;
+                                                                }
+                                                        }
                                                         m_DropdownOpen = false;
                                                         return true;
                                                 }
@@ -3347,6 +3451,8 @@ if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childC
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
         continue;
 if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
+        continue;
+if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
         continue;
                                 const float crh = RowHeight(child.type);
                                 if(r == m_DropdownRow && c == m_DropdownChild)
@@ -3605,6 +3711,8 @@ if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, ro
         continue;
 if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
         continue;
+if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
+        continue;
                                 const float crh = RowHeight(child.type);
                                 const float crw = rw - SUB_LIST_INDENT;
                                 if(PointInRect(mousePos, bodyX + SUB_LIST_INDENT, cursorY, crw, crh))
@@ -3802,6 +3910,8 @@ if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, ro
         continue;
 if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
         continue;
+if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
+        continue;
                                 sig = sig * 31u + (unsigned)(c + 100);
                         }
                 }
@@ -3866,6 +3976,8 @@ if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childC
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
         continue;
 if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
+        continue;
+if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
         continue;
                                                 addRowNode(row.pChildren[c], true);
                                         }
@@ -3935,6 +4047,8 @@ if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childC
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
         continue;
 if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
+        continue;
+if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
         continue;
                                 childrenBlockH += RowHeight(row.pChildren[c].type);
                                 visibleCount++;
@@ -4452,6 +4566,8 @@ if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, ro
         continue;
 if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
         continue;
+if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
+        continue;
                                         ++rowIdx;
                                 }
                                 // Update rowYOffset for lower rows (children are hidden).
@@ -4482,6 +4598,7 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
                                 if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childCount, c)) continue;
                                 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c)) continue;
                                 if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c)) continue;
+                                if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c)) continue;
                                 const YGNodeRef pn = rowNodes[preIdx];
                                 const float py2 = bodyY + YGNodeLayoutGetTop(pn) + rowYOffset;
                                 const float ph2 = YGNodeLayoutGetHeight(pn);
@@ -4520,6 +4637,8 @@ if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childC
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
         continue;
 if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
+        continue;
+if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
         continue;
                                 const YGNodeRef cnode = rowNodes[rowIdx];
                                 const float crx = bodyX + YGNodeLayoutGetLeft(cnode);
