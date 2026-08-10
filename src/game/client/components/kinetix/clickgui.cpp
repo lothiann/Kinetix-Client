@@ -31,10 +31,12 @@
 
 #include <game/client/components/console.h>
 #include <game/client/gameclient.h>
+#include <game/version.h> // v1.56.177: GAME_NAME, GAME_RELEASE_VERSION, DDNET_VERSION_NUMBER, GIT_SHORTREV_HASH (used by Info panel)
 
 namespace {
 // Total number of ClickGUI panels. Must match CClickGui::NUM_PANELS in .h.
-constexpr int NUM_PANELS = 5;
+// v1.56.177: was stale at 5 — caused "too many initializers" on g_Panels[6].
+constexpr int NUM_PANELS = 6;
 
 // Coerce a body height to int for ClipEnable without truncation surprises.
 inline int bodyH_safe(float h)
