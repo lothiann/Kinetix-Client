@@ -354,12 +354,14 @@ int CControls::SnapInput(int *pData)
                 if(g_Config.m_ClDummyCopyMoves)
                 {
                         const bool filter = g_Config.m_KxDummyCopyMovesFilter != 0;
-                        // v1.56.186: Copy Moves Latency. When >0, inactive dummies replay
-                        // the active player's input from N ticks ago (N = latency_ms * D /
-                        // tick_time_ms). Recording happens once per SnapInput; per-dummy
-                        // lookup uses GetDelayedActiveInput. When latency=0 (or history not
-                        // yet filled), falls back to live m_aInputData/m_aLastData.
-                        const int latencyMs = g_Config.m_KxCopyMovesLatency;
+                        // v1.56.186: Copy Moves Latency. When enabled and >0, inactive
+                        // dummies replay the active player's input from N ticks ago
+                        // (N = latency_ms * D / tick_time_ms). Recording happens once per
+                        // SnapInput; per-dummy lookup uses GetDelayedActiveInput. When
+                        // disabled or latency=0 (or history not yet filled), falls back
+                        // to live m_aInputData/m_aLastData.
+                        // v1.56.187: gated by KxCopyMovesLatencyEnabled master toggle.
+                        const int latencyMs = (g_Config.m_KxCopyMovesLatencyEnabled != 0) ? g_Config.m_KxCopyMovesLatency : 0;
                         const int tickSpeed = Client()->GameTickSpeed();
                         if(latencyMs > 0)
                                 GameClient()->RecordActiveInput(m_aInputData[g_Config.m_ClDummy]);

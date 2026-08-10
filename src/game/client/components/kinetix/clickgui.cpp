@@ -425,6 +425,7 @@ static SRow g_BindsRows[] = {
         {ERowType::Input, "Fake Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Input, "Laser Unfreeze", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Input, "Copy Moves Filter", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Copy Moves Latency", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Input, "Trajectory", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Input, "Block", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
 };
@@ -1190,6 +1191,9 @@ void CClickGui::OnRender()
                                 // Functions → Copy Moves Filter expandable is master toggle.
                                 else if(str_comp(row.pName, "Copy Moves Filter") == 0)
                                         row.on = g_Config.m_KxDummyCopyMovesFilter != 0;
+                                // v1.56.187: Copy Moves Latency expandable is master toggle.
+                                else if(str_comp(row.pName, "Copy Moves Latency") == 0)
+                                        row.on = g_Config.m_KxCopyMovesLatencyEnabled != 0;
                                 // Pathfinder top-level sliders/toggles
                                 else if(str_comp(row.pName, "Chunk size") == 0)
                                         row.value = (float)g_Config.m_KxPfChunkSize;
@@ -1219,6 +1223,7 @@ void CClickGui::OnRender()
                                                 else if(str_comp(row.pName, "Fake Aim") == 0) pCmd = "toggle kx_fake_aim 1 0";
                                                 else if(str_comp(row.pName, "Laser Unfreeze") == 0) pCmd = "toggle kx_laser_unfreeze 1 0";
                                                 else if(str_comp(row.pName, "Copy Moves Filter") == 0) pCmd = "toggle kx_dummy_copy_moves_filter 1 0";
+                                                else if(str_comp(row.pName, "Copy Moves Latency") == 0) pCmd = "toggle kx_copy_moves_latency_enabled 1 0";
                                                 else if(str_comp(row.pName, "Trajectory") == 0) pCmd = "toggle kx_show_trajectory 1 0";
                                                 else if(str_comp(row.pName, "ESP") == 0) pCmd = "toggle kx_esp 1 0";
                                                 else if(str_comp(row.pName, "Basic Avoid Freeze") == 0) pCmd = "toggle kx_basic_avoid_freeze 1 0";
@@ -2727,6 +2732,9 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         // Copy Moves Filter expandable is master toggle.
                                         else if(str_comp(pTarget->pName, "Copy Moves Filter") == 0)
                                                 g_Config.m_KxDummyCopyMovesFilter = pTarget->on ? 1 : 0;
+                                        // v1.56.187: Copy Moves Latency expandable is master toggle.
+                                        else if(str_comp(pTarget->pName, "Copy Moves Latency") == 0)
+                                                g_Config.m_KxCopyMovesLatencyEnabled = pTarget->on ? 1 : 0;
                                         // Copy Moves Filter sub-toggles
                                         else if(str_comp(pTarget->pName, "Filter: Jump") == 0)
                                                 g_Config.m_KxDummyCopyMovesFilterJump = pTarget->on ? 1 : 0;
@@ -3907,6 +3915,7 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
                 else if(str_comp(pRow->pName, "Fake Aim") == 0) pCmd = "toggle kx_fake_aim 1 0";
                 else if(str_comp(pRow->pName, "Laser Unfreeze") == 0) pCmd = "toggle kx_laser_unfreeze 1 0";
                 else if(str_comp(pRow->pName, "Copy Moves Filter") == 0) pCmd = "toggle kx_dummy_copy_moves_filter 1 0";
+                else if(str_comp(pRow->pName, "Copy Moves Latency") == 0) pCmd = "toggle kx_copy_moves_latency_enabled 1 0";
                 else if(str_comp(pRow->pName, "Trajectory") == 0) pCmd = "toggle kx_show_trajectory 1 0";
                 else if(str_comp(pRow->pName, "Block") == 0) pCmd = "toggle kx_attack 1 0";
                 if(pCmd)
