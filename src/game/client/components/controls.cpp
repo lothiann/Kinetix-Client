@@ -373,6 +373,7 @@ int CControls::SnapInput(int *pData)
                                         const bool copyHook      = !filter || g_Config.m_KxDummyCopyMovesFilterHook;
                                         const bool copyAim       = !filter || g_Config.m_KxDummyCopyMovesFilterAim;
                                         const bool copyFire      = !filter || g_Config.m_KxDummyCopyMovesFilterFire;
+                                        const bool copyWeapon    = !filter || g_Config.m_KxDummyCopyMovesFilterWeapon;
 
                                         if(copyDirection)
                                                 pDummyInput->m_Direction = m_aInputData[g_Config.m_ClDummy].m_Direction;
@@ -386,13 +387,17 @@ int CControls::SnapInput(int *pData)
                                                 pDummyInput->m_TargetX = m_aInputData[g_Config.m_ClDummy].m_TargetX;
                                                 pDummyInput->m_TargetY = m_aInputData[g_Config.m_ClDummy].m_TargetY;
                                         }
-                                        pDummyInput->m_WantedWeapon = m_aInputData[g_Config.m_ClDummy].m_WantedWeapon;
+                                        if(copyWeapon)
+                                                pDummyInput->m_WantedWeapon = m_aInputData[g_Config.m_ClDummy].m_WantedWeapon;
 
                                         if(!g_Config.m_ClDummyControl && copyFire)
                                                 pDummyInput->m_Fire += m_aInputData[g_Config.m_ClDummy].m_Fire - m_aLastData[g_Config.m_ClDummy].m_Fire;
 
-                                        pDummyInput->m_NextWeapon += m_aInputData[g_Config.m_ClDummy].m_NextWeapon - m_aLastData[g_Config.m_ClDummy].m_NextWeapon;
-                                        pDummyInput->m_PrevWeapon += m_aInputData[g_Config.m_ClDummy].m_PrevWeapon - m_aLastData[g_Config.m_ClDummy].m_PrevWeapon;
+                                        if(copyWeapon)
+                                        {
+                                                pDummyInput->m_NextWeapon += m_aInputData[g_Config.m_ClDummy].m_NextWeapon - m_aLastData[g_Config.m_ClDummy].m_NextWeapon;
+                                                pDummyInput->m_PrevWeapon += m_aInputData[g_Config.m_ClDummy].m_PrevWeapon - m_aLastData[g_Config.m_ClDummy].m_PrevWeapon;
+                                        }
                                 }
 
                                 m_aInputData[D] = *pDummyInput;

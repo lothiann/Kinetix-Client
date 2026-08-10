@@ -102,13 +102,14 @@ struct SRow
 static SRow g_CustomLatencyChildren[] = {
         {ERowType::Slider, "Latency (ms)", nullptr, false, false, 50.0f, 2000.0f, 10.0f, 500.0f, "ms", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
-// "Copy Moves Filter" expandable: 5 sub-toggles.
+// "Copy Moves Filter" expandable: 6 sub-toggles.
 static SRow g_CopyMovesFilterChildren[] = {
         {ERowType::Toggle, "Filter: Jump", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Filter: Direction", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Filter: Hook", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Filter: Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Filter: Fire", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Filter: Weapon", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 // Aim mode dropdown options.
 static const char *const g_AimModeOpts[] = {"Smart", "Mirror"};
@@ -240,7 +241,7 @@ static SRow g_FunctionsRows[] = {
         {ERowType::Expandable, "Custom latency", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CustomLatencyChildren, 1},
         {ERowType::Toggle, "Auto fly", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         // Copy Moves sub-section
-        {ERowType::Expandable, "Copy Moves Filter", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CopyMovesFilterChildren, 5},
+        {ERowType::Expandable, "Copy Moves Filter", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CopyMovesFilterChildren, 6},
         {ERowType::Toggle, "Mirror direction", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Dropdown, "Aim mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_AimModeOpts, 2, 0, nullptr, 0},
         // Conditional aim options (visibility based on Aim mode)
@@ -1258,6 +1259,8 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
                                                 child.on = g_Config.m_KxDummyCopyMovesFilterAim != 0;
                                         else if(str_comp(child.pName, "Filter: Fire") == 0)
                                                 child.on = g_Config.m_KxDummyCopyMovesFilterFire != 0;
+                                        else if(str_comp(child.pName, "Filter: Weapon") == 0)
+                                                child.on = g_Config.m_KxDummyCopyMovesFilterWeapon != 0;
                                         // Settings → IRC children
                                         else if(str_comp(child.pName, "Reveal join") == 0)
                                                 child.on = g_Config.m_KxIrcRevealJoin != 0;
@@ -2723,6 +2726,8 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 g_Config.m_KxDummyCopyMovesFilterAim = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Filter: Fire") == 0)
                                                 g_Config.m_KxDummyCopyMovesFilterFire = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Filter: Weapon") == 0)
+                                                g_Config.m_KxDummyCopyMovesFilterWeapon = pTarget->on ? 1 : 0;
                                         // Settings → IRC children
                                         else if(str_comp(pTarget->pName, "Reveal join") == 0)
                                                 g_Config.m_KxIrcRevealJoin = pTarget->on ? 1 : 0;

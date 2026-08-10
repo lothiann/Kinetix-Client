@@ -266,6 +266,7 @@ MACRO_CONFIG_INT(KxDummyCopyMovesFilterDirection, kx_dummy_copy_moves_filter_dir
 MACRO_CONFIG_INT(KxDummyCopyMovesFilterHook, kx_dummy_copy_moves_filter_hook, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Copy Moves Filter: copy hook")
 MACRO_CONFIG_INT(KxDummyCopyMovesFilterAim, kx_dummy_copy_moves_filter_aim, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Copy Moves Filter: copy aim (target X/Y)")
 MACRO_CONFIG_INT(KxDummyCopyMovesFilterFire, kx_dummy_copy_moves_filter_fire, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Copy Moves Filter: copy fire")
+MACRO_CONFIG_INT(KxDummyCopyMovesFilterWeapon, kx_dummy_copy_moves_filter_weapon, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Copy Moves Filter: copy weapon (wanted/next/prev weapon)")
 MACRO_CONFIG_INT(KxDummyCopyMirrorDir, kx_dummy_copy_mirror_dir, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Mirror direction of inactive dummies by XOR when copy moves is on")
 MACRO_CONFIG_INT(KxDummyCopyAimMode, kx_dummy_copy_aim_mode, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Aim mode for copy moves: 0 = Smart (world coords), 1 = Mirror")
 MACRO_CONFIG_INT(KxDummyCopyMirrorAimX, kx_dummy_copy_mirror_aim_x, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Mirror aim X of inactive dummies when copy moves is on (mirror mode)")
