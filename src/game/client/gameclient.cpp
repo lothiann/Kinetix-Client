@@ -691,6 +691,21 @@ int CGameClient::OnSnapInput(int *pData, int Conn, bool Force)
                                 canHammerNow = false;
                 }
 
+                // v1.56.188: Auto Fly — when dummy is out of hammer range, behave
+                // as if cl_dummy_hammer is off: send normal dummy input so the user
+                // can control the dummy (movement/jump/hook/weapon). Hammer input
+                // (m_aHammerInput) and fire counter (m_aDummyFire) are NOT touched —
+                // they stay ready for seamless resume when the dummy re-enters range.
+                // Without this, dummy was stuck on hammer weapon with no user control
+                // whenever autoFly was on, even when nowhere near the active player.
+                if(autoFly && !canHammerNow)
+                {
+                        if(!Force && (!m_aDummyInput[Conn].m_Direction && !m_aDummyInput[Conn].m_Jump && !m_aDummyInput[Conn].m_Hook))
+                                return 0;
+                        mem_copy(pData, &m_aDummyInput[Conn], sizeof(m_aDummyInput[Conn]));
+                        return sizeof(m_aDummyInput[Conn]);
+                }
+
                 // Always send a fresh packet every tick (not just on hammer hits).
                 // Without this, when KxDummyHammerKeepInputs is on, the server holds
                 // the last sent hammer input (with stale direction/jump/hook) until
