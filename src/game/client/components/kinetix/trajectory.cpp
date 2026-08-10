@@ -308,7 +308,11 @@ static CLaser *FindOwnedLaser(CGameWorld *pWorld, int ownerId)
 
 // v1.56.179: unified prediction-based weapon trajectory renderer.
 // Spawns the weapon entity in a cloned world, simulates N ticks, draws the path.
-void CTrajectory::RenderWeaponPredict(int WeaponType)
+// v1.56.184: ClientId selects which player to predict for. The aim source differs:
+//   - LocalClientId: m_Controls.m_aMousePos (live mouse, most responsive)
+//   - Other players: prediction character's m_Core.m_Input.m_TargetX/Y (from snapshots)
+// Both are aim OFFSETS from the tee in world units (not world positions).
+void CTrajectory::RenderWeaponPredict(int WeaponType, int ClientId)
 {
         // Map WEAPON_* to TRAJ_* index for settings lookup.
         int trajIdx;
@@ -329,26 +333,37 @@ void CTrajectory::RenderWeaponPredict(int WeaponType)
                 return;
 
         int LocalClientId = pGame->m_Snap.m_LocalClientId;
-        if(LocalClientId < 0 || !pGame->m_Snap.m_aCharacters[LocalClientId].m_Active)
+        // v1.56.184: validate ClientId (the player we're predicting for).
+        if(ClientId < 0 || ClientId >= MAX_CLIENTS)
+                return;
+        if(!pGame->m_Snap.m_aCharacters[ClientId].m_Active)
                 return;
 
-        CCharacter *pLocalChar = pGame->m_PredictedWorld.GetCharacterById(LocalClientId);
-        if(!pLocalChar)
+        CCharacter *pChar = pGame->m_PredictedWorld.GetCharacterById(ClientId);
+        if(!pChar)
                 return;
 
-        // v1.56.183: use the RENDERED position (m_aClients[LocalId].m_RenderPos) like
+        // v1.56.183: use the RENDERED position (m_aClients[ClientId].m_RenderPos) like
         // aimbot.cpp:77, so the trajectory start aligns with the visible tee.
-        vec2 MyPos = pGame->m_aClients[LocalClientId].m_RenderPos;
-        // v1.56.181: m_aMousePos is the aim OFFSET from the tee in world units (same as
-        // m_TargetX/Y in CNetObj_PlayerInput) — it is NOT a world position. So the aim
-        // direction is normalize(AimPos), not normalize(AimPos - MyPos). This mirrors
-        // aimbot.cpp:388 and CCharacter::FireWeapon (prediction/entities/character.cpp:264).
-        vec2 AimPos = pGame->m_Controls.m_aMousePos[g_Config.m_ClDummy];
+        vec2 MyPos = pGame->m_aClients[ClientId].m_RenderPos;
+        // v1.56.184: aim source depends on which player we're predicting for.
+        // - Local player: m_Controls.m_aMousePos (live mouse, most responsive)
+        // - Other players: their prediction character's m_TargetX/m_TargetY (from snapshots)
+        // Both are aim OFFSETS from the tee in world units (NOT world positions), so the
+        // direction is normalize(AimPos). Mirrors aimbot.cpp:388 + CCharacter::FireWeapon.
+        vec2 AimPos;
+        if(ClientId == LocalClientId)
+                AimPos = pGame->m_Controls.m_aMousePos[g_Config.m_ClDummy];
+        else
+        {
+                CNetObj_PlayerInput input = pChar->GetCore().m_Input;
+                AimPos = vec2(input.m_TargetX, input.m_TargetY);
+        }
         vec2 Dir = normalize(AimPos);
         if(length(Dir) < 1e-6f)
                 Dir = vec2(1, 0); // fallback: aim right
 
-        vec2 ProjStartPos = MyPos + Dir * pLocalChar->GetProximityRadius() * 0.75f;
+        vec2 ProjStartPos = MyPos + Dir * pChar->GetProximityRadius() * 0.75f;
 
         // Clone the predicted world.
         CGameWorld FutureWorld;
@@ -357,20 +372,21 @@ void CTrajectory::RenderWeaponPredict(int WeaponType)
         // v1.56.182: respect SimulatePlayers. When OFF (default), remove other
         // characters to speed up simulation (projectiles only need collision +
         // owner char). When ON, keep them so projectiles can hit other players.
+        // v1.56.184: keep ClientId (the predicted player), remove everyone else.
         if(!s.m_SimulatePlayers)
         {
                 for(int i = 0; i < MAX_CLIENTS; i++)
                 {
-                        if(i == LocalClientId)
+                        if(i == ClientId)
                                 continue;
-                        if(CCharacter *pChar = FutureWorld.GetCharacterById(i))
-                                FutureWorld.RemoveEntity(pChar);
+                        if(CCharacter *pOther = FutureWorld.GetCharacterById(i))
+                                FutureWorld.RemoveEntity(pOther);
                 }
         }
 
         int StartTick = FutureWorld.GameTick();
         int TickSpeed = FutureWorld.GameTickSpeed();
-        int TuneZone = pLocalChar->GetOverriddenTuneZone();
+        int TuneZone = pChar->GetOverriddenTuneZone();
 
         // Determine if shotgun uses laser (DDRace) or projectile (vanilla).
         const bool isShotgunLaser = (WeaponType == WEAPON_SHOTGUN && FutureWorld.m_WorldConfig.m_IsDDRace);
@@ -389,19 +405,19 @@ void CTrajectory::RenderWeaponPredict(int WeaponType)
                 // Spawn CLaser. LaserReach from tuning.
                 float LaserReach = FutureWorld.GetTuning(TuneZone)->m_LaserReach;
                 int laserType = (WeaponType == WEAPON_LASER) ? WEAPON_LASER : WEAPON_SHOTGUN;
-                new CLaser(&FutureWorld, MyPos, Dir, LaserReach, LocalClientId, laserType);
+                new CLaser(&FutureWorld, MyPos, Dir, LaserReach, ClientId, laserType);
                 vSpawned.push_back({CGameWorld::ENTTYPE_LASER, StartTick});
         }
         else if(WeaponType == WEAPON_GUN)
         {
                 int Lifetime = (int)(TickSpeed * FutureWorld.GetTuning(TuneZone)->m_GunLifetime);
-                new CProjectile(&FutureWorld, WEAPON_GUN, LocalClientId, ProjStartPos, Dir, Lifetime, false, false, -1);
+                new CProjectile(&FutureWorld, WEAPON_GUN, ClientId, ProjStartPos, Dir, Lifetime, false, false, -1);
                 vSpawned.push_back({CGameWorld::ENTTYPE_PROJECTILE, StartTick});
         }
         else if(WeaponType == WEAPON_GRENADE)
         {
                 int Lifetime = (int)(TickSpeed * FutureWorld.GetTuning(TuneZone)->m_GrenadeLifetime);
-                new CProjectile(&FutureWorld, WEAPON_GRENADE, LocalClientId, ProjStartPos, Dir, Lifetime, false, true, SOUND_GRENADE_EXPLODE);
+                new CProjectile(&FutureWorld, WEAPON_GRENADE, ClientId, ProjStartPos, Dir, Lifetime, false, true, SOUND_GRENADE_EXPLODE);
                 vSpawned.push_back({CGameWorld::ENTTYPE_PROJECTILE, StartTick});
         }
         else if(WeaponType == WEAPON_SHOTGUN)
@@ -416,7 +432,7 @@ void CTrajectory::RenderWeaponPredict(int WeaponType)
                         float v = 1 - (absolute(i) / (float)ShotSpread);
                         float Speed = mix((float)FutureWorld.GlobalTuning()->m_ShotgunSpeeddiff, 1.0f, v);
                         vec2 SpreadDir = direction(a) * Speed;
-                        new CProjectile(&FutureWorld, WEAPON_SHOTGUN, LocalClientId, ProjStartPos, SpreadDir, Lifetime, false, false, -1);
+                        new CProjectile(&FutureWorld, WEAPON_SHOTGUN, ClientId, ProjStartPos, SpreadDir, Lifetime, false, false, -1);
                 }
                 // All 5 projectiles share the same StartTick — we'll draw the first
                 // one's path (they spread out so individual paths aren't very useful,
@@ -446,7 +462,7 @@ void CTrajectory::RenderWeaponPredict(int WeaponType)
                         bool alive = false;
                         if(vSpawned[e].entType == CGameWorld::ENTTYPE_PROJECTILE)
                         {
-                                if(CProjectile *pProj = FindOwnedProjectile(&FutureWorld, LocalClientId, vSpawned[e].startTick))
+                                if(CProjectile *pProj = FindOwnedProjectile(&FutureWorld, ClientId, vSpawned[e].startTick))
                                 {
                                         // v1.56.182: CProjectile::Tick does NOT update m_Pos for
                                         // non-bouncing projectiles (pistol/grenade). Use GetPos(Ct)
@@ -458,7 +474,7 @@ void CTrajectory::RenderWeaponPredict(int WeaponType)
                         }
                         else
                         {
-                                if(CLaser *pLaser = FindOwnedLaser(&FutureWorld, LocalClientId))
+                                if(CLaser *pLaser = FindOwnedLaser(&FutureWorld, ClientId))
                                 {
                                         pos = pLaser->m_Pos;
                                         alive = true;
@@ -738,6 +754,9 @@ void CTrajectory::OnRender()
         // weapon (like aimbot). Previously all 4 weapon types were rendered
         // unconditionally (each checked its own m_Show), so enabling Show for
         // multiple types drew them all at once regardless of held weapon.
+        // v1.56.184: also predict for OTHER players when their weapon type's
+        // Show+ShowForOtherPlayers are both ON. Each player gets their own
+        // RenderWeaponPredict call (own cloned world + own aim direction).
         {
                 CCharacter *pLocalChar = pGame->m_PredictedWorld.GetCharacterById(LocalClientId);
                 if(pLocalChar)
@@ -745,7 +764,36 @@ void CTrajectory::OnRender()
                         int weapon = pLocalChar->GetActiveWeapon();
                         // RenderWeaponPredict handles GUN/SHOTGUN/GRENADE/LASER; other
                         // weapons (hammer/ninja) hit the default: return in the switch.
-                        RenderWeaponPredict(weapon);
+                        RenderWeaponPredict(weapon, LocalClientId);
+                }
+
+                // v1.56.184: predict for other players. For each active other player,
+                // check their held weapon's type settings — if Show+ShowForOtherPlayers
+                // are both ON, predict their trajectory too.
+                for(int i = 0; i < MAX_CLIENTS; i++)
+                {
+                        if(i == LocalClientId)
+                                continue;
+                        if(!pGame->m_Snap.m_aCharacters[i].m_Active)
+                                continue;
+                        CCharacter *pOtherChar = pGame->m_PredictedWorld.GetCharacterById(i);
+                        if(!pOtherChar)
+                                continue;
+                        int otherWeapon = pOtherChar->GetActiveWeapon();
+                        // Map weapon to traj index (same switch as RenderWeaponPredict).
+                        int otherTrajIdx;
+                        switch(otherWeapon)
+                        {
+                        case WEAPON_GUN: otherTrajIdx = TRAJ_PISTOL; break;
+                        case WEAPON_SHOTGUN: otherTrajIdx = TRAJ_SHOTGUN; break;
+                        case WEAPON_GRENADE: otherTrajIdx = TRAJ_GRENADE; break;
+                        case WEAPON_LASER: otherTrajIdx = TRAJ_LASER; break;
+                        default: continue; // hammer/ninja: no preview
+                        }
+                        const STypeSettings &os = m_aTypes[otherTrajIdx];
+                        if(!os.m_Show || !os.m_ShowForOtherPlayers)
+                                continue;
+                        RenderWeaponPredict(otherWeapon, i);
                 }
         }
 

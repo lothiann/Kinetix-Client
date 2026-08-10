@@ -27,6 +27,11 @@
 // for show-for-current — tracks ALL players' in-flight projectiles/lasers.
 // SimulatePlayers also applies to show-for-current (keeps other characters
 // for hit detection when ON).
+// v1.56.184: ShowForOtherPlayers ALSO enables the PREVIEW trajectory for
+// other players. OnRender iterates all active players and calls
+// RenderWeaponPredict(theirWeapon, theirClientId) when their weapon type's
+// Show+ShowForOtherPlayers are both ON. Each player gets their own cloned
+// world + aim direction (m_TargetX/Y from snapshots for non-local players).
 //
 // Settings are runtime-only (NOT in config) — same as AimBot per-weapon
 // settings. The legacy m_KxTrajectoryTicks config var stays two-way synced
@@ -75,7 +80,12 @@ private:
         // N ticks, collecting positions each tick. Gives the REAL trajectory
         // (wall collisions, bounces, explosions) — not a hand-rolled approximation.
         // WeaponType is WEAPON_GUN / WEAPON_SHOTGUN / WEAPON_GRENADE / WEAPON_LASER.
-        void RenderWeaponPredict(int WeaponType);
+        // v1.56.184: ClientId selects which player to predict for. When == LocalClientId,
+        // uses m_Controls.m_aMousePos for aim (live mouse). Otherwise uses the player's
+        // prediction character m_TargetX/m_TargetY (from snapshots). OnRender calls this
+        // once for the local player + once per other player whose weapon type has
+        // Show+ShowForOtherPlayers enabled.
+        void RenderWeaponPredict(int WeaponType, int ClientId);
 
         // "Show for current" helpers — iterate prediction-world entities.
         void RenderCurrentProjectiles(int WeaponType);
