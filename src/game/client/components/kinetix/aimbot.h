@@ -89,13 +89,15 @@ private:
         void DoHook();
         void RenderFov(const SWeaponSettings &Settings, const vec2 &MyPos, const vec2 &AimDir, float Alpha);
         void RenderRadius(const SWeaponSettings &Settings, const vec2 &MyPos, const vec2 &AimDir, float Alpha);
-        // v1.56.194: Real Predict — uses full physics simulation (CopyWorld + Tick).
+        // v1.56.196: Real Predict — uses full physics simulation (CopyWorld + Tick).
         // Pre-rolls MAX_PREDICT_TICKS ticks ahead ONCE per FindTarget call,
         // recording each client's position after each tick. Then walks the table
-        // forward: at each tick t, computes projectile flight time to the
-        // target's position at tick t. If flight time == t → projectile and
-        // target arrive simultaneously, aim there. Gravity, friction, wall
-        // collisions, and hook physics all apply during the pre-roll.
+        // forward: at each tick t, computes projectile flight time (FLOAT, not
+        // ceil'd) to the target's position at tick t. When flightTime <= t,
+        // the projectile caught up between (t-1) and t — interpolate the exact
+        // sub-tick moment via linear interp of flightTime and aim at
+        // mix(pos[t-1], pos[t], u). Gravity, friction, wall collisions, and
+        // hook physics all apply during the pre-roll.
         static constexpr int MAX_PREDICT_TICKS = 20;
 
         static void ConAimBot(IConsole::IResult *pResult, void *pUserData);

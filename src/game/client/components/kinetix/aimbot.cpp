@@ -238,15 +238,15 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int Weapon, int LocalId
         float bestScore = 1e18f;
         vec2 bestAimPoint = vec2(0, 0);
 
-        // v1.56.194: Real Predict — full physics simulation (CopyWorld + Tick).
+        // v1.56.196: Real Predict — full physics simulation (CopyWorld + Tick).
         // One CopyWorld per FindTarget call, pre-roll MAX_PREDICT_TICKS ticks
         // ahead, recording each client's position after each tick into a table.
         // Then for each target we walk the table forward one tick at a time:
-        //   tick t → dist(MyPos, pos[t]) → flightTicks = ceil(dist*50/speed)
-        //   if flightTicks == t → projectile and target meet at tick t → use pos[t]
-        //   if flightTicks > t  → projectile needs more time, advance to t+1
-        //   if flightTicks < t  → target already passed this point earlier,
-        //                          clamp to t (closest intersection we can hit)
+        //   tick t → dist(MyPos, pos[t]) → flightTime = dist/speed (or dist*50/speed)
+        //   if flightTime <= t → projectile caught up between (t-1) and t.
+        //     Interpolate the exact sub-tick moment via linear interp of flightTime:
+        //       u = (prevFlightTime - (t-1)) / (1 - (flightTime - prevFlightTime))
+        //     aim at mix(pos[t-1], pos[t], u).
         // Gravity, friction, wall collisions, and hook physics all apply during
         // the pre-roll — prediction matches real server state much better than
         // linear extrapolation on 10+ tick horizons.
@@ -357,53 +357,78 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int Weapon, int LocalId
                 // pre-rolled position table forward one tick at a time.
                 if(predictActive && predValid[i])
                 {
-                        // v1.56.194: Linear tick-scan algorithm. Walk forward through the
-                        // pre-rolled position table one tick at a time. For each tick t,
-                        // compute how long the projectile would take to reach the target's
-                        // position AT tick t. If flight time == t, we found the intersection
-                        // — the projectile and target arrive at that point simultaneously.
-                        // If flight time > t, the projectile needs more time → advance to
-                        // tick t+1 and re-check. If flight time < t, the target already
-                        // passed through this position earlier (we'd need to have fired
-                        // earlier) → use the current tick as the best available estimate
-                        // (clamp). If we exhaust MAX_PREDICT_TICKS without an exact match,
-                        // fall back to the last simulated position.
-                        int chosenTick = 0;
+                        // v1.56.196: Sub-tick interpolation. flightTime is now a FLOAT
+                        // (not ceil'd to int). Walk forward through the pre-rolled position
+                        // table. Find the first tick t where flightTime <= t — that's where
+                        // the projectile catches up with the target. The real intersection
+                        // happened BETWEEN tick (t-1) and tick t (sub-tick moment).
+                        //
+                        // Linear interp of flightTime between (t-1) and t:
+                        //   flightTime(u) = prevFlightTime + (flightTime - prevFlightTime) * u
+                        //   where u in [0,1] is the fraction from tick (t-1) to tick t
+                        // Hook catches up when flightTime(u) == (t-1) + u:
+                        //   prevFlightTime + (flightTime - prevFlightTime) * u = (t-1) + u
+                        //   => u = (prevFlightTime - (t-1)) / (1 - (flightTime - prevFlightTime))
+                        //
+                        // Then aim at mix(pos[t-1], pos[t], u) — the target's position at
+                        // the exact sub-tick moment of intersection.
+                        vec2 predictedPos = predPositions[i][0]; // fallback
+                        bool foundPrediction = false;
+                        float prevFlightTime = -1.0f;
+
                         for(int t = 0; t <= MAX_PREDICT_TICKS; t++)
                         {
                                 float dist = length(predPositions[i][t] - MyPos);
                                 if(dist < 1.0f)
                                 {
-                                        chosenTick = t;
+                                        // Target literally on top of us — aim at current position.
+                                        predictedPos = predPositions[i][t];
+                                        foundPrediction = true;
                                         break;
                                 }
-                                // v1.56.195: Hook speed is units/TICK (m_HookPos += HookDir * HookFireSpeed per Tick).
-                                // Gun/Grenade speeds are units/SECOND (CalcPos multiplies Time[sec] * Speed).
-                                // Use the correct formula based on projSpeedPerTick.
-                                int flightTicks;
+
+                                // v1.56.195: Hook speed is units/TICK, gun/grenade are units/SECOND.
+                                float flightTime;
                                 if(projSpeedPerTick)
-                                        flightTicks = (int)std::ceil(dist / projSpeed);
+                                        flightTime = dist / projSpeed;
                                 else
-                                        flightTicks = (int)std::ceil(dist * (float)SERVER_TICK_SPEED / projSpeed);
-                                if(flightTicks < 1)
-                                        flightTicks = 1;
-                                if(flightTicks == t)
+                                        flightTime = dist * (float)SERVER_TICK_SPEED / projSpeed;
+
+                                if(flightTime <= (float)t)
                                 {
-                                        chosenTick = t;
+                                        // Projectile caught up between tick (t-1) and tick t (or at t).
+                                        if(t == 0 || prevFlightTime < 0.0f)
+                                        {
+                                                // Caught up on the very first tick — no previous to interp.
+                                                predictedPos = predPositions[i][t];
+                                        }
+                                        else
+                                        {
+                                                float prevTick = (float)(t - 1);
+                                                float numerator = prevFlightTime - prevTick;
+                                                float denominator = 1.0f - (flightTime - prevFlightTime);
+                                                float u;
+                                                if(denominator > 0.001f)
+                                                        u = numerator / denominator;
+                                                else
+                                                        u = 0.5f; // fallback (denominator<=0 shouldn't happen here)
+                                                if(u < 0.0f) u = 0.0f;
+                                                if(u > 1.0f) u = 1.0f;
+                                                predictedPos = mix(predPositions[i][t - 1], predPositions[i][t], u);
+                                        }
+                                        foundPrediction = true;
                                         break;
                                 }
-                                if(flightTicks < t)
-                                {
-                                        // Target already passed this point earlier. We can't
-                                        // travel back in time — clamp to current tick as the
-                                        // closest intersection we can still hit.
-                                        chosenTick = t;
-                                        break;
-                                }
-                                // flightTicks > t → projectile needs more time, advance.
-                                chosenTick = t;
+
+                                prevFlightTime = flightTime;
                         }
-                        targetCenter = predPositions[i][chosenTick];
+
+                        if(!foundPrediction)
+                        {
+                                // Never caught up within MAX_PREDICT_TICKS — use last available position.
+                                predictedPos = predPositions[i][MAX_PREDICT_TICKS];
+                        }
+                        targetCenter = predictedPos;
                 }
                 vec2 hbPoints[5] = {
                         targetCenter,
@@ -871,10 +896,10 @@ void CAimBot::RenderRadius(const SWeaponSettings &Settings, const vec2 &MyPos, c
         }
 }
 
-// v1.56.194: ComputePredictedAimPoint removed. Real predict now lives inline
+// v1.56.196: ComputePredictedAimPoint removed. Real predict now lives inline
 // in FindTarget — one CopyWorld + pre-roll of MAX_PREDICT_TICKS ticks builds a
-// positions[MAX_CLIENTS][MAX_PREDICT_TICKS+1] table, then linear tick-scan
-// (walk forward one tick at a time, find where flight time == tick number).
+// positions[MAX_CLIENTS][MAX_PREDICT_TICKS+1] table, then linear tick-scan with
+// sub-tick interpolation (linear interp of flightTime between adjacent ticks).
 
 void CAimBot::ConAimBot(IConsole::IResult *pResult, void *pUserData)
 {
