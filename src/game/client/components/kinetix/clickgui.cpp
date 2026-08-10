@@ -667,8 +667,13 @@ static bool BafChildVisible(const SRow *pChildren, int childCount, int idx)
         return true;
 }
 // v1.56.178: Trajectory — "Show for current" hidden when Type=Tee (no projectiles
-// for the tee type — it predicts tee movement only). "Simulate Players" and
-// "Show for other players" hidden when Type!=Tee (they only apply to tee prediction).
+// for the tee type — it predicts tee movement only).
+// v1.56.182: "Simulate Players" and "Show for other players" are now visible for
+// ALL types (previously hidden when Type!=Tee). Simulate Players controls whether
+// other characters are kept in the prediction world — applies to both tee and
+// weapon prediction (projectiles can hit other players when ON). Show for other
+// players predicts other players' tee movement; for weapon types it has no
+// effect but stays visible for UI consistency.
 static bool TrajectoryChildVisible(const SRow *pChildren, int childCount, int idx)
 {
         if(idx < 0 || idx >= childCount)
@@ -687,10 +692,7 @@ static bool TrajectoryChildVisible(const SRow *pChildren, int childCount, int id
         const bool isTee = (typeIdx == 0);
         if(str_comp(row.pName, "Show for current") == 0)
                 return !isTee; // only for weapon types
-        if(str_comp(row.pName, "Simulate Players") == 0)
-                return isTee; // only for tee prediction
-        if(str_comp(row.pName, "Show for other players") == 0)
-                return isTee; // only for tee prediction
+        // Simulate Players + Show for other players: always visible (v1.56.182)
         return true;
 }
 // Constants — colors and geometry from clickgui.html (box-shadow/blur dropped

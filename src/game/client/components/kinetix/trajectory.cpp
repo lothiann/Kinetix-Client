@@ -353,17 +353,22 @@ void CTrajectory::RenderWeaponPredict(int WeaponType)
 
         vec2 ProjStartPos = MyPos + Dir * pLocalChar->GetProximityRadius() * 0.75f;
 
-        // Clone the predicted world. We remove other characters to speed up
-        // simulation (projectiles only need collision + owner char).
+        // Clone the predicted world.
         CGameWorld FutureWorld;
         FutureWorld.CopyWorld(&pGame->m_PredictedWorld);
 
-        for(int i = 0; i < MAX_CLIENTS; i++)
+        // v1.56.182: respect SimulatePlayers. When OFF (default), remove other
+        // characters to speed up simulation (projectiles only need collision +
+        // owner char). When ON, keep them so projectiles can hit other players.
+        if(!s.m_SimulatePlayers)
         {
-                if(i == LocalClientId)
-                        continue;
-                if(CCharacter *pChar = FutureWorld.GetCharacterById(i))
-                        FutureWorld.RemoveEntity(pChar);
+                for(int i = 0; i < MAX_CLIENTS; i++)
+                {
+                        if(i == LocalClientId)
+                                continue;
+                        if(CCharacter *pChar = FutureWorld.GetCharacterById(i))
+                                FutureWorld.RemoveEntity(pChar);
+                }
         }
 
         int StartTick = FutureWorld.GameTick();
@@ -446,7 +451,11 @@ void CTrajectory::RenderWeaponPredict(int WeaponType)
                         {
                                 if(CProjectile *pProj = FindOwnedProjectile(&FutureWorld, LocalClientId, vSpawned[e].startTick))
                                 {
-                                        pos = pProj->m_Pos;
+                                        // v1.56.182: CProjectile::Tick does NOT update m_Pos for
+                                        // non-bouncing projectiles (pistol/grenade). Use GetPos(Ct)
+                                        // to get the real current position at this tick.
+                                        float Ct = (FutureWorld.GameTick() - pProj->GetStartTick()) / (float)FutureWorld.GameTickSpeed();
+                                        pos = pProj->GetPos(Ct);
                                         alive = true;
                                 }
                         }
@@ -543,7 +552,12 @@ void CTrajectory::RenderCurrentProjectiles(int WeaponType)
         for(size_t e = 0; e < vStartTicks.size(); e++)
         {
                 if(CProjectile *pProj = FindOwnedProjectile(&FutureWorld, LocalClientId, vStartTicks[e]))
-                        vPerEntityPoints[e].push_back(pProj->m_Pos);
+                {
+                        // v1.56.182: use GetPos(Ct) — m_Pos is not updated by Tick for
+                        // non-bouncing projectiles (pistol/grenade).
+                        float Ct = (FutureWorld.GameTick() - pProj->GetStartTick()) / (float)FutureWorld.GameTickSpeed();
+                        vPerEntityPoints[e].push_back(pProj->GetPos(Ct));
+                }
         }
 
         // Simulate N ticks forward, collecting positions.
@@ -557,7 +571,10 @@ void CTrajectory::RenderCurrentProjectiles(int WeaponType)
                 {
                         if(CProjectile *pProj = FindOwnedProjectile(&FutureWorld, LocalClientId, vStartTicks[e]))
                         {
-                                vPerEntityPoints[e].push_back(pProj->m_Pos);
+                                // v1.56.182: use GetPos(Ct) — m_Pos is not updated by Tick for
+                                // non-bouncing projectiles (pistol/grenade).
+                                float Ct = (FutureWorld.GameTick() - pProj->GetStartTick()) / (float)FutureWorld.GameTickSpeed();
+                                vPerEntityPoints[e].push_back(pProj->GetPos(Ct));
                                 anyAlive = true;
                         }
                 }
@@ -672,14 +689,28 @@ void CTrajectory::OnRender()
 {
         SyncLegacyConfig();
 
-        // Per-type prediction renderers.
-        // v1.56.179: weapon types now use prediction-based simulation (spawn real
-        // CProjectile/CLaser in cloned world, simulate N ticks, draw path).
         RenderTee();
-        RenderWeaponPredict(WEAPON_GUN);
-        RenderWeaponPredict(WEAPON_SHOTGUN);
-        RenderWeaponPredict(WEAPON_GRENADE);
-        RenderWeaponPredict(WEAPON_LASER);
+
+        // v1.56.182: only show the weapon trajectory PREVIEW for the currently held
+        // weapon (like aimbot). Previously all 4 weapon types were rendered
+        // unconditionally (each checked its own m_Show), so enabling Show for
+        // multiple types drew them all at once regardless of held weapon.
+        CGameClient *pGame = GameClient();
+        if(pGame)
+        {
+                int LocalClientId = pGame->m_Snap.m_LocalClientId;
+                if(LocalClientId >= 0 && pGame->m_Snap.m_aCharacters[LocalClientId].m_Active)
+                {
+                        CCharacter *pLocalChar = pGame->m_PredictedWorld.GetCharacterById(LocalClientId);
+                        if(pLocalChar)
+                        {
+                                int weapon = pLocalChar->GetActiveWeapon();
+                                // RenderWeaponPredict handles GUN/SHOTGUN/GRENADE/LASER; other
+                                // weapons (hammer/ninja) hit the default: return in the switch.
+                                RenderWeaponPredict(weapon);
+                        }
+                }
+        }
 
         // "Show for current" — iterate existing entities.
         if(m_aTypes[TRAJ_PISTOL].m_ShowForCurrent)
