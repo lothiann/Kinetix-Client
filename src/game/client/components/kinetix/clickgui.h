@@ -82,6 +82,12 @@ private:
         // gets bumped to top. We render in low->high order so high paints last.
         int m_aZOrder[NUM_PANELS] = {};
 
+        // v1.56.175: Drag-to-sort order. m_aPanelOrder[slot] = panelIdx occupying
+        // that slot. Default identity {0,1,2,3,4}. Dragging a panel over another
+        // panel's slot swaps them in this array; the swapped-out panel glides to
+        // the dragged panel's old slot. Slot positions come from SlotHomePos().
+        int m_aPanelOrder[NUM_PANELS] = {0, 1, 2, 3, 4};
+
         // Drag state.
         bool m_Dragging = false;
         int m_DragPanelIdx = -1; // which panel is being dragged
@@ -180,7 +186,15 @@ private:
         static constexpr float BG_DIM_ALPHA = 0.30f;
 
         // Per-panel fixed "home" position (top-left corner, screen-space px).
-        static vec2 PanelHomePos(int panelIdx);
+        // v1.56.175: now non-static — returns the home position of the SLOT the
+        // given panel currently occupies (respects drag-to-sort order). For the
+        // raw slot position use SlotHomePos(slot).
+        vec2 PanelHomePos(int panelIdx) const;
+        // Fixed screen position of slot N (0..NUM_PANELS-1), independent of order.
+        static vec2 SlotHomePos(int slot);
+        // v1.56.175: which slot the given panel currently occupies (index into
+        // m_aPanelOrder). Returns 0 if not found (shouldn't happen).
+        int SlotOf(int panelIdx) const;
 
         // Cubic-bezier easing exactly matching CSS cubic-bezier(0.16, 1, 0.3, 1).
         static float CubicBezierEase(float t);

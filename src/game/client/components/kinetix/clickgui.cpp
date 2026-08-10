@@ -678,20 +678,35 @@ static float RowHeight(ERowType t)
 // CClickGui — static helpers
 // ============================================================================
 
-vec2 CClickGui::PanelHomePos(int panelIdx)
+vec2 CClickGui::SlotHomePos(int slot)
 {
-        // 5 panels: Functions, Advanced, Settings, Pathfinder (top row), Binds (second row).
-        // Top row spaced horizontally 330px apart (300px panel + 30px gap).
-        // Binds panel placed below Functions (second row) so it doesn't overflow the screen.
-        switch(panelIdx)
+        // 5 slots in a horizontal row, spaced 330px apart (300px panel + 30px gap).
+        // Slot N -> fixed screen position. Independent of panel order.
+        switch(slot)
         {
-        case 0: return vec2(60.0f, 90.0f); // Functions
-        case 1: return vec2(390.0f, 90.0f); // Advanced
-        case 2: return vec2(720.0f, 90.0f); // Settings
-        case 3: return vec2(1050.0f, 90.0f); // Pathfinder
-        case 4: return vec2(1380.0f, 90.0f); // Binds (after Pathfinder, top row)
+        case 0: return vec2(60.0f, 90.0f);
+        case 1: return vec2(390.0f, 90.0f);
+        case 2: return vec2(720.0f, 90.0f);
+        case 3: return vec2(1050.0f, 90.0f);
+        case 4: return vec2(1380.0f, 90.0f);
         default: return vec2(60.0f, 90.0f);
         }
+}
+
+vec2 CClickGui::PanelHomePos(int panelIdx) const
+{
+        // v1.56.175: home position of the slot this panel currently occupies.
+        return SlotHomePos(SlotOf(panelIdx));
+}
+
+int CClickGui::SlotOf(int panelIdx) const
+{
+        for(int s = 0; s < NUM_PANELS; ++s)
+        {
+                if(m_aPanelOrder[s] == panelIdx)
+                        return s;
+        }
+        return 0; // not found — shouldn't happen, default to slot 0
 }
 
 // Cubic-bezier easing matching CSS cubic-bezier(0.16, 1, 0.3, 1) exactly.
@@ -913,6 +928,8 @@ void CClickGui::OnReset()
                 m_aPanelScroll[i] = 0.0f;
                 m_aPanelScrollStored[i] = 0.0f;
                 m_aZOrder[i] = i;
+                // v1.56.175: reset drag-to-sort order to identity on reset.
+                m_aPanelOrder[i] = i;
                 // v1.56.72: free + invalidate Yoga layout cache on reset.
                 if(m_aLayoutCache[i].pRoot)
                         YGNodeFreeRecursive(m_aLayoutCache[i].pRoot);
@@ -1782,6 +1799,34 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
         if(m_Dragging && m_DragPanelIdx >= 0)
         {
                 m_aPanelTarget[m_DragPanelIdx] = m_MousePos - m_DragOffset;
+
+                // v1.56.175: Drag-to-sort — if the dragged panel's center is over
+                // another panel's slot (header rect), swap them in m_aPanelOrder.
+                // The swapped-out (non-drag) panel glides to the dragged panel's old
+                // slot via the render-loop lerp below. The dragged panel keeps
+                // following the mouse (target = mouse - offset) until release.
+                const vec2 dragCenter = vec2(
+                        m_aPanelTarget[m_DragPanelIdx].x + PANEL_WIDTH * 0.5f,
+                        m_aPanelTarget[m_DragPanelIdx].y + HEADER_HEIGHT * 0.5f);
+                const int dragSlot = SlotOf(m_DragPanelIdx);
+                for(int s = 0; s < NUM_PANELS; ++s)
+                {
+                        if(s == dragSlot)
+                                continue;
+                        const vec2 slotHome = SlotHomePos(s);
+                        // Use the header rect of the slot as the drop target — predictable
+                        // and matches where the user grabs panels.
+                        if(PointInRect(dragCenter, slotHome.x, slotHome.y, PANEL_WIDTH, HEADER_HEIGHT))
+                        {
+                                // Swap: the panel occupying slot s moves to dragSlot, the
+                                // dragged panel takes slot s.
+                                m_aPanelOrder[dragSlot] = m_aPanelOrder[s];
+                                m_aPanelOrder[s] = m_DragPanelIdx;
+                                // The swapped-out panel's target is updated in the render loop
+                                // (non-drag branch lerps to PanelHomePos = its new slot home).
+                                break;
+                        }
+                }
         }
 
         // If dragging a slider, update its value from mouse X position.
@@ -2005,7 +2050,11 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
         // Uses exponential approach: factor = 1 - exp(-k * dt). At high FPS the
         // per-frame step is small; at low FPS it's large — total speed is constant.
         // k = 25 means ~63% of remaining distance covered in 1/25s (40ms).
-        // Only the dragged panel lerps; others keep target synced (no glide).
+        // v1.56.175: BOTH the dragged panel AND non-dragged panels lerp toward
+        // their target. For non-dragged panels the target is their slot home
+        // (PanelHomePos), so when a drag-to-sort swap moves them to a new slot
+        // they glide there. When no swap happened, target == current position,
+        // so the lerp is a no-op (no jitter).
         const float dtDrag = Client()->RenderFrameTime();
         const float dragK = 25.0f;
         const float dragFactor = 1.0f - std::exp(-dragK * dtDrag);
@@ -2016,7 +2065,14 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
                         m_aPanelPos[i].y + (m_aPanelTarget[i].y - m_aPanelPos[i].y) * dragFactor);
         }
         else
-                m_aPanelTarget[i] = m_aPanelPos[i];
+        {
+                // Non-dragged panel: glide toward its slot home (supports drag-to-sort
+                // swaps). When already at home this is a no-op.
+                m_aPanelTarget[i] = home;
+                m_aPanelPos[i] = vec2(
+                        m_aPanelPos[i].x + (m_aPanelTarget[i].x - m_aPanelPos[i].x) * dragFactor,
+                        m_aPanelPos[i].y + (m_aPanelTarget[i].y - m_aPanelPos[i].y) * dragFactor);
+        }
         const vec2 current = m_aPanelPos[i];
                 vec2 offscreen;
                 if(m_aOffscreenValid[i])
