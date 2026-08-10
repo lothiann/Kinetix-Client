@@ -288,7 +288,7 @@ void CTrajectory::RenderTee()
 // Returns nullptr if the projectile was destroyed (exploded, expired).
 static CProjectile *FindOwnedProjectile(CGameWorld *pWorld, int ownerId, int startTick)
 {
-        for(CEntity *pEnt = pWorld->FindFirst(CGameWorld::ENTTYPE_PROJECTILE); pEnt; pEnt = pEnt->m_pNextTypeEntity)
+        for(CEntity *pEnt = pWorld->FindFirst(CGameWorld::ENTTYPE_PROJECTILE); pEnt; pEnt = pEnt->TypeNext())
         {
                 CProjectile *pProj = static_cast<CProjectile *>(pEnt);
                 if(pProj->GetOwner() == ownerId && pProj->GetStartTick() == startTick)
@@ -302,7 +302,7 @@ static CProjectile *FindOwnedProjectile(CGameWorld *pWorld, int ownerId, int sta
 // in flight at a time). Returns nullptr if the laser was destroyed.
 static CLaser *FindOwnedLaser(CGameWorld *pWorld, int ownerId)
 {
-        for(CEntity *pEnt = pWorld->FindFirst(CGameWorld::ENTTYPE_LASER); pEnt; pEnt = pEnt->m_pNextTypeEntity)
+        for(CEntity *pEnt = pWorld->FindFirst(CGameWorld::ENTTYPE_LASER); pEnt; pEnt = pEnt->TypeNext())
         {
                 CLaser *pLaser = static_cast<CLaser *>(pEnt);
                 if(pLaser->GetOwner() == ownerId)
@@ -500,7 +500,7 @@ void CTrajectory::RenderCurrentProjectiles(int WeaponType)
         int CurTick = pWorld->GameTick();
         int TickSpeed = pWorld->GameTickSpeed();
 
-        for(CEntity *pEnt = pWorld->FindFirst(CGameWorld::ENTTYPE_PROJECTILE); pEnt; pEnt = pEnt->m_pNextTypeEntity)
+        for(CEntity *pEnt = pWorld->FindFirst(CGameWorld::ENTTYPE_PROJECTILE); pEnt; pEnt = pEnt->TypeNext())
         {
                 CProjectile *pProj = static_cast<CProjectile *>(pEnt);
                 if(pProj->GetType() != WeaponType)
@@ -550,7 +550,7 @@ void CTrajectory::RenderCurrentLasers()
 
         const STypeSettings &s = m_aTypes[TRAJ_LASER];
 
-        for(CEntity *pEnt = pWorld->FindFirst(CGameWorld::ENTTYPE_LASER); pEnt; pEnt = pEnt->m_pNextTypeEntity)
+        for(CEntity *pEnt = pWorld->FindFirst(CGameWorld::ENTTYPE_LASER); pEnt; pEnt = pEnt->TypeNext())
         {
                 CLaser *pLaser = static_cast<CLaser *>(pEnt);
                 if(pLaser->GetOwner() != pGame->m_Snap.m_LocalClientId)
