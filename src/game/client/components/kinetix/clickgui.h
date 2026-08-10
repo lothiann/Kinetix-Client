@@ -45,7 +45,7 @@ public:
         bool OnInput(const IInput::CEvent &Event) override;
         bool OnCursorMove(float x, float y, IInput::ECursorType CursorType) override;
 
-        static constexpr int NUM_PANELS = 5;
+        static constexpr int NUM_PANELS = 6;
 
 private:
         // Animation state: 0.0 = fully closed, 1.0 = fully open.
@@ -83,10 +83,22 @@ private:
         int m_aZOrder[NUM_PANELS] = {};
 
         // v1.56.175: Drag-to-sort order. m_aPanelOrder[slot] = panelIdx occupying
-        // that slot. Default identity {0,1,2,3,4}. Dragging a panel over another
+        // that slot. Default identity {0,1,2,3,4,5}. Dragging a panel over another
         // panel's slot swaps them in this array; the swapped-out panel glides to
         // the dragged panel's old slot. Slot positions come from SlotHomePos().
-        int m_aPanelOrder[NUM_PANELS] = {0, 1, 2, 3, 4};
+        int m_aPanelOrder[NUM_PANELS] = {0, 1, 2, 3, 4, 5};
+
+        // v1.56.176: per-panel current rendered height (HEADER_HEIGHT + visible body).
+        // Updated each frame in RenderPanel. Used by SlotHomePos to stack the Info
+        // panel (slot 5) directly under the panel in slot 4 with FLOW_GAP spacing.
+        // Has a 1-frame lag (read previous frame's height) — invisible at 60fps.
+        float m_aPanelCurrentHeight[NUM_PANELS] = {};
+        // Vertical gap between stacked panels (slot 4 -> slot 5) in flow layout.
+        static constexpr float FLOW_GAP = 12.0f;
+
+        // v1.56.176: rolling average FPS for the Info panel. Updated each frame
+        // via exponential moving average (EMA). Displayed as "AVG FPS: <n>".
+        float m_AvgFps = 0.0f;
 
         // Drag state.
         bool m_Dragging = false;
@@ -157,7 +169,7 @@ private:
                 unsigned signature = 0;
         };
         SLayoutCache m_aLayoutCache[NUM_PANELS];
-        bool m_aLayoutCacheDirty[NUM_PANELS] = {true, true, true, true, true};
+        bool m_aLayoutCacheDirty[NUM_PANELS] = {true, true, true, true, true, true}; // v1.56.176: 6 panels
 
         // v1.56.90: Dummies Send toggle state (per-dummy, ClickGUI-local).
         bool m_aDummySendEnabled[8] = {};
@@ -165,6 +177,11 @@ private:
         // v1.56.60: advance all per-row / per-panel animations toward their targets.
         // Called once per frame from OnRender before any drawing.
         void UpdateAnimations(float dt);
+
+        // v1.56.176: refresh the Info panel's dynamic row text buffers
+        // (client name/version/hash + AVG FPS) based on the "Show spoofed"
+        // toggle and live config. Called from OnRender each frame.
+        void UpdateInfoRows();
 
         // Panel geometry — scaled up again 1.2x in v1.56.39 for readability.
         static constexpr float PANEL_WIDTH = 300.0f;
@@ -189,9 +206,12 @@ private:
         // v1.56.175: now non-static — returns the home position of the SLOT the
         // given panel currently occupies (respects drag-to-sort order). For the
         // raw slot position use SlotHomePos(slot).
+        // v1.56.176: SlotHomePos is also non-static now — slot 5 (Info) reads
+        // m_aPanelCurrentHeight of the panel in slot 4 to stack below it.
         vec2 PanelHomePos(int panelIdx) const;
-        // Fixed screen position of slot N (0..NUM_PANELS-1), independent of order.
-        static vec2 SlotHomePos(int slot);
+        // Home position of slot N. v1.56.176: non-static (slot 5 depends on
+        // the current height of the panel in slot 4).
+        vec2 SlotHomePos(int slot) const;
         // v1.56.175: which slot the given panel currently occupies (index into
         // m_aPanelOrder). Returns 0 if not found (shouldn't happen).
         int SlotOf(int panelIdx) const;

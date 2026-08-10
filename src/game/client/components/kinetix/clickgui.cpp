@@ -61,7 +61,12 @@ enum class ERowType
         Expandable,
         Button,
         DoubleButton, // v1.56.90: two buttons in one row (Dummies Connect+Switch)
+        Label, // v1.56.176: non-interactive text row (Info panel: version strings, FPS)
 };
+
+// v1.56.176: Kinetix client version string (shown in Info panel).
+// Bumped manually per release. Matches the commit-message version scheme.
+#define KINETIX_VERSION "v2 beta"
 
 struct SRow
 {
@@ -402,12 +407,58 @@ static SRow g_BindsRows[] = {
         {ERowType::Input, "Block", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
 };
 
+// v1.56.176: Info panel — client identity + version + FPS + social links.
+// Content is dynamic: depends on Show spoofed toggle and live FPS.
+// We keep static SRow array with pName pointing into g_InfoDynamicBuffers,
+// which are rewritten each frame by UpdateInfoRows().
+//
+// Layout (top to bottom):
+//   [toggle] Show spoofed
+//   Client Name:    <real or spoofed>
+//   Client Version: <real "X.Y" or spoofed "X.Y / id">   (real includes DDNet id)
+//   Client Hash:    <GIT_SHORTREV_HASH or spoofed hash>
+//   Kinetix Version: v2 beta
+//   AVG FPS: <n>
+//   [button] Telegram
+//   [button] TikTok
+//
+// Real strings come from version.h: GAME_NAME, GAME_RELEASE_VERSION, GIT_SHORTREV_HASH,
+// DDNET_VERSION_NUMBER. Spoofed strings come from config: m_KxSpoofClientName,
+// m_KxSpoofClientVersion, m_KxSpoofGitHash, m_KxVersionSpoofId.
+// "Show spoofed" toggles between showing real (off) vs spoofed (on) identity.
+static char g_InfoDyn_Name[64];
+static char g_InfoDyn_Version[96];
+static char g_InfoDyn_Hash[64];
+static char g_InfoDyn_Fps[32];
+
+// Index of the "Show spoofed" toggle in g_InfoRows (so UpdateInfoRows can read it).
+static constexpr int INFO_ROW_SHOWSPOOFED = 0;
+static constexpr int INFO_ROW_NAME = 1;
+static constexpr int INFO_ROW_VERSION = 2;
+static constexpr int INFO_ROW_HASH = 3;
+static constexpr int INFO_ROW_KINETIX = 4;
+static constexpr int INFO_ROW_FPS = 5;
+static constexpr int INFO_ROW_TELEGRAM = 6;
+static constexpr int INFO_ROW_TIKTOK = 7;
+
+static SRow g_InfoRows[] = {
+        {ERowType::Toggle, "Show spoofed", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_InfoDyn_Name, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_InfoDyn_Version, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_InfoDyn_Hash, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, "Kinetix Version: " KINETIX_VERSION, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_InfoDyn_Fps, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Button, "Telegram", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Button, "TikTok", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
+
 static SPanel g_Panels[NUM_PANELS] = {
         {"Functions", g_FunctionsRows, sizeof(g_FunctionsRows) / sizeof(g_FunctionsRows[0])},
         {"Advanced", g_AdvancedRows, sizeof(g_AdvancedRows) / sizeof(g_AdvancedRows[0])},
         {"Settings", g_SettingsRows, sizeof(g_SettingsRows) / sizeof(g_SettingsRows[0])},
         {"Pathfinder", g_PathfinderRows, sizeof(g_PathfinderRows) / sizeof(g_PathfinderRows[0])},
         {"Binds", g_BindsRows, sizeof(g_BindsRows) / sizeof(g_BindsRows[0])},
+        {"Info", g_InfoRows, sizeof(g_InfoRows) / sizeof(g_InfoRows[0])},
 };
 
 // Conditional visibility for Functions panel top-level rows.
@@ -668,6 +719,8 @@ static float RowHeight(ERowType t)
                 return ROW_H_BUTTON;
         case ERowType::DoubleButton:
                 return ROW_H_BUTTON;
+        case ERowType::Label:
+                return ROW_H_TOGGLE; // v1.56.176: Label uses same height as a toggle row
         }
         return ROW_H_TOGGLE;
 }
@@ -678,10 +731,12 @@ static float RowHeight(ERowType t)
 // CClickGui — static helpers
 // ============================================================================
 
-vec2 CClickGui::SlotHomePos(int slot)
+vec2 CClickGui::SlotHomePos(int slot) const
 {
-        // 5 slots in a horizontal row, spaced 330px apart (300px panel + 30px gap).
-        // Slot N -> fixed screen position. Independent of panel order.
+        // v1.56.175: slots 0..4 are a horizontal row spaced 330px apart.
+        // v1.56.176: slot 5 (Info) is stacked BELOW slot 4 (Binds) with FLOW_GAP,
+        //   reading the current rendered height of whatever panel occupies slot 4
+        //   so it follows expand/collapse of the panel above it (flow layout).
         switch(slot)
         {
         case 0: return vec2(60.0f, 90.0f);
@@ -689,6 +744,14 @@ vec2 CClickGui::SlotHomePos(int slot)
         case 2: return vec2(720.0f, 90.0f);
         case 3: return vec2(1050.0f, 90.0f);
         case 4: return vec2(1380.0f, 90.0f);
+        case 5:
+        {
+                // Stack under slot 4: X = slot 4's X, Y = slot 4's Y + slot 4 panel height + gap.
+                const vec2 above = SlotHomePos(4);
+                const int abovePanel = m_aPanelOrder[4];
+                const float aboveH = m_aPanelCurrentHeight[abovePanel];
+                return vec2(above.x, above.y + aboveH + FLOW_GAP);
+        }
         default: return vec2(60.0f, 90.0f);
         }
 }
@@ -902,6 +965,71 @@ void CClickGui::UpdateAnimations(float dt)
                         }
                 }
         }
+}
+
+// v1.56.176: refresh Info panel dynamic row text buffers.
+// Reads the "Show spoofed" toggle from g_InfoRows[INFO_ROW_SHOWSPOOFED]
+// and builds the client identity strings (real vs spoofed) + FPS.
+// Real:    GAME_NAME / GAME_RELEASE_VERSION / GIT_SHORTREV_HASH
+//          + version id DDNET_VERSION_NUMBER (shown as "X.Y / id")
+// Spoofed: g_Config.m_KxSpoofClientName / m_KxSpoofClientVersion /
+//          m_KxSpoofGitHash + m_KxVersionSpoofId
+void CClickGui::UpdateInfoRows()
+{
+        // Update rolling average FPS via EMA (smoothing factor 0.05 ~ 1s window at 60fps).
+        const float dt = Client()->RenderFrameTime();
+        if(dt > 0.0f)
+        {
+                const float instantFps = 1.0f / dt;
+                if(m_AvgFps <= 0.0f)
+                        m_AvgFps = instantFps; // first frame: seed
+                else
+                        m_AvgFps = m_AvgFps + 0.05f * (instantFps - m_AvgFps);
+        }
+
+        // Show spoofed toggle: local ClickGUI state (g_InfoRows[0].on).
+        const bool showSpoofed = g_InfoRows[INFO_ROW_SHOWSPOOFED].on;
+
+        // --- Client Name ---
+        if(showSpoofed)
+        {
+                const char *pName = g_Config.m_KxSpoofClientName[0] ? g_Config.m_KxSpoofClientName : GAME_NAME;
+                str_format(g_InfoDyn_Name, sizeof(g_InfoDyn_Name), "Client Name: %s", pName);
+        }
+        else
+        {
+                str_format(g_InfoDyn_Name, sizeof(g_InfoDyn_Name), "Client Name: %s", GAME_NAME);
+        }
+
+        // --- Client Version (real includes DDNet id; spoofed includes spoof id) ---
+        if(showSpoofed)
+        {
+                const char *pVer = g_Config.m_KxSpoofClientVersion[0] ? g_Config.m_KxSpoofClientVersion : GAME_RELEASE_VERSION;
+                str_format(g_InfoDyn_Version, sizeof(g_InfoDyn_Version),
+                        "Client Version: %s / %d", pVer, g_Config.m_KxVersionSpoofId);
+        }
+        else
+        {
+                str_format(g_InfoDyn_Version, sizeof(g_InfoDyn_Version),
+                        "Client Version: %s / %d", GAME_RELEASE_VERSION, DDNET_VERSION_NUMBER);
+        }
+
+        // --- Client Hash ---
+        if(showSpoofed)
+        {
+                const char *pHash = g_Config.m_KxSpoofGitHashEnabled
+                        ? (g_Config.m_KxSpoofGitHash[0] ? g_Config.m_KxSpoofGitHash : "0")
+                        : (GIT_SHORTREV_HASH ? GIT_SHORTREV_HASH : "none");
+                str_format(g_InfoDyn_Hash, sizeof(g_InfoDyn_Hash), "Client Hash: %s", pHash);
+        }
+        else
+        {
+                str_format(g_InfoDyn_Hash, sizeof(g_InfoDyn_Hash),
+                        "Client Hash: %s", GIT_SHORTREV_HASH ? GIT_SHORTREV_HASH : "none");
+        }
+
+        // --- AVG FPS ---
+        str_format(g_InfoDyn_Fps, sizeof(g_InfoDyn_Fps), "AVG FPS: %d", (int)(m_AvgFps + 0.5f));
 }
 
 // ============================================================================
@@ -1749,6 +1877,10 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
         // the next open shows consistent mid-animation values.
         UpdateAnimations(dt);
 
+        // v1.56.176: refresh Info panel dynamic text (client identity + FPS).
+        // Runs every frame so AVG FPS stays live and spoofed settings update.
+        UpdateInfoRows();
+
         // v1.56.77: rainbow color rotation. When enabled, overwrite m_AccentColorRGBA
         // each frame with a hue-rotating color. HSV→RGB conversion inline.
         if(m_RainbowEnabled)
@@ -2295,6 +2427,11 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                         SRow &row = panel.pRows[outRow];
                         SRow *pTarget = (outChild >= 0 && row.pChildren) ? &row.pChildren[outChild] : &row;
 
+                        // v1.56.176: Label rows are non-interactive — click passes through
+                        // (no action, no toggle). BringToFront already happened above.
+                        if(pTarget->type == ERowType::Label)
+                                return;
+
                         // Sub-region hits within the row.
                         if(pTarget->type == ERowType::Toggle || pTarget->type == ERowType::ToggleDropdown || pTarget->type == ERowType::Expandable)
                         {
@@ -2685,6 +2822,17 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                                 m_aDummySendEnabled[d] = pTarget->expanded;
                                                 }
                                         }
+                                }
+                                // v1.56.176: Info panel social buttons — open URL in browser.
+                                else if(str_comp(row.pName, "Telegram") == 0)
+                                {
+                                        Client()->ViewLink("https://t.me/KinetixClient");
+                                        return;
+                                }
+                                else if(str_comp(row.pName, "TikTok") == 0)
+                                {
+                                        Client()->ViewLink("https://tiktok.com/@KinetixClient");
+                                        return;
                                 }
                                 return;
                         }
@@ -3821,6 +3969,11 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
         // call clips rows outside this rect, so scrolled-away rows are GPU-clipped.
         const float visibleBodyHeight = scrollable ? std::min(bodyHeight, MAX_BODY_HEIGHT) : bodyHeight;
 
+        // v1.56.176: record this panel's current rendered height so SlotHomePos(5)
+        // (Info panel) can stack below the panel in slot 4. Updated every frame.
+        // Height = header + visible body. 1-frame lag is invisible at 60fps.
+        m_aPanelCurrentHeight[panelIdx] = HEADER_HEIGHT + visibleBodyHeight;
+
         // Clamp the per-panel scroll offset. 'scrollable' is based on the full
         // content height (not the animated bodyHeight), so it stays stable across
         // the whole collapse/expand animation — the scroll state isn't reset
@@ -4215,6 +4368,15 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
                                                 ColorRGBA(0xffffffff, true).WithAlpha(alpha));
                                 }
                         }
+                        break;
+                }
+                case ERowType::Label:
+                {
+                        // v1.56.176: Label — non-interactive text row (Info panel).
+                        // Just draw the text left-aligned, no background, no checkbox.
+                        // Slightly dimmer than toggle row text to read as "info, not clickable".
+                        DrawText(rx + 4.0f, ry + 5.0f, 16.0f, row.pName,
+                                ColorRGBA(0xffb8b8c8, true).WithAlpha(alpha));
                         break;
                 }
                 }
