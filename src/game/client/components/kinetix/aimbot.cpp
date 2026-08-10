@@ -226,7 +226,7 @@ bool CAimBot::PassesFilters(int ClientId, int LocalId, const SWeaponSettings &Se
         return true;
 }
 
-int CAimBot::FindTarget(const SWeaponSettings &Settings, int LocalId, const vec2 &MyPos, const vec2 &AimDir, const vec2 &AimPos, vec2 &outAimPoint)
+int CAimBot::FindTarget(const SWeaponSettings &Settings, int Weapon, int LocalId, const vec2 &MyPos, const vec2 &AimDir, const vec2 &AimPos, vec2 &outAimPoint)
 {
         CGameClient *pGame = GameClient();
         float myAngle = atan2f(AimDir.y, AimDir.x);
@@ -247,6 +247,18 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int LocalId, const vec2
                 vec2 curPos = vec2((float)pGame->m_Snap.m_aCharacters[i].m_Cur.m_X, (float)pGame->m_Snap.m_aCharacters[i].m_Cur.m_Y);
                 float intra = pGame->Client()->IntraGameTick(g_Config.m_ClDummy);
                 vec2 targetCenter = mix(prevPos, curPos, intra);
+                // v1.56.192: Predict — replace targetCenter with predicted position based on
+                // projectile time-of-flight (iterative fixed-point). Only for AimBot (TB has
+                // no Predict UI toggle, so Settings.m_Predict stays false for TB). Predicted
+                // position is computed ONCE per target, before hitbox sampling — hitbox corners
+                // are tiny (28u) vs typical engagement distances (100-500u), so per-corner
+                // variance is negligible. All subsequent FOV/radius/visibility/score checks use
+                // the predicted center, so we only aim at targets we'll actually hit.
+                if(Settings.m_Predict)
+                {
+                        const vec2 targetVel = pGame->m_aClients[i].m_Predicted.m_Vel;
+                        targetCenter = ComputePredictedAimPoint(Weapon, MyPos, targetCenter, targetVel);
+                }
                 vec2 hbPoints[5] = {
                         targetCenter,
                         targetCenter + vec2(-HB_HALF, -HB_HALF),
@@ -427,7 +439,7 @@ void CAimBot::UpdateAimBot()
                 bool trigger = (s.m_AimMode == 2) ? true : willFire;
                 if(trigger)
                 {
-                        vec2 aimPt; int t = FindTarget(s, LocalId, MyPos, AimDir, AimPos, aimPt);
+                        vec2 aimPt; int t = FindTarget(s, weapon, LocalId, MyPos, AimDir, AimPos, aimPt);
                         if(t >= 0)
                                 ApplyAim(t, MyPos, s, aimPt);
                 }
@@ -439,7 +451,7 @@ void CAimBot::UpdateAimBot()
                 bool trigger = (s.m_AimMode == 2) ? true : (hook && !m_PrevHook);
                 if(trigger)
                 {
-                        vec2 aimPt; int t = FindTarget(s, LocalId, MyPos, AimDir, AimPos, aimPt);
+                        vec2 aimPt; int t = FindTarget(s, 6, LocalId, MyPos, AimDir, AimPos, aimPt);
                         if(t >= 0)
                                 ApplyAim(t, MyPos, s, aimPt);
                 }
@@ -470,7 +482,7 @@ void CAimBot::UpdateTriggerBot()
         if(length(AimDir) < 0.001f)
                 AimDir = vec2(1, 0);
 
-        vec2 aimPtTb; int target = FindTarget(s, LocalId, MyPos, AimDir, AimPos, aimPtTb);
+        vec2 aimPtTb; int target = FindTarget(s, weapon, LocalId, MyPos, AimDir, AimPos, aimPtTb);
         bool targetInZone = (target >= 0);
 
         // Random latency: delay the trigger reaction by a random number of ticks.
@@ -711,6 +723,57 @@ void CAimBot::RenderRadius(const SWeaponSettings &Settings, const vec2 &MyPos, c
 // are now MACRO_CONFIG_INT cvars (KxAimBot, KxTriggerBot). These dead stubs
 // remain only to satisfy the static declarations in aimbot.h. They are never
 // called (OnConsoleInit no longer registers them).
+vec2 CAimBot::ComputePredictedAimPoint(int Weapon, const vec2 &MyPos, const vec2 &TargetPos, const vec2 &TargetVel) const
+{
+        CGameClient *pGame = GameClient();
+        const CTuningParams *pT = pGame->m_PredictedWorld.GlobalTuning();
+        if(!pT)
+                return TargetPos;
+
+        // v1.56.192: Get projectile speed (units/sec) for the given weapon.
+        // Instant weapons (hammer/shotgun/laser/ninja) return 0 → no prediction needed.
+        float speed = 0.0f;
+        switch(Weapon)
+        {
+        case WEAPON_GUN: speed = pT->m_GunSpeed; break;
+        case WEAPON_GRENADE: speed = pT->m_GrenadeSpeed; break;
+        case 6: speed = pT->m_HookFireSpeed; break; // hook
+        default: return TargetPos; // instant weapons — aim at current position
+        }
+        if(speed <= 1.0f)
+                return TargetPos;
+
+        // Iterative fixed-point algorithm:
+        //   1. dist = distance(MyPos, current target estimate)
+        //   2. ticks = ceil(dist * TICKS_PER_SEC / speed)  — projectile flight time
+        //   3. predictedPos = TargetPos + TargetVel * ticks  (TargetVel is in units/tick)
+        //   4. if ticks == prevTicks → converged, return predictedPos
+        //   5. else: current estimate = predictedPos, repeat (max 5 iters)
+        //
+        // Convergence: each iteration brings dist (and thus ticks) closer to the true
+        // value. Typical convergence in 2-3 iters. Max 5 iters as safety (prevents
+        // infinite loop if vel changes erratically).
+        constexpr float TICKS_PER_SEC = (float)SERVER_TICK_SPEED;
+        constexpr int MAX_ITERS = 5;
+
+        vec2 curEstimate = TargetPos;
+        int prevTicks = -1;
+        for(int iter = 0; iter < MAX_ITERS; ++iter)
+        {
+                float dist = length(curEstimate - MyPos);
+                if(dist < 1.0f)
+                        return TargetPos; // too close, no predict needed
+                int ticks = (int)std::ceil(dist * TICKS_PER_SEC / speed);
+                if(ticks < 1)
+                        ticks = 1;
+                if(ticks == prevTicks)
+                        return curEstimate; // converged — aim at this predicted position
+                prevTicks = ticks;
+                curEstimate = TargetPos + TargetVel * (float)ticks;
+        }
+        return curEstimate; // max iters reached — use last prediction (best estimate)
+}
+
 void CAimBot::ConAimBot(IConsole::IResult *pResult, void *pUserData)
 {
         (void)pUserData;

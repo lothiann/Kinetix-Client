@@ -39,6 +39,7 @@ public:
                 bool m_UseAngle = false; // AB: aim at raycast hit point instead of target center
                 bool m_ShowSuccess = false; // AB: show rays that hit player hitbox in success color
                 unsigned m_SuccessColor = 0xffff0000; // AB: success color (0xAARRGGBB, default red)
+                bool m_Predict = false; // AB: predict target position based on projectile time-of-flight (iterative)
                 int m_AimMode = 0; // 0=silent 1=trigger 2=always (AimBot only)
                 int m_TeamFilter = 0; // 0=both 1=war 2=my
                 int m_FriendFilter = 0; // 0=both 1=ignore
@@ -80,7 +81,7 @@ private:
         void Update();
         void UpdateAimBot();
         void UpdateTriggerBot();
-        int FindTarget(const SWeaponSettings &Settings, int LocalId, const vec2 &MyPos, const vec2 &AimDir, const vec2 &AimPos, vec2 &outAimPoint);
+        int FindTarget(const SWeaponSettings &Settings, int Weapon, int LocalId, const vec2 &MyPos, const vec2 &AimDir, const vec2 &AimPos, vec2 &outAimPoint);
         bool IsVisible(const vec2 &From, const vec2 &To);
         bool PassesFilters(int ClientId, int LocalId, const SWeaponSettings &Settings);
         void ApplyAim(int ClientId, const vec2 &MyPos, const SWeaponSettings &Settings, const vec2 &AimPoint);
@@ -88,6 +89,10 @@ private:
         void DoHook();
         void RenderFov(const SWeaponSettings &Settings, const vec2 &MyPos, const vec2 &AimDir, float Alpha);
         void RenderRadius(const SWeaponSettings &Settings, const vec2 &MyPos, const vec2 &AimDir, float Alpha);
+        // v1.56.192: Predict target position N ticks ahead, where N = projectile time-of-flight.
+        // Iterative fixed-point algorithm: predict, recompute distance, recompute ticks, repeat
+        // until ticks count stabilizes (max 5 iters). Returns input pos for instant weapons.
+        vec2 ComputePredictedAimPoint(int Weapon, const vec2 &MyPos, const vec2 &TargetPos, const vec2 &TargetVel) const;
 
         static void ConAimBot(IConsole::IResult *pResult, void *pUserData);
         static void ConTriggerBot(IConsole::IResult *pResult, void *pUserData);

@@ -156,6 +156,8 @@ static SRow g_AimBotChildren[] = {
         {ERowType::Toggle, "Use Angle", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Show success", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Input, "Success color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ff0000", "hex...", nullptr, 0, 0, nullptr, 0},
+        // v1.56.192: AimBot Predict — iterative time-of-flight prediction (NOT in TriggerBot).
+        {ERowType::Toggle, "Predict", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Dropdown, "AB Aim Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABAimModeOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "AB Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTeamOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "AB Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 2, 0, nullptr, 0},
@@ -1530,6 +1532,8 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
                                                                 ch.m_InputInitialized = true;
                                                         }
                                                 }
+                                                else if(str_comp(ch.pName, "Predict") == 0)
+                                                        ch.on = s.m_Predict;
                                                 else if(str_comp(ch.pName, "AB Dummy") == 0)
                                                         ch.valueIdx = s.m_DummyFilter;
                                                 else if(str_comp(ch.pName, "AB Freeze") == 0)
@@ -2672,6 +2676,8 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                             s.m_UseAngle = pTarget->on;
                                                         else if(str_comp(pTarget->pName, "Show success") == 0)
                                                             s.m_ShowSuccess = pTarget->on;
+                                                        else if(str_comp(pTarget->pName, "Predict") == 0)
+                                                            s.m_Predict = pTarget->on;
                                                 }
                                         }
                                         // v1.56.83: TriggerBot per-weapon child toggles (parent = "TriggerBot")
