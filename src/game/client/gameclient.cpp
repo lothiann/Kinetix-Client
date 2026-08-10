@@ -679,15 +679,21 @@ int CGameClient::OnSnapInput(int *pData, int Conn, bool Force)
                                 // + target ProximityRadius (28) = 63. Slider max = 63 (v1.56.190).
                                 const float maxDist = (float)g_Config.m_KxDummyHammerAutoMaxDist;
 
-                                // v1.56.189: Predict — look 1 tick ahead. If the active player
-                                // WILL be in range next tick, fire now (catches fast-moving players
-                                // that would otherwise slip past the hammer window). m_Vel is in
-                                // units/tick, so nextPos = curPos + m_Vel.
+                                // v1.56.189 (fixed v1.56.191): Predict — simulate next tick.
+                                // m_Vel is in units/tick, so nextPos = curPos + m_Vel.
+                                // BOTH active and dummy positions are predicted (v1.56.189 only
+                                // predicted active, leaving dummy at current pos — wrong, since
+                                // both move every tick). Now we check the distance between the
+                                // two predicted positions, which is the actual next-tick distance.
                                 vec2 activeTestPos = activePos;
+                                vec2 dummyTestPos = dummyPos;
                                 if(g_Config.m_KxDummyHammerAutoPredict)
+                                {
                                         activeTestPos = activePos + m_aClients[activeId].m_Predicted.m_Vel;
+                                        dummyTestPos = dummyPos + m_aClients[m_aLocalIds[Conn]].m_Predicted.m_Vel;
+                                }
 
-                                const vec2 delta = activeTestPos - dummyPos;
+                                const vec2 delta = activeTestPos - dummyTestPos;
                                 const float distSq = delta.x * delta.x + delta.y * delta.y;
                                 if(distSq > maxDist * maxDist)
                                         canHammerNow = false;
