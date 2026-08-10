@@ -674,8 +674,9 @@ int CGameClient::OnSnapInput(int *pData, int Conn, bool Force)
                                 const vec2 dummyPos = m_aClients[m_aLocalIds[Conn]].m_Predicted.m_Pos;
 
                                 // v1.56.189: Configurable max distance (replaces hardcoded 50).
-                                // Real DDNet hammer reach = ProximityRadius/2 + target_ProximityRadius
-                                // = 14+28 = 42 by default. Default 50 = small safety margin.
+                                // Real DDNet hammer max reach center-to-center = ProjStartPos offset
+                                // (PhysicalSize*0.75 = 21) + FindEntities radius (PhysicalSize*0.5 = 14)
+                                // + target ProximityRadius (28) = 63. Slider max = 63 (v1.56.190).
                                 const float maxDist = (float)g_Config.m_KxDummyHammerAutoMaxDist;
 
                                 // v1.56.189: Predict — look 1 tick ahead. If the active player

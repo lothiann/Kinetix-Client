@@ -109,10 +109,11 @@ static SRow g_CopyMovesLatencyChildren[] = {
         {ERowType::Slider, "Latency (ms)", nullptr, false, false, 50.0f, 5000.0f, 10.0f, 500.0f, "ms", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 // v1.56.189: "Auto Fly" expandable — configurable auto-hammer for hammerfly.
-// Children: Max Distance slider (5-200, default 50, real hammer reach ~42),
+// Children: Max Distance slider (5-63, default 50, real hammer max reach = 63
+// = ProjStartPos offset 21 + FindEntities radius 14 + target ProximityRadius 28),
 // Predict toggle (next-tick position prediction).
 static SRow g_AutoFlyChildren[] = {
-        {ERowType::Slider, "Max Distance", nullptr, false, false, 5.0f, 200.0f, 1.0f, 50.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Max Distance", nullptr, false, false, 5.0f, 63.0f, 1.0f, 50.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Predict", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 // "Copy Moves Filter" expandable: 6 sub-toggles.
