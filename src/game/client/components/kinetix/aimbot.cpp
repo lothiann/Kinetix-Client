@@ -256,6 +256,7 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int Weapon, int LocalId
         vec2 predPositions[MAX_CLIENTS][MAX_PREDICT_TICKS + 1];
         bool predValid[MAX_CLIENTS] = {};
         float projSpeed = 0.0f;
+        bool projSpeedPerTick = false; // false = units/sec (gun/grenade), true = units/tick (hook)
         bool predictActive = false;
 
         if(Settings.m_Predict)
@@ -265,9 +266,13 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int Weapon, int LocalId
                 {
                         switch(Weapon)
                         {
-                        case WEAPON_GUN:     projSpeed = pT->m_GunSpeed;     break;
-                        case WEAPON_GRENADE: projSpeed = pT->m_GrenadeSpeed; break;
-                        case 6:              projSpeed = pT->m_HookFireSpeed; break; // hook
+                        // Gun/Grenade speeds are in units/SECOND (used by CalcPos where Time is in seconds).
+                        // flightTicks = ceil(dist * TICKS_PER_SEC / speed)
+                        case WEAPON_GUN:     projSpeed = pT->m_GunSpeed;     projSpeedPerTick = false; break;
+                        case WEAPON_GRENADE: projSpeed = pT->m_GrenadeSpeed; projSpeedPerTick = false; break;
+                        // Hook speed is in units/TICK (m_HookPos += HookDir * HookFireSpeed per Tick()).
+                        // flightTicks = ceil(dist / speed)
+                        case 6:              projSpeed = pT->m_HookFireSpeed; projSpeedPerTick = true; break;
                         default:             break; // instant weapons (hammer/shotgun/laser/ninja) — no predict
                         }
                         if(projSpeed > 1.0f)
@@ -372,7 +377,14 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int Weapon, int LocalId
                                         chosenTick = t;
                                         break;
                                 }
-                                int flightTicks = (int)std::ceil(dist * (float)SERVER_TICK_SPEED / projSpeed);
+                                // v1.56.195: Hook speed is units/TICK (m_HookPos += HookDir * HookFireSpeed per Tick).
+                                // Gun/Grenade speeds are units/SECOND (CalcPos multiplies Time[sec] * Speed).
+                                // Use the correct formula based on projSpeedPerTick.
+                                int flightTicks;
+                                if(projSpeedPerTick)
+                                        flightTicks = (int)std::ceil(dist / projSpeed);
+                                else
+                                        flightTicks = (int)std::ceil(dist * (float)SERVER_TICK_SPEED / projSpeed);
                                 if(flightTicks < 1)
                                         flightTicks = 1;
                                 if(flightTicks == t)
