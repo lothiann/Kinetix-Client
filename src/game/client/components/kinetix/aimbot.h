@@ -89,10 +89,15 @@ private:
         void DoHook();
         void RenderFov(const SWeaponSettings &Settings, const vec2 &MyPos, const vec2 &AimDir, float Alpha);
         void RenderRadius(const SWeaponSettings &Settings, const vec2 &MyPos, const vec2 &AimDir, float Alpha);
-        // v1.56.192: Predict target position N ticks ahead, where N = projectile time-of-flight.
-        // Iterative fixed-point algorithm: predict, recompute distance, recompute ticks, repeat
-        // until ticks count stabilizes (max 5 iters). Returns input pos for instant weapons.
-        vec2 ComputePredictedAimPoint(int Weapon, const vec2 &MyPos, const vec2 &TargetPos, const vec2 &TargetVel) const;
+        // v1.56.193: Real Predict — uses full physics simulation (CopyWorld + Tick)
+        // instead of v1.56.192's linear extrapolation (pos + vel * ticks). The
+        // pre-roll simulates MAX_PREDICT_TICKS ticks ahead ONCE per FindTarget
+        // call, recording each client's position after each tick. Iterative
+        // convergence then picks the tick count matching the projectile's
+        // flight time. Gravity, friction, wall collisions, and hook physics
+        // all apply, so the prediction matches real game state much better
+        // than linear extrapolation on longer time horizons (10+ ticks).
+        static constexpr int MAX_PREDICT_TICKS = 20;
 
         static void ConAimBot(IConsole::IResult *pResult, void *pUserData);
         static void ConTriggerBot(IConsole::IResult *pResult, void *pUserData);

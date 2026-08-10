@@ -237,6 +237,101 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int Weapon, int LocalId
         int bestTarget = -1;
         float bestScore = 1e18f;
         vec2 bestAimPoint = vec2(0, 0);
+
+        // v1.56.193: Real Predict — full physics simulation (CopyWorld + Tick) replaces
+        // v1.56.192's linear extrapolation (pos + vel * ticks). One CopyWorld per
+        // FindTarget call, pre-roll MAX_PREDICT_TICKS ticks ahead, recording each
+        // client's position after each tick. Iterative convergence then picks the tick
+        // count matching the projectile's flight time. Gravity, friction, wall
+        // collisions, and hook physics all apply — prediction matches real game state
+        // much better than linear extrapolation on 10+ tick horizons.
+        //
+        // Stack usage: positions[64][21] of vec2 = ~10.7 KB. Acceptable.
+        CGameWorld *pPredWorld = nullptr;
+        vec2 predPositions[MAX_CLIENTS][MAX_PREDICT_TICKS + 1];
+        bool predValid[MAX_CLIENTS] = {};
+        float projSpeed = 0.0f;
+        bool predictActive = false;
+
+        if(Settings.m_Predict)
+        {
+                const CTuningParams *pT = pGame->m_PredictedWorld.GlobalTuning();
+                if(pT)
+                {
+                        switch(Weapon)
+                        {
+                        case WEAPON_GUN:     projSpeed = pT->m_GunSpeed;     break;
+                        case WEAPON_GRENADE: projSpeed = pT->m_GrenadeSpeed; break;
+                        case 6:              projSpeed = pT->m_HookFireSpeed; break; // hook
+                        default:             break; // instant weapons (hammer/shotgun/laser/ninja) — no predict
+                        }
+                        if(projSpeed > 1.0f)
+                                predictActive = true;
+                }
+        }
+
+        if(predictActive)
+        {
+                pPredWorld = new CGameWorld;
+                pPredWorld->CopyWorld(&pGame->m_PredictedWorld);
+
+                // Record each client's CURRENT position as tick 0.
+                for(int c = 0; c < MAX_CLIENTS; c++)
+                {
+                        if(CCharacter *pChar = pPredWorld->GetCharacterById(c))
+                        {
+                                predPositions[c][0] = pChar->Core()->m_Pos;
+                                predValid[c] = true;
+                        }
+                }
+
+                // Pre-roll MAX_PREDICT_TICKS ticks. Each character gets its last known
+                // input fed back to it (preserves movement direction, jump state, hook
+                // state). This is the same pattern laser_unfreeze uses for its trigger
+                // prediction — proven to match real server-side state closely.
+                //
+                // Per-tick ordering (matches laser_unfreeze exactly):
+                //   1. OnDirectInput on all chars (still on previous tick)
+                //   2. Advance m_GameTick to the new tick
+                //   3. OnPredictedInput on all chars (now on the new tick)
+                //   4. World Tick() — applies physics for the new tick
+                const int startTick = pPredWorld->GameTick();
+                for(int t = 1; t <= MAX_PREDICT_TICKS; t++)
+                {
+                        // 1. OnDirectInput for all characters (previous tick)
+                        for(int c = 0; c < MAX_CLIENTS; c++)
+                        {
+                                CCharacter *pChar = pPredWorld->GetCharacterById(c);
+                                if(!pChar)
+                                        continue;
+                                CNetObj_PlayerInput inp = pChar->Core()->m_Input;
+                                pChar->OnDirectInput(&inp);
+                        }
+                        // 2. Advance tick
+                        pPredWorld->m_GameTick = startTick + t;
+                        // 3. OnPredictedInput for all characters (new tick)
+                        for(int c = 0; c < MAX_CLIENTS; c++)
+                        {
+                                CCharacter *pChar = pPredWorld->GetCharacterById(c);
+                                if(!pChar)
+                                        continue;
+                                CNetObj_PlayerInput inp = pChar->Core()->m_Input;
+                                pChar->OnPredictedInput(&inp);
+                        }
+                        // 4. World Tick — applies physics for this tick
+                        pPredWorld->Tick();
+
+                        // Record positions after this tick
+                        for(int c = 0; c < MAX_CLIENTS; c++)
+                        {
+                                if(CCharacter *pChar = pPredWorld->GetCharacterById(c))
+                                        predPositions[c][t] = pChar->Core()->m_Pos;
+                                else
+                                        predValid[c] = false; // character disappeared during sim (death/leave)
+                        }
+                }
+        }
+
         for(int i = 0; i < MAX_CLIENTS; i++)
         {
                 if(i == LocalId)
@@ -247,17 +342,39 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int Weapon, int LocalId
                 vec2 curPos = vec2((float)pGame->m_Snap.m_aCharacters[i].m_Cur.m_X, (float)pGame->m_Snap.m_aCharacters[i].m_Cur.m_Y);
                 float intra = pGame->Client()->IntraGameTick(g_Config.m_ClDummy);
                 vec2 targetCenter = mix(prevPos, curPos, intra);
-                // v1.56.192: Predict — replace targetCenter with predicted position based on
-                // projectile time-of-flight (iterative fixed-point). Only for AimBot (TB has
-                // no Predict UI toggle, so Settings.m_Predict stays false for TB). Predicted
-                // position is computed ONCE per target, before hitbox sampling — hitbox corners
-                // are tiny (28u) vs typical engagement distances (100-500u), so per-corner
-                // variance is negligible. All subsequent FOV/radius/visibility/score checks use
-                // the predicted center, so we only aim at targets we'll actually hit.
-                if(Settings.m_Predict)
+                // v1.56.193: Real Predict — replace targetCenter with the position the
+                // target will be at when the projectile arrives. Iterative fixed-point:
+                //   1. dist = distance(MyPos, current estimate)
+                //   2. ticks = ceil(dist * TICKS_PER_SEC / projSpeed) — flight time
+                //   3. newEstimate = predPositions[i][ticks] (from pre-roll sim)
+                //   4. if ticks == prevTicks → converged, use predPositions[i][ticks]
+                //   5. else: prevTicks = ticks, estimate = predPositions[i][ticks], repeat
+                // Each iteration uses the REAL simulated position (with gravity/friction/
+                // walls), not linear extrapolation. Max 5 iters as safety. Tick count is
+                // clamped to MAX_PREDICT_TICKS — beyond that, predict falls back to the
+                // last available simulated position (still better than no predict).
+                if(predictActive && predValid[i])
                 {
-                        const vec2 targetVel = pGame->m_aClients[i].m_Predicted.m_Vel;
-                        targetCenter = ComputePredictedAimPoint(Weapon, MyPos, targetCenter, targetVel);
+                        vec2 curEstimate = targetCenter;
+                        int prevTicks = -1;
+                        int lastTicks = 0;
+                        for(int iter = 0; iter < 5; iter++)
+                        {
+                                float dist = length(curEstimate - MyPos);
+                                if(dist < 1.0f)
+                                        break;
+                                int ticks = (int)std::ceil(dist * (float)SERVER_TICK_SPEED / projSpeed);
+                                if(ticks < 1)
+                                        ticks = 1;
+                                if(ticks > MAX_PREDICT_TICKS)
+                                        ticks = MAX_PREDICT_TICKS;
+                                lastTicks = ticks;
+                                if(ticks == prevTicks)
+                                        break;
+                                prevTicks = ticks;
+                                curEstimate = predPositions[i][ticks];
+                        }
+                        targetCenter = predPositions[i][lastTicks];
                 }
                 vec2 hbPoints[5] = {
                         targetCenter,
@@ -339,6 +456,12 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int Weapon, int LocalId
                         bestAimPoint = sampleAimPoint;
                 }
         }
+        // v1.56.193: Free the predicted world before returning. CopyWorld allocated
+        // characters with `new`, so `delete` is correct here (RemoveEntity only unlinks
+        // — it does NOT free). See laser_unfreeze Phase 1 comment for the same pattern.
+        if(pPredWorld)
+                delete pPredWorld;
+
         outAimPoint = bestAimPoint;
         return bestTarget;
 }
@@ -719,60 +842,11 @@ void CAimBot::RenderRadius(const SWeaponSettings &Settings, const vec2 &MyPos, c
         }
 }
 
-// v1.56.171 BUG9: ConAimBot/ConTriggerBot removed — kx_aimbot/kx_triggerbot
-// are now MACRO_CONFIG_INT cvars (KxAimBot, KxTriggerBot). These dead stubs
-// remain only to satisfy the static declarations in aimbot.h. They are never
-// called (OnConsoleInit no longer registers them).
-vec2 CAimBot::ComputePredictedAimPoint(int Weapon, const vec2 &MyPos, const vec2 &TargetPos, const vec2 &TargetVel) const
-{
-        CGameClient *pGame = GameClient();
-        const CTuningParams *pT = pGame->m_PredictedWorld.GlobalTuning();
-        if(!pT)
-                return TargetPos;
-
-        // v1.56.192: Get projectile speed (units/sec) for the given weapon.
-        // Instant weapons (hammer/shotgun/laser/ninja) return 0 → no prediction needed.
-        float speed = 0.0f;
-        switch(Weapon)
-        {
-        case WEAPON_GUN: speed = pT->m_GunSpeed; break;
-        case WEAPON_GRENADE: speed = pT->m_GrenadeSpeed; break;
-        case 6: speed = pT->m_HookFireSpeed; break; // hook
-        default: return TargetPos; // instant weapons — aim at current position
-        }
-        if(speed <= 1.0f)
-                return TargetPos;
-
-        // Iterative fixed-point algorithm:
-        //   1. dist = distance(MyPos, current target estimate)
-        //   2. ticks = ceil(dist * TICKS_PER_SEC / speed)  — projectile flight time
-        //   3. predictedPos = TargetPos + TargetVel * ticks  (TargetVel is in units/tick)
-        //   4. if ticks == prevTicks → converged, return predictedPos
-        //   5. else: current estimate = predictedPos, repeat (max 5 iters)
-        //
-        // Convergence: each iteration brings dist (and thus ticks) closer to the true
-        // value. Typical convergence in 2-3 iters. Max 5 iters as safety (prevents
-        // infinite loop if vel changes erratically).
-        constexpr float TICKS_PER_SEC = (float)SERVER_TICK_SPEED;
-        constexpr int MAX_ITERS = 5;
-
-        vec2 curEstimate = TargetPos;
-        int prevTicks = -1;
-        for(int iter = 0; iter < MAX_ITERS; ++iter)
-        {
-                float dist = length(curEstimate - MyPos);
-                if(dist < 1.0f)
-                        return TargetPos; // too close, no predict needed
-                int ticks = (int)std::ceil(dist * TICKS_PER_SEC / speed);
-                if(ticks < 1)
-                        ticks = 1;
-                if(ticks == prevTicks)
-                        return curEstimate; // converged — aim at this predicted position
-                prevTicks = ticks;
-                curEstimate = TargetPos + TargetVel * (float)ticks;
-        }
-        return curEstimate; // max iters reached — use last prediction (best estimate)
-}
+// v1.56.193: ComputePredictedAimPoint removed. Real predict now lives inline
+// in FindTarget — one CopyWorld + pre-roll of MAX_PREDICT_TICKS ticks builds a
+// positions[MAX_CLIENTS][MAX_PREDICT_TICKS+1] table, and the main target loop
+// does iterative convergence against that table (instead of the old linear
+// extrapolation pos + vel * ticks).
 
 void CAimBot::ConAimBot(IConsole::IResult *pResult, void *pUserData)
 {
