@@ -342,10 +342,14 @@ void CTrajectory::RenderWeaponPredict(int WeaponType)
                 return;
 
         vec2 MyPos = pLocalChar->m_Pos;
+        // v1.56.181: m_aMousePos is the aim OFFSET from the tee in world units (same as
+        // m_TargetX/Y in CNetObj_PlayerInput) — it is NOT a world position. So the aim
+        // direction is normalize(AimPos), not normalize(AimPos - MyPos). This mirrors
+        // aimbot.cpp:388 and CCharacter::FireWeapon (prediction/entities/character.cpp:264).
         vec2 AimPos = pGame->m_Controls.m_aMousePos[g_Config.m_ClDummy];
-        vec2 Dir = normalize(AimPos - MyPos);
+        vec2 Dir = normalize(AimPos);
         if(length(Dir) < 1e-6f)
-                return;
+                Dir = vec2(1, 0); // fallback: aim right
 
         vec2 ProjStartPos = MyPos + Dir * pLocalChar->GetProximityRadius() * 0.75f;
 
@@ -473,10 +477,14 @@ void CTrajectory::RenderWeaponPredict(int WeaponType)
 
 void CTrajectory::RenderCurrentProjectiles(int WeaponType)
 {
-        // "Show for current" for pistol/shotgun/grenade: iterate the predicted
-        // world's CProjectile entities matching the given weapon type and draw
-        // their trajectory from StartTick to the current tick (already-flown
-        // portion) plus remaining life (forward simulation up to LifeSpan).
+        // v1.56.181: "Show for current" for pistol/shotgun/grenade — rewritten to use
+        // REAL simulation instead of GetPos() parabola. GetPos ignores wall collisions,
+        // bounces and explosions, so the old code drew a fake arc through walls.
+        //
+        // New approach: clone the predicted world, locate the matching projectile by
+        // (owner, startTick), remove other characters (speedup), simulate N ticks
+        // forward, collect positions. Only the REMAINING path is drawn (from current
+        // projectile position to explosion/expiry) — not the already-flown portion.
         CGameClient *pGame = GameClient();
         if(!pGame)
                 return;
@@ -497,49 +505,83 @@ void CTrajectory::RenderCurrentProjectiles(int WeaponType)
         }
         const STypeSettings &s = m_aTypes[trajIdx];
 
-        int CurTick = pWorld->GameTick();
-        int TickSpeed = pWorld->GameTickSpeed();
+        int LocalClientId = pGame->m_Snap.m_LocalClientId;
 
+        // Collect matching projectiles (owner + weapon type) from the live predicted world.
+        // We snapshot (startTick) so we can find them again in the cloned world.
+        std::vector<int> vStartTicks;
         for(CEntity *pEnt = pWorld->FindFirst(CGameWorld::ENTTYPE_PROJECTILE); pEnt; pEnt = pEnt->TypeNext())
         {
                 CProjectile *pProj = static_cast<CProjectile *>(pEnt);
                 if(pProj->GetType() != WeaponType)
                         continue;
-                if(pProj->GetOwner() != pGame->m_Snap.m_LocalClientId)
+                if(pProj->GetOwner() != LocalClientId)
                         continue;
+                vStartTicks.push_back(pProj->GetStartTick());
+        }
+        if(vStartTicks.empty())
+                return;
 
-                // Build trajectory: from spawn (StartTick) to current tick,
-                // then forward to LifeSpan end.
-                const vec2 &Dir = pProj->GetDirection();
-                int StartTick = pProj->GetStartTick();
+        // Clone the predicted world once for all matching projectiles.
+        CGameWorld FutureWorld;
+        FutureWorld.CopyWorld(pWorld);
 
-                // Use GetPos to compute positions at each tick.
-                // GetPos(Time) where Time is in seconds relative to StartTick.
-                std::vector<vec2> vPoints;
-                int EndTick = StartTick + 200; // generous upper bound; projectile self-removes earlier
-                int FromTick = std::min(StartTick, CurTick);
-                int ToTick = std::max(CurTick, EndTick);
+        // Remove other characters (projectiles only need collision + owner char).
+        for(int i = 0; i < MAX_CLIENTS; i++)
+        {
+                if(i == LocalClientId)
+                        continue;
+                if(CCharacter *pChar = FutureWorld.GetCharacterById(i))
+                        FutureWorld.RemoveEntity(pChar);
+        }
 
-                // Sample every 2 ticks for performance.
-                for(int t = FromTick; t <= ToTick; t += 2)
+        int StartTick = FutureWorld.GameTick();
+
+        // Per-projectile point collection. Seed with the projectile's CURRENT position
+        // (not its spawn position — Fix #6: only the remaining path is drawn).
+        std::vector<std::vector<vec2>> vPerEntityPoints(vStartTicks.size());
+        for(size_t e = 0; e < vStartTicks.size(); e++)
+        {
+                if(CProjectile *pProj = FindOwnedProjectile(&FutureWorld, LocalClientId, vStartTicks[e]))
+                        vPerEntityPoints[e].push_back(pProj->m_Pos);
+        }
+
+        // Simulate N ticks forward, collecting positions.
+        for(int i = 0; i < s.m_PredictionTicks; i++)
+        {
+                FutureWorld.m_GameTick = StartTick + i + 1;
+                FutureWorld.Tick();
+
+                bool anyAlive = false;
+                for(size_t e = 0; e < vStartTicks.size(); e++)
                 {
-                        float Time = (float)(t - StartTick) / (float)TickSpeed;
-                        vec2 Pos = pProj->GetPos(Time);
-                        vPoints.push_back(Pos);
-                        // Stop if projectile would have expired (simplified: stop at CurTick + LifeSpan).
-                        if(t > CurTick + 100)
-                                break;
+                        if(CProjectile *pProj = FindOwnedProjectile(&FutureWorld, LocalClientId, vStartTicks[e]))
+                        {
+                                vPerEntityPoints[e].push_back(pProj->m_Pos);
+                                anyAlive = true;
+                        }
                 }
+                if(!anyAlive)
+                        break;
+        }
 
-                DrawPolyline(vPoints, s.m_AlphaGradient);
+        // Draw each projectile's remaining trajectory.
+        for(size_t e = 0; e < vPerEntityPoints.size(); e++)
+        {
+                DrawPolyline(vPerEntityPoints[e], s.m_AlphaGradient);
         }
 }
 
 void CTrajectory::RenderCurrentLasers()
 {
-        // "Show for current" for laser: iterate CLaser entities and draw their
-        // full bounce path (From -> current Pos -> predicted future bounces).
-        // We re-simulate the laser's bounces forward from its current state.
+        // v1.56.181: "Show for current" for laser — rewritten to use REAL simulation
+        // (same approach as RenderCurrentProjectiles). The old hand-rolled raycast
+        // had two bugs:
+        //   (1) MaxBounces=2 cap — real laser bounces ~8 times (LaserReach/BounceCost),
+        //       so only 2 bounces were drawn ("мало углов").
+        //   (2) Drew From -> Pos (already-flown segment) + only 2 future bounces.
+        // New approach: clone world, find the laser, simulate N ticks (1 bounce/tick),
+        // collect positions. Only the REMAINING path is drawn (from current m_Pos).
         CGameClient *pGame = GameClient();
         if(!pGame)
                 return;
@@ -550,65 +592,79 @@ void CTrajectory::RenderCurrentLasers()
 
         const STypeSettings &s = m_aTypes[TRAJ_LASER];
 
+        int LocalClientId = pGame->m_Snap.m_LocalClientId;
+
+        // Lasers don't expose StartTick via getter, so we match by owner only.
+        // There's typically only one laser per owner in flight at a time.
+        // Count matching lasers so we know how many to track in the cloned world.
+        int laserCount = 0;
         for(CEntity *pEnt = pWorld->FindFirst(CGameWorld::ENTTYPE_LASER); pEnt; pEnt = pEnt->TypeNext())
         {
                 CLaser *pLaser = static_cast<CLaser *>(pEnt);
-                if(pLaser->GetOwner() != pGame->m_Snap.m_LocalClientId)
+                if(pLaser->GetOwner() == LocalClientId)
+                        laserCount++;
+        }
+        if(laserCount == 0)
+                return;
+
+        // Clone the predicted world. Remove other characters (speedup — laser only
+        // needs collision + owner char for hit detection).
+        CGameWorld FutureWorld;
+        FutureWorld.CopyWorld(pWorld);
+        for(int i = 0; i < MAX_CLIENTS; i++)
+        {
+                if(i == LocalClientId)
                         continue;
+                if(CCharacter *pChar = FutureWorld.GetCharacterById(i))
+                        FutureWorld.RemoveEntity(pChar);
+        }
 
-                // Draw the existing path: From -> Pos (the current segment).
-                std::vector<vec2> vPoints;
-                vPoints.push_back(pLaser->GetFrom());
-                vPoints.push_back(pLaser->m_Pos);
+        int StartTick = FutureWorld.GameTick();
 
-                // Predict remaining bounces using the laser's current direction.
-                CCollision *pColl = pWorld->Collision();
-                if(!pColl)
+        // Collect matching lasers from the CLONE (positions are post-copy, so they
+        // reflect the live state). We'll re-find them each tick by owner.
+        std::vector<vec2> vInitialPos;
+        for(CEntity *pEnt = FutureWorld.FindFirst(CGameWorld::ENTTYPE_LASER); pEnt; pEnt = pEnt->TypeNext())
+        {
+                CLaser *pLaser = static_cast<CLaser *>(pEnt);
+                if(pLaser->GetOwner() == LocalClientId)
+                        vInitialPos.push_back(pLaser->m_Pos);
+        }
+
+        // Per-laser point collection. Seed with current position (Fix #6: only
+        // remaining path, not the already-flown From -> Pos segment).
+        std::vector<std::vector<vec2>> vPerLaserPoints(vInitialPos.size());
+        for(size_t e = 0; e < vInitialPos.size(); e++)
+                vPerLaserPoints[e].push_back(vInitialPos[e]);
+
+        // Simulate N ticks forward. CLaser::Tick calls DoBounce() once per tick
+        // (when LaserBounceDelay has elapsed, which is 0 by default → every tick),
+        // so each tick produces one bounce point. With PredictionTicks=10 we get
+        // up to 10 bounces — matching the original engine's laser behaviour.
+        for(int i = 0; i < s.m_PredictionTicks; i++)
+        {
+                FutureWorld.m_GameTick = StartTick + i + 1;
+                FutureWorld.Tick();
+
+                bool anyAlive = false;
+                size_t e = 0;
+                for(CEntity *pEnt = FutureWorld.FindFirst(CGameWorld::ENTTYPE_LASER); pEnt && e < vPerLaserPoints.size(); pEnt = pEnt->TypeNext())
                 {
-                        DrawPolyline(vPoints, s.m_AlphaGradient);
-                        continue;
+                        CLaser *pLaser = static_cast<CLaser *>(pEnt);
+                        if(pLaser->GetOwner() != LocalClientId)
+                                continue;
+                        vPerLaserPoints[e].push_back(pLaser->m_Pos);
+                        anyAlive = true;
+                        e++;
                 }
+                if(!anyAlive)
+                        break;
+        }
 
-                const float BounceCost = 100.0f;
-                const int MaxBounces = 2;
-                vec2 Pos = pLaser->m_Pos;
-                vec2 Dir = pLaser->GetDir();
-                vec2 From = pLaser->GetFrom();
-
-                float Energy = 800.0f - distance(From, Pos);
-                int Bounces = 0;
-
-                for(int i = 0; i < s.m_PredictionTicks && Bounces <= MaxBounces && Energy > 0.0f; i++)
-                {
-                        vec2 To = Pos + Dir * Energy;
-                        vec2 OutCol, OutBefore;
-                        int Res = pColl->IntersectLine(Pos, To, &OutCol, &OutBefore);
-                        if(Res)
-                        {
-                                vPoints.push_back(OutCol);
-                                vec2 ToX = vec2(OutCol.x + (Dir.x > 0 ? 1.0f : -1.0f), OutCol.y);
-                                vec2 ToY = vec2(OutCol.x, OutCol.y + (Dir.y > 0 ? 1.0f : -1.0f));
-                                vec2 D1, D2;
-                                bool HitX = pColl->IntersectLine(OutCol, ToX, &D1, &D2);
-                                bool HitY = pColl->IntersectLine(OutCol, ToY, &D1, &D2);
-                                if(HitX)
-                                        Dir.x = -Dir.x;
-                                if(HitY)
-                                        Dir.y = -Dir.y;
-                                Dir = normalize(Dir);
-
-                                Energy -= distance(Pos, OutCol) + BounceCost;
-                                Pos = OutCol;
-                                Bounces++;
-                        }
-                        else
-                        {
-                                vPoints.push_back(To);
-                                break;
-                        }
-                }
-
-                DrawPolyline(vPoints, s.m_AlphaGradient);
+        // Draw each laser's remaining bounce path.
+        for(size_t e = 0; e < vPerLaserPoints.size(); e++)
+        {
+                DrawPolyline(vPerLaserPoints[e], s.m_AlphaGradient);
         }
 }
 

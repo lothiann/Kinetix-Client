@@ -1629,6 +1629,53 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
                         }
                 }
         }
+        // v1.56.181: per-frame sync of Trajectory UI from CTrajectory state.
+        // Runs every frame while open (not just on open) so switching the Type
+        // dropdown immediately updates all per-type fields (Show / Prediction
+        // Ticks / Alpha Gradient / Simulate Players / Show for other players /
+        // Show for current). Mirrors the AimBot per-frame sync pattern (v1.56.83).
+        // ROOT CAUSE of bug #5: previously this sync only ran inside the
+        // on-open block (if(isOpen && !m_WasOpen)), so changing the Type dropdown
+        // at runtime did NOT refresh the child rows — they kept showing the
+        // previous type's values until the ClickGUI was closed and reopened.
+        if(isOpen)
+        {
+                CTrajectory &traj = GameClient()->m_Trajectory;
+                for(int p = 0; p < NUM_PANELS; ++p)
+                {
+                        for(int r = 0; r < g_Panels[p].rowCount; ++r)
+                        {
+                                SRow &row = g_Panels[p].pRows[r];
+                                if(row.type != ERowType::Expandable)
+                                        continue;
+                                if(str_comp(row.pName, "Trajectory") == 0)
+                                {
+                                        int sel = traj.m_SelectedType;
+                                        if(sel < 0 || sel >= CTrajectory::NUM_TRAJ_TYPES)
+                                                sel = 0;
+                                        const CTrajectory::STypeSettings &ts = traj.m_aTypes[sel];
+                                        for(int c = 0; c < row.childCount; ++c)
+                                        {
+                                                SRow &ch = row.pChildren[c];
+                                                if(str_comp(ch.pName, "Type") == 0)
+                                                        ch.valueIdx = sel;
+                                                else if(str_comp(ch.pName, "Show") == 0)
+                                                        ch.on = ts.m_Show;
+                                                else if(str_comp(ch.pName, "Prediction Ticks") == 0)
+                                                        ch.value = (float)ts.m_PredictionTicks;
+                                                else if(str_comp(ch.pName, "Alpha Gradient") == 0)
+                                                        ch.on = ts.m_AlphaGradient;
+                                                else if(str_comp(ch.pName, "Simulate Players") == 0)
+                                                        ch.on = ts.m_SimulatePlayers;
+                                                else if(str_comp(ch.pName, "Show for other players") == 0)
+                                                        ch.on = ts.m_ShowForOtherPlayers;
+                                                else if(str_comp(ch.pName, "Show for current") == 0)
+                                                        ch.on = ts.m_ShowForCurrent;
+                                        }
+                                }
+                        }
+                }
+        }
         // v1.56.90: per-frame sync of Block + Dummies UI from CBotNet state.
         if(isOpen)
         {
