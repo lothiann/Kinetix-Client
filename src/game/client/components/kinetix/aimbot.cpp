@@ -238,13 +238,18 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int Weapon, int LocalId
         float bestScore = 1e18f;
         vec2 bestAimPoint = vec2(0, 0);
 
-        // v1.56.193: Real Predict — full physics simulation (CopyWorld + Tick) replaces
-        // v1.56.192's linear extrapolation (pos + vel * ticks). One CopyWorld per
-        // FindTarget call, pre-roll MAX_PREDICT_TICKS ticks ahead, recording each
-        // client's position after each tick. Iterative convergence then picks the tick
-        // count matching the projectile's flight time. Gravity, friction, wall
-        // collisions, and hook physics all apply — prediction matches real game state
-        // much better than linear extrapolation on 10+ tick horizons.
+        // v1.56.194: Real Predict — full physics simulation (CopyWorld + Tick).
+        // One CopyWorld per FindTarget call, pre-roll MAX_PREDICT_TICKS ticks
+        // ahead, recording each client's position after each tick into a table.
+        // Then for each target we walk the table forward one tick at a time:
+        //   tick t → dist(MyPos, pos[t]) → flightTicks = ceil(dist*50/speed)
+        //   if flightTicks == t → projectile and target meet at tick t → use pos[t]
+        //   if flightTicks > t  → projectile needs more time, advance to t+1
+        //   if flightTicks < t  → target already passed this point earlier,
+        //                          clamp to t (closest intersection we can hit)
+        // Gravity, friction, wall collisions, and hook physics all apply during
+        // the pre-roll — prediction matches real server state much better than
+        // linear extrapolation on 10+ tick horizons.
         //
         // Stack usage: positions[64][21] of vec2 = ~10.7 KB. Acceptable.
         CGameWorld *pPredWorld = nullptr;
@@ -342,39 +347,51 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int Weapon, int LocalId
                 vec2 curPos = vec2((float)pGame->m_Snap.m_aCharacters[i].m_Cur.m_X, (float)pGame->m_Snap.m_aCharacters[i].m_Cur.m_Y);
                 float intra = pGame->Client()->IntraGameTick(g_Config.m_ClDummy);
                 vec2 targetCenter = mix(prevPos, curPos, intra);
-                // v1.56.193: Real Predict — replace targetCenter with the position the
-                // target will be at when the projectile arrives. Iterative fixed-point:
-                //   1. dist = distance(MyPos, current estimate)
-                //   2. ticks = ceil(dist * TICKS_PER_SEC / projSpeed) — flight time
-                //   3. newEstimate = predPositions[i][ticks] (from pre-roll sim)
-                //   4. if ticks == prevTicks → converged, use predPositions[i][ticks]
-                //   5. else: prevTicks = ticks, estimate = predPositions[i][ticks], repeat
-                // Each iteration uses the REAL simulated position (with gravity/friction/
-                // walls), not linear extrapolation. Max 5 iters as safety. Tick count is
-                // clamped to MAX_PREDICT_TICKS — beyond that, predict falls back to the
-                // last available simulated position (still better than no predict).
+                // v1.56.194: Real Predict — replace targetCenter with the predicted
+                // position where the projectile will intersect the target. Walks the
+                // pre-rolled position table forward one tick at a time.
                 if(predictActive && predValid[i])
                 {
-                        vec2 curEstimate = targetCenter;
-                        int prevTicks = -1;
-                        int lastTicks = 0;
-                        for(int iter = 0; iter < 5; iter++)
+                        // v1.56.194: Linear tick-scan algorithm. Walk forward through the
+                        // pre-rolled position table one tick at a time. For each tick t,
+                        // compute how long the projectile would take to reach the target's
+                        // position AT tick t. If flight time == t, we found the intersection
+                        // — the projectile and target arrive at that point simultaneously.
+                        // If flight time > t, the projectile needs more time → advance to
+                        // tick t+1 and re-check. If flight time < t, the target already
+                        // passed through this position earlier (we'd need to have fired
+                        // earlier) → use the current tick as the best available estimate
+                        // (clamp). If we exhaust MAX_PREDICT_TICKS without an exact match,
+                        // fall back to the last simulated position.
+                        int chosenTick = 0;
+                        for(int t = 0; t <= MAX_PREDICT_TICKS; t++)
                         {
-                                float dist = length(curEstimate - MyPos);
+                                float dist = length(predPositions[i][t] - MyPos);
                                 if(dist < 1.0f)
+                                {
+                                        chosenTick = t;
                                         break;
-                                int ticks = (int)std::ceil(dist * (float)SERVER_TICK_SPEED / projSpeed);
-                                if(ticks < 1)
-                                        ticks = 1;
-                                if(ticks > MAX_PREDICT_TICKS)
-                                        ticks = MAX_PREDICT_TICKS;
-                                lastTicks = ticks;
-                                if(ticks == prevTicks)
+                                }
+                                int flightTicks = (int)std::ceil(dist * (float)SERVER_TICK_SPEED / projSpeed);
+                                if(flightTicks < 1)
+                                        flightTicks = 1;
+                                if(flightTicks == t)
+                                {
+                                        chosenTick = t;
                                         break;
-                                prevTicks = ticks;
-                                curEstimate = predPositions[i][ticks];
+                                }
+                                if(flightTicks < t)
+                                {
+                                        // Target already passed this point earlier. We can't
+                                        // travel back in time — clamp to current tick as the
+                                        // closest intersection we can still hit.
+                                        chosenTick = t;
+                                        break;
+                                }
+                                // flightTicks > t → projectile needs more time, advance.
+                                chosenTick = t;
                         }
-                        targetCenter = predPositions[i][lastTicks];
+                        targetCenter = predPositions[i][chosenTick];
                 }
                 vec2 hbPoints[5] = {
                         targetCenter,
@@ -456,7 +473,7 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int Weapon, int LocalId
                         bestAimPoint = sampleAimPoint;
                 }
         }
-        // v1.56.193: Free the predicted world before returning. CopyWorld allocated
+        // v1.56.194: Free the predicted world before returning. CopyWorld allocated
         // characters with `new`, so `delete` is correct here (RemoveEntity only unlinks
         // — it does NOT free). See laser_unfreeze Phase 1 comment for the same pattern.
         if(pPredWorld)
@@ -842,11 +859,10 @@ void CAimBot::RenderRadius(const SWeaponSettings &Settings, const vec2 &MyPos, c
         }
 }
 
-// v1.56.193: ComputePredictedAimPoint removed. Real predict now lives inline
+// v1.56.194: ComputePredictedAimPoint removed. Real predict now lives inline
 // in FindTarget — one CopyWorld + pre-roll of MAX_PREDICT_TICKS ticks builds a
-// positions[MAX_CLIENTS][MAX_PREDICT_TICKS+1] table, and the main target loop
-// does iterative convergence against that table (instead of the old linear
-// extrapolation pos + vel * ticks).
+// positions[MAX_CLIENTS][MAX_PREDICT_TICKS+1] table, then linear tick-scan
+// (walk forward one tick at a time, find where flight time == tick number).
 
 void CAimBot::ConAimBot(IConsole::IResult *pResult, void *pUserData)
 {
