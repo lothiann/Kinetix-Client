@@ -738,7 +738,7 @@ int CGameClient::OnSnapInput(int *pData, int Conn, bool Force)
         }
 }
 
-void CGameClient::ApplyCopyMovesTransforms(int D)
+void CGameClient::ApplyCopyMovesTransforms(int D, const CNetObj_PlayerInput &SrcInput)
 {
         // Only applies when copy moves is on; transforms the dummy's input in-place.
         if(!g_Config.m_ClDummyCopyMoves)
@@ -770,10 +770,12 @@ void CGameClient::ApplyCopyMovesTransforms(int D)
         if(wantSmart)
         {
                 // Smart aim: dummy aims at the same WORLD point as the player.
-                // Player's world aim = activePos + (m_TargetX, m_TargetY) from player's input.
+                // Player's world aim = activePos + (m_TargetX, m_TargetY) from SrcInput.
+                // v1.56.186: SrcInput is the (possibly delayed) source — keeps smart
+                // aim in sync with movement/fire replay delay.
                 const vec2 playerWorldAim = activePos + vec2(
-                        (float)m_Controls.m_aInputData[g_Config.m_ClDummy].m_TargetX,
-                        (float)m_Controls.m_aInputData[g_Config.m_ClDummy].m_TargetY);
+                        (float)SrcInput.m_TargetX,
+                        (float)SrcInput.m_TargetY);
                 const vec2 dummyAim = playerWorldAim - dummyPos;
                 m_aDummyInput[D].m_TargetX = (int)dummyAim.x;
                 m_aDummyInput[D].m_TargetY = (int)dummyAim.y;
@@ -781,8 +783,9 @@ void CGameClient::ApplyCopyMovesTransforms(int D)
         else // wantMirror
         {
                 // Mirror aim: reflect the player's LOCAL aim vector by X and/or Y.
-                int tx = m_Controls.m_aInputData[g_Config.m_ClDummy].m_TargetX;
-                int ty = m_Controls.m_aInputData[g_Config.m_ClDummy].m_TargetY;
+                // v1.56.186: SrcInput is the (possibly delayed) source.
+                int tx = SrcInput.m_TargetX;
+                int ty = SrcInput.m_TargetY;
                 if(g_Config.m_KxDummyCopyMirrorAimX)
                         tx = -tx;
                 if(g_Config.m_KxDummyCopyMirrorAimY)
@@ -790,6 +793,56 @@ void CGameClient::ApplyCopyMovesTransforms(int D)
                 m_aDummyInput[D].m_TargetX = tx;
                 m_aDummyInput[D].m_TargetY = ty;
         }
+}
+
+// v1.56.186: Copy Moves Latency — record the active player's finalized input
+// each SnapInput call. Entries are timestamped by game tick so dummies can
+// later replay the input from N ticks ago.
+//
+// We keep up to 2200 entries (= 44 seconds at 50 tps). With max latency 5000ms
+// * 7 dummies = 35000ms = 1750 ticks needed, 2200 gives a safety margin. Old
+// entries past the back are pruned. The vector is treated as a ring (oldest
+// first) — we search back-to-front because recent entries are at the end.
+void CGameClient::RecordActiveInput(const CNetObj_PlayerInput &Input)
+{
+        const int CurTick = Client()->GameTick(g_Config.m_ClDummy);
+        SInputHistoryEntry Entry;
+        Entry.m_Tick = CurTick;
+        Entry.m_Input = Input;
+        m_ActiveInputHistory.push_back(Entry);
+
+        // Prune. Keep at most 2200 entries (~44s @ 50tps). Max needed depth:
+        // KxCopyMovesLatency(5000ms) * MAX_DUMMIES(7) / tick_time(20ms) = 1750 ticks.
+        constexpr size_t MAX_HISTORY = 2200;
+        if(m_ActiveInputHistory.size() > MAX_HISTORY)
+        {
+                const size_t Excess = m_ActiveInputHistory.size() - MAX_HISTORY;
+                m_ActiveInputHistory.erase(m_ActiveInputHistory.begin(), m_ActiveInputHistory.begin() + Excess);
+        }
+}
+
+// Returns the most recent entry with tick <= (CurTick - DelayTicks), i.e. the
+// input that was active `DelayTicks` ticks ago. If no entry is old enough,
+// returns false (caller should fall back to live input — e.g. right after
+// connect when the history is still filling).
+bool CGameClient::GetDelayedActiveInput(int DelayTicks, CNetObj_PlayerInput &Out) const
+{
+        if(DelayTicks <= 0 || m_ActiveInputHistory.empty())
+                return false;
+
+        const int CurTick = Client()->GameTick(g_Config.m_ClDummy);
+        const int TargetTick = CurTick - DelayTicks;
+
+        // Search back-to-front — recent entries are at the end.
+        for(auto it = m_ActiveInputHistory.rbegin(); it != m_ActiveInputHistory.rend(); ++it)
+        {
+                if(it->m_Tick <= TargetTick)
+                {
+                        Out = it->m_Input;
+                        return true;
+                }
+        }
+        return false;
 }
 
 void CGameClient::OnConnected()
@@ -851,6 +904,10 @@ void CGameClient::OnReset()
 
         std::fill(std::begin(m_aLastPos), std::end(m_aLastPos), vec2(0.0f, 0.0f));
         std::fill(std::begin(m_aLastActive), std::end(m_aLastActive), false);
+
+        // v1.56.186: clear Copy Moves Latency input history on reset (map change /
+        // reconnect resets the tick counter, so old entries would be invalid).
+        m_ActiveInputHistory.clear();
 
         m_GameOver = false;
         m_GamePaused = false;

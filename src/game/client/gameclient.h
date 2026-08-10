@@ -635,7 +635,26 @@ public:
         // Apply copy-moves transformations (filter, mirror direction, mirror aim,
         // smart aim) to a non-active dummy's input. Called after m_aDummyInput[D]
         // is set from the player's input. Only active when cl_dummy_copy_moves is on.
-        void ApplyCopyMovesTransforms(int D);
+        // v1.56.186: SrcInput parameter — the (possibly delayed) source input used
+        // for aim transforms. When Copy Moves Latency > 0 this is the delayed entry,
+        // so mirror/smart aim is replayed with the same delay as movement/fire.
+        void ApplyCopyMovesTransforms(int D, const CNetObj_PlayerInput &SrcInput);
+
+        // v1.56.186: Copy Moves Latency — buffer of recent active-player inputs.
+        // When kx_copy_moves_latency > 0, inactive dummies replay the active player's
+        // input from N ticks ago (N = latency_ms * dummy_index / tick_time_ms).
+        // Recording happens once per SnapInput; lookup is per-dummy.
+        // GetDelayedActiveInput returns the entry with tick >= (current - delayTicks)
+        // closest to that target — i.e. the most recent entry older than delayTicks.
+        // Returns false if no suitable entry exists (caller should fall back to live).
+        struct SInputHistoryEntry
+        {
+                int m_Tick; // game tick when entry was recorded
+                CNetObj_PlayerInput m_Input;
+        };
+        std::vector<SInputHistoryEntry> m_ActiveInputHistory;
+        void RecordActiveInput(const CNetObj_PlayerInput &Input);
+        bool GetDelayedActiveInput(int DelayTicks, CNetObj_PlayerInput &Out) const;
         void OnShutdown() override;
         void OnEnterGame() override;
         void OnRconType(bool UsernameReq) override;

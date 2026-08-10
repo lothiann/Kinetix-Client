@@ -102,6 +102,12 @@ struct SRow
 static SRow g_CustomLatencyChildren[] = {
         {ERowType::Slider, "Latency (ms)", nullptr, false, false, 50.0f, 2000.0f, 10.0f, 500.0f, "ms", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
+// v1.56.186: "Copy Moves Latency" expandable — staggered input replay delay.
+// When >0, inactive dummies replay active player's input from N ms ago, where
+// N = latency_ms * dummy_index (D1: 1x, D2: 2x, D3: 3x...). 0 = live copy.
+static SRow g_CopyMovesLatencyChildren[] = {
+        {ERowType::Slider, "Latency (ms)", nullptr, false, false, 50.0f, 5000.0f, 10.0f, 500.0f, "ms", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
 // "Copy Moves Filter" expandable: 6 sub-toggles.
 static SRow g_CopyMovesFilterChildren[] = {
         {ERowType::Toggle, "Filter: Jump", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
@@ -250,6 +256,8 @@ static SRow g_FunctionsRows[] = {
         {ERowType::Toggle, "Smart aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         // v1.56.151: Fly Ride — pilot hooks/hammers nearest dummy, WASD moves anchor.
         {ERowType::Toggle, "Fly Ride", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        // v1.56.186: Copy Moves Latency — staggered input replay delay for inactive dummies.
+        {ERowType::Expandable, "Copy Moves Latency", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CopyMovesLatencyChildren, 1},
 };
 
 // ---------- Advanced panel (5) ----------
@@ -1247,8 +1255,10 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
         continue;
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
         continue;
-                                        if(str_comp(child.pName, "Latency (ms)") == 0)
+                                        if(str_comp(child.pName, "Latency (ms)") == 0 && str_comp(row.pName, "Custom latency") == 0)
                                                 child.value = (float)g_Config.m_KxDummyHammerLatencyMs;
+                                        else if(str_comp(child.pName, "Latency (ms)") == 0 && str_comp(row.pName, "Copy Moves Latency") == 0)
+                                                child.value = (float)g_Config.m_KxCopyMovesLatency;
                                         else if(str_comp(child.pName, "Filter: Jump") == 0)
                                                 child.on = g_Config.m_KxDummyCopyMovesFilterJump != 0;
                                         else if(str_comp(child.pName, "Filter: Direction") == 0)
@@ -2103,8 +2113,10 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
                                 else
                                         pTarget->value = raw;
                         }
-                        if(str_comp(pTarget->pName, "Latency (ms)") == 0)
+                        if(str_comp(pTarget->pName, "Latency (ms)") == 0 && str_comp(row.pName, "Custom latency") == 0)
                                 g_Config.m_KxDummyHammerLatencyMs = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Latency (ms)") == 0 && str_comp(row.pName, "Copy Moves Latency") == 0)
+                                g_Config.m_KxCopyMovesLatency = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Version ID") == 0)
                                 g_Config.m_KxVersionSpoofId = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "FOV") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
@@ -3007,8 +3019,10 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         else
                                                 pTarget->value = raw;
                                 }
-                                if(str_comp(pTarget->pName, "Latency (ms)") == 0)
+                                if(str_comp(pTarget->pName, "Latency (ms)") == 0 && str_comp(row.pName, "Custom latency") == 0)
                                         g_Config.m_KxDummyHammerLatencyMs = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Latency (ms)") == 0 && str_comp(row.pName, "Copy Moves Latency") == 0)
+                                        g_Config.m_KxCopyMovesLatency = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Version ID") == 0)
                                         g_Config.m_KxVersionSpoofId = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "FOV") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)

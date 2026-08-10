@@ -354,6 +354,16 @@ int CControls::SnapInput(int *pData)
                 if(g_Config.m_ClDummyCopyMoves)
                 {
                         const bool filter = g_Config.m_KxDummyCopyMovesFilter != 0;
+                        // v1.56.186: Copy Moves Latency. When >0, inactive dummies replay
+                        // the active player's input from N ticks ago (N = latency_ms * D /
+                        // tick_time_ms). Recording happens once per SnapInput; per-dummy
+                        // lookup uses GetDelayedActiveInput. When latency=0 (or history not
+                        // yet filled), falls back to live m_aInputData/m_aLastData.
+                        const int latencyMs = g_Config.m_KxCopyMovesLatency;
+                        const int tickSpeed = Client()->GameTickSpeed();
+                        if(latencyMs > 0)
+                                GameClient()->RecordActiveInput(m_aInputData[g_Config.m_ClDummy]);
+
                         for(int D = 0; D < MAX_DUMMIES; D++)
                         {
                                 if(D == g_Config.m_ClDummy)
@@ -362,6 +372,21 @@ int CControls::SnapInput(int *pData)
                                         continue;
 
                                 CNetObj_PlayerInput *pDummyInput = &GameClient()->m_aDummyInput[D];
+
+                                // v1.56.186: resolve source input. With latency > 0, use the
+                                // history entry from delayTicks ago. delayTicks scales with D
+                                // so dummies fire at staggered offsets (D=1: 1x, D=2: 2x...).
+                                CNetObj_PlayerInput srcInput = m_aInputData[g_Config.m_ClDummy];
+                                CNetObj_PlayerInput srcPrev = m_aLastData[g_Config.m_ClDummy];
+                                if(latencyMs > 0 && D > 0)
+                                {
+                                        const int delayTicks = (latencyMs * D * tickSpeed) / 1000;
+                                        CNetObj_PlayerInput delayedCur, delayedPrev;
+                                        if(GameClient()->GetDelayedActiveInput(delayTicks, delayedCur))
+                                                srcInput = delayedCur;
+                                        if(GameClient()->GetDelayedActiveInput(delayTicks + 1, delayedPrev))
+                                                srcPrev = delayedPrev;
+                                }
 
                                 // Don't copy any input to dummy when spectating others
                                 if(!GameClient()->m_Snap.m_SpecInfo.m_Active || GameClient()->m_Snap.m_SpecInfo.m_SpectatorId < 0)
@@ -376,34 +401,36 @@ int CControls::SnapInput(int *pData)
                                         const bool copyWeapon    = !filter || g_Config.m_KxDummyCopyMovesFilterWeapon;
 
                                         if(copyDirection)
-                                                pDummyInput->m_Direction = m_aInputData[g_Config.m_ClDummy].m_Direction;
+                                                pDummyInput->m_Direction = srcInput.m_Direction;
                                         if(copyHook)
-                                                pDummyInput->m_Hook = m_aInputData[g_Config.m_ClDummy].m_Hook;
+                                                pDummyInput->m_Hook = srcInput.m_Hook;
                                         if(copyJump)
-                                                pDummyInput->m_Jump = m_aInputData[g_Config.m_ClDummy].m_Jump;
-                                        pDummyInput->m_PlayerFlags = m_aInputData[g_Config.m_ClDummy].m_PlayerFlags;
+                                                pDummyInput->m_Jump = srcInput.m_Jump;
+                                        pDummyInput->m_PlayerFlags = srcInput.m_PlayerFlags;
                                         if(copyAim)
                                         {
-                                                pDummyInput->m_TargetX = m_aInputData[g_Config.m_ClDummy].m_TargetX;
-                                                pDummyInput->m_TargetY = m_aInputData[g_Config.m_ClDummy].m_TargetY;
+                                                pDummyInput->m_TargetX = srcInput.m_TargetX;
+                                                pDummyInput->m_TargetY = srcInput.m_TargetY;
                                         }
                                         if(copyWeapon)
-                                                pDummyInput->m_WantedWeapon = m_aInputData[g_Config.m_ClDummy].m_WantedWeapon;
+                                                pDummyInput->m_WantedWeapon = srcInput.m_WantedWeapon;
 
                                         if(!g_Config.m_ClDummyControl && copyFire)
-                                                pDummyInput->m_Fire += m_aInputData[g_Config.m_ClDummy].m_Fire - m_aLastData[g_Config.m_ClDummy].m_Fire;
+                                                pDummyInput->m_Fire += srcInput.m_Fire - srcPrev.m_Fire;
 
                                         if(copyWeapon)
                                         {
-                                                pDummyInput->m_NextWeapon += m_aInputData[g_Config.m_ClDummy].m_NextWeapon - m_aLastData[g_Config.m_ClDummy].m_NextWeapon;
-                                                pDummyInput->m_PrevWeapon += m_aInputData[g_Config.m_ClDummy].m_PrevWeapon - m_aLastData[g_Config.m_ClDummy].m_PrevWeapon;
+                                                pDummyInput->m_NextWeapon += srcInput.m_NextWeapon - srcPrev.m_NextWeapon;
+                                                pDummyInput->m_PrevWeapon += srcInput.m_PrevWeapon - srcPrev.m_PrevWeapon;
                                         }
                                 }
 
                                 m_aInputData[D] = *pDummyInput;
 
                                 // Apply mirror direction / mirror aim / smart aim.
-                                GameClient()->ApplyCopyMovesTransforms(D);
+                                // v1.56.186: pass srcInput so aim transforms use the
+                                // delayed source when Copy Moves Latency is active.
+                                GameClient()->ApplyCopyMovesTransforms(D, srcInput);
                                 m_aInputData[D] = *pDummyInput;
                         }
                 }
