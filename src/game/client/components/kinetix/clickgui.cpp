@@ -108,6 +108,13 @@ static SRow g_CustomLatencyChildren[] = {
 static SRow g_CopyMovesLatencyChildren[] = {
         {ERowType::Slider, "Latency (ms)", nullptr, false, false, 50.0f, 5000.0f, 10.0f, 500.0f, "ms", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
+// v1.56.189: "Auto Fly" expandable — configurable auto-hammer for hammerfly.
+// Children: Max Distance slider (5-200, default 50, real hammer reach ~42),
+// Predict toggle (next-tick position prediction).
+static SRow g_AutoFlyChildren[] = {
+        {ERowType::Slider, "Max Distance", nullptr, false, false, 5.0f, 200.0f, 1.0f, 50.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Predict", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
 // "Copy Moves Filter" expandable: 6 sub-toggles.
 static SRow g_CopyMovesFilterChildren[] = {
         {ERowType::Toggle, "Filter: Jump", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
@@ -245,7 +252,8 @@ static SRow g_FunctionsRows[] = {
         // Fly sub-section
         {ERowType::Toggle, "Preserve input", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Expandable, "Custom latency", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CustomLatencyChildren, 1},
-        {ERowType::Toggle, "Auto fly", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        // v1.56.189: Auto fly is now an expandable with Max Distance + Predict children.
+        {ERowType::Expandable, "Auto fly", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AutoFlyChildren, 2},
         // Copy Moves sub-section
         {ERowType::Expandable, "Copy Moves Filter", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CopyMovesFilterChildren, 6},
         {ERowType::Toggle, "Mirror direction", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
@@ -1276,6 +1284,11 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
                                                 child.on = g_Config.m_KxDummyCopyMovesFilterFire != 0;
                                         else if(str_comp(child.pName, "Filter: Weapon") == 0)
                                                 child.on = g_Config.m_KxDummyCopyMovesFilterWeapon != 0;
+                                        // v1.56.189: Auto Fly children — Max Distance slider + Predict toggle.
+                                        else if(str_comp(child.pName, "Max Distance") == 0 && str_comp(row.pName, "Auto fly") == 0)
+                                                child.value = (float)g_Config.m_KxDummyHammerAutoMaxDist;
+                                        else if(str_comp(child.pName, "Predict") == 0 && str_comp(row.pName, "Auto fly") == 0)
+                                                child.on = g_Config.m_KxDummyHammerAutoPredict != 0;
                                         // Settings → IRC children
                                         else if(str_comp(child.pName, "Reveal join") == 0)
                                                 child.on = g_Config.m_KxIrcRevealJoin != 0;
@@ -2122,6 +2135,8 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
                                 g_Config.m_KxDummyHammerLatencyMs = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Latency (ms)") == 0 && str_comp(row.pName, "Copy Moves Latency") == 0)
                                 g_Config.m_KxCopyMovesLatency = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Max Distance") == 0 && str_comp(row.pName, "Auto fly") == 0)
+                                g_Config.m_KxDummyHammerAutoMaxDist = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Version ID") == 0)
                                 g_Config.m_KxVersionSpoofId = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "FOV") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
@@ -2748,6 +2763,9 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 g_Config.m_KxDummyCopyMovesFilterFire = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Filter: Weapon") == 0)
                                                 g_Config.m_KxDummyCopyMovesFilterWeapon = pTarget->on ? 1 : 0;
+                                        // v1.56.189: Auto Fly Predict toggle.
+                                        else if(str_comp(pTarget->pName, "Predict") == 0 && str_comp(row.pName, "Auto fly") == 0)
+                                                g_Config.m_KxDummyHammerAutoPredict = pTarget->on ? 1 : 0;
                                         // Settings → IRC children
                                         else if(str_comp(pTarget->pName, "Reveal join") == 0)
                                                 g_Config.m_KxIrcRevealJoin = pTarget->on ? 1 : 0;
@@ -3031,6 +3049,8 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         g_Config.m_KxDummyHammerLatencyMs = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Latency (ms)") == 0 && str_comp(row.pName, "Copy Moves Latency") == 0)
                                         g_Config.m_KxCopyMovesLatency = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Max Distance") == 0 && str_comp(row.pName, "Auto fly") == 0)
+                                        g_Config.m_KxDummyHammerAutoMaxDist = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Version ID") == 0)
                                         g_Config.m_KxVersionSpoofId = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "FOV") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)

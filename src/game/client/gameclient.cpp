@@ -672,9 +672,23 @@ int CGameClient::OnSnapInput(int *pData, int Conn, bool Force)
                                 // m_Predicted.m_Pos for the same reason.
                                 const vec2 activePos = m_aClients[activeId].m_Predicted.m_Pos;
                                 const vec2 dummyPos = m_aClients[m_aLocalIds[Conn]].m_Predicted.m_Pos;
-                                const float distSq = (activePos - dummyPos).x * (activePos - dummyPos).x + (activePos - dummyPos).y * (activePos - dummyPos).y;
-                                constexpr float HAMMER_RADIUS = 50.0f;
-                                if(distSq > HAMMER_RADIUS * HAMMER_RADIUS)
+
+                                // v1.56.189: Configurable max distance (replaces hardcoded 50).
+                                // Real DDNet hammer reach = ProximityRadius/2 + target_ProximityRadius
+                                // = 14+28 = 42 by default. Default 50 = small safety margin.
+                                const float maxDist = (float)g_Config.m_KxDummyHammerAutoMaxDist;
+
+                                // v1.56.189: Predict — look 1 tick ahead. If the active player
+                                // WILL be in range next tick, fire now (catches fast-moving players
+                                // that would otherwise slip past the hammer window). m_Vel is in
+                                // units/tick, so nextPos = curPos + m_Vel.
+                                vec2 activeTestPos = activePos;
+                                if(g_Config.m_KxDummyHammerAutoPredict)
+                                        activeTestPos = activePos + m_aClients[activeId].m_Predicted.m_Vel;
+
+                                const vec2 delta = activeTestPos - dummyPos;
+                                const float distSq = delta.x * delta.x + delta.y * delta.y;
+                                if(distSq > maxDist * maxDist)
                                         canHammerNow = false;
                         }
                         // Auto fly overrides custom latency — hammers every tick when in range.
