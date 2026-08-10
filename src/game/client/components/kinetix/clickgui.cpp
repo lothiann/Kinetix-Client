@@ -4938,16 +4938,34 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
                                         // v1.56.90: DoubleButton child — Connect + Switch + Send toggle (Dummies).
                                         // If dummy NOT connected: only Connect button (full row width).
                                         // If dummy connected: Connect (left) + Switch (middle) + Send checkbox (right).
+                                        // v1.56.197: left button label is dynamic — "D# Connect" (idle),
+                                        // "D# Connecting..." (connecting), "D# Disconnect" (connected).
                                         ColorRGBA leftCol = ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha);
                                         if(child.on) // child.on = connected state
                                                 leftCol = ColorRGBA(0xff3da35a, true).WithAlpha(alpha);
+                                        // v1.56.197: build dynamic left-button label based on connection state.
+                                        // pName is const (static "D# Connect"), so render from a local buffer
+                                        // when the state requires a different word.
+                                        const char *pLeftLabel = child.pName;
+                                        char aLeftLabel[32];
+                                        if(child.pName && child.pName[0] == 'D' && child.pName[1] >= '1' && child.pName[1] <= '7')
+                                        {
+                                                int d = child.pName[1] - '0';
+                                                if(child.on)
+                                                        str_format(aLeftLabel, sizeof(aLeftLabel), "D%d Disconnect", d);
+                                                else if(GameClient()->Client()->DummyConnecting(d))
+                                                        str_format(aLeftLabel, sizeof(aLeftLabel), "D%d Connecting...", d);
+                                                else
+                                                        str_format(aLeftLabel, sizeof(aLeftLabel), "D%d Connect", d);
+                                                pLeftLabel = aLeftLabel;
+                                        }
                                         if(!child.on)
                                         {
                                                 // Not connected — full-width Connect button.
                                                 DrawRoundedRect(crx + 2.0f, cry + 2.0f, crw - 4.0f, crh - 4.0f, 4.0f,
                                                         IGraphics::CORNER_ALL, leftCol);
-                                                const float lw1 = TextRender()->TextWidth(15.0f, child.pName);
-                                                DrawText(crx + (crw - lw1) * 0.5f, cry + 7.0f, 15.0f, child.pName,
+                                                const float lw1 = TextRender()->TextWidth(15.0f, pLeftLabel);
+                                                DrawText(crx + (crw - lw1) * 0.5f, cry + 7.0f, 15.0f, pLeftLabel,
                                                         ColorRGBA(0xffffffff, true).WithAlpha(alpha));
                                         }
                                         else
@@ -4959,8 +4977,8 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
                                                 // Left button (Connect/Disconnect)
                                                 DrawRoundedRect(crx + 2.0f, cry + 2.0f, btnW, crh - 4.0f, 4.0f,
                                                         IGraphics::CORNER_ALL, leftCol);
-                                                const float lw1 = TextRender()->TextWidth(13.0f, child.pName);
-                                                DrawText(crx + 2.0f + (btnW - lw1) * 0.5f, cry + 8.0f, 13.0f, child.pName,
+                                                const float lw1 = TextRender()->TextWidth(13.0f, pLeftLabel);
+                                                DrawText(crx + 2.0f + (btnW - lw1) * 0.5f, cry + 8.0f, 13.0f, pLeftLabel,
                                                         ColorRGBA(0xffffffff, true).WithAlpha(alpha));
                                                 // Middle button (Switch) — green if active.
                                                 ColorRGBA rightCol = ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha);
