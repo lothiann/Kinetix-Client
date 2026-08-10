@@ -8,6 +8,12 @@
 // that selects which type's settings are being edited (same pattern as
 // AimBot's per-weapon dropdown).
 //
+// v1.56.183: MASTER TOGGLE — g_Config.m_KxShowTrajectory is checked at the top
+// of OnRender (like g_Config.m_KxAimBot in aimbot.cpp). When OFF, NOTHING
+// renders. Per-type m_Show is independent (like AimBot per-weapon m_Enabled).
+// The ClickGUI parent "Trajectory" toggle and the legacy bind
+// "toggle kx_show_trajectory 1 0" both control this master toggle.
+//
 // Types:
 //   0 = Tee      — predict tee movement N ticks forward (existing behaviour)
 //   1 = Pistol   — spawn CProjectile(WEAPON_GUN) in cloned world, simulate N ticks
@@ -17,12 +23,14 @@
 //
 // "Show for current" (Pistol/Shotgun/Grenade/Laser only) iterates the
 // PREDICTED world's existing CProjectile / CLaser entities and draws
-// their remaining trajectory.
+// their remaining trajectory. v1.56.183: ShowForOtherPlayers now works
+// for show-for-current — tracks ALL players' in-flight projectiles/lasers.
+// SimulatePlayers also applies to show-for-current (keeps other characters
+// for hit detection when ON).
 //
 // Settings are runtime-only (NOT in config) — same as AimBot per-weapon
-// settings. The legacy m_KxShowTrajectory / m_KxTrajectoryTicks config
-// vars stay for backward-compat with existing bind commands and are
-// synced to/from m_aTypes[0] (Tee) each frame.
+// settings. The legacy m_KxTrajectoryTicks config var stays two-way synced
+// with m_aTypes[0] (Tee) m_PredictionTicks for backward compat with binds.
 
 #ifndef GAME_CLIENT_COMPONENTS_KINETIX_TRAJECTORY_H
 #define GAME_CLIENT_COMPONENTS_KINETIX_TRAJECTORY_H

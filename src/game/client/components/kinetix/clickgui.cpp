@@ -671,9 +671,10 @@ static bool BafChildVisible(const SRow *pChildren, int childCount, int idx)
 // v1.56.182: "Simulate Players" and "Show for other players" are now visible for
 // ALL types (previously hidden when Type!=Tee). Simulate Players controls whether
 // other characters are kept in the prediction world — applies to both tee and
-// weapon prediction (projectiles can hit other players when ON). Show for other
-// players predicts other players' tee movement; for weapon types it has no
-// effect but stays visible for UI consistency.
+// weapon prediction (projectiles/lasers can hit other players when ON).
+// v1.56.183: Show for other players now works for ALL types — for Tee it predicts
+// other players' tee movement; for weapon types (in show-for-current mode) it
+// tracks other players' in-flight projectiles/lasers too.
 static bool TrajectoryChildVisible(const SRow *pChildren, int childCount, int idx)
 {
         if(idx < 0 || idx >= childCount)

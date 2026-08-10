@@ -25,17 +25,13 @@
 
 void CTrajectory::SyncLegacyConfig()
 {
-        // v1.56.178: two-way sync between the legacy config vars and m_aTypes[TRAJ_TEE].
-        // - If the user runs "toggle kx_show_trajectory 1 0" the config var changes,
-        //   and we reflect that into m_aTypes[TRAJ_TEE].m_Show so the new ClickGUI
-        //   toggle stays in sync.
-        // - If the user toggles via the new ClickGUI toggle, m_aTypes[TRAJ_TEE].m_Show
-        //   changes and we write back to the config var so existing bind commands
-        //   still see the right state.
-        // Ticks are one-way (config -> settings) because the new slider writes
-        // directly to m_aTypes[TRAJ_TEE].m_PredictionTicks and we don't want
-        // legacy binds to fight with it; but we do write back so they match.
-        static bool s_LastShow = false;
+        // v1.56.183: m_KxShowTrajectory is now the MASTER toggle (checked in OnRender),
+        // exactly like g_Config.m_KxAimBot in aimbot.cpp. It is NO LONGER synced to
+        // m_aTypes[TRAJ_TEE].m_Show — per-type Show is independent (like AimBot's
+        // per-weapon m_Enabled). The ClickGUI parent "Trajectory" toggle reads/writes
+        // g_Config.m_KxShowTrajectory directly (clickgui.cpp:1150,2580). Legacy bind
+        // "toggle kx_show_trajectory 1 0" controls the master, not Tee's per-type Show.
+        // Only m_KxTrajectoryTicks stays two-way synced with Tee's m_PredictionTicks.
         static int s_LastTicks = -1;
         static bool s_First = true;
 
@@ -43,26 +39,22 @@ void CTrajectory::SyncLegacyConfig()
 
         if(s_First)
         {
-                // Seed Tee settings from legacy config on first frame.
-                tee.m_Show = g_Config.m_KxShowTrajectory != 0;
                 tee.m_PredictionTicks = g_Config.m_KxTrajectoryTicks;
+                // v1.56.183: seed Tee's Show from the master toggle on first frame only.
+                // Provides backward compat for users who had kx_show_trajectory=1 saved
+                // in config — they'll still see the Tee trajectory without needing to
+                // manually enable Tee's per-type Show. After this first frame, the
+                // master and per-type Show are fully independent (like AimBot).
+                tee.m_Show = g_Config.m_KxShowTrajectory != 0;
                 s_First = false;
         }
         else
         {
-                // Detect external config change (bind command).
-                bool cfgShow = g_Config.m_KxShowTrajectory != 0;
-                if(cfgShow != s_LastShow)
-                        tee.m_Show = cfgShow;
                 if(g_Config.m_KxTrajectoryTicks != s_LastTicks)
                         tee.m_PredictionTicks = g_Config.m_KxTrajectoryTicks;
         }
 
-        // Write back so legacy config always mirrors the Tee settings.
-        g_Config.m_KxShowTrajectory = tee.m_Show ? 1 : 0;
         g_Config.m_KxTrajectoryTicks = tee.m_PredictionTicks;
-
-        s_LastShow = tee.m_Show;
         s_LastTicks = tee.m_PredictionTicks;
 }
 
@@ -219,12 +211,15 @@ void CTrajectory::RenderTee()
         // Per-character point collection.
         std::vector<std::vector<vec2>> vPerCharPoints(vPredictIds.size());
 
-        // Seed initial positions.
+        // v1.56.183: seed with the RENDERED position (m_aClients[cid].m_RenderPos),
+        // not the predicted m_Pos. This keeps the trajectory start glued to the
+        // visible tee during movement (no jerk from prediction lag). Same approach
+        // as aimbot.cpp:77 (MyPos = m_aClients[LocalId].m_RenderPos).
         for(size_t c = 0; c < vPredictIds.size(); c++)
         {
-                CCharacter *pChar = FutureWorld.GetCharacterById(vPredictIds[c]);
-                if(pChar)
-                        vPerCharPoints[c].push_back(pChar->m_Pos);
+                int cid = vPredictIds[c];
+                if(cid >= 0 && cid < MAX_CLIENTS)
+                        vPerCharPoints[c].push_back(pGame->m_aClients[cid].m_RenderPos);
         }
 
         // Simulate N ticks.
@@ -341,7 +336,9 @@ void CTrajectory::RenderWeaponPredict(int WeaponType)
         if(!pLocalChar)
                 return;
 
-        vec2 MyPos = pLocalChar->m_Pos;
+        // v1.56.183: use the RENDERED position (m_aClients[LocalId].m_RenderPos) like
+        // aimbot.cpp:77, so the trajectory start aligns with the visible tee.
+        vec2 MyPos = pGame->m_aClients[LocalClientId].m_RenderPos;
         // v1.56.181: m_aMousePos is the aim OFFSET from the tee in world units (same as
         // m_TargetX/Y in CNetObj_PlayerInput) — it is NOT a world position. So the aim
         // direction is normalize(AimPos), not normalize(AimPos - MyPos). This mirrors
@@ -516,42 +513,55 @@ void CTrajectory::RenderCurrentProjectiles(int WeaponType)
 
         int LocalClientId = pGame->m_Snap.m_LocalClientId;
 
-        // Collect matching projectiles (owner + weapon type) from the live predicted world.
-        // We snapshot (startTick) so we can find them again in the cloned world.
-        std::vector<int> vStartTicks;
+        // v1.56.183: collect matching projectiles as (owner, startTick) pairs.
+        // When ShowForOtherPlayers is ON, track ALL players' projectiles (not just
+        // local). This makes "Show for other players" work for show-for-current.
+        struct SProjKey { int owner; int startTick; };
+        std::vector<SProjKey> vKeys;
         for(CEntity *pEnt = pWorld->FindFirst(CGameWorld::ENTTYPE_PROJECTILE); pEnt; pEnt = pEnt->TypeNext())
         {
                 CProjectile *pProj = static_cast<CProjectile *>(pEnt);
                 if(pProj->GetType() != WeaponType)
                         continue;
-                if(pProj->GetOwner() != LocalClientId)
+                if(!s.m_ShowForOtherPlayers && pProj->GetOwner() != LocalClientId)
                         continue;
-                vStartTicks.push_back(pProj->GetStartTick());
+                vKeys.push_back({pProj->GetOwner(), pProj->GetStartTick()});
         }
-        if(vStartTicks.empty())
+        if(vKeys.empty())
                 return;
 
         // Clone the predicted world once for all matching projectiles.
         CGameWorld FutureWorld;
         FutureWorld.CopyWorld(pWorld);
 
-        // Remove other characters (projectiles only need collision + owner char).
-        for(int i = 0; i < MAX_CLIENTS; i++)
+        // v1.56.183: build keep set — local + owners of tracked projectiles.
+        // When SimulatePlayers is OFF, remove characters NOT in the keep set (speed).
+        // When ON, keep all characters so projectiles can hit any player.
+        bool keepClient[MAX_CLIENTS] = {false};
+        keepClient[LocalClientId] = true;
+        for(const auto &k : vKeys)
+                if(k.owner >= 0 && k.owner < MAX_CLIENTS)
+                        keepClient[k.owner] = true;
+
+        if(!s.m_SimulatePlayers)
         {
-                if(i == LocalClientId)
-                        continue;
-                if(CCharacter *pChar = FutureWorld.GetCharacterById(i))
-                        FutureWorld.RemoveEntity(pChar);
+                for(int i = 0; i < MAX_CLIENTS; i++)
+                {
+                        if(keepClient[i])
+                                continue;
+                        if(CCharacter *pChar = FutureWorld.GetCharacterById(i))
+                                FutureWorld.RemoveEntity(pChar);
+                }
         }
 
         int StartTick = FutureWorld.GameTick();
 
         // Per-projectile point collection. Seed with the projectile's CURRENT position
         // (not its spawn position — Fix #6: only the remaining path is drawn).
-        std::vector<std::vector<vec2>> vPerEntityPoints(vStartTicks.size());
-        for(size_t e = 0; e < vStartTicks.size(); e++)
+        std::vector<std::vector<vec2>> vPerEntityPoints(vKeys.size());
+        for(size_t e = 0; e < vKeys.size(); e++)
         {
-                if(CProjectile *pProj = FindOwnedProjectile(&FutureWorld, LocalClientId, vStartTicks[e]))
+                if(CProjectile *pProj = FindOwnedProjectile(&FutureWorld, vKeys[e].owner, vKeys[e].startTick))
                 {
                         // v1.56.182: use GetPos(Ct) — m_Pos is not updated by Tick for
                         // non-bouncing projectiles (pistol/grenade).
@@ -567,9 +577,9 @@ void CTrajectory::RenderCurrentProjectiles(int WeaponType)
                 FutureWorld.Tick();
 
                 bool anyAlive = false;
-                for(size_t e = 0; e < vStartTicks.size(); e++)
+                for(size_t e = 0; e < vKeys.size(); e++)
                 {
-                        if(CProjectile *pProj = FindOwnedProjectile(&FutureWorld, LocalClientId, vStartTicks[e]))
+                        if(CProjectile *pProj = FindOwnedProjectile(&FutureWorld, vKeys[e].owner, vKeys[e].startTick))
                         {
                                 // v1.56.182: use GetPos(Ct) — m_Pos is not updated by Tick for
                                 // non-bouncing projectiles (pistol/grenade).
@@ -611,42 +621,52 @@ void CTrajectory::RenderCurrentLasers()
 
         int LocalClientId = pGame->m_Snap.m_LocalClientId;
 
-        // Lasers don't expose StartTick via getter, so we match by owner only.
-        // There's typically only one laser per owner in flight at a time.
-        // Count matching lasers so we know how many to track in the cloned world.
-        int laserCount = 0;
+        // v1.56.183: build keep set from matching lasers' owners (do this on the
+        // live world before cloning so we know which characters to keep).
+        // When ShowForOtherPlayers is ON, track ALL players' lasers.
+        bool keepClient[MAX_CLIENTS] = {false};
+        keepClient[LocalClientId] = true;
+        int matchCount = 0;
         for(CEntity *pEnt = pWorld->FindFirst(CGameWorld::ENTTYPE_LASER); pEnt; pEnt = pEnt->TypeNext())
         {
                 CLaser *pLaser = static_cast<CLaser *>(pEnt);
-                if(pLaser->GetOwner() == LocalClientId)
-                        laserCount++;
+                if(!s.m_ShowForOtherPlayers && pLaser->GetOwner() != LocalClientId)
+                        continue;
+                if(pLaser->GetOwner() >= 0 && pLaser->GetOwner() < MAX_CLIENTS)
+                        keepClient[pLaser->GetOwner()] = true;
+                matchCount++;
         }
-        if(laserCount == 0)
+        if(matchCount == 0)
                 return;
 
-        // Clone the predicted world. Remove other characters (speedup — laser only
-        // needs collision + owner char for hit detection).
+        // Clone the predicted world.
         CGameWorld FutureWorld;
         FutureWorld.CopyWorld(pWorld);
-        for(int i = 0; i < MAX_CLIENTS; i++)
+
+        // v1.56.183: remove characters not in keep set (unless SimulatePlayers is on).
+        if(!s.m_SimulatePlayers)
         {
-                if(i == LocalClientId)
-                        continue;
-                if(CCharacter *pChar = FutureWorld.GetCharacterById(i))
-                        FutureWorld.RemoveEntity(pChar);
+                for(int i = 0; i < MAX_CLIENTS; i++)
+                {
+                        if(keepClient[i])
+                                continue;
+                        if(CCharacter *pChar = FutureWorld.GetCharacterById(i))
+                                FutureWorld.RemoveEntity(pChar);
+                }
         }
 
-        int StartTick = FutureWorld.GameTick();
-
         // Collect matching lasers from the CLONE (positions are post-copy, so they
-        // reflect the live state). We'll re-find them each tick by owner.
+        // reflect the live state). We'll re-find them each tick by iteration.
         std::vector<vec2> vInitialPos;
         for(CEntity *pEnt = FutureWorld.FindFirst(CGameWorld::ENTTYPE_LASER); pEnt; pEnt = pEnt->TypeNext())
         {
                 CLaser *pLaser = static_cast<CLaser *>(pEnt);
-                if(pLaser->GetOwner() == LocalClientId)
-                        vInitialPos.push_back(pLaser->m_Pos);
+                if(!s.m_ShowForOtherPlayers && pLaser->GetOwner() != LocalClientId)
+                        continue;
+                vInitialPos.push_back(pLaser->m_Pos);
         }
+        if(vInitialPos.empty())
+                return;
 
         // Per-laser point collection. Seed with current position (Fix #6: only
         // remaining path, not the already-flown From -> Pos segment).
@@ -654,10 +674,14 @@ void CTrajectory::RenderCurrentLasers()
         for(size_t e = 0; e < vInitialPos.size(); e++)
                 vPerLaserPoints[e].push_back(vInitialPos[e]);
 
+        int StartTick = FutureWorld.GameTick();
+
         // Simulate N ticks forward. CLaser::Tick calls DoBounce() once per tick
         // (when LaserBounceDelay has elapsed, which is 0 by default → every tick),
         // so each tick produces one bounce point. With PredictionTicks=10 we get
         // up to 10 bounces — matching the original engine's laser behaviour.
+        // v1.56.183: iterate all lasers and assign by index (preserves multi-laser
+        // per owner tracking; ShowForOtherPlayers extends filter to all owners).
         for(int i = 0; i < s.m_PredictionTicks; i++)
         {
                 FutureWorld.m_GameTick = StartTick + i + 1;
@@ -668,7 +692,7 @@ void CTrajectory::RenderCurrentLasers()
                 for(CEntity *pEnt = FutureWorld.FindFirst(CGameWorld::ENTTYPE_LASER); pEnt && e < vPerLaserPoints.size(); pEnt = pEnt->TypeNext())
                 {
                         CLaser *pLaser = static_cast<CLaser *>(pEnt);
-                        if(pLaser->GetOwner() != LocalClientId)
+                        if(!s.m_ShowForOtherPlayers && pLaser->GetOwner() != LocalClientId)
                                 continue;
                         vPerLaserPoints[e].push_back(pLaser->m_Pos);
                         anyAlive = true;
@@ -689,26 +713,39 @@ void CTrajectory::OnRender()
 {
         SyncLegacyConfig();
 
+        // v1.56.183: master toggle — like g_Config.m_KxAimBot in aimbot.cpp:60,91.
+        // When OFF, nothing renders (no tee, no weapon preview, no show-for-current).
+        // The ClickGUI parent "Trajectory" toggle and the legacy bind
+        // "toggle kx_show_trajectory 1 0" both control this config var.
+        if(!g_Config.m_KxShowTrajectory)
+                return;
+
+        CGameClient *pGame = GameClient();
+        if(!pGame)
+                return;
+
+        int LocalClientId = pGame->m_Snap.m_LocalClientId;
+        if(LocalClientId < 0 || !pGame->m_Snap.m_aCharacters[LocalClientId].m_Active)
+                return;
+
+        // v1.56.183: set up screen transform like aimbot.cpp:87 so world-space
+        // coordinates map correctly to the visible screen.
+        Graphics()->MapScreenToInterface(pGame->m_Camera.m_Center.x, pGame->m_Camera.m_Center.y, pGame->m_Camera.m_Zoom);
+
         RenderTee();
 
         // v1.56.182: only show the weapon trajectory PREVIEW for the currently held
         // weapon (like aimbot). Previously all 4 weapon types were rendered
         // unconditionally (each checked its own m_Show), so enabling Show for
         // multiple types drew them all at once regardless of held weapon.
-        CGameClient *pGame = GameClient();
-        if(pGame)
         {
-                int LocalClientId = pGame->m_Snap.m_LocalClientId;
-                if(LocalClientId >= 0 && pGame->m_Snap.m_aCharacters[LocalClientId].m_Active)
+                CCharacter *pLocalChar = pGame->m_PredictedWorld.GetCharacterById(LocalClientId);
+                if(pLocalChar)
                 {
-                        CCharacter *pLocalChar = pGame->m_PredictedWorld.GetCharacterById(LocalClientId);
-                        if(pLocalChar)
-                        {
-                                int weapon = pLocalChar->GetActiveWeapon();
-                                // RenderWeaponPredict handles GUN/SHOTGUN/GRENADE/LASER; other
-                                // weapons (hammer/ninja) hit the default: return in the switch.
-                                RenderWeaponPredict(weapon);
-                        }
+                        int weapon = pLocalChar->GetActiveWeapon();
+                        // RenderWeaponPredict handles GUN/SHOTGUN/GRENADE/LASER; other
+                        // weapons (hammer/ninja) hit the default: return in the switch.
+                        RenderWeaponPredict(weapon);
                 }
         }
 
