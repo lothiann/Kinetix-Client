@@ -10,10 +10,10 @@
 //
 // Types:
 //   0 = Tee      — predict tee movement N ticks forward (existing behaviour)
-//   1 = Pistol   — raycast from player along aim dir to wall
-//   2 = Shotgun  — 5 raycasts in a fan (shotgun spread)
-//   3 = Grenade  — simulate projectile arc (gravity + bounces) for N ticks
-//   4 = Laser    — raycast with bounces off walls until energy runs out
+//   1 = Pistol   — spawn CProjectile(WEAPON_GUN) in cloned world, simulate N ticks
+//   2 = Shotgun  — spawn CProjectile(WEAPON_SHOTGUN) x5 (vanilla) or CLaser (DDRace), simulate
+//   3 = Grenade  — spawn CProjectile(WEAPON_GRENADE), simulate N ticks (real arc + bounces)
+//   4 = Laser    — spawn CLaser(WEAPON_LASER), simulate N ticks (real bounces off walls)
 //
 // "Show for current" (Pistol/Shotgun/Grenade/Laser only) iterates the
 // PREDICTED world's existing CProjectile / CLaser entities and draws
@@ -62,10 +62,12 @@ public:
 private:
         // Per-type renderers. Each reads its STypeSettings and draws if m_Show.
         void RenderTee();
-        void RenderPistol();
-        void RenderShotgun();
-        void RenderGrenade();
-        void RenderLaser();
+        // v1.56.179: unified prediction-based weapon trajectory renderer.
+        // Spawns a real CProjectile/CLaser in a cloned CGameWorld and simulates
+        // N ticks, collecting positions each tick. Gives the REAL trajectory
+        // (wall collisions, bounces, explosions) — not a hand-rolled approximation.
+        // WeaponType is WEAPON_GUN / WEAPON_SHOTGUN / WEAPON_GRENADE / WEAPON_LASER.
+        void RenderWeaponPredict(int WeaponType);
 
         // "Show for current" helpers — iterate prediction-world entities.
         void RenderCurrentProjectiles(int WeaponType);

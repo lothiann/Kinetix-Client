@@ -272,98 +272,60 @@ void CTrajectory::RenderTee()
         }
 }
 
-void CTrajectory::RenderPistol()
+// v1.56.179: Prediction-based weapon trajectory.
+// Spawns a real CProjectile/CLaser in a cloned CGameWorld and simulates N ticks,
+// collecting positions each tick. This gives the REAL trajectory (with wall
+// collisions, bounces, explosions) — not a hand-rolled approximation.
+//
+// Weapon type -> entity mapping (mirrors CCharacter::FireWeapon):
+//   WEAPON_GUN      -> CProjectile (1 projectile, straight line, short lifetime)
+//   WEAPON_GRENADE  -> CProjectile (1 projectile, parabolic arc, bounces off walls)
+//   WEAPON_SHOTGUN  -> CProjectile (5 projectiles with spread) in vanilla,
+//                      CLaser (WEAPON_SHOTGUN type) in DDRace
+//   WEAPON_LASER    -> CLaser (bounces off walls until energy runs out)
+
+// Helper: find a projectile owned by `ownerId` with matching `startTick`.
+// Returns nullptr if the projectile was destroyed (exploded, expired).
+static CProjectile *FindOwnedProjectile(CGameWorld *pWorld, int ownerId, int startTick)
 {
-        const STypeSettings &s = m_aTypes[TRAJ_PISTOL];
-        if(!s.m_Show)
-                return;
-
-        CGameClient *pGame = GameClient();
-        if(!pGame)
-                return;
-
-        int LocalClientId = pGame->m_Snap.m_LocalClientId;
-        if(LocalClientId < 0 || !pGame->m_Snap.m_aCharacters[LocalClientId].m_Active)
-                return;
-
-        CCharacter *pLocalChar = pGame->m_PredictedWorld.GetCharacterById(LocalClientId);
-        if(!pLocalChar)
-                return;
-
-        vec2 MyPos = pLocalChar->m_Pos;
-        // Aim direction = direction from player to mouse target (in world space).
-        vec2 AimPos = pGame->m_Controls.m_aMousePos[g_Config.m_ClDummy];
-        vec2 AimDir = normalize(AimPos - MyPos);
-        if(length(AimDir) < 1e-6f)
-                return;
-
-        // Raycast to wall.
-        vec2 OutCol, OutBefore;
-        CCollision *pColl = pGame->Collision();
-        if(!pColl)
-                return;
-
-        vec2 End = MyPos + AimDir * 1000.0f;
-        pColl->IntersectLine(MyPos, End, &OutCol, &OutBefore);
-
-        std::vector<vec2> vPoints;
-        vPoints.push_back(MyPos);
-        vPoints.push_back(OutCol);
-        DrawPolyline(vPoints, s.m_AlphaGradient);
-}
-
-void CTrajectory::RenderShotgun()
-{
-        const STypeSettings &s = m_aTypes[TRAJ_SHOTGUN];
-        if(!s.m_Show)
-                return;
-
-        CGameClient *pGame = GameClient();
-        if(!pGame)
-                return;
-
-        int LocalClientId = pGame->m_Snap.m_LocalClientId;
-        if(LocalClientId < 0 || !pGame->m_Snap.m_aCharacters[LocalClientId].m_Active)
-                return;
-
-        CCharacter *pLocalChar = pGame->m_PredictedWorld.GetCharacterById(LocalClientId);
-        if(!pLocalChar)
-                return;
-
-        CCollision *pColl = pGame->Collision();
-        if(!pColl)
-                return;
-
-        vec2 MyPos = pLocalChar->m_Pos;
-        vec2 AimPos = pGame->m_Controls.m_aMousePos[g_Config.m_ClDummy];
-        vec2 AimDir = normalize(AimPos - MyPos);
-        if(length(AimDir) < 1e-6f)
-                return;
-
-        // Shotgun spread: 5 rays at offsets. DDNet shotgun uses a fixed spread
-        // pattern; we approximate with a symmetric fan around the aim direction.
-        // Spread angles (radians): -0.14, -0.07, 0, 0.07, 0.14 (~ -8°..+8°).
-        const float SpreadAngles[5] = {-0.14f, -0.07f, 0.0f, 0.07f, 0.14f};
-        const float BaseAngle = atan2(AimDir.y, AimDir.x);
-
-        for(int i = 0; i < 5; i++)
+        for(CEntity *pEnt = pWorld->FindFirst(CGameWorld::ENTTYPE_PROJECTILE); pEnt; pEnt = pEnt->m_pNextTypeEntity)
         {
-                float a = BaseAngle + SpreadAngles[i];
-                vec2 Dir = vec2(cosf(a), sinf(a));
-                vec2 End = MyPos + Dir * 1000.0f;
-                vec2 OutCol, OutBefore;
-                pColl->IntersectLine(MyPos, End, &OutCol, &OutBefore);
-
-                std::vector<vec2> vPoints;
-                vPoints.push_back(MyPos);
-                vPoints.push_back(OutCol);
-                DrawPolyline(vPoints, s.m_AlphaGradient);
+                CProjectile *pProj = static_cast<CProjectile *>(pEnt);
+                if(pProj->GetOwner() == ownerId && pProj->GetStartTick() == startTick)
+                        return pProj;
         }
+        return nullptr;
 }
 
-void CTrajectory::RenderGrenade()
+// Helper: find a laser owned by `ownerId`. Lasers don't expose StartTick via
+// getter, so we match by owner only (there's typically only one laser per owner
+// in flight at a time). Returns nullptr if the laser was destroyed.
+static CLaser *FindOwnedLaser(CGameWorld *pWorld, int ownerId)
 {
-        const STypeSettings &s = m_aTypes[TRAJ_GRENADE];
+        for(CEntity *pEnt = pWorld->FindFirst(CGameWorld::ENTTYPE_LASER); pEnt; pEnt = pEnt->m_pNextTypeEntity)
+        {
+                CLaser *pLaser = static_cast<CLaser *>(pEnt);
+                if(pLaser->GetOwner() == ownerId)
+                        return pLaser;
+        }
+        return nullptr;
+}
+
+// v1.56.179: unified prediction-based weapon trajectory renderer.
+// Spawns the weapon entity in a cloned world, simulates N ticks, draws the path.
+void CTrajectory::RenderWeaponPredict(int WeaponType)
+{
+        // Map WEAPON_* to TRAJ_* index for settings lookup.
+        int trajIdx;
+        switch(WeaponType)
+        {
+        case WEAPON_GUN: trajIdx = TRAJ_PISTOL; break;
+        case WEAPON_SHOTGUN: trajIdx = TRAJ_SHOTGUN; break;
+        case WEAPON_GRENADE: trajIdx = TRAJ_GRENADE; break;
+        case WEAPON_LASER: trajIdx = TRAJ_LASER; break;
+        default: return;
+        }
+        const STypeSettings &s = m_aTypes[trajIdx];
         if(!s.m_Show)
                 return;
 
@@ -379,140 +341,134 @@ void CTrajectory::RenderGrenade()
         if(!pLocalChar)
                 return;
 
-        CCollision *pColl = pGame->Collision();
-        if(!pColl)
-                return;
-
         vec2 MyPos = pLocalChar->m_Pos;
         vec2 AimPos = pGame->m_Controls.m_aMousePos[g_Config.m_ClDummy];
-        vec2 AimDir = normalize(AimPos - MyPos);
-        if(length(AimDir) < 1e-6f)
+        vec2 Dir = normalize(AimPos - MyPos);
+        if(length(Dir) < 1e-6f)
                 return;
 
-        // Grenade projectile simulation: initial velocity = AimDir * grenade_speed,
-        // then apply gravity + bounce off walls for PredictionTicks ticks.
-        // DDNet grenade tuning: speed=10, gravity=0.5, bounce factor varies.
-        // We use a simplified physics model that matches DDNet's projectile arc.
-        const float GrenadeSpeed = 10.0f; // tiles per tick
-        const float Gravity = 0.5f; // per tick
-        const float BounceFriction = 0.5f; // velocity retained on bounce
+        vec2 ProjStartPos = MyPos + Dir * pLocalChar->GetProximityRadius() * 0.75f;
 
-        vec2 Pos = MyPos + AimDir * 4.0f; // spawn offset (matches DDNet projectile spawn)
-        vec2 Vel = AimDir * GrenadeSpeed;
+        // Clone the predicted world. We remove other characters to speed up
+        // simulation (projectiles only need collision + owner char).
+        CGameWorld FutureWorld;
+        FutureWorld.CopyWorld(&pGame->m_PredictedWorld);
 
-        std::vector<vec2> vPoints;
-        vPoints.push_back(Pos);
+        for(int i = 0; i < MAX_CLIENTS; i++)
+        {
+                if(i == LocalClientId)
+                        continue;
+                if(CCharacter *pChar = FutureWorld.GetCharacterById(i))
+                        FutureWorld.RemoveEntity(pChar);
+        }
+
+        int StartTick = FutureWorld.GameTick();
+        int TickSpeed = FutureWorld.GameTickSpeed();
+        int TuneZone = pLocalChar->GetOverriddenTuneZone();
+
+        // Determine if shotgun uses laser (DDRace) or projectile (vanilla).
+        const bool isShotgunLaser = (WeaponType == WEAPON_SHOTGUN && FutureWorld.m_WorldConfig.m_IsDDRace);
+
+        // For vanilla shotgun: spawn 5 projectiles with spread.
+        // For everything else: spawn 1 entity.
+        struct SSpawned
+        {
+                int entType; // CGameWorld::ENTTYPE_PROJECTILE or ENTTYPE_LASER
+                int startTick; // for projectile matching
+        };
+        std::vector<SSpawned> vSpawned;
+
+        if(WeaponType == WEAPON_LASER || isShotgunLaser)
+        {
+                // Spawn CLaser. LaserReach from tuning.
+                float LaserReach = FutureWorld.GetTuning(TuneZone)->m_LaserReach;
+                int laserType = (WeaponType == WEAPON_LASER) ? WEAPON_LASER : WEAPON_SHOTGUN;
+                new CLaser(&FutureWorld, MyPos, Dir, LaserReach, LocalClientId, laserType);
+                vSpawned.push_back({CGameWorld::ENTTYPE_LASER, StartTick});
+        }
+        else if(WeaponType == WEAPON_GUN)
+        {
+                int Lifetime = (int)(TickSpeed * FutureWorld.GetTuning(TuneZone)->m_GunLifetime);
+                new CProjectile(&FutureWorld, WEAPON_GUN, LocalClientId, ProjStartPos, Dir, Lifetime, false, false, -1);
+                vSpawned.push_back({CGameWorld::ENTTYPE_PROJECTILE, StartTick});
+        }
+        else if(WeaponType == WEAPON_GRENADE)
+        {
+                int Lifetime = (int)(TickSpeed * FutureWorld.GetTuning(TuneZone)->m_GrenadeLifetime);
+                new CProjectile(&FutureWorld, WEAPON_GRENADE, LocalClientId, ProjStartPos, Dir, Lifetime, false, true, SOUND_GRENADE_EXPLODE);
+                vSpawned.push_back({CGameWorld::ENTTYPE_PROJECTILE, StartTick});
+        }
+        else if(WeaponType == WEAPON_SHOTGUN)
+        {
+                // Vanilla shotgun: 5 projectiles with spread.
+                const float aSpreading[] = {-0.185f, -0.070f, 0, 0.070f, 0.185f};
+                int ShotSpread = 2;
+                int Lifetime = (int)(TickSpeed * FutureWorld.GetTuning(TuneZone)->m_ShotgunLifetime);
+                for(int i = -ShotSpread; i <= ShotSpread; ++i)
+                {
+                        float a = angle(Dir) + aSpreading[i + 2];
+                        float v = 1 - (absolute(i) / (float)ShotSpread);
+                        float Speed = mix((float)FutureWorld.GlobalTuning()->m_ShotgunSpeeddiff, 1.0f, v);
+                        vec2 SpreadDir = direction(a) * Speed;
+                        new CProjectile(&FutureWorld, WEAPON_SHOTGUN, LocalClientId, ProjStartPos, SpreadDir, Lifetime, false, false, -1);
+                }
+                // All 5 projectiles share the same StartTick — we'll draw the first
+                // one's path (they spread out so individual paths aren't very useful,
+                // but the simulation still runs for all 5).
+                vSpawned.push_back({CGameWorld::ENTTYPE_PROJECTILE, StartTick});
+        }
+
+        // Simulate N ticks, collecting positions for each spawned entity.
+        // We draw one polyline per spawned entity (vanilla shotgun = 5 lines,
+        // everything else = 1 line).
+        std::vector<std::vector<vec2>> vPerEntityPoints(vSpawned.size());
+        for(size_t e = 0; e < vSpawned.size(); e++)
+        {
+                vPerEntityPoints[e].push_back(ProjStartPos); // seed with spawn pos
+        }
 
         for(int i = 0; i < s.m_PredictionTicks; i++)
         {
-                vec2 NewPos = Pos + Vel;
+                FutureWorld.m_GameTick = StartTick + i + 1;
+                FutureWorld.Tick();
 
-                // Wall collision (X and Y axis separately for bouncing).
-                vec2 OutCol, OutBefore;
-                if(pColl->IntersectLine(Pos, NewPos, &OutCol, &OutBefore))
+                // Collect current position of each spawned entity.
+                bool anyAlive = false;
+                for(size_t e = 0; e < vSpawned.size(); e++)
                 {
-                        // Hit wall — bounce.
-                        NewPos = OutCol;
-                        // Determine bounce axis: check which component caused the hit.
-                        vec2 TestX = vec2(NewPos.x + (Vel.x > 0 ? 1.0f : -1.0f), NewPos.y);
-                        vec2 Dummy1, Dummy2;
-                        if(pColl->IntersectLine(NewPos, TestX, &Dummy1, &Dummy2))
-                                Vel.x = -Vel.x * BounceFriction;
-
-                        vec2 TestY = vec2(NewPos.x, NewPos.y + (Vel.y > 0 ? 1.0f : -1.0f));
-                        if(pColl->IntersectLine(NewPos, TestY, &Dummy1, &Dummy2))
-                                Vel.y = -Vel.y * BounceFriction;
+                        vec2 pos;
+                        bool alive = false;
+                        if(vSpawned[e].entType == CGameWorld::ENTTYPE_PROJECTILE)
+                        {
+                                if(CProjectile *pProj = FindOwnedProjectile(&FutureWorld, LocalClientId, vSpawned[e].startTick))
+                                {
+                                        pos = pProj->m_Pos;
+                                        alive = true;
+                                }
+                        }
+                        else
+                        {
+                                if(CLaser *pLaser = FindOwnedLaser(&FutureWorld, LocalClientId))
+                                {
+                                        pos = pLaser->m_Pos;
+                                        alive = true;
+                                }
+                        }
+                        if(alive)
+                        {
+                                vPerEntityPoints[e].push_back(pos);
+                                anyAlive = true;
+                        }
                 }
-
-                Vel.y += Gravity;
-                Pos = NewPos;
-                vPoints.push_back(Pos);
-        }
-
-        DrawPolyline(vPoints, s.m_AlphaGradient);
-}
-
-void CTrajectory::RenderLaser()
-{
-        const STypeSettings &s = m_aTypes[TRAJ_LASER];
-        if(!s.m_Show)
-                return;
-
-        CGameClient *pGame = GameClient();
-        if(!pGame)
-                return;
-
-        int LocalClientId = pGame->m_Snap.m_LocalClientId;
-        if(LocalClientId < 0 || !pGame->m_Snap.m_aCharacters[LocalClientId].m_Active)
-                return;
-
-        CCharacter *pLocalChar = pGame->m_PredictedWorld.GetCharacterById(LocalClientId);
-        if(!pLocalChar)
-                return;
-
-        CCollision *pColl = pGame->Collision();
-        if(!pColl)
-                return;
-
-        vec2 MyPos = pLocalChar->m_Pos;
-        vec2 AimPos = pGame->m_Controls.m_aMousePos[g_Config.m_ClDummy];
-        vec2 AimDir = normalize(AimPos - MyPos);
-        if(length(AimDir) < 1e-6f)
-                return;
-
-        // Laser prediction with bounces. We simulate the laser bouncing off walls
-        // until either PredictionTicks bounces are reached or energy runs out.
-        // DDNet laser tuning: StartEnergy=800, BounceCost=100, BounceNum=2.
-        // We use a fixed iteration count = PredictionTicks to bound the work.
-        const float StartEnergy = 800.0f;
-        const float BounceCost = 100.0f;
-        const int MaxBounces = 2;
-
-        vec2 Pos = MyPos;
-        vec2 Dir = AimDir;
-        float Energy = StartEnergy;
-        int Bounces = 0;
-
-        std::vector<vec2> vPoints;
-        vPoints.push_back(Pos);
-
-        for(int i = 0; i < s.m_PredictionTicks && Bounces <= MaxBounces && Energy > 0.0f; i++)
-        {
-                vec2 To = Pos + Dir * Energy;
-                vec2 OutCol, OutBefore;
-                int Res = pColl->IntersectLine(Pos, To, &OutCol, &OutBefore);
-                if(Res)
-                {
-                        // Hit wall — bounce.
-                        vec2 HitPos = OutCol;
-                        vPoints.push_back(HitPos);
-
-                        // Reflect direction off the wall normal.
-                        // Simple reflection: invert the dominant axis component.
-                        vec2 ToX = vec2(HitPos.x + (Dir.x > 0 ? 1.0f : -1.0f), HitPos.y);
-                        vec2 ToY = vec2(HitPos.x, HitPos.y + (Dir.y > 0 ? 1.0f : -1.0f));
-                        vec2 D1, D2;
-                        bool HitX = pColl->IntersectLine(HitPos, ToX, &D1, &D2);
-                        bool HitY = pColl->IntersectLine(HitPos, ToY, &D1, &D2);
-                        if(HitX)
-                                Dir.x = -Dir.x;
-                        if(HitY)
-                                Dir.y = -Dir.y;
-                        Dir = normalize(Dir);
-
-                        Energy -= distance(Pos, HitPos) + BounceCost;
-                        Pos = HitPos;
-                        Bounces++;
-                }
-                else
-                {
-                        // No wall hit — laser ends here.
-                        vPoints.push_back(To);
+                if(!anyAlive)
                         break;
-                }
         }
 
-        DrawPolyline(vPoints, s.m_AlphaGradient);
+        // Draw each entity's trajectory.
+        for(size_t e = 0; e < vPerEntityPoints.size(); e++)
+        {
+                DrawPolyline(vPerEntityPoints[e], s.m_AlphaGradient);
+        }
 }
 
 void CTrajectory::RenderCurrentProjectiles(int WeaponType)
@@ -661,11 +617,13 @@ void CTrajectory::OnRender()
         SyncLegacyConfig();
 
         // Per-type prediction renderers.
+        // v1.56.179: weapon types now use prediction-based simulation (spawn real
+        // CProjectile/CLaser in cloned world, simulate N ticks, draw path).
         RenderTee();
-        RenderPistol();
-        RenderShotgun();
-        RenderGrenade();
-        RenderLaser();
+        RenderWeaponPredict(WEAPON_GUN);
+        RenderWeaponPredict(WEAPON_SHOTGUN);
+        RenderWeaponPredict(WEAPON_GRENADE);
+        RenderWeaponPredict(WEAPON_LASER);
 
         // "Show for current" — iterate existing entities.
         if(m_aTypes[TRAJ_PISTOL].m_ShowForCurrent)
