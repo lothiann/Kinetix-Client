@@ -163,9 +163,22 @@ void CBasicAvoidFreeze::ApplyOverride()
         }
 
         // Danger WITH hook, but safe WITHOUT hook — the user's hook IS the problem.
-        // Release the hook so the player doesn't get dragged into freeze.
+        // Use "latest safe tick search" to release at the VERY last moment
+        // (same pattern as BAF's override hook in Test A below).
         if(dangerWithCurrent > 0 && dangerWithoutHook == 0)
         {
+                // Test A: Can we wait 1 more tick with hook still active?
+                // Simulate 1 tick with current input (hook=1), then release hook
+                // for remaining ticks. If safe → wait, don't intervene yet.
+                int delayedDanger = SimulateDangerTickDelayed(LocalId, Current, 1, NoHook, simTicks);
+
+                if(delayedDanger == 0)
+                {
+                        // Can wait 1 more tick — hook is safe for now.
+                        return;
+                }
+
+                // Can't wait — LAST MOMENT. Release hook NOW.
                 pInput->m_Hook = 0;
                 m_WasOverriding = true;
                 m_OverrideHook = 0;
