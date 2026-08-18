@@ -440,6 +440,8 @@ static SRow g_BindsRows[] = {
         {ERowType::Input, "Copy Moves Filter", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Input, "Copy Moves Latency", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Input, "Trajectory", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "ESP", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Basic Avoid Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Input, "Block", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
 };
 
@@ -1225,36 +1227,7 @@ void CClickGui::OnRender()
                                         row.on = g_Config.m_KxIrcEnabled != 0;
                                 else if(str_comp(row.pName, "Spoofer") == 0)
                                         row.on = (g_Config.m_KxVersionSpoof != 0 || g_Config.m_KxSpoofClientStr != 0);
-                                // Binds panel — sync input fields with actual bound keys.
-                                else if(p == 4 && row.type == ERowType::Input)
-                                {
-                                        // Don't clobber the field being edited.
-                                        if(!m_InputEditing || m_InputPanel != p || m_InputRow != r)
-                                        {
-                                                const char *pCmd = nullptr;
-                                                if(str_comp(row.pName, "ClickGUI") == 0) pCmd = "toggle cl_clickgui 1 0";
-                                                else if(str_comp(row.pName, "AimBot") == 0) pCmd = "toggle kx_aimbot 1 0";
-                                                else if(str_comp(row.pName, "TriggerBot") == 0) pCmd = "toggle kx_triggerbot 1 0";
-                                                else if(str_comp(row.pName, "Fake Aim") == 0) pCmd = "toggle kx_fake_aim 1 0";
-                                                else if(str_comp(row.pName, "Laser Unfreeze") == 0) pCmd = "toggle kx_laser_unfreeze 1 0";
-                                                else if(str_comp(row.pName, "Copy Moves Filter") == 0) pCmd = "toggle kx_dummy_copy_moves_filter 1 0";
-                                                else if(str_comp(row.pName, "Copy Moves Latency") == 0) pCmd = "toggle kx_copy_moves_latency_enabled 1 0";
-                                                else if(str_comp(row.pName, "Trajectory") == 0) pCmd = "toggle kx_show_trajectory 1 0";
-                                                else if(str_comp(row.pName, "ESP") == 0) pCmd = "toggle kx_esp 1 0";
-                                                else if(str_comp(row.pName, "Basic Avoid Freeze") == 0) pCmd = "toggle kx_basic_avoid_freeze 1 0";
-                                                else if(str_comp(row.pName, "Block") == 0) pCmd = "toggle kx_attack 1 0";
-                                                if(pCmd)
-                                                {
-                                                        char aKey[64];
-                                                        GameClient()->m_Binds.GetKey(pCmd, aKey, sizeof(aKey));
-                                                        if(aKey[0])
-                                                                str_copy(row.m_aInputBuf, aKey, sizeof(row.m_aInputBuf));
-                                                        else
-                                                                str_copy(row.m_aInputBuf, "", sizeof(row.m_aInputBuf));
-                                                        row.m_InputInitialized = true;
-                                                }
-                                        }
-                                }
+                                // v1.56.199: Binds panel sync moved to every-frame loop (see below).
                                 // Sync children of expandable rows
                                 for(int c = 0; c < row.childCount; ++c)
                                 {
@@ -1975,6 +1948,37 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
                         // v1.56.199: sync BG blackout slider from m_BgBlackout.
                         else if(str_comp(row.pName, "BG blackout") == 0 && row.type == ERowType::Slider)
                                 row.value = (float)m_BgBlackout;
+                        // v1.56.199: Binds panel — sync input fields with actual bound keys
+                        // every frame (not just on open), so console bind changes appear
+                        // immediately while ClickGUI is open.
+                        else if(p == 4 && row.type == ERowType::Input)
+                        {
+                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r)
+                                {
+                                        const char *pCmd = nullptr;
+                                        if(str_comp(row.pName, "ClickGUI") == 0) pCmd = "toggle cl_clickgui 1 0";
+                                        else if(str_comp(row.pName, "AimBot") == 0) pCmd = "toggle kx_aimbot 1 0";
+                                        else if(str_comp(row.pName, "TriggerBot") == 0) pCmd = "toggle kx_triggerbot 1 0";
+                                        else if(str_comp(row.pName, "Fake Aim") == 0) pCmd = "toggle kx_fake_aim 1 0";
+                                        else if(str_comp(row.pName, "Laser Unfreeze") == 0) pCmd = "toggle kx_laser_unfreeze 1 0";
+                                        else if(str_comp(row.pName, "Copy Moves Filter") == 0) pCmd = "toggle kx_dummy_copy_moves_filter 1 0";
+                                        else if(str_comp(row.pName, "Copy Moves Latency") == 0) pCmd = "toggle kx_copy_moves_latency_enabled 1 0";
+                                        else if(str_comp(row.pName, "Trajectory") == 0) pCmd = "toggle kx_show_trajectory 1 0";
+                                        else if(str_comp(row.pName, "ESP") == 0) pCmd = "toggle kx_esp 1 0";
+                                        else if(str_comp(row.pName, "Basic Avoid Freeze") == 0) pCmd = "toggle kx_basic_avoid_freeze 1 0";
+                                        else if(str_comp(row.pName, "Block") == 0) pCmd = "toggle kx_attack 1 0";
+                                        if(pCmd)
+                                        {
+                                                char aKey[64];
+                                                GameClient()->m_Binds.GetKey(pCmd, aKey, sizeof(aKey));
+                                                if(aKey[0])
+                                                        str_copy(row.m_aInputBuf, aKey, sizeof(row.m_aInputBuf));
+                                                else
+                                                        str_copy(row.m_aInputBuf, "", sizeof(row.m_aInputBuf));
+                                                row.m_InputInitialized = true;
+                                        }
+                                }
+                        }
                         // v1.56.112: Line rendering dedicated sync (per-component).
                         // Reads g_Config.m_KxLineComponent every frame so changing
                         // the Component dropdown updates color/size/opacity immediately.
@@ -3971,6 +3975,8 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
                 else if(str_comp(pRow->pName, "Copy Moves Filter") == 0) pCmd = "toggle kx_dummy_copy_moves_filter 1 0";
                 else if(str_comp(pRow->pName, "Copy Moves Latency") == 0) pCmd = "toggle kx_copy_moves_latency_enabled 1 0";
                 else if(str_comp(pRow->pName, "Trajectory") == 0) pCmd = "toggle kx_show_trajectory 1 0";
+                else if(str_comp(pRow->pName, "ESP") == 0) pCmd = "toggle kx_esp 1 0";
+                else if(str_comp(pRow->pName, "Basic Avoid Freeze") == 0) pCmd = "toggle kx_basic_avoid_freeze 1 0";
                 else if(str_comp(pRow->pName, "Block") == 0) pCmd = "toggle kx_attack 1 0";
                 if(pCmd)
                 {
