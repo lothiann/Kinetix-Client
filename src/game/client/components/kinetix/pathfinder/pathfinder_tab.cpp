@@ -138,9 +138,11 @@ void CBotNet::PfResetRun()
 // other ticks, aim is left untouched so Fake Aim can coexist with PfGo.
 bool CBotNet::ApplyPfGoInput(CNetObj_PlayerInput *pInput)
 {
+        // Reset before early return — otherwise stopping PfGo leaves the flag
+        // true and permanently blocks Fake Aim generation.
+        m_PfGoAimedThisTick = false;
         if(!m_PfGoActive || !pInput)
                 return false;
-        m_PfGoAimedThisTick = false;
         if(m_PfGoIdx >= m_PfFullInputs.size())
         {
                 // Playback finished.
