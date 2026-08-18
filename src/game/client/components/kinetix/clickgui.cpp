@@ -805,27 +805,55 @@ static float RowHeight(ERowType t)
 
 vec2 CClickGui::SlotHomePos(int slot) const
 {
-        // v1.56.175: slots 0..4 are a horizontal row spaced 330px apart.
-        // v1.56.176: slot 5 (Info) is stacked BELOW slot 4 (Binds) with FLOW_GAP,
-        //   reading the current rendered height of whatever panel occupies slot 4
-        //   so it follows expand/collapse of the panel above it (flow layout).
-        switch(slot)
+        // v1.56.203: dynamic aspect-ratio adaptation.
+        // Panels are placed left-to-right in a horizontal row. When a panel's
+        // right edge (x + PANEL_WIDTH) would exceed the screen width, it wraps
+        // to the next row below the tallest panel in the current row.
+        // Slot 5 (Info) always stacks below slot 4 (flow layout).
+        const float screenW = (float)Graphics()->ScreenWidth();
+        const float startX = 60.0f;
+        const float startY = 90.0f;
+        const float spacingX = 30.0f; // gap between panels horizontally
+        const float spacingY = FLOW_GAP; // gap between rows vertically
+
+        // Compute positions for slots 0..4 with row wrapping.
+        // We track the current X cursor and the max bottom of the current row.
+        float curX = startX;
+        float curY = startY;
+        float rowBottom = startY; // max (panel.y + panel.height) in current row
+
+        for(int s = 0; s <= slot && s < 5; ++s)
         {
-        case 0: return vec2(60.0f, 90.0f);
-        case 1: return vec2(390.0f, 90.0f);
-        case 2: return vec2(720.0f, 90.0f);
-        case 3: return vec2(1050.0f, 90.0f);
-        case 4: return vec2(1380.0f, 90.0f);
-        case 5:
+                // Would this panel exceed screen width?
+                if(s > 0 && curX + PANEL_WIDTH > screenW - 10.0f)
+                {
+                        // Wrap to next row.
+                        curX = startX;
+                        curY = rowBottom + spacingY;
+                        rowBottom = curY; // reset for new row
+                }
+
+                if(s == slot)
+                        return vec2(curX, curY);
+
+                // Advance cursor for next slot.
+                const int panelIdx = m_aPanelOrder[s];
+                const float panelH = m_aPanelCurrentHeight[panelIdx];
+                if(curY + panelH > rowBottom)
+                        rowBottom = curY + panelH;
+                curX += PANEL_WIDTH + spacingX;
+        }
+
+        // Slot 5 (Info): stack below slot 4.
+        if(slot == 5)
         {
-                // Stack under slot 4: X = slot 4's X, Y = slot 4's Y + slot 4 panel height + gap.
                 const vec2 above = SlotHomePos(4);
                 const int abovePanel = m_aPanelOrder[4];
                 const float aboveH = m_aPanelCurrentHeight[abovePanel];
                 return vec2(above.x, above.y + aboveH + FLOW_GAP);
         }
-        default: return vec2(60.0f, 90.0f);
-        }
+
+        return vec2(startX, startY);
 }
 
 vec2 CClickGui::PanelHomePos(int panelIdx) const
