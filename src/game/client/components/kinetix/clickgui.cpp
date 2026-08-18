@@ -377,8 +377,10 @@ static SRow g_LineRenderingChildren[] = {
         {ERowType::Slider, "Layer", nullptr, false, false, 0.0f, 10.0f, 1.0f, 0.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 static SRow g_SettingsRows[] = {
-        {ERowType::Input, "ClickGUI Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "9d4edd", "hex...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Main Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "9d4edd", "hex...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Expandable, "Rainbow color", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowChildren, 1},
+        {ERowType::Input, "Panel Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "161622", "hex...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "BG blackout", nullptr, false, false, 0.0f, 100.0f, 1.0f, 30.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Expandable, "Line rendering", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LineRenderingChildren, 5},
         {ERowType::Expandable, "IRC", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_IrcChildren, 2},
         {ERowType::Expandable, "Spoofer", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_SpooferChildren, 7},
@@ -725,7 +727,9 @@ static bool TrajectoryChildVisible(const SRow *pChildren, int childCount, int id
 // decodes as 0xAARRGGBB (alpha in high byte), NOT 0xRRGGBBAA. Previous versions
 // had R and B swapped and alpha in wrong position — header looked blue/cyan
 // instead of purple. Now all colors use correct 0xAARRGGBB format.
-static constexpr unsigned COL_PANEL_BG = 0xff161622;
+// COL_PANEL_BG is now replaced by m_PanelBgRGBA (configurable per-instance).
+// Kept as fallback constant for any static references.
+static constexpr unsigned COL_PANEL_BG_DEFAULT = 0xff161622;
 static constexpr unsigned COL_PANEL_BORDER = 0xff2a2a3e;
 static constexpr unsigned COL_HEADER_BG = 0xff9d4edd; // vivid purple (A=ff,R=9d,G=4e,B=dd)
 static constexpr unsigned COL_HEADER_TEXT = 0xffffffff;
@@ -1928,13 +1932,13 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
                         }
                 }
         }
-        // v1.56.77: sync ClickGUI Color input + Rainbow state from m_AccentColorRGBA.
+        // v1.56.199: sync Main Color, Panel Color, BG blackout, Rainbow state.
         for(int p = 0; p < NUM_PANELS; ++p)
         {
                 for(int r = 0; r < g_Panels[p].rowCount; ++r)
                 {
                         SRow &row = g_Panels[p].pRows[r];
-                        if(str_comp(row.pName, "ClickGUI Color") == 0 && row.type == ERowType::Input)
+                        if(str_comp(row.pName, "Main Color") == 0 && row.type == ERowType::Input)
                         {
                                 if(!m_InputEditing || m_InputPanel != p || m_InputRow != r)
                                 {
@@ -1957,6 +1961,20 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
                                                 child.value = m_RainbowSpeed;
                                 }
                         }
+                        // v1.56.199: sync Panel Color input from m_PanelBgRGBA.
+                        else if(str_comp(row.pName, "Panel Color") == 0 && row.type == ERowType::Input)
+                        {
+                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r)
+                                {
+                                        char hex[8];
+                                        str_format(hex, sizeof(hex), "%06x", m_PanelBgRGBA & 0xffffff);
+                                        str_copy(row.m_aInputBuf, hex, sizeof(row.m_aInputBuf));
+                                        row.m_InputInitialized = true;
+                                }
+                        }
+                        // v1.56.199: sync BG blackout slider from m_BgBlackout.
+                        else if(str_comp(row.pName, "BG blackout") == 0 && row.type == ERowType::Slider)
+                                row.value = (float)m_BgBlackout;
                         // v1.56.112: Line rendering dedicated sync (per-component).
                         // Reads g_Config.m_KxLineComponent every frame so changing
                         // the Component dropdown updates color/size/opacity immediately.
@@ -2138,6 +2156,8 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
                         }
                         if(str_comp(pTarget->pName, "Latency (ms)") == 0 && str_comp(row.pName, "Custom latency") == 0)
                                 g_Config.m_KxDummyHammerLatencyMs = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "BG blackout") == 0)
+                                m_BgBlackout = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Latency (ms)") == 0 && str_comp(row.pName, "Copy Moves Latency") == 0)
                                 g_Config.m_KxCopyMovesLatency = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Max Distance") == 0 && str_comp(row.pName, "Auto fly") == 0)
@@ -2308,7 +2328,7 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         {
                 Graphics()->BlendNormal();
                 Graphics()->DrawRect(0.0f, 0.0f, screenW, screenH,
-                        ColorRGBA(0.0f, 0.0f, 0.0f, BG_DIM_ALPHA * eased),
+                        ColorRGBA(0.0f, 0.0f, 0.0f, (m_BgBlackout / 100.0f) * eased),
                         IGraphics::CORNER_NONE, 0.0f);
         }
 
@@ -3850,8 +3870,8 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
         if(!pRow)
                 return;
 
-        // ClickGUI Color (hex, e.g. "ff8800").
-        if(str_comp(pRow->pName, "ClickGUI Color") == 0)
+        // Main Color (hex, e.g. "ff8800"). Was "ClickGUI Color" before v1.56.199.
+        if(str_comp(pRow->pName, "Main Color") == 0)
         {
                 unsigned hex = 0;
                 if(sscanf(pRow->m_aInputBuf, "%6x", &hex) == 1)
@@ -3860,6 +3880,13 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
                         m_RainbowEnabled = false; // manual color disables rainbow
                         m_SavedAccentColorRGBA = m_AccentColorRGBA;
                 }
+        }
+        // Panel Color (hex, e.g. "161622").
+        else if(str_comp(pRow->pName, "Panel Color") == 0)
+        {
+                unsigned hex = 0;
+                if(sscanf(pRow->m_aInputBuf, "%6x", &hex) == 1)
+                        m_PanelBgRGBA = 0xff000000u | (hex & 0xffffff);
         }
         // Line color (per-component via m_KxLineComponent).
         else if(str_comp(pRow->pName, "Line color") == 0)
@@ -4227,7 +4254,7 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         // Panel background.
         DrawRoundedRect(px, py, PANEL_WIDTH, panelH,
                 5.0f, IGraphics::CORNER_ALL,
-                ColorRGBA(COL_PANEL_BG, true).WithAlpha(alpha));
+                ColorRGBA(m_PanelBgRGBA, true).WithAlpha(alpha));
 
         // ---- Step 3: header ----
         // Header is the top HEADER_HEIGHT px; rounded only on top corners so it

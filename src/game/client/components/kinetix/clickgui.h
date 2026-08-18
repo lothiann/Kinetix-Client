@@ -64,6 +64,14 @@ private:
         // rainbow is disabled so the manual HEX color comes back.
         unsigned m_SavedAccentColorRGBA = 0xff9d4edd;
 
+        // v1.56.199: configurable panel background color (replaces hardcoded COL_PANEL_BG).
+        // Packed 0xAARRGGBB. Default = dark navy 0xff161622.
+        unsigned m_PanelBgRGBA = 0xff161622;
+        // v1.56.199: configurable background blackout percentage (0-100).
+        // Replaces hardcoded BG_DIM_ALPHA. Stored as integer percent; divided by 100
+        // at render time. Default = 30 (30%).
+        int m_BgBlackout = 30;
+
         // Per-panel offscreen target (randomized each time ClickGUI closes).
         vec2 m_aOffscreenPos[NUM_PANELS] = {};
         bool m_aOffscreenValid[NUM_PANELS] = {};
@@ -199,8 +207,8 @@ private:
         float m_aPanelScroll[NUM_PANELS] = {};
         float m_aPanelScrollStored[NUM_PANELS] = {};
 
-        // Background dimming: black overlay at this alpha when fully open.
-        static constexpr float BG_DIM_ALPHA = 0.30f;
+        // Background dimming: computed from m_BgBlackout (0-100) / 100.0f.
+        // Was hardcoded BG_DIM_ALPHA = 0.30f before v1.56.199.
 
         // Per-panel fixed "home" position (top-left corner, screen-space px).
         // v1.56.175: now non-static — returns the home position of the SLOT the
