@@ -346,13 +346,9 @@ static inline void PfSimulateChunk(CGameWorld *pWorld, int PredictedCharId, CCha
         out.endJumpedTotal = pBot->GetCore().m_JumpedTotal;
 }
 
-// =========================================================
 // v1.56.108: Per-component line rendering settings.
 // Component indices: 0=AimBot 1=TriggerBot 2=Trajectory
 //                   3=LaserUnfreeze 4=Pathfinder 5=ESP
-// Layer (KxLineRenderingLayer) stays global — the deferred
-// overlay queue (CKinetixLines) is shared infrastructure.
-// =========================================================
 enum EKxLineComponent
 {
         KX_LINE_AIMBOT = 0,
@@ -363,6 +359,42 @@ enum EKxLineComponent
         KX_LINE_ESP = 5,
         KX_LINE_COUNT = 6,
 };
+
+// =========================================================
+// v1.56.201: Per-component line rendering rainbow hue state.
+// Updated each frame from CKinetixLines::OnRender. Read by KxLineColor().
+extern float g_aLineRainbowHue[KX_LINE_COUNT];
+
+// Update rainbow hues for all components. Call once per frame with delta time.
+inline void KxLineUpdateRainbow(float dt)
+{
+        for(int i = 0; i < KX_LINE_COUNT; i++)
+        {
+                int speed = 60;
+                bool enabled = false;
+                EKxLineComponent c = (EKxLineComponent)i;
+                switch(c)
+                {
+                case KX_LINE_AIMBOT: enabled = g_Config.m_KxLineAimBotRainbow != 0; speed = g_Config.m_KxLineAimBotRainbowSpeed; break;
+                case KX_LINE_TRIGGERBOT: enabled = g_Config.m_KxLineTriggerBotRainbow != 0; speed = g_Config.m_KxLineTriggerBotRainbowSpeed; break;
+                case KX_LINE_TRAJECTORY: enabled = g_Config.m_KxLineTrajectoryRainbow != 0; speed = g_Config.m_KxLineTrajectoryRainbowSpeed; break;
+                case KX_LINE_LASER_UNFREEZE: enabled = g_Config.m_KxLineLaserUnfreezeRainbow != 0; speed = g_Config.m_KxLineLaserUnfreezeRainbowSpeed; break;
+                case KX_LINE_PATHFINDER: enabled = g_Config.m_KxLinePathfinderRainbow != 0; speed = g_Config.m_KxLinePathfinderRainbowSpeed; break;
+                case KX_LINE_ESP: enabled = g_Config.m_KxLineEspRainbow != 0; speed = g_Config.m_KxLineEspRainbowSpeed; break;
+                }
+                if(enabled)
+                {
+                        g_aLineRainbowHue[i] += dt * (float)speed;
+                        if(g_aLineRainbowHue[i] >= 360.0f)
+                                g_aLineRainbowHue[i] -= 360.0f;
+                }
+        }
+}
+
+// v1.56.108: Per-component line rendering settings.
+// Layer (KxLineRenderingLayer) stays global — the deferred
+// overlay queue (CKinetixLines) is shared infrastructure.
+// =========================================================
 
 // Read per-component line rendering settings from g_Config.
 // Returns the 3 visual fields (size, color, alpha). Caller
@@ -383,6 +415,35 @@ inline int KxLineSize(EKxLineComponent c)
 
 inline unsigned KxLineColor(EKxLineComponent c)
 {
+        // v1.56.201: per-component rainbow mode — if enabled, return HSV-rotated color.
+        bool rainbow = false;
+        int speed = 60;
+        switch(c)
+        {
+        case KX_LINE_AIMBOT: rainbow = g_Config.m_KxLineAimBotRainbow != 0; speed = g_Config.m_KxLineAimBotRainbowSpeed; break;
+        case KX_LINE_TRIGGERBOT: rainbow = g_Config.m_KxLineTriggerBotRainbow != 0; speed = g_Config.m_KxLineTriggerBotRainbowSpeed; break;
+        case KX_LINE_TRAJECTORY: rainbow = g_Config.m_KxLineTrajectoryRainbow != 0; speed = g_Config.m_KxLineTrajectoryRainbowSpeed; break;
+        case KX_LINE_LASER_UNFREEZE: rainbow = g_Config.m_KxLineLaserUnfreezeRainbow != 0; speed = g_Config.m_KxLineLaserUnfreezeRainbowSpeed; break;
+        case KX_LINE_PATHFINDER: rainbow = g_Config.m_KxLinePathfinderRainbow != 0; speed = g_Config.m_KxLinePathfinderRainbowSpeed; break;
+        case KX_LINE_ESP: rainbow = g_Config.m_KxLineEspRainbow != 0; speed = g_Config.m_KxLineEspRainbowSpeed; break;
+        }
+        if(rainbow)
+        {
+                // Convert current hue (0..360) to RGB via HSV with S=1, V=1.
+                float h = g_aLineRainbowHue[c] / 60.0f;
+                float x = 1.0f - std::abs(std::fmod(h, 2.0f) - 1.0f);
+                float r = 0.0f, g = 0.0f, b = 0.0f;
+                if(h < 1.0f) { r = 1.0f; g = x; }
+                else if(h < 2.0f) { r = x; g = 1.0f; }
+                else if(h < 3.0f) { g = 1.0f; b = x; }
+                else if(h < 4.0f) { g = x; b = 1.0f; }
+                else if(h < 5.0f) { r = x; b = 1.0f; }
+                else { r = 1.0f; b = x; }
+                unsigned ur = (unsigned)(r * 255.0f);
+                unsigned ug = (unsigned)(g * 255.0f);
+                unsigned ub = (unsigned)(b * 255.0f);
+                return 0xff000000u | (ur << 16) | (ug << 8) | ub;
+        }
         switch(c)
         {
         case KX_LINE_AIMBOT: return g_Config.m_KxLineAimBotColor;
