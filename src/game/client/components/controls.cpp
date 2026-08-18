@@ -707,6 +707,8 @@ int CControls::SnapInput(int *pData)
                 {
                         if(laserAimActive)
                                 s_RobotAim = m_LaserUnfreezeAimOffset;
+                        else if(GameClient()->m_BotNet.m_PfGoAimedThisTick)
+                                s_RobotAim = GameClient()->m_BotNet.m_PfGoAimOffset;
                         else
                                 s_RobotAim = realAim;
                 }

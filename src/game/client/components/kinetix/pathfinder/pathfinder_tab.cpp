@@ -155,10 +155,12 @@ bool CBotNet::ApplyPfGoInput(CNetObj_PlayerInput *pInput)
         pInput->m_Hook = In.m_Hook;
         // v1.56.204: Only apply aim on hook rising edge (new hook), like Fake Aim's hookPress.
         // This prevents PfGo from overwriting aim every tick, allowing Fake Aim to work.
+        // v1.56.207: Store aim offset so Robot Aim can remember the PfGo target.
         if(In.m_Hook != 0 && m_PfGoPrevHook == 0)
         {
                 pInput->m_TargetX = In.m_TargetX;
                 pInput->m_TargetY = In.m_TargetY;
+                m_PfGoAimOffset = vec2((float)In.m_TargetX, (float)In.m_TargetY);
                 m_PfGoAimedThisTick = true;
         }
         m_PfGoPrevHook = In.m_Hook;

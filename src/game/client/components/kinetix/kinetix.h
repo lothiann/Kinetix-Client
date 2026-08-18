@@ -384,8 +384,10 @@ public:
         size_t m_PfGoIdx = 0;
         // v1.56.204: PfGo aim tracking for Fake Aim coexistence.
         // m_PfGoAimedThisTick: set true when ApplyPfGoInput applied aim this tick.
+        // m_PfGoAimOffset: the aim position PfGo applied (for Robot Aim to remember).
         // m_PfGoPrevHook: previous tick's hook state, for rising-edge detection.
         bool m_PfGoAimedThisTick = false;
+        vec2 m_PfGoAimOffset = vec2(0, 0);
         int m_PfGoPrevHook = 0;
 
         // Per-dummy runtime state

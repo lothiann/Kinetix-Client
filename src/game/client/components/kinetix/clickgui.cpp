@@ -824,44 +824,16 @@ static float RowHeight(ERowType t)
 
 vec2 CClickGui::SlotHomePos(int slot) const
 {
-        // v1.56.203: dynamic aspect-ratio adaptation.
-        // Panels are placed left-to-right in a horizontal row. When a panel's
-        // right edge (x + PANEL_WIDTH) would exceed the screen width, it wraps
-        // to the next row below the tallest panel in the current row.
-        // Slot 5 (Info) always stacks below slot 4 (flow layout).
+        // v1.56.207: dynamic aspect-ratio adaptation.
+        // Panels are placed left-to-right in the first row. Overflow panels
+        // wrap below the column with the least total height (not always the
+        // first column), accounting for panels already stacked below.
+        // Slot 5 (Info) always stacks below slot 4.
         const float screenW = (float)Graphics()->ScreenWidth();
         const float startX = 60.0f;
         const float startY = 90.0f;
         const float spacingX = 30.0f; // gap between panels horizontally
         const float spacingY = FLOW_GAP; // gap between rows vertically
-
-        // Compute positions for slots 0..4 with row wrapping.
-        // We track the current X cursor and the max bottom of the current row.
-        float curX = startX;
-        float curY = startY;
-        float rowBottom = startY; // max (panel.y + panel.height) in current row
-
-        for(int s = 0; s <= slot && s < 5; ++s)
-        {
-                // Would this panel exceed screen width?
-                if(s > 0 && curX + PANEL_WIDTH > screenW - 10.0f)
-                {
-                        // Wrap to next row.
-                        curX = startX;
-                        curY = rowBottom + spacingY;
-                        rowBottom = curY; // reset for new row
-                }
-
-                if(s == slot)
-                        return vec2(curX, curY);
-
-                // Advance cursor for next slot.
-                const int panelIdx = m_aPanelOrder[s];
-                const float panelH = m_aPanelCurrentHeight[panelIdx];
-                if(curY + panelH > rowBottom)
-                        rowBottom = curY + panelH;
-                curX += PANEL_WIDTH + spacingX;
-        }
 
         // Slot 5 (Info): stack below slot 4.
         if(slot == 5)
@@ -870,6 +842,56 @@ vec2 CClickGui::SlotHomePos(int slot) const
                 const int abovePanel = m_aPanelOrder[4];
                 const float aboveH = m_aPanelCurrentHeight[abovePanel];
                 return vec2(above.x, above.y + aboveH + FLOW_GAP);
+        }
+
+        // Phase 1: determine which slots fit in the first row.
+        int firstRowCount = 0;
+        {
+                float x = startX;
+                for(int s = 0; s < 5; ++s)
+                {
+                        if(s > 0 && x + PANEL_WIDTH > screenW - 10.0f)
+                                break;
+                        firstRowCount++;
+                        x += PANEL_WIDTH + spacingX;
+                }
+        }
+
+        // First-row slots: simple left-to-right layout.
+        if(slot < firstRowCount)
+        {
+                float x = startX + slot * (PANEL_WIDTH + spacingX);
+                return vec2(x, startY);
+        }
+
+        // Phase 2: overflow slots (firstRowCount..4) stack below the
+        // column with the least bottom, accounting for already-stacked panels.
+        // Track per-column X position and bottom (y + cumulative heights).
+        float colX[5];
+        float colBottom[5];
+        for(int c = 0; c < firstRowCount; ++c)
+        {
+                colX[c] = startX + c * (PANEL_WIDTH + spacingX);
+                const int panelIdx = m_aPanelOrder[c];
+                colBottom[c] = startY + m_aPanelCurrentHeight[panelIdx];
+        }
+
+        for(int s = firstRowCount; s <= slot && s < 5; ++s)
+        {
+                // Find column with the least bottom.
+                int bestCol = 0;
+                for(int c = 1; c < firstRowCount; ++c)
+                {
+                        if(colBottom[c] < colBottom[bestCol])
+                                bestCol = c;
+                }
+
+                if(s == slot)
+                        return vec2(colX[bestCol], colBottom[bestCol] + spacingY);
+
+                // Update column bottom for the next overflow slot.
+                const int panelIdx = m_aPanelOrder[s];
+                colBottom[bestCol] += spacingY + m_aPanelCurrentHeight[panelIdx];
         }
 
         return vec2(startX, startY);
