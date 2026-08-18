@@ -375,7 +375,7 @@ static SRow g_LineRenderingChildren[] = {
         {ERowType::Slider, "Line size", nullptr, false, false, 0.0f, 20.0f, 1.0f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Line opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 80.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Rainbow", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Rainbow Speed", nullptr, false, false, 1.0f, 3600.0f, 1.0f, 60.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Layer", nullptr, false, false, 0.0f, 10.0f, 1.0f, 0.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 static SRow g_SettingsRows[] = {
@@ -673,6 +673,25 @@ static bool SpooferChildVisible(const SRow *pChildren, int childCount, int idx)
                         }
                 }
                 return presetIdx == 2;
+        }
+        return true;
+}
+// v1.56.204: Line rendering — "Speed" slider visible only when "Rainbow" toggle is on
+// for the currently selected component.
+static bool LineRenderingChildVisible(const SRow *pChildren, int childCount, int idx)
+{
+        if(idx < 0 || idx >= childCount)
+                return false;
+        const SRow &row = pChildren[idx];
+        if(str_comp(row.pName, "Speed") == 0)
+        {
+                // Check the Rainbow toggle's on state for the selected component.
+                for(int i = 0; i < childCount; ++i)
+                {
+                        if(str_comp(pChildren[i].pName, "Rainbow") == 0)
+                                return pChildren[i].on;
+                }
+                return false;
         }
         return true;
 }
@@ -1277,6 +1296,8 @@ if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, ro
 if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
         continue;
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
+        continue;
+if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c))
         continue;
                                         if(str_comp(child.pName, "Latency (ms)") == 0 && str_comp(row.pName, "Custom latency") == 0)
                                                 child.value = (float)g_Config.m_KxDummyHammerLatencyMs;
@@ -2051,16 +2072,16 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
                                                 case KX_LINE_ESP: child.on = g_Config.m_KxLineEspRainbow != 0; break;
                                                 }
                                         }
-                                        else if(str_comp(child.pName, "Rainbow Speed") == 0)
+                                        else if(str_comp(child.pName, "Speed") == 0)
                                         {
                                                 switch(comp)
                                                 {
-                                                case KX_LINE_AIMBOT: child.value = (float)g_Config.m_KxLineAimBotRainbowSpeed; break;
-                                                case KX_LINE_TRIGGERBOT: child.value = (float)g_Config.m_KxLineTriggerBotRainbowSpeed; break;
-                                                case KX_LINE_TRAJECTORY: child.value = (float)g_Config.m_KxLineTrajectoryRainbowSpeed; break;
-                                                case KX_LINE_LASER_UNFREEZE: child.value = (float)g_Config.m_KxLineLaserUnfreezeRainbowSpeed; break;
-                                                case KX_LINE_PATHFINDER: child.value = (float)g_Config.m_KxLinePathfinderRainbowSpeed; break;
-                                                case KX_LINE_ESP: child.value = (float)g_Config.m_KxLineEspRainbowSpeed; break;
+                                                case KX_LINE_AIMBOT: child.value = (float)g_Config.m_KxLineAimBotRainbowSpeed / 10.0f; break;
+                                                case KX_LINE_TRIGGERBOT: child.value = (float)g_Config.m_KxLineTriggerBotRainbowSpeed / 10.0f; break;
+                                                case KX_LINE_TRAJECTORY: child.value = (float)g_Config.m_KxLineTrajectoryRainbowSpeed / 10.0f; break;
+                                                case KX_LINE_LASER_UNFREEZE: child.value = (float)g_Config.m_KxLineLaserUnfreezeRainbowSpeed / 10.0f; break;
+                                                case KX_LINE_PATHFINDER: child.value = (float)g_Config.m_KxLinePathfinderRainbowSpeed / 10.0f; break;
+                                                case KX_LINE_ESP: child.value = (float)g_Config.m_KxLineEspRainbowSpeed / 10.0f; break;
                                                 }
                                         }
                                         else if(str_comp(child.pName, "Layer") == 0)
@@ -2217,19 +2238,20 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
                                 g_Config.m_KxDummyHammerLatencyMs = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "BG blackout") == 0)
                                 m_BgBlackout = (int)pTarget->value;
-                        // v1.56.201: Line rendering per-component Rainbow Speed slider
-                        else if(str_comp(pTarget->pName, "Rainbow Speed") == 0)
+                        // v1.56.204: Line rendering per-component Speed slider (display = config/10)
+                        else if(str_comp(pTarget->pName, "Speed") == 0 && str_comp(row.pName, "Line rendering") == 0)
                         {
                                 int compIdx = g_Config.m_KxLineComponent;
                                 EKxLineComponent comp = (EKxLineComponent)compIdx;
+                                int rawVal = (int)(pTarget->value * 10.0f + 0.5f);
                                 switch(comp)
                                 {
-                                case KX_LINE_AIMBOT: g_Config.m_KxLineAimBotRainbowSpeed = (int)pTarget->value; break;
-                                case KX_LINE_TRIGGERBOT: g_Config.m_KxLineTriggerBotRainbowSpeed = (int)pTarget->value; break;
-                                case KX_LINE_TRAJECTORY: g_Config.m_KxLineTrajectoryRainbowSpeed = (int)pTarget->value; break;
-                                case KX_LINE_LASER_UNFREEZE: g_Config.m_KxLineLaserUnfreezeRainbowSpeed = (int)pTarget->value; break;
-                                case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderRainbowSpeed = (int)pTarget->value; break;
-                                case KX_LINE_ESP: g_Config.m_KxLineEspRainbowSpeed = (int)pTarget->value; break;
+                                case KX_LINE_AIMBOT: g_Config.m_KxLineAimBotRainbowSpeed = rawVal; break;
+                                case KX_LINE_TRIGGERBOT: g_Config.m_KxLineTriggerBotRainbowSpeed = rawVal; break;
+                                case KX_LINE_TRAJECTORY: g_Config.m_KxLineTrajectoryRainbowSpeed = rawVal; break;
+                                case KX_LINE_LASER_UNFREEZE: g_Config.m_KxLineLaserUnfreezeRainbowSpeed = rawVal; break;
+                                case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderRainbowSpeed = rawVal; break;
+                                case KX_LINE_ESP: g_Config.m_KxLineEspRainbowSpeed = rawVal; break;
                                 }
                         }
                         else if(str_comp(pTarget->pName, "Latency (ms)") == 0 && str_comp(row.pName, "Copy Moves Latency") == 0)
@@ -3451,6 +3473,8 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
         continue;
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
         continue;
+if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c))
+        continue;
                                 const float crh = RowHeight(child.type);
                                 if(r == m_DropdownRow && c == m_DropdownChild)
                                 {
@@ -3666,6 +3690,8 @@ if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, ro
 if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
         continue;
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
+        continue;
+if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c))
         continue;
                                 const float crh = RowHeight(child.type);
                                 if(r == m_DropdownRow && c == m_DropdownChild)
@@ -3926,6 +3952,8 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
         continue;
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
         continue;
+if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c))
+        continue;
                                 const float crh = RowHeight(child.type);
                                 const float crw = rw - SUB_LIST_INDENT;
                                 if(PointInRect(mousePos, bodyX + SUB_LIST_INDENT, cursorY, crw, crh))
@@ -4135,6 +4163,8 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
         continue;
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
         continue;
+if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c))
+        continue;
                                 sig = sig * 31u + (unsigned)(c + 100);
                         }
                 }
@@ -4201,6 +4231,8 @@ if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, ro
 if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
         continue;
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
+        continue;
+if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c))
         continue;
                                                 addRowNode(row.pChildren[c], true);
                                         }
@@ -4272,6 +4304,8 @@ if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, ro
 if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
         continue;
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
+        continue;
+if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c))
         continue;
                                 childrenBlockH += RowHeight(row.pChildren[c].type);
                                 visibleCount++;
@@ -4791,6 +4825,8 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
         continue;
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
         continue;
+if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c))
+        continue;
                                         ++rowIdx;
                                 }
                                 // Update rowYOffset for lower rows (children are hidden).
@@ -4822,6 +4858,8 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
                                 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c)) continue;
                                 if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c)) continue;
                                 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c)) continue;
+                                if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c))
+                                        continue;
                                 const YGNodeRef pn = rowNodes[preIdx];
                                 const float py2 = bodyY + YGNodeLayoutGetTop(pn) + rowYOffset;
                                 const float ph2 = YGNodeLayoutGetHeight(pn);
@@ -4862,6 +4900,8 @@ if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, ro
 if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
         continue;
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
+        continue;
+if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c))
         continue;
                                 const YGNodeRef cnode = rowNodes[rowIdx];
                                 const float crx = bodyX + YGNodeLayoutGetLeft(cnode);

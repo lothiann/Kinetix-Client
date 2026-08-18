@@ -713,10 +713,9 @@ int CControls::SnapInput(int *pData)
         }
 
         // Fake aim generation — skipped when laser unfreeze active (laser has priority)
-        // v1.56.202: also skipped when Pathfinder Go (kx_pf_play) is active, because
-        // PfGo writes full CNetObj_PlayerInput including TargetX/Y for hook aiming
-        // and path replay. Fake Aim overwriting aim after PfGo breaks hook targeting.
-        if(g_Config.m_KxFakeAim && !laserAimActive && !GameClient()->m_BotNet.m_PfGoActive)
+        // v1.56.204: skipped when PfGo applied aim this tick (hook rising edge),
+        // but otherwise Fake Aim can coexist with PfGo playback.
+        if(g_Config.m_KxFakeAim && !laserAimActive && !GameClient()->m_BotNet.m_PfGoAimedThisTick)
         {
                 // Decide: real or fake
                 if(willFire || hookPress)

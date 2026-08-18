@@ -382,9 +382,11 @@ inline void KxLineUpdateRainbow(float dt)
                 case KX_LINE_PATHFINDER: enabled = g_Config.m_KxLinePathfinderRainbow != 0; speed = g_Config.m_KxLinePathfinderRainbowSpeed; break;
                 case KX_LINE_ESP: enabled = g_Config.m_KxLineEspRainbow != 0; speed = g_Config.m_KxLineEspRainbowSpeed; break;
                 }
+                // v1.56.204: speed is stored as display*10 (display range 0.1-10.0).
+                // To match Rainbow Color: hue += dt * displaySpeed * 60 = dt * (speed/10) * 60 = dt * speed * 6.
                 if(enabled)
                 {
-                        g_aLineRainbowHue[i] += dt * (float)speed;
+                        g_aLineRainbowHue[i] += dt * (float)speed * 6.0f;
                         if(g_aLineRainbowHue[i] >= 360.0f)
                                 g_aLineRainbowHue[i] -= 360.0f;
                 }

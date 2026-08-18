@@ -382,6 +382,11 @@ public:
         // m_PfGoIdx advances per tick; stops when reaches end of m_PfFullInputs.
         bool m_PfGoActive = false;
         size_t m_PfGoIdx = 0;
+        // v1.56.204: PfGo aim tracking for Fake Aim coexistence.
+        // m_PfGoAimedThisTick: set true when ApplyPfGoInput applied aim this tick.
+        // m_PfGoPrevHook: previous tick's hook state, for rising-edge detection.
+        bool m_PfGoAimedThisTick = false;
+        int m_PfGoPrevHook = 0;
 
         // Per-dummy runtime state
         CBotNetDummy m_aDummies[MAX_DUMMIES];

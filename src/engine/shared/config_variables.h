@@ -335,17 +335,17 @@ MACRO_CONFIG_INT(KxLineEspAlpha, kx_line_esp_alpha, 80, 0, 100, CFGFLAG_CLIENT |
 // v1.56.201: Per-component line rendering rainbow mode.
 // Each component has its own rainbow toggle and hue rotation speed.
 MACRO_CONFIG_INT(KxLineAimBotRainbow, kx_line_aimbot_rainbow, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "AimBot line rainbow mode")
-MACRO_CONFIG_INT(KxLineAimBotRainbowSpeed, kx_line_aimbot_rainbow_speed, 60, 1, 3600, CFGFLAG_CLIENT | CFGFLAG_SAVE, "AimBot line rainbow speed (hue deg/sec)")
+MACRO_CONFIG_INT(KxLineAimBotRainbowSpeed, kx_line_aimbot_rainbow_speed, 10, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "AimBot line rainbow speed (display = value/10)")
 MACRO_CONFIG_INT(KxLineTriggerBotRainbow, kx_line_triggerbot_rainbow, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "TriggerBot line rainbow mode")
-MACRO_CONFIG_INT(KxLineTriggerBotRainbowSpeed, kx_line_triggerbot_rainbow_speed, 60, 1, 3600, CFGFLAG_CLIENT | CFGFLAG_SAVE, "TriggerBot line rainbow speed (hue deg/sec)")
+MACRO_CONFIG_INT(KxLineTriggerBotRainbowSpeed, kx_line_triggerbot_rainbow_speed, 10, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "TriggerBot line rainbow speed (display = value/10)")
 MACRO_CONFIG_INT(KxLineTrajectoryRainbow, kx_line_trajectory_rainbow, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Trajectory line rainbow mode")
-MACRO_CONFIG_INT(KxLineTrajectoryRainbowSpeed, kx_line_trajectory_rainbow_speed, 60, 1, 3600, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Trajectory line rainbow speed (hue deg/sec)")
+MACRO_CONFIG_INT(KxLineTrajectoryRainbowSpeed, kx_line_trajectory_rainbow_speed, 10, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Trajectory line rainbow speed (display = value/10)")
 MACRO_CONFIG_INT(KxLineLaserUnfreezeRainbow, kx_line_laser_unfreeze_rainbow, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Laser Unfreeze line rainbow mode")
-MACRO_CONFIG_INT(KxLineLaserUnfreezeRainbowSpeed, kx_line_laser_unfreeze_rainbow_speed, 60, 1, 3600, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Laser Unfreeze line rainbow speed (hue deg/sec)")
+MACRO_CONFIG_INT(KxLineLaserUnfreezeRainbowSpeed, kx_line_laser_unfreeze_rainbow_speed, 10, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Laser Unfreeze line rainbow speed (display = value/10)")
 MACRO_CONFIG_INT(KxLinePathfinderRainbow, kx_line_pathfinder_rainbow, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder line rainbow mode")
-MACRO_CONFIG_INT(KxLinePathfinderRainbowSpeed, kx_line_pathfinder_rainbow_speed, 60, 1, 3600, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder line rainbow speed (hue deg/sec)")
+MACRO_CONFIG_INT(KxLinePathfinderRainbowSpeed, kx_line_pathfinder_rainbow_speed, 10, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder line rainbow speed (display = value/10)")
 MACRO_CONFIG_INT(KxLineEspRainbow, kx_line_esp_rainbow, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ESP line rainbow mode")
-MACRO_CONFIG_INT(KxLineEspRainbowSpeed, kx_line_esp_rainbow_speed, 60, 1, 3600, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ESP line rainbow speed (hue deg/sec)")
+MACRO_CONFIG_INT(KxLineEspRainbowSpeed, kx_line_esp_rainbow_speed, 10, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ESP line rainbow speed (display = value/10)")
 
 // Laser unfreeze — predictive laser self-unfreeze
 MACRO_CONFIG_INT(KxLaserUnfreeze, kx_laser_unfreeze, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Laser unfreeze: predict freeze and auto-fire laser to unfreeze self")

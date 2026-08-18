@@ -133,10 +133,14 @@ void CBotNet::PfResetRun()
 // kx_pf_play: apply next path tick to real player input.
 // Called from CControls::SnapInput each tick when m_PfGoActive is true.
 // Advances m_PfGoIdx; auto-stops when end of m_PfFullInputs reached.
+// v1.56.204: Aim (TargetX/Y) is only applied on the rising edge of m_Hook
+// (new hook press), matching Fake Aim's fire/hookPress condition. On all
+// other ticks, aim is left untouched so Fake Aim can coexist with PfGo.
 bool CBotNet::ApplyPfGoInput(CNetObj_PlayerInput *pInput)
 {
         if(!m_PfGoActive || !pInput)
                 return false;
+        m_PfGoAimedThisTick = false;
         if(m_PfGoIdx >= m_PfFullInputs.size())
         {
                 // Playback finished.
@@ -145,12 +149,19 @@ bool CBotNet::ApplyPfGoInput(CNetObj_PlayerInput *pInput)
                 return false;
         }
         const CNetObj_PlayerInput &In = m_PfFullInputs[m_PfGoIdx];
-        // Apply direction, jump, hook, aim — full input except fire/weapon (let player keep their own).
+        // Apply direction, jump, hook — full input except fire/weapon (let player keep their own).
         pInput->m_Direction = In.m_Direction;
         pInput->m_Jump = In.m_Jump;
         pInput->m_Hook = In.m_Hook;
-        pInput->m_TargetX = In.m_TargetX;
-        pInput->m_TargetY = In.m_TargetY;
+        // v1.56.204: Only apply aim on hook rising edge (new hook), like Fake Aim's hookPress.
+        // This prevents PfGo from overwriting aim every tick, allowing Fake Aim to work.
+        if(In.m_Hook != 0 && m_PfGoPrevHook == 0)
+        {
+                pInput->m_TargetX = In.m_TargetX;
+                pInput->m_TargetY = In.m_TargetY;
+                m_PfGoAimedThisTick = true;
+        }
+        m_PfGoPrevHook = In.m_Hook;
         m_PfGoIdx++;
         return true;
 }
