@@ -138,24 +138,42 @@ void CBasicAvoidFreeze::ApplyOverride()
         if(simTicks < 1) simTicks = 1;
         if(simTicks > 20) simTicks = 20;
 
-        // Danger check WITHOUT hook (m_Hook=0). This is the "natural" danger state —
+        // Check danger WITH the current input (including the user's hook state).
+        // This detects when the hook itself is pulling the player into freeze.
+        int dangerWithCurrent = SimulateDangerTick(LocalId, Current, simTicks);
+
+        // Check danger WITHOUT hook (m_Hook=0). This is the "natural" danger state —
         // if the player isn't holding hook, are they in danger? This prevents BAF
         // from staying inactive when the player holds hook that masks the danger
         // (hook keeps them safe temporarily, but danger is still there without it).
         CNetObj_PlayerInput NoHook = Current;
         NoHook.m_Hook = 0;
-        int currentDanger = SimulateDangerTick(LocalId, NoHook, simTicks);
-        if(currentDanger == 0)
+        int dangerWithoutHook = SimulateDangerTick(LocalId, NoHook, simTicks);
+
+        // No danger at all (with or without hook) — safe. Release any BAF override.
+        if(dangerWithCurrent == 0 && dangerWithoutHook == 0)
         {
-                // No danger without hook. If BAF overrode last tick with hook=1,
-                // release the hook now so the player's own hook state takes over.
-                if(m_WasOverriding && m_OverrideHook != 0)
+                if(m_WasOverriding)
                 {
-                        pInput->m_Hook = 0;
+                        if(m_OverrideHook != 0)
+                                pInput->m_Hook = 0; // Retract BAF's forced hook=1
                         m_WasOverriding = false;
                 }
-                return; // no danger at all — nothing to avoid
+                return;
         }
+
+        // Danger WITH hook, but safe WITHOUT hook — the user's hook IS the problem.
+        // Release the hook so the player doesn't get dragged into freeze.
+        if(dangerWithCurrent > 0 && dangerWithoutHook == 0)
+        {
+                pInput->m_Hook = 0;
+                m_WasOverriding = true;
+                m_OverrideHook = 0;
+                return;
+        }
+
+        // Danger exists even without hook — use brute-force to find alternative.
+        int currentDanger = dangerWithoutHook;
 
         // Build combo lists.
         bool allowDir = g_Config.m_KxBafDirection != 0;
