@@ -31,8 +31,10 @@ void CKinetixLines::OnReset()
 
 void CKinetixLines::OnRender()
 {
-        // v1.56.201: update per-component rainbow hue each frame.
-        KxLineUpdateRainbow(Client()->GlobalTime() > 0.0f ? 1.0f / 60.0f : 0.016f);
+        // v1.56.204: update per-component rainbow hue each frame.
+        // Use RenderFrameTime() for framerate-independent rotation (same as Rainbow Color in clickgui.cpp).
+        // The old fixed 1/60 dt caused speed to scale with FPS (100x too fast at 6000fps).
+        KxLineUpdateRainbow(Client()->RenderFrameTime());
 
         if(g_DeferredLines.empty())
                 return;
