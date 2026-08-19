@@ -62,7 +62,7 @@ enum class ERowType
 
 // v1.56.176: Kinetix client version string (shown in Info panel).
 // Bumped manually per release. Matches the commit-message version scheme.
-#define KINETIX_VERSION "v2 beta"
+#define KINETIX_VERSION "v3 beta"
 
 struct SRow
 {
