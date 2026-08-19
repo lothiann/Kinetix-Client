@@ -2995,6 +2995,22 @@ void CGameClient::OnPredict()
         CCharacterCore BeforePrevChar = m_PredictedPrevChar;
         CCharacterCore BeforeChar = m_PredictedChar;
 
+        // TODO(spect-predict): anti-ping prediction does not work while spectating
+        // (/pause with free view, /spec). Server side:
+        //   - /spec (PAUSE_SPEC) calls CCharacter::Pause(true) which REMOVES our
+        //     character from the world (character.cpp:2426-2427), so it is not
+        //     sent in snapshots anymore -> m_aCharacters[LocalClientId].m_Active
+        //     becomes false -> early return below kills ALL prediction.
+        //   - /pause (PAUSE_PAUSED) keeps the character, but if the whole world
+        //     is paused the server sets GAMESTATEFLAG_PAUSED and the block at
+        //     3003 disables prediction the same way.
+        // Tried: keep a CCharacter copy (m_pKxSavedChar) and re-insert it into
+        // m_PredictedWorld after CopyWorld. BROKE prediction everywhere — the
+        // copy ctor copies the private m_pNextTypeEntity/m_pPrevTypeEntity list
+        // pointers and ~CEntity() calls GameWorld()->RemoveEntity(this), which
+        // then writes through stale pointers (m_pParent->m_DestroyTick in
+        // gameworld.cpp RemoveEntity) and corrupts the PredictedWorld list.
+        // Needs a solution that does NOT touch OnPredict / CEntity lifetime.
         // we can't predict without our own id or own character
         if(m_Snap.m_LocalClientId == -1 || !m_Snap.m_aCharacters[m_Snap.m_LocalClientId].m_Active)
                 return;
