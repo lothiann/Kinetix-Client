@@ -144,6 +144,13 @@ private:
         // Mouse position in screen-space px (updated each frame from NativeMousePos).
         vec2 m_MousePos = vec2(0, 0);
 
+        // v1.56.212: DPI-independent UI scale. The whole ClickGUI is laid out in
+        // a virtual 1920x1080 coordinate space; m_UiScale maps physical pixels to
+        // virtual units (screenH / 1080). Panels therefore keep the same physical
+        // size on every resolution as they have at 1920x1080. Recalculated each
+        // frame in OnRender.
+        float m_UiScale = 1.0f;
+
         // Animation timing. ANIM_DURATION matches the HTML transition:
         // `transition: left/top 0.55s cubic-bezier(0.16, 1, 0.3, 1)`.
         static constexpr float ANIM_DURATION = 0.55f;
@@ -220,6 +227,16 @@ private:
         // Home position of slot N. v1.56.176: non-static (slot 5 depends on
         // the current height of the panel in slot 4).
         vec2 SlotHomePos(int slot) const;
+        // v1.56.212: virtual screen size in virtual units (width preserves the
+        // physical aspect ratio). Used by all layout/fit logic so panels scale
+        // consistently at any resolution (DPI-independent).
+        float VScreenWidth() const;
+        float VScreenHeight() const;
+        // v1.56.212: Graphics()->ClipEnable operates in PHYSICAL pixels (it
+        // ignores the MapScreen transform and clamps against ScreenWidth()/
+        // ScreenHeight()). This helper converts a virtual-space rect to physical
+        // pixels before clipping, so the scissor matches the scaled drawing.
+        void ClipEnableVirtual(float x, float y, float w, float h);
         // v1.56.175: which slot the given panel currently occupies (index into
         // m_aPanelOrder). Returns 0 if not found (shouldn't happen).
         int SlotOf(int panelIdx) const;

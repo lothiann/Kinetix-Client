@@ -37,12 +37,6 @@ namespace {
 // Total number of ClickGUI panels. Must match CClickGui::NUM_PANELS in .h.
 // v1.56.177: was stale at 5 — caused "too many initializers" on g_Panels[6].
 constexpr int NUM_PANELS = 6;
-
-// Coerce a body height to int for ClipEnable without truncation surprises.
-inline int bodyH_safe(float h)
-{
-        return (int)(h + 0.5f);
-}
 } // namespace
 
 // ============================================================================
@@ -846,33 +840,49 @@ static float RowHeight(ERowType t)
 // CClickGui — static helpers
 // ============================================================================
 
+float CClickGui::VScreenWidth() const
+{
+        // Virtual width = physical width / scale, preserving the physical
+        // aspect ratio. On 1920x1080 this is 1920; on any 16:9 resolution it
+        // stays 1920, so the same number of panels fit the first row.
+        return (float)Graphics()->ScreenWidth() / (m_UiScale > 0.0f ? m_UiScale : 1.0f);
+}
+
+float CClickGui::VScreenHeight() const
+{
+        return (float)Graphics()->ScreenHeight() / (m_UiScale > 0.0f ? m_UiScale : 1.0f);
+}
+
+void CClickGui::ClipEnableVirtual(float x, float y, float w, float h)
+{
+        // ClipEnable ignores the MapScreen transform and clamps against the
+        // physical ScreenWidth()/ScreenHeight(), so the rect must be converted
+        // back to physical pixels (virtual unit * m_UiScale).
+        const float s = m_UiScale > 0.0f ? m_UiScale : 1.0f;
+        Graphics()->ClipEnable((int)roundf(x * s), (int)roundf(y * s), (int)roundf(w * s), (int)roundf(h * s));
+}
+
 vec2 CClickGui::SlotHomePos(int slot) const
 {
-        // v1.56.207: dynamic aspect-ratio adaptation.
-        // Panels are placed left-to-right in the first row. Overflow panels
-        // wrap below the column with the least total height (not always the
-        // first column), accounting for panels already stacked below.
-        // Slot 5 (Info) always stacks below slot 4.
-        const float screenW = (float)Graphics()->ScreenWidth();
+        // v1.56.212: dynamic relocation of overflow panels.
+        // Panels are placed left-to-right in the first row. Any panel that does
+        // not fit (plus Info, slot 5) is stacked below the column with the LEAST
+        // accumulated height — accounting for both the first-row panel heights
+        // and panels already relocated under a column. Info is no longer glued
+        // below Binds: it is placed independently like every other overflow
+        // panel, so a relocated panel never drags its lower neighbour with it.
+        // Layout runs in the virtual 1920x1080 space (DPI-independent).
+        const float screenW = VScreenWidth();
         const float startX = 60.0f;
         const float startY = 90.0f;
         const float spacingX = 30.0f; // gap between panels horizontally
         const float spacingY = FLOW_GAP; // gap between rows vertically
 
-        // Slot 5 (Info): stack below slot 4.
-        if(slot == 5)
-        {
-                const vec2 above = SlotHomePos(4);
-                const int abovePanel = m_aPanelOrder[4];
-                const float aboveH = m_aPanelCurrentHeight[abovePanel];
-                return vec2(above.x, above.y + aboveH + FLOW_GAP);
-        }
-
         // Phase 1: determine which slots fit in the first row.
         int firstRowCount = 0;
         {
                 float x = startX;
-                for(int s = 0; s < 5; ++s)
+                for(int s = 0; s < NUM_PANELS; ++s)
                 {
                         if(s > 0 && x + PANEL_WIDTH > screenW - 10.0f)
                                 break;
@@ -888,34 +898,38 @@ vec2 CClickGui::SlotHomePos(int slot) const
                 return vec2(x, startY);
         }
 
-        // Phase 2: overflow slots (firstRowCount..4) stack below the
+        // Phase 2: overflow slots (firstRowCount..NUM_PANELS-1) stack below the
         // column with the least bottom, accounting for already-stacked panels.
-        // Track per-column X position and bottom (y + cumulative heights).
-        float colX[5];
-        float colBottom[5];
+        // colBottom tracks each column's current bottom; colCount tracks how
+        // many overflow panels a column already absorbed (used as tie-breaker
+        // so panels spread evenly even while heights are still animating/0).
+        float colBottom[NUM_PANELS];
+        int colCount[NUM_PANELS];
         for(int c = 0; c < firstRowCount; ++c)
         {
-                colX[c] = startX + c * (PANEL_WIDTH + spacingX);
                 const int panelIdx = m_aPanelOrder[c];
                 colBottom[c] = startY + m_aPanelCurrentHeight[panelIdx];
+                colCount[c] = 0;
         }
 
-        for(int s = firstRowCount; s <= slot && s < 5; ++s)
+        for(int s = firstRowCount; s <= slot && s < NUM_PANELS; ++s)
         {
-                // Find column with the least bottom.
+                // Find column with the least bottom (ties → least stacked).
                 int bestCol = 0;
                 for(int c = 1; c < firstRowCount; ++c)
                 {
-                        if(colBottom[c] < colBottom[bestCol])
+                        if(colBottom[c] < colBottom[bestCol] - 0.5f ||
+                                (std::abs(colBottom[c] - colBottom[bestCol]) <= 0.5f && colCount[c] < colCount[bestCol]))
                                 bestCol = c;
                 }
 
                 if(s == slot)
-                        return vec2(colX[bestCol], colBottom[bestCol] + spacingY);
+                        return vec2(startX + bestCol * (PANEL_WIDTH + spacingX), colBottom[bestCol] + spacingY);
 
                 // Update column bottom for the next overflow slot.
                 const int panelIdx = m_aPanelOrder[s];
                 colBottom[bestCol] += spacingY + m_aPanelCurrentHeight[panelIdx];
+                colCount[bestCol]++;
         }
 
         return vec2(startX, startY);
@@ -1237,15 +1251,22 @@ void CClickGui::OnRender()
 {
         const bool isOpen = g_Config.m_ClClickGui != 0;
 
-        // Update mouse position from native SDL cursor (screen-space px).
-        m_MousePos = Input()->NativeMousePos();
+        // v1.56.212: DPI-independent UI scale. m_UiScale = screenH / 1080 maps
+        // physical pixels into the virtual 1920x1080 space used by all ClickGUI
+        // geometry, so panels keep the same physical size on every resolution
+        // as they have at 1920x1080.
+        const float physH = (float)Graphics()->ScreenHeight();
+        m_UiScale = (physH > 0.0f) ? (physH / 1080.0f) : 1.0f;
+
+        // Mouse position in virtual units (physical px / scale).
+        m_MousePos = Input()->NativeMousePos() / m_UiScale;
 
         // Detect transition 0->1 (opening): pick fresh random offscreen positions
         // for each panel and initialize panel positions to home (if first open).
         if(isOpen && !m_WasOpen)
         {
-                const float sw = (float)Graphics()->ScreenWidth();
-                const float sh = (float)Graphics()->ScreenHeight();
+                const float sw = VScreenWidth();
+                const float sh = VScreenHeight();
                 for(int i = 0; i < NUM_PANELS; ++i)
                 {
                         m_aOffscreenPos[i] = PickRandomOffscreenPos(i, sw, sh);
@@ -2499,9 +2520,11 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                 eased = 1.0f - CubicBezierEase(1.0f - m_AnimProgress); // 1→0, slow-start fast-end
         const float alpha = eased;
 
-        // Set up pixel-space projection.
-        const float screenW = (float)Graphics()->ScreenWidth();
-        const float screenH = (float)Graphics()->ScreenHeight();
+        // Set up pixel-space projection. The screen is mapped into the virtual
+        // 1920x1080 space (DPI-scaled), so all hardcoded geometry below renders
+        // at the same physical size on every resolution.
+        const float screenW = VScreenWidth();
+        const float screenH = VScreenHeight();
         Graphics()->MapScreen(0.0f, 0.0f, screenW, screenH);
 
         Graphics()->TextureClear();
@@ -4521,7 +4544,7 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                         0.0f, IGraphics::CORNER_NONE,
                         ColorRGBA(COL_SUB_LIST_BG, true).WithAlpha(alpha * 0.5f));
 
-                Graphics()->ClipEnable((int)bodyX, (int)bodyY, (int)bodyW, (int)bodyH_safe(visibleBodyHeight));
+                ClipEnableVirtual(bodyX, bodyY, bodyW, visibleBodyHeight);
 
         // ---- Step 5: draw each row using its Yoga-computed rectangle ----
         // v1.56.71: rows below an animating expandable shift UP by that
@@ -4946,7 +4969,7 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                         // the body clip. For animating expand/collapse, childClipH is the
                         // visible portion of the children block (intersected with the body).
                         if(useChildClip && childClipH > 0.5f)
-                                Graphics()->ClipEnable((int)bodyX, (int)childClipY, (int)bodyW, (int)bodyH_safe(childClipH));
+                                ClipEnableVirtual(bodyX, childClipY, bodyW, childClipH);
 
                         // v1.56.118: merged children background + left stripe.
                         float childBlockTop = -1.0f, childBlockBottom = -1.0f;
@@ -5267,7 +5290,7 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
 
                         // Restore the body clip for subsequent rows.
                         if(useChildClip)
-                                Graphics()->ClipEnable((int)bodyX, (int)bodyY, (int)bodyW, (int)bodyH_safe(visibleBodyHeight));
+                                ClipEnableVirtual(bodyX, bodyY, bodyW, visibleBodyHeight);
 
                         // v1.56.72: use precomputed expandInfo (avoids re-calling
                         // EaseBothDirections and re-summing childrenBlockH here).
