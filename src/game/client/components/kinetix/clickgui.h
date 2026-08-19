@@ -28,6 +28,8 @@
 #include <base/color.h>
 #include <base/vmath.h>
 
+#include <vector>
+
 #include <yoga/Yoga.h>
 
 #include <game/client/component.h>
@@ -44,6 +46,7 @@ public:
         void OnRender() override;
         bool OnInput(const IInput::CEvent &Event) override;
         bool OnCursorMove(float x, float y, IInput::ECursorType CursorType) override;
+        bool OnTouchState(const std::vector<IInput::CTouchFingerState> &vTouchFingerStates) override;
 
         static constexpr int NUM_PANELS = 6;
 
@@ -143,6 +146,20 @@ private:
 
         // Mouse position in screen-space px (updated each frame from NativeMousePos).
         vec2 m_MousePos = vec2(0, 0);
+
+        // v1.56.218: Android touch support. The primary finger drives m_MousePos
+        // like a Windows cursor; m_vPrevTouchFingers tracks per-finger down/up
+        // transitions so taps map to HandleMouseDown/Up. m_TouchActive prevents
+        // OnRender from overwriting the touch position with stale NativeMousePos.
+        std::vector<IInput::CTouchFingerState> m_vPrevTouchFingers;
+        bool m_TouchActive = false;
+        // v1.56.219: swipe-to-scroll. A fresh press is deferred (m_TouchPendingTap);
+        // if the finger moves past SCROLL_STEP units the gesture becomes a scroll
+        // (m_TouchScrollMode) instead of a tap, so no stray row click fires.
+        bool m_TouchPendingTap = false;
+        bool m_TouchScrollMode = false;
+        float m_TouchScrollAccum = 0.0f;
+        vec2 m_TouchPressPos = vec2(0.0f, 0.0f);
 
         // v1.56.212: DPI-independent UI scale. The whole ClickGUI is laid out in
         // a virtual 1920x1080 coordinate space; m_UiScale maps physical pixels to
@@ -270,6 +287,10 @@ private:
         // UX event handling (called from OnInput / OnCursorMove).
         void HandleMouseDown(vec2 mousePos);
         void HandleMouseUp(vec2 mousePos);
+
+        // Scroll the panel under mousePos (topmost hit) by dir (signed SCROLL_STEP).
+        // Returns true if a panel was scrolled. Shared by mouse wheel and touch swipe.
+        bool ScrollPanelAt(vec2 mousePos, float dir);
 
         // Find which row a click hit. Returns row/child indices via out-params.
         // panelIdx is an input (which panel to test). Returns true if a row was hit.

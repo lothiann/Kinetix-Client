@@ -220,6 +220,7 @@ void CGameClient::OnConsoleInit()
         // build the input stack
         m_vpInput.insert(m_vpInput.end(), {&m_KeyBinder, // this will take over all input when we want to bind a key
                                                   &m_Binds.m_SpecialBinds,
+                                                  &m_ClickGui, // consume clicks/keys when ClickGUI is open (must be before menus/spectator so ESC closes it, not the game menu)
                                                   &m_GameConsole,
                                                   &m_Chat, // chat has higher prio, due to that you can quit it by pressing esc
                                                   &m_Scoreboard,
@@ -228,7 +229,6 @@ void CGameClient::OnConsoleInit()
                                                   &m_Emoticon,
                                                   &m_ImportantAlert,
                                                   &m_Menus,
-                                                  &m_ClickGui, // consume clicks/keys when ClickGUI is open
                                                   &m_Controls,
                                                   &m_TouchControls,
                                                   &m_Binds});

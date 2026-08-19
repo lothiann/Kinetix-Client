@@ -1259,7 +1259,11 @@ void CClickGui::OnRender()
         m_UiScale = (physH > 0.0f) ? (physH / 1080.0f) : 1.0f;
 
         // Mouse position in virtual units (physical px / scale).
-        m_MousePos = Input()->NativeMousePos() / m_UiScale;
+        // v1.56.218: while a touch finger drives the GUI (Android), keep the
+        // position set by OnTouchState — NativeMousePos is stale on touch
+        // devices and would reset the cursor to 0,0 every frame.
+        if(!m_TouchActive)
+                m_MousePos = Input()->NativeMousePos() / m_UiScale;
 
         // Detect transition 0->1 (opening): pick fresh random offscreen positions
         // for each panel and initialize panel positions to home (if first open).
@@ -2629,6 +2633,18 @@ bool CClickGui::OnInput(const IInput::CEvent &Event)
         if(m_AnimProgress < 0.95f)
                 return false;
 
+        // Android BACK (translated to KEY_ESCAPE in engine/client/input.cpp) or
+        // desktop ESC: close the ClickGUI instead of leaking into the game menu.
+        // While an input field is being edited, route through HandleTextInput
+        // first so the typed text is committed (same as ESC inside the field).
+        if(Event.m_Flags & IInput::FLAG_PRESS && Event.m_Key == KEY_ESCAPE)
+        {
+                if(m_InputEditing)
+                        HandleTextInput(Event);
+                g_Config.m_ClClickGui = 0;
+                return true;
+        }
+
         // Mouse clicks ALWAYS go through HandleMouseDown/Up — consumed by ClickGUI.
         if(Event.m_Flags & IInput::FLAG_PRESS && Event.m_Key == KEY_MOUSE_1)
         {
@@ -2645,37 +2661,8 @@ bool CClickGui::OnInput(const IInput::CEvent &Event)
         if(Event.m_Flags & IInput::FLAG_PRESS &&
                 (Event.m_Key == KEY_MOUSE_WHEEL_UP || Event.m_Key == KEY_MOUSE_WHEEL_DOWN))
         {
-                const vec2 mp = m_MousePos;
-                // Iterate panels top-to-bottom (high z first).
-                int order[NUM_PANELS];
-                for(int i = 0; i < NUM_PANELS; ++i)
-                        order[i] = i;
-                for(int a = 0; a < NUM_PANELS; ++a)
-                        for(int b = a + 1; b < NUM_PANELS; ++b)
-                                if(m_aZOrder[order[b]] > m_aZOrder[order[a]])
-                                {
-                                        int tmp = order[a];
-                                        order[a] = order[b];
-                                        order[b] = tmp;
-                                }
-                for(int idx = 0; idx < NUM_PANELS; ++idx)
-                {
-                        const int i = order[idx];
-                        if(!m_aPanelPosValid[i])
-                                continue;
-                        const vec2 p = m_aPanelPos[i];
-                        const float bodyTop = p.y + HEADER_HEIGHT;
-                        const float bodyBottom = p.y + HEADER_HEIGHT + MAX_BODY_HEIGHT + 50.0f;
-                        if(mp.x >= p.x && mp.x < p.x + PANEL_WIDTH && mp.y >= bodyTop && mp.y < bodyBottom)
-                        {
-                                const float dir = (Event.m_Key == KEY_MOUSE_WHEEL_UP) ? -SCROLL_STEP : SCROLL_STEP;
-                                // Write to stored so the value survives panel collapse/expand.
-                                m_aPanelScrollStored[i] += dir;
-                                if(m_aPanelScrollStored[i] < 0.0f)
-                                        m_aPanelScrollStored[i] = 0.0f;
-                                return true;
-                        }
-                }
+                const float dir = (Event.m_Key == KEY_MOUSE_WHEEL_UP) ? -SCROLL_STEP : SCROLL_STEP;
+                return ScrollPanelAt(m_MousePos, dir);
         }
 
         // If editing an input field, route keyboard events to text editing.
@@ -2700,6 +2687,149 @@ bool CClickGui::OnCursorMove(float x, float y, IInput::ECursorType CursorType)
                 return true;
         }
         return false;
+}
+
+// v1.56.218: Android touch support. Called by the game client each frame with
+// the current finger states (normalized 0..1 positions). While ClickGUI is
+// open we claim every touch — returning true stops the input stack here, so
+// the game's touch controls / camera / aim never see the touches. The primary
+// finger acts as a Windows cursor: its position drives m_MousePos.
+// v1.56.219: swipe-to-scroll. A fresh press on a plain row is deferred — if
+// the finger moves it becomes a scroll gesture instead of an accidental tap.
+// Presses on headers (panel drag), sliders, dropdowns and while editing an
+// input field fire immediately like on desktop.
+bool CClickGui::OnTouchState(const std::vector<IInput::CTouchFingerState> &vTouchFingerStates)
+{
+        const bool isOpen = g_Config.m_ClClickGui != 0 || m_AnimProgress > 0.0f;
+        if(!isOpen)
+        {
+                m_vPrevTouchFingers.clear();
+                m_TouchActive = false;
+                m_TouchPendingTap = false;
+                m_TouchScrollMode = false;
+                m_TouchScrollAccum = 0.0f;
+                return false;
+        }
+
+        m_TouchActive = !vTouchFingerStates.empty();
+
+        if(!vTouchFingerStates.empty())
+        {
+                // Primary finger = cursor. Map normalized touch position to
+                // ClickGUI virtual units (physical px / m_UiScale), same space
+                // as m_MousePos from NativeMousePos on desktop.
+                const vec2 ScreenSize = vec2((float)Graphics()->ScreenWidth(), (float)Graphics()->ScreenHeight());
+                const vec2 FingerPos = vTouchFingerStates.front().m_Position;
+                const float scale = (Graphics()->ScreenHeight() > 0.0f) ? (Graphics()->ScreenHeight() / 1080.0f) : 1.0f;
+                m_MousePos = vec2(FingerPos.x * ScreenSize.x, FingerPos.y * ScreenSize.y) / scale;
+
+                // True if the press lands on something that needs an immediate
+                // press-down (drag interactions), not a deferred tap.
+                const auto HitHeaderOrSlider = [&](vec2 pos) {
+                        int order[NUM_PANELS];
+                        for(int i = 0; i < NUM_PANELS; ++i)
+                                order[i] = i;
+                        for(int a = 0; a < NUM_PANELS; ++a)
+                                for(int b = a + 1; b < NUM_PANELS; ++b)
+                                        if(m_aZOrder[order[b]] > m_aZOrder[order[a]])
+                                        {
+                                                int tmp = order[a];
+                                                order[a] = order[b];
+                                                order[b] = tmp;
+                                        }
+                        for(int idx = 0; idx < NUM_PANELS; ++idx)
+                        {
+                                const int i = order[idx];
+                                const vec2 ppos = m_aPanelPosValid[i] ? m_aPanelPos[i] : PanelHomePos(i);
+                                if(PointInRect(pos, ppos.x, ppos.y, PANEL_WIDTH, HEADER_HEIGHT))
+                                        return true;
+                                if(m_aPanelCollapsed[i])
+                                        continue;
+                                int outRow, outChild;
+                                float rx, ry, rw, rh;
+                                if(HitTestRow(pos, i, outRow, outChild, rx, ry, rw, rh))
+                                {
+                                        SPanel &panel = g_Panels[i];
+                                        SRow &row = panel.pRows[outRow];
+                                        SRow *pTarget = (outChild >= 0 && row.pChildren) ? &row.pChildren[outChild] : &row;
+                                        if(pTarget->type == ERowType::Slider && pTarget->max > pTarget->min)
+                                                return true;
+                                }
+                        }
+                        return false;
+                };
+
+                // Finger press (not present last frame).
+                const bool WasDown = std::any_of(m_vPrevTouchFingers.begin(), m_vPrevTouchFingers.end(), [&](const IInput::CTouchFingerState &Prev) {
+                        return Prev.m_Finger == vTouchFingerStates.front().m_Finger;
+                });
+                if(!WasDown)
+                {
+                        m_TouchPressPos = m_MousePos;
+                        m_TouchScrollAccum = 0.0f;
+                        m_TouchScrollMode = false;
+                        if(m_DropdownOpen || m_InputEditing || HitHeaderOrSlider(m_MousePos))
+                        {
+                                // Drag-style interactions: press fires immediately.
+                                m_TouchPendingTap = false;
+                                if(m_AnimProgress >= 0.95f)
+                                        HandleMouseDown(m_MousePos);
+                        }
+                        else
+                        {
+                                // Plain row: defer the click — a swipe becomes a scroll.
+                                m_TouchPendingTap = true;
+                        }
+                }
+                else if(m_TouchPendingTap || m_TouchScrollMode)
+                {
+                        // Swipe: accumulate vertical travel, emit one scroll step
+                        // per SCROLL_STEP units (finger up = scroll down).
+                        m_TouchScrollAccum += m_MousePos.y - m_TouchPressPos.y;
+                        m_TouchPressPos = m_MousePos;
+                        while(m_TouchScrollAccum >= SCROLL_STEP)
+                        {
+                                m_TouchScrollAccum -= SCROLL_STEP;
+                                if(ScrollPanelAt(m_MousePos, -SCROLL_STEP))
+                                        m_TouchScrollMode = true;
+                        }
+                        while(m_TouchScrollAccum <= -SCROLL_STEP)
+                        {
+                                m_TouchScrollAccum += SCROLL_STEP;
+                                if(ScrollPanelAt(m_MousePos, SCROLL_STEP))
+                                        m_TouchScrollMode = true;
+                        }
+                        if(m_TouchScrollMode)
+                                m_TouchPendingTap = false;
+                }
+        }
+
+        // Finger release (present last frame, gone now) = mouse button up.
+        for(const auto &Prev : m_vPrevTouchFingers)
+        {
+                const bool StillDown = std::any_of(vTouchFingerStates.begin(), vTouchFingerStates.end(), [&](const IInput::CTouchFingerState &Cur) {
+                        return Cur.m_Finger == Prev.m_Finger;
+                });
+                if(!StillDown && m_AnimProgress >= 0.95f)
+                {
+                        if(m_TouchPendingTap)
+                        {
+                                // Deferred tap: fire press + release at the release spot.
+                                HandleMouseDown(m_MousePos);
+                                HandleMouseUp(m_MousePos);
+                        }
+                        else
+                        {
+                                HandleMouseUp(m_MousePos);
+                        }
+                        m_TouchPendingTap = false;
+                        m_TouchScrollMode = false;
+                        m_TouchScrollAccum = 0.0f;
+                }
+        }
+
+        m_vPrevTouchFingers = vTouchFingerStates;
+        return true;
 }
 
 void CClickGui::BringToFront(int panelIdx)
@@ -3473,6 +3603,40 @@ void CClickGui::HandleMouseUp(vec2 mousePos)
         m_DragSliderPanel = -1;
         m_DragSliderRow = -1;
         m_DragSliderChild = -1;
+}
+
+bool CClickGui::ScrollPanelAt(vec2 mousePos, float dir)
+{
+        // Iterate panels top-to-bottom (high z first).
+        int order[NUM_PANELS];
+        for(int i = 0; i < NUM_PANELS; ++i)
+                order[i] = i;
+        for(int a = 0; a < NUM_PANELS; ++a)
+                for(int b = a + 1; b < NUM_PANELS; ++b)
+                        if(m_aZOrder[order[b]] > m_aZOrder[order[a]])
+                        {
+                                int tmp = order[a];
+                                order[a] = order[b];
+                                order[b] = tmp;
+                        }
+        for(int idx = 0; idx < NUM_PANELS; ++idx)
+        {
+                const int i = order[idx];
+                if(!m_aPanelPosValid[i])
+                        continue;
+                const vec2 p = m_aPanelPos[i];
+                const float bodyTop = p.y + HEADER_HEIGHT;
+                const float bodyBottom = p.y + HEADER_HEIGHT + MAX_BODY_HEIGHT + 50.0f;
+                if(mousePos.x >= p.x && mousePos.x < p.x + PANEL_WIDTH && mousePos.y >= bodyTop && mousePos.y < bodyBottom)
+                {
+                        // Write to stored so the value survives panel collapse/expand.
+                        m_aPanelScrollStored[i] += dir;
+                        if(m_aPanelScrollStored[i] < 0.0f)
+                                m_aPanelScrollStored[i] = 0.0f;
+                        return true;
+                }
+        }
+        return false;
 }
 
 void *CClickGui::GetEditingInputRowPtr()
