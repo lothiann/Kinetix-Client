@@ -160,6 +160,11 @@ bool CSpectator::OnCursorMove(float x, float y, IInput::ECursorType CursorType)
 	if(!m_Active)
 		return false;
 
+	// v1.56.213: the ClickGUI needs the cursor (dragging, slider thumbs) while
+	// it is open — don't let the spectate selector swallow mouse movement.
+	if(g_Config.m_ClClickGui != 0)
+		return false;
+
 	Ui()->ConvertMouseMove(&x, &y, CursorType);
 	m_SelectorMouse += vec2(x, y);
 	return true;
@@ -175,7 +180,10 @@ bool CSpectator::OnInput(const IInput::CEvent &Event)
 
 	if(g_Config.m_ClSpectatorMouseclicks)
 	{
-		if(GameClient()->m_Snap.m_SpecInfo.m_Active && !IsActive() && !GameClient()->m_MultiViewActivated &&
+		// v1.56.213: let the ClickGUI own mouse clicks while it is open,
+		// otherwise the spectator freeview toggle swallows them and the
+		// ClickGUI becomes unclickable during spectate.
+		if(g_Config.m_ClClickGui == 0 && GameClient()->m_Snap.m_SpecInfo.m_Active && !IsActive() && !GameClient()->m_MultiViewActivated &&
 			!Ui()->IsPopupOpen() && !GameClient()->m_GameConsole.IsActive() && !GameClient()->m_Menus.IsActive())
 		{
 			if(Event.m_Flags & IInput::FLAG_PRESS && Event.m_Key == KEY_MOUSE_1)
