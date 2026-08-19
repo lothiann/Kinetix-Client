@@ -256,7 +256,6 @@ void CEsp::EmitLine(const vec2 &p0, const vec2 &p1, int playerIndex) const
 		}
 	}
 }
-}
 
 void CEsp::OnRender()
 {
