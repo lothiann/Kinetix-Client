@@ -619,6 +619,26 @@ int CControls::SnapInput(int *pData)
         vec2 fakeOffset(0, 0);
         bool fakeShowForMe = false;
 
+        // v1.56.209: Show For Me flicker fix.
+        // Background — why this is needed:
+        //   m_FakeAimRenderOffset is updated only here, once per SnapInput (~50 Hz).
+        //   m_aMousePos is updated every frame in OnRender (~60-144 Hz).
+        //   players.cpp picks m_FakeAimRenderOffset when m_FakeAimRenderActive is true,
+        //   otherwise it falls through to m_aMousePos (live mouse).
+        //
+        //   On a release tick (laser/aimbot/avoid/pfgo owns the aim, OR
+        //   willFire/hookPress), the fake block is either skipped (so
+        //   m_FakeAimRenderActive stays false) or sets fakeOffset = realAim
+        //   (so m_FakeAimRenderOffset == realAim). In both cases players.cpp
+        //   ends up showing the real aim — for 1-3 frames until the next
+        //   SnapInput restores the mask.
+        //
+        // Fix: remember the last "real" fake offset and hold it across
+        // release ticks. The actual aim going to the server (m_aInputData /
+        // pData) is unchanged — only the rendered character angle is held.
+        static vec2 s_LastFakeRenderOffset = vec2(0, 0);
+        static bool s_HaveLastFake = false;
+
         // Fire/hook detection + robot update — ALWAYS runs (even when laser unfreeze active)
         bool willFire = false;
         bool hookPress = false;
@@ -800,6 +820,42 @@ int CControls::SnapInput(int *pData)
                 CNetObj_PlayerInput *pSend = (CNetObj_PlayerInput *)pData;
                 pSend->m_TargetX = (int)fakeOffset.x;
                 pSend->m_TargetY = (int)fakeOffset.y;
+        }
+
+        // v1.56.209: Hold the fake mask across release ticks.
+        // See the long comment near s_LastFakeRenderOffset declaration above
+        // for the full explanation. Short version:
+        //   - If this tick is a release (another component owns the aim, OR
+        //     player is firing / pressing hook), the mask has just dropped.
+        //   - Restore it from the last "real" fake offset so players.cpp keeps
+        //     drawing the spoofed direction instead of falling through to the
+        //     live m_aMousePos.
+        // The aim actually sent to the server (m_aInputData / pData) is not
+        // touched here — this only affects the rendered character angle.
+        if(g_Config.m_KxFakeAim && s_HaveLastFake)
+        {
+                // Figure out whether this tick is a release tick.
+                bool aimOwnedByComponent = laserAimActive || GameClient()->m_BotNet.m_PfGoAimedThisTick;
+                bool aimOwnedByPlayerFire = fakeActive && (willFire || hookPress);
+                bool isReleaseTick = aimOwnedByComponent || aimOwnedByPlayerFire;
+
+                if(isReleaseTick)
+                {
+                        // Keep the mask: render the previous fake direction.
+                        m_FakeAimRenderActive = true;
+                        m_FakeAimRenderOffset = s_LastFakeRenderOffset;
+                }
+        }
+
+        // Remember the current fake offset for next tick's mask continuation.
+        // Only update from genuine fake ticks — not from release ticks where
+        // fakeOffset happens to be realAim (willFire/hookPress) — otherwise
+        // we'd poison the mask with the real aim and the fix would be useless.
+        if(fakeActive && !laserAimActive && !GameClient()->m_BotNet.m_PfGoAimedThisTick &&
+           !willFire && !hookPress)
+        {
+                s_LastFakeRenderOffset = fakeOffset;
+                s_HaveLastFake = true;
         }
 
         return sizeof(m_aInputData[0]);
