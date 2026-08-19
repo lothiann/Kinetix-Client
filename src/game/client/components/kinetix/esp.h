@@ -36,7 +36,7 @@ private:
 	bool PassesFilters(int ClientId, int LocalId) const;
 
 	// v1.56.113: Style-aware line emission (Line/Arrow/Dotted/DottedArrow).
-	void EmitLine(const vec2 &p0, const vec2 &p1) const;
+	void EmitLine(const vec2 &p0, const vec2 &p1, int playerIndex) const;
 
 	// Draw a single solid segment (immediate mode, not deferred).
 	void DrawSegment(const vec2 &p0, const vec2 &p1, ColorRGBA col, float halfWidth) const;

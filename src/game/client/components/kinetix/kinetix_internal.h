@@ -472,4 +472,80 @@ inline float KxLineAlpha(EKxLineComponent c)
         return (float)g_Config.m_KxLineRenderingAlpha / 100.0f;
 }
 
+// v1.56.210: Per-segment line color for gradient mode.
+// Gradient is visible ONLY when Rainbow is ON. When Gradient is also ON,
+// each segment gets hue = baseHue + segment_index * step (wrapped to 0..360).
+// Otherwise returns the same color for every segment (current behavior).
+//
+// segment_index is the 0-based index of the segment in the line strip
+// the component is drawing. Callers that draw a single segment can pass 0.
+inline unsigned KxLineColorAt(EKxLineComponent c, int segment_index)
+{
+        bool rainbow = false;
+        bool gradient = false;
+        int step = 15;
+        switch(c)
+        {
+        case KX_LINE_AIMBOT:
+                rainbow = g_Config.m_KxLineAimBotRainbow != 0;
+                gradient = g_Config.m_KxLineAimBotGradient != 0;
+                step = g_Config.m_KxLineAimBotGradientStep;
+                break;
+        case KX_LINE_TRIGGERBOT:
+                rainbow = g_Config.m_KxLineTriggerBotRainbow != 0;
+                gradient = g_Config.m_KxLineTriggerBotGradient != 0;
+                step = g_Config.m_KxLineTriggerBotGradientStep;
+                break;
+        case KX_LINE_TRAJECTORY:
+                rainbow = g_Config.m_KxLineTrajectoryRainbow != 0;
+                gradient = g_Config.m_KxLineTrajectoryGradient != 0;
+                step = g_Config.m_KxLineTrajectoryGradientStep;
+                break;
+        case KX_LINE_LASER_UNFREEZE:
+                rainbow = g_Config.m_KxLineLaserUnfreezeRainbow != 0;
+                gradient = g_Config.m_KxLineLaserUnfreezeGradient != 0;
+                step = g_Config.m_KxLineLaserUnfreezeGradientStep;
+                break;
+        case KX_LINE_PATHFINDER:
+                rainbow = g_Config.m_KxLinePathfinderRainbow != 0;
+                gradient = g_Config.m_KxLinePathfinderGradient != 0;
+                step = g_Config.m_KxLinePathfinderGradientStep;
+                break;
+        case KX_LINE_ESP:
+                rainbow = g_Config.m_KxLineEspRainbow != 0;
+                gradient = g_Config.m_KxLineEspGradient != 0;
+                step = g_Config.m_KxLineEspGradientStep;
+                break;
+        }
+
+        // No rainbow → use the static per-component color (existing path).
+        if(!rainbow)
+                return KxLineColor(c);
+
+        // Rainbow ON, Gradient OFF → uniform rainbow color (existing path).
+        if(!gradient)
+                return KxLineColor(c);
+
+        // Rainbow ON + Gradient ON → per-segment hue offset.
+        float hue = g_aLineRainbowHue[c] + (float)segment_index * (float)step;
+        hue = std::fmod(hue, 360.0f);
+        if(hue < 0.0f)
+                hue += 360.0f;
+
+        // Convert hue (0..360) to RGB via HSV with S=1, V=1 (same as KxLineColor).
+        float h = hue / 60.0f;
+        float x = 1.0f - std::abs(std::fmod(h, 2.0f) - 1.0f);
+        float r = 0.0f, g = 0.0f, b = 0.0f;
+        if(h < 1.0f) { r = 1.0f; g = x; }
+        else if(h < 2.0f) { r = x; g = 1.0f; }
+        else if(h < 3.0f) { g = 1.0f; b = x; }
+        else if(h < 4.0f) { g = x; b = 1.0f; }
+        else if(h < 5.0f) { r = x; b = 1.0f; }
+        else { r = 1.0f; b = x; }
+        unsigned ur = (unsigned)(r * 255.0f);
+        unsigned ug = (unsigned)(g * 255.0f);
+        unsigned ub = (unsigned)(b * 255.0f);
+        return 0xff000000u | (ur << 16) | (ug << 8) | ub;
+}
+
 #endif // GAME_CLIENT_COMPONENTS_KINETIX_INTERNAL_H

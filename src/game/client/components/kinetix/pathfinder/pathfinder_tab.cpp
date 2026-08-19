@@ -1048,7 +1048,9 @@ void CBotNet::RenderPathfinderPath()
                         }
                         else
                         {
-                                Graphics()->SetColor(BaseColor.r, BaseColor.g, BaseColor.b, ConfigAlpha);
+                                // v1.56.210: per-segment gradient color (Rainbow+Gradient both ON).
+                                ColorRGBA segCol = ColorRGBA(KxLineColorAt(KX_LINE_PATHFINDER, (int)i - 1), true);
+                                Graphics()->SetColor(segCol.r, segCol.g, segCol.b, ConfigAlpha);
                         }
                         Graphics()->QuadsDrawFreeform(&Quad, 1);
                 }
@@ -1067,7 +1069,9 @@ void CBotNet::RenderPathfinderPath()
                         }
                         else
                         {
-                                Graphics()->SetColor(BaseColor.r, BaseColor.g, BaseColor.b, ConfigAlpha);
+                                // v1.56.210: per-segment gradient color (Rainbow+Gradient both ON).
+                                ColorRGBA segCol = ColorRGBA(KxLineColorAt(KX_LINE_PATHFINDER, (int)i - 1), true);
+                                Graphics()->SetColor(segCol.r, segCol.g, segCol.b, ConfigAlpha);
                         }
                         IGraphics::CLineItem Line(m_PfVPath[i - 1], m_PfVPath[i]);
                         Graphics()->LinesDraw(&Line, 1);

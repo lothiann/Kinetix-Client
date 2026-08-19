@@ -71,7 +71,6 @@ void CTrajectory::DrawPolyline(const std::vector<vec2> &vPoints, bool AlphaGradi
         if(!pGraphics)
                 return;
 
-        ColorRGBA BaseColor = ColorRGBA(KxLineColor(KX_LINE_TRAJECTORY), true);
         float ConfigAlpha = KxLineAlpha(KX_LINE_TRAJECTORY);
         int LineSize = KxLineSize(KX_LINE_TRAJECTORY);
 
@@ -110,7 +109,9 @@ void CTrajectory::DrawPolyline(const std::vector<vec2> &vPoints, bool AlphaGradi
                         {
                                 Alpha = ConfigAlpha;
                         }
-                        pGraphics->SetColor(BaseColor.r, BaseColor.g, BaseColor.b, Alpha);
+                        // v1.56.210: per-segment color when gradient is on.
+                        ColorRGBA segCol = ColorRGBA(KxLineColorAt(KX_LINE_TRAJECTORY, (int)i), true);
+                        pGraphics->SetColor(segCol.r, segCol.g, segCol.b, Alpha);
                         pGraphics->QuadsDrawFreeform(&vQuads[i], 1);
                 }
                 pGraphics->QuadsEnd();
@@ -130,8 +131,10 @@ void CTrajectory::DrawPolyline(const std::vector<vec2> &vPoints, bool AlphaGradi
                         {
                                 Alpha = ConfigAlpha;
                         }
+                        // v1.56.210: per-segment color when gradient is on.
+                        ColorRGBA segCol = ColorRGBA(KxLineColorAt(KX_LINE_TRAJECTORY, (int)(i - 1)), true);
                         IGraphics::CLineItem Line(vPoints[i - 1], vPoints[i]);
-                        pGraphics->SetColor(BaseColor.r, BaseColor.g, BaseColor.b, Alpha);
+                        pGraphics->SetColor(segCol.r, segCol.g, segCol.b, Alpha);
                         pGraphics->LinesDraw(&Line, 1);
                 }
                 pGraphics->LinesEnd();

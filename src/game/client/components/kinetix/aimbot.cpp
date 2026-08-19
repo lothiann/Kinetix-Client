@@ -751,7 +751,6 @@ void CAimBot::RenderFov(const SWeaponSettings &Settings, const vec2 &MyPos, cons
         float halfFovRad = (Settings.m_Fov * 0.5f) * (pi / 180.0f);
         float myAngle = atan2f(AimDir.y, AimDir.x);
         float radius = Settings.m_Radius;
-        ColorRGBA col = ColorRGBA(KxLineColor(KX_LINE_AIMBOT), true);
         int LineSize = KxLineSize(KX_LINE_AIMBOT);
         float HalfWidth = 0.5f + (float)(LineSize > 0 ? LineSize - 1 : 0) * 0.25f;
         bool useRay = Settings.m_UseRaycastShow;
@@ -785,11 +784,14 @@ void CAimBot::RenderFov(const SWeaponSettings &Settings, const vec2 &MyPos, cons
         // v1.56.104: Layer > 0 → defer to CKinetixLines (renders on top of fg blocks).
         if(g_Config.m_KxLineRenderingLayer > 0)
         {
-                ColorRGBA c = col;
-                c.a = Alpha;
                 float hw = LineSize > 0 ? HalfWidth : 0.0f;
-                for(const auto &seg : segments)
-                        KinetixEnqueueLine(seg.first, seg.second, c, hw);
+                for(size_t i = 0; i < segments.size(); i++)
+                {
+                        // v1.56.210: per-segment color when gradient is on.
+                        ColorRGBA c = ColorRGBA(KxLineColorAt(KX_LINE_AIMBOT, (int)i), true);
+                        c.a = Alpha;
+                        KinetixEnqueueLine(segments[i].first, segments[i].second, c, hw);
+                }
                 return;
         }
 
@@ -797,10 +799,10 @@ void CAimBot::RenderFov(const SWeaponSettings &Settings, const vec2 &MyPos, cons
         if(LineSize > 0)
         {
                 Graphics()->QuadsBegin();
-                for(const auto &seg : segments)
+                for(size_t i = 0; i < segments.size(); i++)
                 {
-                        vec2 p0 = seg.first;
-                        vec2 p1 = seg.second;
+                        vec2 p0 = segments[i].first;
+                        vec2 p1 = segments[i].second;
                         vec2 dir = normalize(p1 - p0);
                         if(length(dir) < 0.001f)
                                 continue;
@@ -808,7 +810,9 @@ void CAimBot::RenderFov(const SWeaponSettings &Settings, const vec2 &MyPos, cons
                         IGraphics::CFreeformItem q(
                                 p0.x - perp.x, p0.y - perp.y, p0.x + perp.x, p0.y + perp.y,
                                 p1.x - perp.x, p1.y - perp.y, p1.x + perp.x, p1.y + perp.y);
-                        Graphics()->SetColor(col.r, col.g, col.b, Alpha);
+                        // v1.56.210: per-segment color when gradient is on.
+                        ColorRGBA segCol = ColorRGBA(KxLineColorAt(KX_LINE_AIMBOT, (int)i), true);
+                        Graphics()->SetColor(segCol.r, segCol.g, segCol.b, Alpha);
                         Graphics()->QuadsDrawFreeform(&q, 1);
                 }
                 Graphics()->QuadsEnd();
@@ -816,10 +820,12 @@ void CAimBot::RenderFov(const SWeaponSettings &Settings, const vec2 &MyPos, cons
         else
         {
                 Graphics()->LinesBegin();
-                Graphics()->SetColor(col.r, col.g, col.b, Alpha);
-                for(const auto &seg : segments)
+                for(size_t i = 0; i < segments.size(); i++)
                 {
-                        IGraphics::CLineItem Line(seg.first.x, seg.first.y, seg.second.x, seg.second.y);
+                        // v1.56.210: per-segment color when gradient is on.
+                        ColorRGBA segCol = ColorRGBA(KxLineColorAt(KX_LINE_AIMBOT, (int)i), true);
+                        Graphics()->SetColor(segCol.r, segCol.g, segCol.b, Alpha);
+                        IGraphics::CLineItem Line(segments[i].first.x, segments[i].first.y, segments[i].second.x, segments[i].second.y);
                         Graphics()->LinesDraw(&Line, 1);
                 }
                 Graphics()->LinesEnd();
@@ -831,7 +837,6 @@ void CAimBot::RenderRadius(const SWeaponSettings &Settings, const vec2 &MyPos, c
         float halfFovRad = (Settings.m_Fov * 0.5f) * (pi / 180.0f);
         float myAngle = atan2f(AimDir.y, AimDir.x);
         float radius = Settings.m_Radius;
-        ColorRGBA col = ColorRGBA(KxLineColor(KX_LINE_AIMBOT), true);
         int LineSize = KxLineSize(KX_LINE_AIMBOT);
         float HalfWidth = 0.5f + (float)(LineSize > 0 ? LineSize - 1 : 0) * 0.25f;
         bool useRay = Settings.m_UseRaycastShow;
@@ -855,11 +860,14 @@ void CAimBot::RenderRadius(const SWeaponSettings &Settings, const vec2 &MyPos, c
         // v1.56.104: Layer > 0 → defer to CKinetixLines (renders on top of fg blocks).
         if(g_Config.m_KxLineRenderingLayer > 0)
         {
-                ColorRGBA c = col;
-                c.a = Alpha;
                 float hw = LineSize > 0 ? HalfWidth : 0.0f;
                 for(size_t i = 0; i + 1 < points.size(); i++)
+                {
+                        // v1.56.210: per-segment color when gradient is on.
+                        ColorRGBA c = ColorRGBA(KxLineColorAt(KX_LINE_AIMBOT, (int)i), true);
+                        c.a = Alpha;
                         KinetixEnqueueLine(points[i], points[i + 1], c, hw);
+                }
                 return;
         }
 
@@ -878,7 +886,9 @@ void CAimBot::RenderRadius(const SWeaponSettings &Settings, const vec2 &MyPos, c
                         IGraphics::CFreeformItem q(
                                 p0.x - perp.x, p0.y - perp.y, p0.x + perp.x, p0.y + perp.y,
                                 p1.x - perp.x, p1.y - perp.y, p1.x + perp.x, p1.y + perp.y);
-                        Graphics()->SetColor(col.r, col.g, col.b, Alpha);
+                        // v1.56.210: per-segment color when gradient is on.
+                        ColorRGBA segCol = ColorRGBA(KxLineColorAt(KX_LINE_AIMBOT, (int)i), true);
+                        Graphics()->SetColor(segCol.r, segCol.g, segCol.b, Alpha);
                         Graphics()->QuadsDrawFreeform(&q, 1);
                 }
                 Graphics()->QuadsEnd();
@@ -886,9 +896,11 @@ void CAimBot::RenderRadius(const SWeaponSettings &Settings, const vec2 &MyPos, c
         else
         {
                 Graphics()->LinesBegin();
-                Graphics()->SetColor(col.r, col.g, col.b, Alpha);
                 for(size_t i = 0; i + 1 < points.size(); i++)
                 {
+                        // v1.56.210: per-segment color when gradient is on.
+                        ColorRGBA segCol = ColorRGBA(KxLineColorAt(KX_LINE_AIMBOT, (int)i), true);
+                        Graphics()->SetColor(segCol.r, segCol.g, segCol.b, Alpha);
                         IGraphics::CLineItem Line(points[i].x, points[i].y, points[i + 1].x, points[i + 1].y);
                         Graphics()->LinesDraw(&Line, 1);
                 }

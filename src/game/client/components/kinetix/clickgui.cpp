@@ -368,6 +368,9 @@ static SRow g_RainbowChildren[] = {
 // Shared line render settings used by trajectory, aimbot FOV/radius, pathfinder path, laser unfreeze.
 // v1.56.108: Line rendering per-component. Component dropdown selects which
 // component's Size/Color/Opacity is being edited. Layer stays global.
+// v1.56.210: Added Gradient toggle + Step slider per-component. Both visible
+// only when Rainbow is ON (gradient has no effect without rainbow). Speed
+// slider min lowered from 0.1 to 0 (frozen rainbow is now possible).
 static const char *const g_LineComponentOpts[] = {"AimBot", "TriggerBot", "Trajectory", "Laser Unfreeze", "Pathfinder", "ESP"};
 static SRow g_LineRenderingChildren[] = {
         {ERowType::Dropdown, "Component", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_LineComponentOpts, 6, 0, nullptr, 0},
@@ -375,7 +378,9 @@ static SRow g_LineRenderingChildren[] = {
         {ERowType::Slider, "Line size", nullptr, false, false, 0.0f, 20.0f, 1.0f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Line opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 80.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Rainbow", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Speed", nullptr, false, false, 0.0f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Gradient", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Step", nullptr, false, false, 1.0f, 180.0f, 1.0f, 15.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Layer", nullptr, false, false, 0.0f, 10.0f, 1.0f, 0.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 static SRow g_SettingsRows[] = {
@@ -383,7 +388,7 @@ static SRow g_SettingsRows[] = {
         {ERowType::Expandable, "Rainbow color", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowChildren, 1},
         {ERowType::Input, "Panel Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "161622", "hex...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "BG blackout", nullptr, false, false, 0.0f, 100.0f, 1.0f, 30.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Expandable, "Line rendering", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LineRenderingChildren, 7},
+        {ERowType::Expandable, "Line rendering", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LineRenderingChildren, 9},
         {ERowType::Expandable, "IRC", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_IrcChildren, 2},
         {ERowType::Expandable, "Spoofer", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_SpooferChildren, 7},
 };
@@ -678,14 +683,33 @@ static bool SpooferChildVisible(const SRow *pChildren, int childCount, int idx)
 }
 // v1.56.204: Line rendering — "Speed" slider visible only when "Rainbow" toggle is on
 // for the currently selected component.
+// v1.56.210: "Gradient" toggle visible only with Rainbow ON (gradient has no
+// effect without rainbow rotation). "Step" slider visible only when BOTH
+// Rainbow AND Gradient are ON — it controls the per-segment hue increment.
 static bool LineRenderingChildVisible(const SRow *pChildren, int childCount, int idx)
 {
         if(idx < 0 || idx >= childCount)
                 return false;
         const SRow &row = pChildren[idx];
-        if(str_comp(row.pName, "Speed") == 0)
+
+        // Step needs BOTH Rainbow ON and Gradient ON.
+        if(str_comp(row.pName, "Step") == 0)
         {
-                // Check the Rainbow toggle's on state for the selected component.
+                bool rainbowOn = false;
+                bool gradientOn = false;
+                for(int i = 0; i < childCount; ++i)
+                {
+                        if(str_comp(pChildren[i].pName, "Rainbow") == 0)
+                                rainbowOn = pChildren[i].on;
+                        else if(str_comp(pChildren[i].pName, "Gradient") == 0)
+                                gradientOn = pChildren[i].on;
+                }
+                return rainbowOn && gradientOn;
+        }
+
+        // Speed and Gradient only need Rainbow ON.
+        if(str_comp(row.pName, "Speed") == 0 || str_comp(row.pName, "Gradient") == 0)
+        {
                 for(int i = 0; i < childCount; ++i)
                 {
                         if(str_comp(pChildren[i].pName, "Rainbow") == 0)
@@ -2106,6 +2130,32 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                                 case KX_LINE_ESP: child.value = (float)g_Config.m_KxLineEspRainbowSpeed / 10.0f; break;
                                                 }
                                         }
+                                        // v1.56.210: Gradient toggle per-component
+                                        else if(str_comp(child.pName, "Gradient") == 0)
+                                        {
+                                                switch(comp)
+                                                {
+                                                case KX_LINE_AIMBOT: child.on = g_Config.m_KxLineAimBotGradient != 0; break;
+                                                case KX_LINE_TRIGGERBOT: child.on = g_Config.m_KxLineTriggerBotGradient != 0; break;
+                                                case KX_LINE_TRAJECTORY: child.on = g_Config.m_KxLineTrajectoryGradient != 0; break;
+                                                case KX_LINE_LASER_UNFREEZE: child.on = g_Config.m_KxLineLaserUnfreezeGradient != 0; break;
+                                                case KX_LINE_PATHFINDER: child.on = g_Config.m_KxLinePathfinderGradient != 0; break;
+                                                case KX_LINE_ESP: child.on = g_Config.m_KxLineEspGradient != 0; break;
+                                                }
+                                        }
+                                        // v1.56.210: Step slider per-component (hue increment per segment)
+                                        else if(str_comp(child.pName, "Step") == 0)
+                                        {
+                                                switch(comp)
+                                                {
+                                                case KX_LINE_AIMBOT: child.value = (float)g_Config.m_KxLineAimBotGradientStep; break;
+                                                case KX_LINE_TRIGGERBOT: child.value = (float)g_Config.m_KxLineTriggerBotGradientStep; break;
+                                                case KX_LINE_TRAJECTORY: child.value = (float)g_Config.m_KxLineTrajectoryGradientStep; break;
+                                                case KX_LINE_LASER_UNFREEZE: child.value = (float)g_Config.m_KxLineLaserUnfreezeGradientStep; break;
+                                                case KX_LINE_PATHFINDER: child.value = (float)g_Config.m_KxLinePathfinderGradientStep; break;
+                                                case KX_LINE_ESP: child.value = (float)g_Config.m_KxLineEspGradientStep; break;
+                                                }
+                                        }
                                         else if(str_comp(child.pName, "Layer") == 0)
                                                 child.value = (float)g_Config.m_KxLineRenderingLayer;
                                 }
@@ -2274,6 +2324,22 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                 case KX_LINE_LASER_UNFREEZE: g_Config.m_KxLineLaserUnfreezeRainbowSpeed = rawVal; break;
                                 case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderRainbowSpeed = rawVal; break;
                                 case KX_LINE_ESP: g_Config.m_KxLineEspRainbowSpeed = rawVal; break;
+                                }
+                        }
+                        // v1.56.210: Line rendering per-component Step slider (hue increment per segment)
+                        else if(str_comp(pTarget->pName, "Step") == 0 && str_comp(row.pName, "Line rendering") == 0)
+                        {
+                                int compIdx = g_Config.m_KxLineComponent;
+                                EKxLineComponent comp = (EKxLineComponent)compIdx;
+                                int rawVal = (int)(pTarget->value + 0.5f);
+                                switch(comp)
+                                {
+                                case KX_LINE_AIMBOT: g_Config.m_KxLineAimBotGradientStep = rawVal; break;
+                                case KX_LINE_TRIGGERBOT: g_Config.m_KxLineTriggerBotGradientStep = rawVal; break;
+                                case KX_LINE_TRAJECTORY: g_Config.m_KxLineTrajectoryGradientStep = rawVal; break;
+                                case KX_LINE_LASER_UNFREEZE: g_Config.m_KxLineLaserUnfreezeGradientStep = rawVal; break;
+                                case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderGradientStep = rawVal; break;
+                                case KX_LINE_ESP: g_Config.m_KxLineEspGradientStep = rawVal; break;
                                 }
                         }
                         else if(str_comp(pTarget->pName, "Latency (ms)") == 0 && str_comp(row.pName, "Copy Moves Latency") == 0)
@@ -3011,6 +3077,21 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 case KX_LINE_LASER_UNFREEZE: g_Config.m_KxLineLaserUnfreezeRainbow = pTarget->on ? 1 : 0; break;
                                                 case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderRainbow = pTarget->on ? 1 : 0; break;
                                                 case KX_LINE_ESP: g_Config.m_KxLineEspRainbow = pTarget->on ? 1 : 0; break;
+                                                }
+                                        }
+                                        // v1.56.210: Line rendering per-component Gradient toggle
+                                        else if(str_comp(pTarget->pName, "Gradient") == 0 && str_comp(row.pName, "Line rendering") == 0)
+                                        {
+                                                int compIdx = g_Config.m_KxLineComponent;
+                                                EKxLineComponent comp = (EKxLineComponent)compIdx;
+                                                switch(comp)
+                                                {
+                                                case KX_LINE_AIMBOT: g_Config.m_KxLineAimBotGradient = pTarget->on ? 1 : 0; break;
+                                                case KX_LINE_TRIGGERBOT: g_Config.m_KxLineTriggerBotGradient = pTarget->on ? 1 : 0; break;
+                                                case KX_LINE_TRAJECTORY: g_Config.m_KxLineTrajectoryGradient = pTarget->on ? 1 : 0; break;
+                                                case KX_LINE_LASER_UNFREEZE: g_Config.m_KxLineLaserUnfreezeGradient = pTarget->on ? 1 : 0; break;
+                                                case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderGradient = pTarget->on ? 1 : 0; break;
+                                                case KX_LINE_ESP: g_Config.m_KxLineEspGradient = pTarget->on ? 1 : 0; break;
                                                 }
                                         }
                                         return;

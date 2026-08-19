@@ -365,6 +365,21 @@ void CBotNet::RenderLaserUnfreezePath()
     // Line size: trajectory line size setting
     int LineSize = KxLineSize(KX_LINE_LASER_UNFREEZE);
 
+    // v1.56.210: per-segment gradient color (only when Rainbow + Gradient are both ON).
+    // Falls back to the laser rifle inner color otherwise (so the laser beam still
+    // matches in-game laser rendering when gradient is off).
+    bool LaserGradientActive =
+        g_Config.m_KxLineLaserUnfreezeRainbow != 0 && g_Config.m_KxLineLaserUnfreezeGradient != 0;
+    auto segCol = [&](int segIdx) -> ColorRGBA {
+        if(LaserGradientActive)
+        {
+            ColorRGBA c = ColorRGBA(KxLineColorAt(KX_LINE_LASER_UNFREEZE, segIdx), true);
+            c.a = ConfigAlpha;
+            return c;
+        }
+        return ColorRGBA(BaseColor.r, BaseColor.g, BaseColor.b, ConfigAlpha);
+    };
+
     pGame->Graphics()->TextureClear();
     pGame->Graphics()->BlendNormal();
 
@@ -392,7 +407,8 @@ void CBotNet::RenderLaserUnfreezePath()
         pGame->Graphics()->QuadsBegin();
         for(size_t i = 0; i < vQuads.size(); i++)
         {
-            pGame->Graphics()->SetColor(BaseColor.r, BaseColor.g, BaseColor.b, ConfigAlpha);
+            ColorRGBA c = segCol((int)i);
+            pGame->Graphics()->SetColor(c.r, c.g, c.b, c.a);
             pGame->Graphics()->QuadsDrawFreeform(&vQuads[i], 1);
         }
         pGame->Graphics()->QuadsEnd();
@@ -401,10 +417,11 @@ void CBotNet::RenderLaserUnfreezePath()
     {
         // Thin line rendering (LineSize == 0)
         pGame->Graphics()->LinesBegin();
-        pGame->Graphics()->SetColor(BaseColor.r, BaseColor.g, BaseColor.b, ConfigAlpha);
 
         for(size_t i = 1; i < m_LaserUnfreezePath.size(); i++)
         {
+            ColorRGBA c = segCol((int)(i - 1));
+            pGame->Graphics()->SetColor(c.r, c.g, c.b, c.a);
             IGraphics::CLineItem Line(
                 m_LaserUnfreezePath[i - 1].x, m_LaserUnfreezePath[i - 1].y,
                 m_LaserUnfreezePath[i].x, m_LaserUnfreezePath[i].y);

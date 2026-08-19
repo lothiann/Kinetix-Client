@@ -116,11 +116,18 @@ void CEsp::DrawArrowhead(const vec2 &p0, const vec2 &p1, ColorRGBA col, float ha
 	DrawSegment(p1, rightTip, col, halfWidth);
 }
 
-void CEsp::EmitLine(const vec2 &p0, const vec2 &p1) const
+void CEsp::EmitLine(const vec2 &p0, const vec2 &p1, int playerIndex) const
 {
-	ColorRGBA col = ColorRGBA(KxLineColor(KX_LINE_ESP), true);
-	float alpha = KxLineAlpha(KX_LINE_ESP);
-	col.a = alpha;
+	// v1.56.210: per-segment gradient color. When Gradient is ON (and
+	// Rainbow ON), each segment gets hue = baseHue + segIdx*step. The
+	// counter starts at playerIndex so lines to different players get
+	// different hues. Otherwise (no gradient / no rainbow) every segment
+	// returns the same color (same as before).
+	auto segCol = [&](int segIdx) -> ColorRGBA {
+		ColorRGBA c = ColorRGBA(KxLineColorAt(KX_LINE_ESP, segIdx), true);
+		c.a = KxLineAlpha(KX_LINE_ESP);
+		return c;
+	};
 	int lineSize = KxLineSize(KX_LINE_ESP);
 	float halfWidth = lineSize > 0 ? 0.5f + (float)(lineSize - 1) * 0.25f : 0.0f;
 
@@ -145,6 +152,7 @@ void CEsp::EmitLine(const vec2 &p0, const vec2 &p1) const
 			if(animOffset < 0.0f)
 				animOffset += pattern;
 			float pos = animOffset; // v1.56.116: +animOffset = dashes move toward target (p1)
+			int dashIdx = 0;
 			while(pos < totalLen)
 			{
 				float dashStart = pos;
@@ -155,7 +163,8 @@ void CEsp::EmitLine(const vec2 &p0, const vec2 &p1) const
 					if(dashEnd > totalLen) dashEnd = totalLen;
 					vec2 segStart = p0 + dir * dashStart;
 					vec2 segEnd = p0 + dir * dashEnd;
-					KinetixEnqueueLine(segStart, segEnd, col, halfWidth);
+					KinetixEnqueueLine(segStart, segEnd, segCol(playerIndex + dashIdx), halfWidth);
+					dashIdx++;
 				}
 				pos += pattern;
 			}
@@ -174,14 +183,14 @@ void CEsp::EmitLine(const vec2 &p0, const vec2 &p1) const
 					vec2 rightDir = vec2(adir.x * ca + adir.y * sa, -adir.x * sa + adir.y * ca);
 					vec2 leftTip = p1 - leftDir * arrowLen;
 					vec2 rightTip = p1 - rightDir * arrowLen;
-					KinetixEnqueueLine(p1, leftTip, col, halfWidth);
-					KinetixEnqueueLine(p1, rightTip, col, halfWidth);
+					KinetixEnqueueLine(p1, leftTip, segCol(playerIndex + dashIdx), halfWidth);
+					KinetixEnqueueLine(p1, rightTip, segCol(playerIndex + dashIdx + 1), halfWidth);
 				}
 			}
 		}
 		else
 		{
-			KinetixEnqueueLine(p0, p1, col, halfWidth);
+			KinetixEnqueueLine(p0, p1, segCol(playerIndex), halfWidth);
 			if(hasArrow)
 			{
 				vec2 adir = p1 - p0;
@@ -197,8 +206,8 @@ void CEsp::EmitLine(const vec2 &p0, const vec2 &p1) const
 					vec2 rightDir = vec2(adir.x * ca + adir.y * sa, -adir.x * sa + adir.y * ca);
 					vec2 leftTip = p1 - leftDir * arrowLen;
 					vec2 rightTip = p1 - rightDir * arrowLen;
-					KinetixEnqueueLine(p1, leftTip, col, halfWidth);
-					KinetixEnqueueLine(p1, rightTip, col, halfWidth);
+					KinetixEnqueueLine(p1, leftTip, segCol(playerIndex + 1), halfWidth);
+					KinetixEnqueueLine(p1, rightTip, segCol(playerIndex + 2), halfWidth);
 				}
 			}
 		}
@@ -220,30 +229,33 @@ void CEsp::EmitLine(const vec2 &p0, const vec2 &p1) const
 			if(animOffset < 0.0f)
 				animOffset += pattern;
 			float pos = animOffset; // v1.56.116: +animOffset = dashes move toward target (p1)
+			int dashIdx = 0;
 			while(pos < totalLen)
 			{
 				float dashStart = pos;
 				float dashEnd = pos + dash;
-			if(dashEnd > 0.0f && dashStart < totalLen)
+				if(dashEnd > 0.0f && dashStart < totalLen)
 				{
 					if(dashStart < 0.0f) dashStart = 0.0f;
 					if(dashEnd > totalLen) dashEnd = totalLen;
 					vec2 segStart = p0 + dir * dashStart;
 					vec2 segEnd = p0 + dir * dashEnd;
-					DrawSegment(segStart, segEnd, col, halfWidth);
+					DrawSegment(segStart, segEnd, segCol(playerIndex + dashIdx), halfWidth);
+					dashIdx++;
 				}
 				pos += pattern;
 			}
 			if(hasArrow)
-				DrawArrowhead(p0, p1, col, halfWidth);
+				DrawArrowhead(p0, p1, segCol(playerIndex + dashIdx), halfWidth);
 		}
 		else
 		{
-			DrawSegment(p0, p1, col, halfWidth);
+			DrawSegment(p0, p1, segCol(playerIndex), halfWidth);
 			if(hasArrow)
-				DrawArrowhead(p0, p1, col, halfWidth);
+				DrawArrowhead(p0, p1, segCol(playerIndex + 1), halfWidth);
 		}
 	}
+}
 }
 
 void CEsp::OnRender()
@@ -292,6 +304,6 @@ void CEsp::OnRender()
 		if(!PassesFilters(i, LocalId))
 			continue;
 		vec2 target = pGame->m_aClients[i].m_RenderPos;
-		EmitLine(pointA, target);
+		EmitLine(pointA, target, i);
 	}
 }
