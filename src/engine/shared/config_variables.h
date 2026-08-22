@@ -430,6 +430,7 @@ MACRO_CONFIG_INT(KxPfAStarNodeBudget, kx_pf_astar_node_budget, 100000, 1000, 100
 MACRO_CONFIG_INT(KxPfPerf, kx_pf_perf, 100, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: performance budget per tick in % (1-100; lower = slower but smoother, spreads chunk generation across many ticks)")
 MACRO_CONFIG_INT(KxPfAdvancedSearch, kx_pf_advanced_search, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: RHEA (Rolling Horizon Evolutionary Algorithm) — evolves a population of input sequences per chunk. When off, uses default fixed-input candidates.")
 MACRO_CONFIG_INT(KxPfRheaGenerations, kx_pf_rhea_generations, 10, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder RHEA: number of evolution generations per chunk (more = better candidates but slower)")
+MACRO_CONFIG_INT(KxPfBeamWidth, kx_pf_beam_width, 32, 4, 1024, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: beam width for beam search (4-1024). Higher = better quality but slower. Used when KxPfAdvancedSearch is off.")
 // Score method — combine any of these (checkboxes; final score = weighted sum of enabled)
 MACRO_CONFIG_INT(KxPfScoreDist, kx_pf_score_dist, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Score: distance reduction (how much closer the chunk moved us to goal)")
 MACRO_CONFIG_INT(KxPfScoreFlow, kx_pf_score_flow, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Score: flow-field alignment (how well the trajectory follows the BFS flow field)")

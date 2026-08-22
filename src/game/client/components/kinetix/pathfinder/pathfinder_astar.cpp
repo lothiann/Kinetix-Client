@@ -617,6 +617,244 @@ int CBotNet::PfAStarStep()
                 return 0;
         }
 
+        // === Beam Search (v1.57: replaces flat parameter sweep) ===
+        // Per-tick beam search with per-tick input combinations.
+        // Maintains a beam of K states. At each tick, expands each state by
+        // all valid single-tick inputs, simulates 1 tick, scores by cumulative
+        // PfScoreChunk, keeps top-K. Each tick has its OWN input combo.
+        {
+                struct BeamState {
+                        CCharacterCore core;
+                        vec2 pos;
+                        int freezeTime;
+                        int jumpedTotal;
+                        std::vector<CNetObj_PlayerInput> inputs;
+                        std::vector<vec2> traj;
+                        std::vector<PfHookSeg> hookSegs;
+                        float score;
+                        bool died;
+                        bool reachedFinish;
+                        int freezeTicks;
+                };
+
+                int BeamWidth = pf_clamp(g_Config.m_KxPfBeamWidth, 4, 1024);
+                int pushCount = pf_clamp(g_Config.m_KxPfBacktrackCandidates, 1, BeamWidth);
+                bool hookRaysReady = (cur.Core.m_HookState == HOOK_IDLE);
+
+                std::vector<BeamState> beam;
+                {
+                        BeamState s;
+                        s.core = cur.Core;
+                        s.pos = cur.Pos;
+                        s.freezeTime = cur.FreezeTime;
+                        s.jumpedTotal = cur.Core.m_JumpedTotal;
+                        s.score = 0.0f;
+                        s.died = false;
+                        s.reachedFinish = false;
+                        s.freezeTicks = 0;
+                        s.traj.push_back(cur.Pos);
+                        beam.push_back(std::move(s));
+                }
+
+                for(int tick = 0; tick < ChunkSize; tick++)
+                {
+                        std::vector<BeamState> newBeam;
+                        newBeam.reserve(beam.size() * 12);
+
+                        for(auto &st : beam)
+                        {
+                                if(st.died || st.reachedFinish)
+                                {
+                                        newBeam.push_back(st);
+                                        continue;
+                                }
+
+                                bool stHookIdle = (st.core.m_HookState == HOOK_IDLE);
+                                bool stHookActive = (st.core.m_HookState == HOOK_FLYING || st.core.m_HookState == HOOK_GRABBED);
+
+                                CNetObj_PlayerInput cands[128];
+                                int nCands = 0;
+
+                                for(int d = 0; d < 3; d++)
+                                {
+                                        for(int j = 0; j < 2; j++)
+                                        {
+                                                CNetObj_PlayerInput inp;
+                                                mem_zero(&inp, sizeof(inp));
+                                                inp.m_Direction = aDirs[d];
+                                                inp.m_Jump = j;
+                                                inp.m_Hook = 0;
+                                                inp.m_TargetX = aDirs[d] * 256;
+                                                inp.m_TargetY = -256;
+                                                cands[nCands++] = inp;
+                                        }
+                                }
+
+                                if(stHookActive)
+                                {
+                                        for(int d = 0; d < 3; d++)
+                                        {
+                                                for(int j = 0; j < 2; j++)
+                                                {
+                                                        CNetObj_PlayerInput inp;
+                                                        mem_zero(&inp, sizeof(inp));
+                                                        inp.m_Direction = aDirs[d];
+                                                        inp.m_Jump = j;
+                                                        inp.m_Hook = 1;
+                                                        vec2 aimRel = st.core.m_HookPos - st.pos;
+                                                        inp.m_TargetX = (int)aimRel.x;
+                                                        inp.m_TargetY = (int)aimRel.y;
+                                                        cands[nCands++] = inp;
+                                                }
+                                        }
+                                }
+
+                                if(stHookIdle && hookRaysReady)
+                                {
+                                        for(int a = 0; a < HookAngles; a++)
+                                        {
+                                                if(!aHookRays[a].hasTarget)
+                                                        continue;
+                                                for(int d = 0; d < 3; d++)
+                                                {
+                                                        CNetObj_PlayerInput inp;
+                                                        mem_zero(&inp, sizeof(inp));
+                                                        inp.m_Direction = aDirs[d];
+                                                        inp.m_Jump = 0;
+                                                        inp.m_Hook = 1;
+                                                        vec2 aimRel = vec2(cosf(aHookRays[a].angle), sinf(aHookRays[a].angle)) * 256.0f;
+                                                        inp.m_TargetX = (int)aimRel.x;
+                                                        inp.m_TargetY = (int)aimRel.y;
+                                                        cands[nCands++] = inp;
+                                                }
+                                        }
+                                }
+
+                                for(int ci = 0; ci < nCands; ci++)
+                                {
+                                        if(!FutureWorld.GetCharacterById(LocalID))
+                                                PfAStarSetupWorld(&FutureWorld, pGame, LocalID);
+                                        FutureWorld.m_GameTick = RootStartTick + cur.TickOffset + tick + 1;
+                                        pBot = PfSpawnSimBot(&FutureWorld, LocalID, st.pos, st.core.m_Vel,
+                                                             st.core.m_HookState, st.core.m_HookPos,
+                                                             st.core.m_HookDir, st.core.m_HookTick,
+                                                             st.freezeTime, st.core.m_Jumped);
+                                        if(!pBot)
+                                                continue;
+                                        { CCharacterCore c = pBot->GetCore(); c.m_JumpedTotal = st.jumpedTotal; pBot->SetCore(c); }
+
+                                        PfChunkResult res;
+                                        std::vector<CNetObj_PlayerInput> oneInput = {cands[ci]};
+                                        PfSimulateChunk(&FutureWorld, LocalID, pBot, oneInput,
+                                                        RootStartTick + cur.TickOffset + tick, res);
+
+                                        if(res.died && !res.reachedFinish)
+                                                continue;
+
+                                        BeamState ns;
+                                        ns.core = st.core;
+                                        ns.core.m_Pos = res.endPos;
+                                        ns.core.m_Vel = res.endVel;
+                                        ns.core.m_HookState = res.endHookState;
+                                        ns.core.m_HookPos = res.endHookPos;
+                                        ns.core.m_HookDir = res.endHookDir;
+                                        ns.core.m_HookTick = res.endHookTick;
+                                        ns.core.m_Jumped = res.endJumped;
+                                        ns.core.m_JumpedTotal = res.endJumpedTotal;
+                                        ns.jumpedTotal = res.endJumpedTotal;
+                                        ns.pos = res.endPos;
+                                        ns.freezeTime = res.endFreezeTime;
+                                        ns.died = res.died;
+                                        ns.reachedFinish = res.reachedFinish;
+                                        ns.freezeTicks = st.freezeTicks + res.freezeTicks;
+                                        ns.inputs = st.inputs;
+                                        ns.inputs.push_back(cands[ci]);
+                                        ns.traj = st.traj;
+                                        ns.traj.push_back(res.endPos);
+                                        ns.hookSegs = st.hookSegs;
+                                        for(const auto &hs : res.hookSegs)
+                                                ns.hookSegs.push_back(hs);
+                                        ns.score = PfScoreChunk(cur.Pos, res.endPos, ns.reachedFinish,
+                                                                ns.died && !ns.reachedFinish, ns.freezeTicks);
+
+                                        newBeam.push_back(std::move(ns));
+
+                                        if(ns.reachedFinish)
+                                                break;
+                                }
+                        }
+
+                        if(newBeam.empty())
+                                break;
+
+                        std::sort(newBeam.begin(), newBeam.end(),
+                                [](const BeamState &a, const BeamState &b) { return a.score > b.score; });
+
+                        if((int)newBeam.size() > BeamWidth)
+                                newBeam.resize(BeamWidth);
+
+                        beam = std::move(newBeam);
+
+                        bool allTerminal = true;
+                        for(auto &s : beam)
+                        {
+                                if(!s.died && !s.reachedFinish)
+                                {
+                                        allTerminal = false;
+                                        break;
+                                }
+                        }
+                        if(allTerminal)
+                                break;
+                }
+
+                std::unordered_set<uint64_t> pushedKeys;
+                int pushed = 0;
+                for(auto &st : beam)
+                {
+                        if(pushed >= pushCount)
+                                break;
+                        if(st.died && !st.reachedFinish)
+                                continue;
+                        if(st.inputs.empty())
+                                continue;
+
+                        bool endGrounded = pColl->IsOnGround(st.pos, CCharacterCore::PhysicalSize());
+                        uint64_t newKey = PfAStarKey(st.core, st.freezeTime, endGrounded);
+                        if(pushedKeys.count(newKey))
+                                continue;
+                        pushedKeys.insert(newKey);
+
+                        float newG = cur.G + (float)ChunkSize + PfAStarStuckPenalty(cur.Pos, st.pos) - st.score;
+                        auto it = m_PfABestG.find(newKey);
+                        if(it != m_PfABestG.end() && it->second <= newG)
+                                continue;
+                        m_PfABestG[newKey] = newG;
+
+                        AStarNode child;
+                        child.Core = st.core;
+                        child.Pos = st.pos;
+                        child.FreezeTime = st.freezeTime;
+                        child.Grounded = endGrounded;
+                        child.G = newG;
+                        child.H = PfAStarHeuristic(child.Pos, endPos);
+                        child.F = child.G + (float)W * child.H;
+                        child.ParentIdx = curIdx;
+                        child.PrimIdx = 0;
+                        child.PrimTicks = ChunkSize;
+                        child.TickOffset = cur.TickOffset + ChunkSize;
+                        child.Traj = st.traj;
+                        child.HookSegs = st.hookSegs;
+                        child.Inputs = st.inputs;
+                        m_PfANodes.push_back(child);
+                        PfAStarHeapPush(m_PfAOpen, m_PfANodes, (int)m_PfANodes.size() - 1);
+                        pushed++;
+                }
+        }
+
+        return 0;
+
+#if 0 // Legacy flat parameter sweep — replaced by beam search above
         for(int dirIdx = 0; dirIdx < 3; dirIdx++)
         {
                 int dir = aDirs[dirIdx];
@@ -817,8 +1055,7 @@ int CBotNet::PfAStarStep()
                         }
                 }
         }
-
-        return 0;
+#endif // end of legacy flat parameter sweep
 }
 
 static void PfAStarBuildInputs(int primI, int pTicks, float aHookX[8], float aHookY[8],
