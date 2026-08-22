@@ -408,6 +408,7 @@ public:
         std::atomic<bool> m_PfThreadCancel{false};
         std::atomic<int> m_PfThreadResult{0};
         std::mutex m_PfDataMutex;
+        std::vector<PfHookSeg> m_PfVHookSegs;
 
         // Per-dummy runtime state
         CBotNetDummy m_aDummies[MAX_DUMMIES];

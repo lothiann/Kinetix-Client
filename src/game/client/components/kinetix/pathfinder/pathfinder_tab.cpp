@@ -614,9 +614,11 @@ void CBotNet::UpdatePathfinder()
         {
                 m_PfTickCounter++;
                 int perf = pf_clamp(g_Config.m_KxPfPerf, 1, 100);
-                int tickInterval = 6000 / perf;
-                if(tickInterval < 1)
+                int tickInterval;
+                if(perf >= 100)
                         tickInterval = 1;
+                else
+                        tickInterval = 60 * (100 - perf) + 1;
                 if(m_PfTickCounter < tickInterval)
                         return;
                 m_PfTickCounter = 0;
@@ -778,9 +780,11 @@ static int PfAStarHeapPop(std::vector<int> &heap, const std::vector<CBotNet::ASt
 void CBotNet::RenderPathfinderPath()
 {
 	std::vector<vec2> vPath;
+	std::vector<PfHookSeg> vHookSegs;
 	{
 		std::lock_guard<std::mutex> lock(m_PfDataMutex);
 		vPath = m_PfVPath;
+		vHookSegs = m_PfVHookSegs;
 	}
 	if(vPath.empty())
 		return;
@@ -930,48 +934,30 @@ void CBotNet::RenderPathfinderPath()
         }
 
         // === Show hooks (blue lines, using trajectory settings for width) ===
-        // Draws ALL hook fire/hold segments along the best path, captured per-tick
-        // in PfSimulateChunk (node.HookSegs). This shows multiple hook cycles inside
-        // a single chunk (e.g. Advanced search per-tick hook fire), not just the
-        // final HOOK_GRABBED state.
-        if(g_Config.m_KxPfShowHooks && m_PfANodes.size() > 0)
+        // Draws ALL hook fire/hold segments along the preview path, captured per-tick
+        // in PfSimulateChunk (node.HookSegs). Snapshot taken together with m_PfVPath
+        // in PfAStarResimulatePath under m_PfDataMutex — guarantees hooks match path.
+        if(g_Config.m_KxPfShowHooks && !vHookSegs.empty())
         {
-                // Find best path (same as preview)
-                int bestIdx = -1;
-                float bestH = 1e18f;
-                for(int idx : m_PfAOpen)
-                {
-                        if(idx < 0 || idx >= (int)m_PfANodes.size())
-                                continue;
-                        if(m_PfANodes[idx].H < bestH)
-                        {
-                                bestH = m_PfANodes[idx].H;
-                                bestIdx = idx;
-                        }
-                }
                 float HalfWidth = 0.5f + (float)(LineSize - 1) * 0.25f;
-                if(LineSize > 0 && bestIdx >= 0)
+                if(LineSize > 0)
                 {
                         std::vector<IGraphics::CFreeformItem> vQuads;
-                        for(int idx = bestIdx; idx >= 0; idx = m_PfANodes[idx].ParentIdx)
+                        for(const auto &seg : vHookSegs)
                         {
-                                AStarNode &node = m_PfANodes[idx];
-                                for(const auto &seg : node.HookSegs)
-                                {
-                                        vec2 p0 = seg.teePos;
-                                        vec2 p1 = seg.hookPos;
-                                        vec2 d = p1 - p0;
-                                        float len = length(d);
-                                        if(len < 0.001f)
-                                                continue;
-                                        vec2 Dir = d / len;
-                                        vec2 Perp = vec2(Dir.y, -Dir.x) * HalfWidth;
-                                        vQuads.emplace_back(
-                                                p0.x - Perp.x, p0.y - Perp.y,
-                                                p0.x + Perp.x, p0.y + Perp.y,
-                                                p1.x - Perp.x, p1.y - Perp.y,
-                                                p1.x + Perp.x, p1.y + Perp.y);
-                                }
+                                vec2 p0 = seg.teePos;
+                                vec2 p1 = seg.hookPos;
+                                vec2 d = p1 - p0;
+                                float len = length(d);
+                                if(len < 0.001f)
+                                        continue;
+                                vec2 Dir = d / len;
+                                vec2 Perp = vec2(Dir.y, -Dir.x) * HalfWidth;
+                                vQuads.emplace_back(
+                                        p0.x - Perp.x, p0.y - Perp.y,
+                                        p0.x + Perp.x, p0.y + Perp.y,
+                                        p1.x - Perp.x, p1.y - Perp.y,
+                                        p1.x + Perp.x, p1.y + Perp.y);
                         }
                         Graphics()->QuadsBegin();
                         for(size_t i = 0; i < vQuads.size(); i++)
@@ -981,18 +967,14 @@ void CBotNet::RenderPathfinderPath()
                         }
                         Graphics()->QuadsEnd();
                 }
-                else if(bestIdx >= 0)
+                else
                 {
                         Graphics()->LinesBegin();
                         Graphics()->SetColor(0.2f, 0.4f, 1.0f, ConfigAlpha);
-                        for(int idx = bestIdx; idx >= 0; idx = m_PfANodes[idx].ParentIdx)
+                        for(const auto &seg : vHookSegs)
                         {
-                                AStarNode &node = m_PfANodes[idx];
-                                for(const auto &seg : node.HookSegs)
-                                {
-                                        IGraphics::CLineItem Line(seg.teePos, seg.hookPos);
-                                        Graphics()->LinesDraw(&Line, 1);
-                                }
+                                IGraphics::CLineItem Line(seg.teePos, seg.hookPos);
+                                Graphics()->LinesDraw(&Line, 1);
                         }
                         Graphics()->LinesEnd();
                 }

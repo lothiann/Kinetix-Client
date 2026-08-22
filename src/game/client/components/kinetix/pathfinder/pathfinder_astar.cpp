@@ -633,7 +633,7 @@ int CBotNet::PfAStarStep()
                         int freezeTicks;
                 };
 
-                int BeamWidth = pf_clamp(g_Config.m_KxPfBeamWidth, 4, 1024);
+                int BeamWidth = pf_clamp(g_Config.m_KxPfBeamWidth, 4, 4096);
                 int pushCount = pf_clamp(g_Config.m_KxPfBacktrackCandidates, 1, BeamWidth);
                 bool hookRaysReady = (cur.Core.m_HookState == HOOK_IDLE);
 
@@ -1111,18 +1111,22 @@ void CBotNet::PfAStarResimulatePath(int targetIdx)
 		vPathIdx.push_back(idx);
 	std::reverse(vPathIdx.begin(), vPathIdx.end());
 
-	// Build path in a local buffer, then swap under lock (minimises mutex hold time)
+	// Build path + hook segs in local buffers, then swap under lock (minimises mutex hold time)
 	std::vector<vec2> newPath;
+	std::vector<PfHookSeg> newHookSegs;
 	newPath.push_back(m_PfANodes[vPathIdx[0]].Pos);
 	for(size_t i = 1; i < vPathIdx.size(); i++)
 	{
 		AStarNode &node = m_PfANodes[vPathIdx[i]];
 		for(size_t k = 1; k < node.Traj.size(); k++)
 			newPath.push_back(node.Traj[k]);
+		for(const auto &seg : node.HookSegs)
+			newHookSegs.push_back(seg);
 	}
 
 	std::lock_guard<std::mutex> lock(m_PfDataMutex);
 	m_PfVPath = std::move(newPath);
+	m_PfVHookSegs = std::move(newHookSegs);
 }
 
 void CBotNet::PfAStarUpdatePreview()
