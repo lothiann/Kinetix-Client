@@ -3335,7 +3335,10 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 else // PF_STATE_FINISHED
                                                 {
                                                         BN.m_PfState = PF_STATE_IDLE;
-                                                        BN.m_PfVPath.clear();
+														{
+															std::lock_guard<std::mutex> lock(BN.m_PfDataMutex);
+															BN.m_PfVPath.clear();
+														}
                                                         // BUG4 v1.56.165: release heavy A*/RHEA search buffers
                                                         // (m_PfANodes, m_PfRHAPopulation, m_PfFullInputs, ...)
                                                         // before going idle. They were left alive across the

@@ -117,9 +117,9 @@ float CBotNet::PfAStarHeuristic(const vec2 &pos, const vec2 &endPos)
 }
 
 // Setup clean FutureWorld (local variable passed by caller — same as v1.55 PfGenerateChunk)
-static void PfAStarSetupWorld(CGameWorld *pWorld, CGameClient *pGame, int LocalID)
+static void PfAStarSetupWorld(CGameWorld *pWorld, CGameWorld *pSrc, int LocalID)
 {
-        pWorld->CopyWorld(&pGame->m_PredictedWorld);
+	pWorld->CopyWorld(pSrc);
         for(int Type = 0; Type < CGameWorld::NUM_ENTTYPES; Type++)
         {
                 if(Type == CGameWorld::ENTTYPE_CHARACTER)
@@ -141,16 +141,15 @@ static void PfAStarSetupWorld(CGameWorld *pWorld, CGameClient *pGame, int LocalI
 
 bool CBotNet::PfAStarInit()
 {
-        CGameClient *pGame = GameClient();
-        if(!pGame || !pGame->m_Snap.m_pLocalInfo)
-                return false;
-        int LocalID = pGame->m_Snap.m_LocalClientId;
-        if(LocalID < 0)
-                return false;
-        if(!pGame->m_PredictedWorld.GetCharacterById(LocalID))
-                return false;
-        if(m_PfFinishTiles.empty())
-                return false;
+	if(!m_PfBaseWorld)
+		return false;
+	int LocalID = m_PfLocalID;
+	if(LocalID < 0)
+		return false;
+	if(!m_PfBaseWorld->GetCharacterById(LocalID))
+		return false;
+	if(m_PfFinishTiles.empty())
+		return false;
 
         m_PfANodes.clear();
         m_PfAOpen.clear();
@@ -168,8 +167,8 @@ bool CBotNet::PfAStarInit()
         dbg_msg("pathfinder", "A* init: start=(%.0f,%.0f) goal=(%.0f,%.0f) dist=%.0f",
                 m_PfCurPos.x, m_PfCurPos.y, endPos.x, endPos.y, bestDist);
 
-        AStarNode root;
-        root.Core = pGame->m_PredictedWorld.GetCharacterById(LocalID)->GetCore();
+	AStarNode root;
+	root.Core = m_PfBaseWorld->GetCharacterById(LocalID)->GetCore();
         root.Core.m_Pos = m_PfCurPos;
         root.Core.m_Vel = m_PfCurVel;
         root.Core.m_HookState = m_PfCurHookState;
@@ -179,8 +178,8 @@ bool CBotNet::PfAStarInit()
         root.Core.m_Jumped = m_PfCurJumped;
         root.Pos = m_PfCurPos;
         root.FreezeTime = m_PfCurFreezeTime;
-        CCollision *pColl = pGame->Collision();
-        root.Grounded = pColl ? pColl->IsOnGround(root.Pos, CCharacterCore::PhysicalSize()) : false;
+	CCollision *pColl = m_PfBaseWorld->Collision();
+	root.Grounded = pColl ? pColl->IsOnGround(root.Pos, CCharacterCore::PhysicalSize()) : false;
         root.G = 0.0f;
         root.H = PfAStarHeuristic(m_PfCurPos, endPos);
         root.F = root.G + (float)pf_clamp(g_Config.m_KxPfAStarWeight, 1, 20) * root.H;
@@ -246,13 +245,10 @@ int CBotNet::PfAStarStep()
         if(cur.G >= (float)maxTicks)
                 return 0;
 
-        CGameClient *pGame = GameClient();
-        if(!pGame)
-                return -1;
-        int LocalID = pGame->m_Snap.m_LocalClientId;
+	int LocalID = m_PfLocalID;
 
-        CGameWorld FutureWorld;
-        PfAStarSetupWorld(&FutureWorld, pGame, LocalID);
+	CGameWorld FutureWorld;
+	PfAStarSetupWorld(&FutureWorld, m_PfBaseWorld, LocalID);
         CCollision *pColl = FutureWorld.Collision();
         if(!pColl)
                 return 0;
@@ -397,7 +393,7 @@ int CBotNet::PfAStarStep()
                 // Evaluate one individual: simulate ChunkSize ticks, store result + fitness.
                 auto fnEvaluate = [&](RheaIndividual &ind) {
                         if(!FutureWorld.GetCharacterById(LocalID))
-                                PfAStarSetupWorld(&FutureWorld, pGame, LocalID);
+                                PfAStarSetupWorld(&FutureWorld, m_PfBaseWorld, LocalID);
                         FutureWorld.m_GameTick = RootStartTick + cur.TickOffset;
                         pBot = PfSpawnSimBot(&FutureWorld, LocalID, cur.Pos, cur.Core.m_Vel,
                              cur.Core.m_HookState, cur.Core.m_HookPos,
@@ -526,7 +522,7 @@ int CBotNet::PfAStarStep()
                                 inp.m_TargetY = (int)aim.y;
                                 std::vector<CNetObj_PlayerInput> oneTick = {inp};
                                 if(!FutureWorld.GetCharacterById(LocalID))
-                                        PfAStarSetupWorld(&FutureWorld, pGame, LocalID);
+                                        PfAStarSetupWorld(&FutureWorld, m_PfBaseWorld, LocalID);
                                 FutureWorld.m_GameTick = RootStartTick + cur.TickOffset;
                                 pBot = PfSpawnSimBot(&FutureWorld, LocalID, cur.Pos, cur.Core.m_Vel,
                                      cur.Core.m_HookState, cur.Core.m_HookPos,
@@ -733,7 +729,7 @@ int CBotNet::PfAStarStep()
                                 for(int ci = 0; ci < nCands; ci++)
                                 {
                                         if(!FutureWorld.GetCharacterById(LocalID))
-                                                PfAStarSetupWorld(&FutureWorld, pGame, LocalID);
+                                                PfAStarSetupWorld(&FutureWorld, m_PfBaseWorld, LocalID);
                                         FutureWorld.m_GameTick = RootStartTick + cur.TickOffset + tick + 1;
                                         pBot = PfSpawnSimBot(&FutureWorld, LocalID, st.pos, st.core.m_Vel,
                                                              st.core.m_HookState, st.core.m_HookPos,
@@ -892,7 +888,7 @@ int CBotNet::PfAStarStep()
 
                                                 // Re-spawn bot
                                                 if(!FutureWorld.GetCharacterById(LocalID))
-                                                        PfAStarSetupWorld(&FutureWorld, pGame, LocalID);
+                                                        PfAStarSetupWorld(&FutureWorld, m_PfBaseWorld, LocalID);
                                                 FutureWorld.m_GameTick = RootStartTick + cur.TickOffset;
                                                 pBot = PfSpawnSimBot(&FutureWorld, LocalID, cur.Pos, cur.Core.m_Vel,
                                                      cur.Core.m_HookState, cur.Core.m_HookPos,
@@ -953,7 +949,7 @@ int CBotNet::PfAStarStep()
                                         }
 
                                         if(!FutureWorld.GetCharacterById(LocalID))
-                                                PfAStarSetupWorld(&FutureWorld, pGame, LocalID);
+                                                PfAStarSetupWorld(&FutureWorld, m_PfBaseWorld, LocalID);
                                         FutureWorld.m_GameTick = RootStartTick + cur.TickOffset;
                                         pBot = PfSpawnSimBot(&FutureWorld, LocalID, cur.Pos, cur.Core.m_Vel,
                                              cur.Core.m_HookState, cur.Core.m_HookPos,
@@ -1011,7 +1007,7 @@ int CBotNet::PfAStarStep()
                                         }
 
                                         if(!FutureWorld.GetCharacterById(LocalID))
-                                                PfAStarSetupWorld(&FutureWorld, pGame, LocalID);
+                                                PfAStarSetupWorld(&FutureWorld, m_PfBaseWorld, LocalID);
                                         FutureWorld.m_GameTick = RootStartTick + cur.TickOffset;
                                         pBot = PfSpawnSimBot(&FutureWorld, LocalID, cur.Pos, cur.Core.m_Vel,
                                              cur.Core.m_HookState, cur.Core.m_HookPos,
@@ -1106,24 +1102,27 @@ static void PfAStarBuildInputs(int primI, int pTicks, float aHookX[8], float aHo
 
 void CBotNet::PfAStarResimulatePath(int targetIdx)
 {
-        if(targetIdx < 0 || targetIdx >= (int)m_PfANodes.size())
-                return;
+	if(targetIdx < 0 || targetIdx >= (int)m_PfANodes.size())
+		return;
 
-        // Walk parents from target to root
-        std::vector<int> vPathIdx;
-        for(int idx = targetIdx; idx >= 0; idx = m_PfANodes[idx].ParentIdx)
-                vPathIdx.push_back(idx);
-        std::reverse(vPathIdx.begin(), vPathIdx.end());
+	// Walk parents from target to root
+	std::vector<int> vPathIdx;
+	for(int idx = targetIdx; idx >= 0; idx = m_PfANodes[idx].ParentIdx)
+		vPathIdx.push_back(idx);
+	std::reverse(vPathIdx.begin(), vPathIdx.end());
 
-        // Build m_PfVPath from cached Traj in each node (no re-simulation — fast)
-        m_PfVPath.clear();
-        m_PfVPath.push_back(m_PfANodes[vPathIdx[0]].Pos);
-        for(size_t i = 1; i < vPathIdx.size(); i++)
-        {
-                AStarNode &node = m_PfANodes[vPathIdx[i]];
-                for(size_t k = 1; k < node.Traj.size(); k++)
-                        m_PfVPath.push_back(node.Traj[k]);
-        }
+	// Build path in a local buffer, then swap under lock (minimises mutex hold time)
+	std::vector<vec2> newPath;
+	newPath.push_back(m_PfANodes[vPathIdx[0]].Pos);
+	for(size_t i = 1; i < vPathIdx.size(); i++)
+	{
+		AStarNode &node = m_PfANodes[vPathIdx[i]];
+		for(size_t k = 1; k < node.Traj.size(); k++)
+			newPath.push_back(node.Traj[k]);
+	}
+
+	std::lock_guard<std::mutex> lock(m_PfDataMutex);
+	m_PfVPath = std::move(newPath);
 }
 
 void CBotNet::PfAStarUpdatePreview()
@@ -1151,8 +1150,9 @@ void CBotNet::PfAStarUpdatePreview()
 
 void CBotNet::PfAStarReconstruct()
 {
-        if(m_PfAGoalIdx < 0)
-                return;
+	PfThreadStop();
+	if(m_PfAGoalIdx < 0)
+		return;
 
         PfAStarResimulatePath(m_PfAGoalIdx);
 
@@ -1183,6 +1183,66 @@ void CBotNet::PfAStarReconstruct()
                 m_PfCurJumped = last.Core.m_Jumped;
                 m_PfCurFreezeTime = last.FreezeTime;
         }
+}
+
+// =========================================================
+// v1.57: Threaded pathfinder worker
+// =========================================================
+
+void CBotNet::PfThreadWorker()
+{
+	if(!PfAStarInit())
+	{
+		m_PfThreadResult.store(-1);
+		m_PfThreadRunning.store(false);
+		return;
+	}
+
+	while(!m_PfThreadCancel.load(std::memory_order_relaxed))
+	{
+		int result = PfAStarStep();
+
+		PfAStarUpdatePreview();
+
+		if(m_PfAExpandCount % 1000 == 0)
+			dbg_msg("pathfinder", "A* thread progress: %d expansions, %zu nodes, open=%zu",
+				m_PfAExpandCount, m_PfANodes.size(), m_PfAOpen.size());
+
+		if(result == 1)
+		{
+			m_PfThreadResult.store(1);
+			m_PfThreadRunning.store(false);
+			return;
+		}
+		if(result < 0)
+		{
+			m_PfThreadResult.store(-1);
+			m_PfThreadRunning.store(false);
+			return;
+		}
+	}
+
+	m_PfThreadResult.store(-1);
+	m_PfThreadRunning.store(false);
+}
+
+void CBotNet::PfThreadStart()
+{
+	PfThreadStop();
+	m_PfThreadResult.store(0);
+	m_PfThreadCancel.store(false);
+	m_PfThreadRunning.store(true);
+	m_PfThread = std::thread(&CBotNet::PfThreadWorker, this);
+}
+
+void CBotNet::PfThreadStop()
+{
+	if(!m_PfThread.joinable())
+		return;
+	m_PfThreadCancel.store(true);
+	m_PfThread.join();
+	m_PfThreadRunning.store(false);
+	m_PfThreadCancel.store(false);
 }
 
 // Render m_PfVPath (copy of RenderPackage with m_PfVPath substituted).

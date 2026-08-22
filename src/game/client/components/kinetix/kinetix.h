@@ -11,8 +11,11 @@
 #include <game/gamecore.h>
 #include <generated/protocol.h>
 
+#include <atomic>
 #include <cstdint>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -246,6 +249,8 @@ struct CBotNetDummy
         }
 };
 
+class CGameWorld;
+
 // =========================================================
 // CBotNet — botnet component (all inactive dummies)
 // =========================================================
@@ -390,6 +395,20 @@ public:
         vec2 m_PfGoAimOffset = vec2(0, 0);
         int m_PfGoPrevHook = 0;
 
+        // v1.57: Threaded pathfinder — A* search runs in a background thread.
+        // m_PfBaseWorld = pristine snapshot of PredictedWorld (taken in PfResetRun
+        //   on the main thread). Worker reads from this; never touches GameClient().
+        // m_PfLocalID = LocalClientId captured at snapshot time.
+        // m_PfThreadResult: 0=running, 1=goal found, -1=failed/cancelled.
+        // m_PfDataMutex: protects m_PfVPath (written by worker, read by renderer).
+        CGameWorld *m_PfBaseWorld = nullptr;
+        int m_PfLocalID = -1;
+        std::thread m_PfThread;
+        std::atomic<bool> m_PfThreadRunning{false};
+        std::atomic<bool> m_PfThreadCancel{false};
+        std::atomic<int> m_PfThreadResult{0};
+        std::mutex m_PfDataMutex;
+
         // Per-dummy runtime state
         CBotNetDummy m_aDummies[MAX_DUMMIES];
 
@@ -486,6 +505,9 @@ public:
         void PfAStarUpdatePreview();
         void PfAStarResimulatePath(int targetIdx);  // re-simulate path root→target, fill m_PfVPath
         float PfAStarHeuristic(const vec2 &pos, const vec2 &endPos);
+        void PfThreadWorker();
+        void PfThreadStart();
+        void PfThreadStop();
 
         // --- Console commands ---
         static void ConRandomAim(IConsole::IResult *pResult, void *pUserData);

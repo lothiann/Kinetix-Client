@@ -156,7 +156,10 @@ void CBotNet::ConPfLive(IConsole::IResult *pResult, void *pUserData)
                 p->PfResetRun();
         p->m_PfState = s;
         if(s == PF_STATE_IDLE)
-                p->m_PfVPath.clear();
+			{
+				std::lock_guard<std::mutex> lock(p->m_PfDataMutex);
+				p->m_PfVPath.clear();
+			}
 }
 
 void CBotNet::ConPfGo(IConsole::IResult *pResult, void *pUserData)

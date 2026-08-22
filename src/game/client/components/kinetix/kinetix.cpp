@@ -64,7 +64,9 @@ CBotNet::CBotNet()
 
 CBotNet::~CBotNet()
 {
-        if(m_pMapGrid) delete[] m_pMapGrid;
+	PfThreadStop();
+	if(m_PfBaseWorld) { delete m_PfBaseWorld; m_PfBaseWorld = nullptr; }
+	if(m_pMapGrid) delete[] m_pMapGrid;
         if(m_pFrontGrid) delete[] m_pFrontGrid;
         if(m_pfDist) delete[] m_pfDist;
         if(m_pfVisited) delete[] m_pfVisited;

@@ -42,7 +42,15 @@
 //   the player or the map.
 void CBotNet::PfClearSearchState()
 {
-        m_PfANodes.clear();
+	PfThreadStop();
+	if(m_PfBaseWorld)
+	{
+		delete m_PfBaseWorld;
+		m_PfBaseWorld = nullptr;
+	}
+	m_PfLocalID = -1;
+	m_PfThreadResult.store(-1);
+	m_PfANodes.clear();
         m_PfAOpen.clear();
         m_PfABestG.clear();
         m_PfAGoalIdx = -1;
@@ -125,9 +133,20 @@ void CBotNet::PfResetRun()
         m_PfFinishTiles.clear();
         PfComputeFlowField();
 
-        dbg_msg("pathfinder", "PfResetRun: start=(%.0f,%.0f) finish_tiles=%d flowfield=%s",
-                Core.m_Pos.x, Core.m_Pos.y, (int)m_PfFinishTiles.size(),
-                m_PfFlowField ? "ok" : "null");
+	dbg_msg("pathfinder", "PfResetRun: start=(%.0f,%.0f) finish_tiles=%d flowfield=%s",
+		Core.m_Pos.x, Core.m_Pos.y, (int)m_PfFinishTiles.size(),
+		m_PfFlowField ? "ok" : "null");
+
+	// v1.57: Snapshot the predicted world for the worker thread.
+	// The worker never touches GameClient() — it only reads from this snapshot.
+	if(m_PfBaseWorld)
+		delete m_PfBaseWorld;
+	m_PfBaseWorld = new CGameWorld();
+	m_PfBaseWorld->CopyWorld(&pGame->m_PredictedWorld);
+	m_PfLocalID = LocalID;
+
+	PfThreadStart();
+	m_PfAStarted = true;
 }
 
 // kx_pf_play: apply next path tick to real player input.
@@ -618,47 +637,24 @@ void CBotNet::UpdatePathfinder()
                 return;
         }
 
-        // ── A* phase ──
-        // Perf throttle: 6000/perf frames between expansions (same as v1.55)
-        m_PfTickCounter++;
-        int perf = pf_clamp(g_Config.m_KxPfPerf, 1, 100);
-        int tickInterval = 6000 / perf;
-        if(tickInterval < 1)
-                tickInterval = 1;
-        if(m_PfTickCounter < tickInterval)
-                return;
-        m_PfTickCounter = 0;
+	// ── A* phase (v1.57: runs in background thread) ──
+	int result = m_PfThreadResult.load();
+	if(result == 0)
+		return; // worker still running
 
-        if(!m_PfAStarted)
-        {
-                if(!PfAStarInit())
-                {
-                        m_PfState = PF_STATE_FINISHED;
-                        return;
-                }
-                m_PfAStarted = true;
-                PfAStarUpdatePreview();
-                return;
-        }
+	if(result == 1)
+	{
+		PfAStarReconstruct();
+		m_PfAPathReady = true;
+		m_PfFullInputsIdx = 0;
+		dbg_msg("pathfinder", "A* path found: %zu ticks, %zu nodes, %d expansions",
+			m_PfFullInputs.size(), m_PfANodes.size(), m_PfAExpandCount);
+		return;
+	}
 
-        int result = PfAStarStep();
-        if(result == 1)
-        {
-                PfAStarReconstruct();
-                m_PfAPathReady = true;
-                m_PfFullInputsIdx = 0;
-                dbg_msg("pathfinder", "A* path found: %zu ticks, %zu nodes, %d expansions",
-                        m_PfFullInputs.size(), m_PfANodes.size(), m_PfAExpandCount);
-                return;
-        }
-        else if(result < 0)
-        {
-                dbg_msg("pathfinder", "A* failed: %d expansions, %zu nodes",
-                        m_PfAExpandCount, m_PfANodes.size());
-                m_PfState = PF_STATE_FINISHED;
-                return;
-        }
-        PfAStarUpdatePreview();
+	dbg_msg("pathfinder", "A* failed: %d expansions, %zu nodes",
+		m_PfAExpandCount, m_PfANodes.size());
+	m_PfState = PF_STATE_FINISHED;
 }
 
 // Try an alternative candidate from the backtrack buffer.
@@ -781,8 +777,13 @@ static int PfAStarHeapPop(std::vector<int> &heap, const std::vector<CBotNet::ASt
 
 void CBotNet::RenderPathfinderPath()
 {
-        if(m_PfVPath.empty())
-                return;
+	std::vector<vec2> vPath;
+	{
+		std::lock_guard<std::mutex> lock(m_PfDataMutex);
+		vPath = m_PfVPath;
+	}
+	if(vPath.empty())
+		return;
 
         // CBotNet is registered in m_vpAll BEFORE m_MapLayersBackground, so the
         // world projection (normally set up by CMapRenderer via MapScreenToInterface)
@@ -803,11 +804,11 @@ void CBotNet::RenderPathfinderPath()
         // If only the start point exists (no chunk generated yet, or all chunks
         // failed), render a small marker so the user sees the pathfinder is
         // active but stuck — instead of an invisible empty path.
-        if(m_PfVPath.size() == 1)
-        {
-                Graphics()->QuadsBegin();
-                Graphics()->SetColor(BaseColor.r, BaseColor.g, BaseColor.b, ConfigAlpha);
-                vec2 p = m_PfVPath[0];
+	if(vPath.size() == 1)
+	{
+		Graphics()->QuadsBegin();
+		Graphics()->SetColor(BaseColor.r, BaseColor.g, BaseColor.b, ConfigAlpha);
+		vec2 p = vPath[0];
                 float s = 8.0f;
                 IGraphics::CFreeformItem Quad(
                         p.x - s, p.y - s, p.x + s, p.y - s,
@@ -1019,11 +1020,11 @@ void CBotNet::RenderPathfinderPath()
         if(LineSize > 0)
         {
                 float HalfWidth = 0.5f + (float)(LineSize - 1) * 0.25f;
-                Graphics()->QuadsBegin();
-                for(size_t i = 1; i < m_PfVPath.size(); i++)
-                {
-                        vec2 p0 = m_PfVPath[i - 1];
-                        vec2 p1 = m_PfVPath[i];
+		Graphics()->QuadsBegin();
+		for(size_t i = 1; i < vPath.size(); i++)
+		{
+			vec2 p0 = vPath[i - 1];
+			vec2 p1 = vPath[i];
                         vec2 Dir = normalize(p1 - p0);
                         vec2 Perp = vec2(Dir.y, -Dir.x) * HalfWidth;
                         IGraphics::CFreeformItem Quad(
@@ -1035,7 +1036,7 @@ void CBotNet::RenderPathfinderPath()
                         if(g_Config.m_KxPfShowSpeed)
                         {
                                 // Speed at start and end of this segment.
-                                float speed0 = (i > 1) ? distance(m_PfVPath[i - 2], m_PfVPath[i - 1]) : distance(p0, p1);
+				float speed0 = (i > 1) ? distance(vPath[i - 2], vPath[i - 1]) : distance(p0, p1);
                                 float speed1 = distance(p0, p1);
                                 ColorRGBA c0 = fnSpeedColor(speed0);
                                 ColorRGBA c1 = fnSpeedColor(speed1);
@@ -1058,12 +1059,12 @@ void CBotNet::RenderPathfinderPath()
         }
         else
         {
-                Graphics()->LinesBegin();
-                for(size_t i = 1; i < m_PfVPath.size(); i++)
+		Graphics()->LinesBegin();
+		for(size_t i = 1; i < vPath.size(); i++)
                 {
                         if(g_Config.m_KxPfShowSpeed)
                         {
-                                float speed = distance(m_PfVPath[i - 1], m_PfVPath[i]);
+			float speed = distance(vPath[i - 1], vPath[i]);
                                 ColorRGBA c = fnSpeedColor(speed);
                                 Graphics()->SetColor(c.r, c.g, c.b, ConfigAlpha);
                         }
@@ -1073,7 +1074,7 @@ void CBotNet::RenderPathfinderPath()
                                 ColorRGBA segCol = ColorRGBA(KxLineColorAt(KX_LINE_PATHFINDER, (int)i - 1), true);
                                 Graphics()->SetColor(segCol.r, segCol.g, segCol.b, ConfigAlpha);
                         }
-                        IGraphics::CLineItem Line(m_PfVPath[i - 1], m_PfVPath[i]);
+			IGraphics::CLineItem Line(vPath[i - 1], vPath[i]);
                         Graphics()->LinesDraw(&Line, 1);
                 }
                 Graphics()->LinesEnd();
