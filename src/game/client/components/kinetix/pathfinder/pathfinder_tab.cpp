@@ -1,5 +1,6 @@
 #include <game/client/components/kinetix/kinetix.h>
 #include <game/client/components/kinetix/kinetix_internal.h>
+#include <engine/keys.h>
 
 // PfClearSearchState (v1.56.165, BUG4): release ALL A*/RHEA search buffers.
 //
@@ -229,6 +230,8 @@ void CBotNet::PfComputeFlowField()
                 }
         }
 
+        const std::vector<vec2> &vSources = PfActiveFinishTiles();
+
         // === Phase 1: BFS from finish, STRICTLY skip freeze tiles. ===
         // Freeze tiles stay 1e18 (unreachable). If the bot's start position is
         // reachable in Phase 1, we're done — path exists without freeze.
@@ -236,7 +239,7 @@ void CBotNet::PfComputeFlowField()
         for(int i = 0; i < Size; i++)
                 m_PfFlowField[i] = 1e18f;
 
-        if(m_PfFinishTiles.empty())
+        if(vSources.empty())
                 return;
 
         const float SQRT2 = 1.4142135623730951f;
@@ -250,7 +253,7 @@ void CBotNet::PfComputeFlowField()
         };
 
         std::priority_queue<PfNode, std::vector<PfNode>, std::greater<PfNode>> open;
-        for(const vec2 &fp : m_PfFinishTiles)
+        for(const vec2 &fp : vSources)
         {
                 int tx = (int)(fp.x / 32.0f);
                 int ty = (int)(fp.y / 32.0f);
@@ -314,7 +317,7 @@ void CBotNet::PfComputeFlowField()
                         m_PfFlowField[i] = 1e18f;
 
                 std::priority_queue<PfNode, std::vector<PfNode>, std::greater<PfNode>> open2;
-                for(const vec2 &fp : m_PfFinishTiles)
+                for(const vec2 &fp : vSources)
                 {
                         int tx = (int)(fp.x / 32.0f);
                         int ty = (int)(fp.y / 32.0f);
@@ -380,6 +383,8 @@ void CBotNet::PfComputeFlowField()
                 int idx = ty * m_MapWidth + tx;
                 unsigned char t = m_pMapGrid[idx];
                 unsigned char ft = m_pFrontGrid[idx];
+                if(m_pForbiddenGrid && m_pForbiddenGrid[idx])
+                        return false;
                 return t != TILE_SOLID && t != TILE_DEATH && ft != TILE_DEATH;
         };
 
@@ -396,7 +401,7 @@ void CBotNet::PfComputeFlowField()
 
         // ── Phase 1: BFS strictly skip freeze tiles. ──
         std::priority_queue<PfNode, std::vector<PfNode>, std::greater<PfNode>> scoreOpen;
-        for(const vec2 &fp : m_PfFinishTiles)
+        for(const vec2 &fp : vSources)
         {
                 int scx = (int)(fp.x / 8.0f);
                 int scy = (int)(fp.y / 8.0f);
@@ -456,7 +461,7 @@ void CBotNet::PfComputeFlowField()
                         m_PfScoreField[i] = 1e18f;
 
                 std::priority_queue<PfNode, std::vector<PfNode>, std::greater<PfNode>> scoreOpen2;
-                for(const vec2 &fp : m_PfFinishTiles)
+                for(const vec2 &fp : vSources)
                 {
                         int scx = (int)(fp.x / 8.0f);
                         int scy = (int)(fp.y / 8.0f);
@@ -601,9 +606,9 @@ void CBotNet::UpdatePathfinder()
                 return;
         }
 
-        if(m_PfFlowField == nullptr || m_PfFinishTiles.empty())
+        if(m_PfFlowField == nullptr || (m_PfFinishTiles.empty() && m_PfCustomFinishTiles.empty()))
                 PfComputeFlowField();
-        if(m_PfFinishTiles.empty())
+        if(m_PfFinishTiles.empty() && m_PfCustomFinishTiles.empty())
         {
                 m_PfState = PF_STATE_FINISHED;
                 return;
@@ -825,10 +830,14 @@ void CBotNet::RenderPathfinderPath()
         // === Show flow field (vector arrows pointing toward finish) ===
         if(g_Config.m_KxPfShowField && m_PfFlowField && m_MapWidth > 0 && m_MapHeight > 0)
         {
-                int tx0 = pf_clamp((int)(pGame->m_Camera.m_Center.x / 32.0f) - 30, 0, m_MapWidth - 1);
-                int ty0 = pf_clamp((int)(pGame->m_Camera.m_Center.y / 32.0f) - 20, 0, m_MapHeight - 1);
-                int tx1 = pf_clamp(tx0 + 60, 0, m_MapWidth - 1);
-                int ty1 = pf_clamp(ty0 + 40, 0, m_MapHeight - 1);
+                float halfTilesW = pGame->m_Camera.m_Zoom * (float)Graphics()->ScreenWidth() / 64.0f + 1.0f;
+                float halfTilesH = pGame->m_Camera.m_Zoom * (float)Graphics()->ScreenHeight() / 64.0f + 1.0f;
+                int camTX = (int)(pGame->m_Camera.m_Center.x / 32.0f);
+                int camTY = (int)(pGame->m_Camera.m_Center.y / 32.0f);
+                int tx0 = pf_clamp(camTX - (int)halfTilesW, 0, m_MapWidth - 1);
+                int ty0 = pf_clamp(camTY - (int)halfTilesH, 0, m_MapHeight - 1);
+                int tx1 = pf_clamp(camTX + (int)halfTilesW, 0, m_MapWidth - 1);
+                int ty1 = pf_clamp(camTY + (int)halfTilesH, 0, m_MapHeight - 1);
                 Graphics()->LinesBegin();
                 Graphics()->SetColor(BaseColor.r, BaseColor.g, BaseColor.b, ConfigAlpha * 0.3f);
                 for(int ty = ty0; ty <= ty1; ty++)
@@ -1133,7 +1142,7 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
                         emptyInputs.push_back(inp);
                 }
                 PfChunkResult res;
-                PfSimulateChunk(&FutureWorld, LocalID, pBot, emptyInputs, StartTick, res);
+                PfSimulateChunk(&FutureWorld, LocalID, pBot, emptyInputs, StartTick, res, m_pForbiddenGrid, PfCustomFinishSimGrid());
                 if(res.died && !res.reachedFinish)
                         return false;
                 // Return this as the chunk
@@ -1269,7 +1278,7 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
                         int savedFreeze = pBot->m_FreezeTime;
 
                         PfChunkResult res;
-                        PfSimulateChunk(&FutureWorld, LocalID, pBot, inSeq, StartTick, res);
+                        PfSimulateChunk(&FutureWorld, LocalID, pBot, inSeq, StartTick, res, m_pForbiddenGrid, PfCustomFinishSimGrid());
 
                         pBot->SetCore(savedCore);
                         pBot->m_Pos = savedPos;
@@ -1358,7 +1367,7 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
                                                 int savedFreeze = pBot->m_FreezeTime;
 
                                                 PfChunkResult res;
-                                                PfSimulateChunk(&FutureWorld, LocalID, pBot, inSeq, StartTick, res);
+                                                PfSimulateChunk(&FutureWorld, LocalID, pBot, inSeq, StartTick, res, m_pForbiddenGrid, PfCustomFinishSimGrid());
 
                                                 pBot->SetCore(savedCore);
                                                 pBot->m_Pos = savedPos;
@@ -1422,7 +1431,7 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
                                         int savedFreeze = pBot->m_FreezeTime;
 
                                         PfChunkResult res;
-                                        PfSimulateChunk(&FutureWorld, LocalID, pBot, inSeq, StartTick, res);
+                                        PfSimulateChunk(&FutureWorld, LocalID, pBot, inSeq, StartTick, res, m_pForbiddenGrid, PfCustomFinishSimGrid());
 
                                         pBot->SetCore(savedCore);
                                         pBot->m_Pos = savedPos;
@@ -1483,7 +1492,7 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
                                         int savedFreeze = pBot->m_FreezeTime;
 
                                         PfChunkResult res;
-                                        PfSimulateChunk(&FutureWorld, LocalID, pBot, inSeq, StartTick, res);
+                                        PfSimulateChunk(&FutureWorld, LocalID, pBot, inSeq, StartTick, res, m_pForbiddenGrid, PfCustomFinishSimGrid());
 
                                         pBot->SetCore(savedCore);
                                         pBot->m_Pos = savedPos;
@@ -1589,4 +1598,278 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
         m_PfCurFreezeTime = best.endFreezeTime;
 
         return true;
+}
+
+bool CBotNet::PfTileCanBeCustomFinish(int tx, int ty)
+{
+        if(tx < 0 || ty < 0 || tx >= m_MapWidth || ty >= m_MapHeight)
+                return false;
+        int idx = ty * m_MapWidth + tx;
+        auto fnOk = [](unsigned char t) {
+                return t == TILE_AIR || t == TILE_FINISH || t == TILE_FREEZE || t == TILE_DFREEZE ||
+                       t == TILE_LFREEZE || t == TILE_UNFREEZE || t == TILE_DUNFREEZE || t == TILE_LUNFREEZE;
+        };
+        return fnOk(m_pMapGrid[idx]) && fnOk(m_pFrontGrid[idx]);
+}
+
+void CBotNet::PfEditorBeginChange()
+{
+        if(m_PfState == PF_STATE_RUNNING)
+                PfThreadStop();
+}
+
+void CBotNet::PfEditorEndChange()
+{
+        if(m_PfFlowField)
+        {
+                delete[] m_PfFlowField;
+                m_PfFlowField = nullptr;
+        }
+        if(m_PfScoreField)
+        {
+                delete[] m_PfScoreField;
+                m_PfScoreField = nullptr;
+        }
+        m_PfScoreFieldW = 0;
+        m_PfScoreFieldH = 0;
+        if(m_PfState == PF_STATE_RUNNING)
+                PfResetRun();
+}
+
+void CBotNet::PfAddForbiddenTile(int tx, int ty)
+{
+        if(tx < 0 || ty < 0 || tx >= m_MapWidth || ty >= m_MapHeight || !m_pForbiddenGrid)
+                return;
+        int idx = ty * m_MapWidth + tx;
+        if(m_pForbiddenGrid[idx])
+                return;
+        PfEditorBeginChange();
+        if(m_pCustomFinishGrid && m_pCustomFinishGrid[idx])
+        {
+                m_pCustomFinishGrid[idx] = 0;
+                vec2 c(tx * 32.0f + 16.0f, ty * 32.0f + 16.0f);
+                for(size_t i = 0; i < m_PfCustomFinishTiles.size(); i++)
+                {
+                        if(m_PfCustomFinishTiles[i].x == c.x && m_PfCustomFinishTiles[i].y == c.y)
+                        {
+                                m_PfCustomFinishTiles.erase(m_PfCustomFinishTiles.begin() + i);
+                                break;
+                        }
+                }
+        }
+        m_pForbiddenGrid[idx] = 1;
+        m_PfForbiddenTiles.push_back(vec2(tx * 32.0f + 16.0f, ty * 32.0f + 16.0f));
+        PfEditorEndChange();
+}
+
+void CBotNet::PfRemoveForbiddenTile(int tx, int ty)
+{
+        if(tx < 0 || ty < 0 || tx >= m_MapWidth || ty >= m_MapHeight || !m_pForbiddenGrid)
+                return;
+        int idx = ty * m_MapWidth + tx;
+        if(!m_pForbiddenGrid[idx])
+                return;
+        PfEditorBeginChange();
+        m_pForbiddenGrid[idx] = 0;
+        vec2 c(tx * 32.0f + 16.0f, ty * 32.0f + 16.0f);
+        for(size_t i = 0; i < m_PfForbiddenTiles.size(); i++)
+        {
+                if(m_PfForbiddenTiles[i].x == c.x && m_PfForbiddenTiles[i].y == c.y)
+                {
+                        m_PfForbiddenTiles.erase(m_PfForbiddenTiles.begin() + i);
+                        break;
+                }
+        }
+        PfEditorEndChange();
+}
+
+void CBotNet::PfAddCustomFinishTile(int tx, int ty)
+{
+        if(tx < 0 || ty < 0 || tx >= m_MapWidth || ty >= m_MapHeight || !m_pCustomFinishGrid)
+                return;
+        int idx = ty * m_MapWidth + tx;
+        if(m_pCustomFinishGrid[idx])
+                return;
+        PfEditorBeginChange();
+        if(m_pForbiddenGrid && m_pForbiddenGrid[idx])
+        {
+                m_pForbiddenGrid[idx] = 0;
+                vec2 c(tx * 32.0f + 16.0f, ty * 32.0f + 16.0f);
+                for(size_t i = 0; i < m_PfForbiddenTiles.size(); i++)
+                {
+                        if(m_PfForbiddenTiles[i].x == c.x && m_PfForbiddenTiles[i].y == c.y)
+                        {
+                                m_PfForbiddenTiles.erase(m_PfForbiddenTiles.begin() + i);
+                                break;
+                        }
+                }
+        }
+        m_pCustomFinishGrid[idx] = 1;
+        m_PfCustomFinishTiles.push_back(vec2(tx * 32.0f + 16.0f, ty * 32.0f + 16.0f));
+        PfEditorEndChange();
+}
+
+void CBotNet::PfRemoveCustomFinishTile(int tx, int ty)
+{
+        if(tx < 0 || ty < 0 || tx >= m_MapWidth || ty >= m_MapHeight || !m_pCustomFinishGrid)
+                return;
+        int idx = ty * m_MapWidth + tx;
+        if(!m_pCustomFinishGrid[idx])
+                return;
+        PfEditorBeginChange();
+        m_pCustomFinishGrid[idx] = 0;
+        vec2 c(tx * 32.0f + 16.0f, ty * 32.0f + 16.0f);
+        for(size_t i = 0; i < m_PfCustomFinishTiles.size(); i++)
+        {
+                if(m_PfCustomFinishTiles[i].x == c.x && m_PfCustomFinishTiles[i].y == c.y)
+                {
+                        m_PfCustomFinishTiles.erase(m_PfCustomFinishTiles.begin() + i);
+                        break;
+                }
+        }
+        PfEditorEndChange();
+}
+
+void CBotNet::PfClearForbiddenTiles()
+{
+        if(m_PfForbiddenTiles.empty() || !m_pForbiddenGrid)
+                return;
+        PfEditorBeginChange();
+        mem_zero(m_pForbiddenGrid, (size_t)m_MapWidth * m_MapHeight);
+        m_PfForbiddenTiles.clear();
+        PfEditorEndChange();
+}
+
+void CBotNet::PfClearCustomFinishTiles()
+{
+        if(m_PfCustomFinishTiles.empty() || !m_pCustomFinishGrid)
+                return;
+        PfEditorBeginChange();
+        mem_zero(m_pCustomFinishGrid, (size_t)m_MapWidth * m_MapHeight);
+        m_PfCustomFinishTiles.clear();
+        PfEditorEndChange();
+}
+
+void CBotNet::UpdatePfTileEditor()
+{
+        if(m_PfEditorMode == 0)
+                return;
+        if(g_Config.m_ClClickGui != 0)
+                return;
+        CGameClient *pGame = GameClient();
+        if(!pGame || pGame->m_Menus.IsActive())
+                return;
+        if(!m_MapGridLoaded)
+                LoadMapGrid();
+        if(!m_MapGridLoaded || !m_pForbiddenGrid || !m_pCustomFinishGrid)
+                return;
+        vec2 cam = pGame->m_Camera.m_Center;
+        vec2 aim = cam + (pGame->m_Controls.m_aTargetPos[g_Config.m_ClDummy] - cam) * pGame->m_Camera.m_Zoom;
+        int tx = (int)floorf(aim.x / 32.0f);
+        int ty = (int)floorf(aim.y / 32.0f);
+        if(tx < 0 || ty < 0 || tx >= m_MapWidth || ty >= m_MapHeight)
+                return;
+        bool lmb = Input()->KeyIsPressed(KEY_MOUSE_1);
+        bool rmb = Input()->KeyIsPressed(KEY_MOUSE_2);
+        if(m_PfEditorMode == 1)
+        {
+                if(lmb && !rmb)
+                        PfAddForbiddenTile(tx, ty);
+                else if(rmb && !lmb)
+                        PfRemoveForbiddenTile(tx, ty);
+        }
+        else if(m_PfEditorMode == 2)
+        {
+                if(rmb && !lmb)
+                        PfRemoveCustomFinishTile(tx, ty);
+                else if(lmb && !rmb && PfTileCanBeCustomFinish(tx, ty))
+                        PfAddCustomFinishTile(tx, ty);
+        }
+}
+
+void CBotNet::RenderPfTileEditor()
+{
+        if(!m_MapGridLoaded)
+                return;
+        if(m_PfEditorMode == 0 && m_PfForbiddenTiles.empty() && m_PfCustomFinishTiles.empty())
+                return;
+        CGameClient *pGame = GameClient();
+        if(!pGame)
+                return;
+        Graphics()->MapScreenToInterface(pGame->m_Camera.m_Center.x, pGame->m_Camera.m_Center.y, pGame->m_Camera.m_Zoom);
+        float alpha = KxLineAlpha(KX_LINE_PATHFINDER);
+        int lineSize = KxLineSize(KX_LINE_PATHFINDER);
+        float halfWidth = 0.5f + (float)(lineSize - 1) * 0.25f;
+        vec2 cam = pGame->m_Camera.m_Center;
+        float zoom = pGame->m_Camera.m_Zoom;
+        float viewHalfW = zoom * (float)Graphics()->ScreenWidth() * 0.5f + 64.0f;
+        float viewHalfH = zoom * (float)Graphics()->ScreenHeight() * 0.5f + 64.0f;
+        Graphics()->TextureClear();
+        Graphics()->QuadsBegin();
+        Graphics()->SetColor(0.85f, 0.15f, 0.15f, alpha * 0.5f);
+        for(const vec2 &t : m_PfForbiddenTiles)
+        {
+                if(t.x < cam.x - viewHalfW || t.x > cam.x + viewHalfW || t.y < cam.y - viewHalfH || t.y > cam.y + viewHalfH)
+                        continue;
+                IGraphics::CFreeformItem Quad(
+                        t.x - 16.0f, t.y - 16.0f, t.x + 16.0f, t.y - 16.0f,
+                        t.x - 16.0f, t.y + 16.0f, t.x + 16.0f, t.y + 16.0f);
+                Graphics()->QuadsDrawFreeform(&Quad, 1);
+        }
+        Graphics()->SetColor(0.20f, 0.85f, 0.30f, alpha * 0.5f);
+        for(const vec2 &t : m_PfCustomFinishTiles)
+        {
+                if(t.x < cam.x - viewHalfW || t.x > cam.x + viewHalfW || t.y < cam.y - viewHalfH || t.y > cam.y + viewHalfH)
+                        continue;
+                IGraphics::CFreeformItem Quad(
+                        t.x - 16.0f, t.y - 16.0f, t.x + 16.0f, t.y - 16.0f,
+                        t.x - 16.0f, t.y + 16.0f, t.x + 16.0f, t.y + 16.0f);
+                Graphics()->QuadsDrawFreeform(&Quad, 1);
+        }
+        Graphics()->QuadsEnd();
+        if(m_PfEditorMode != 0)
+        {
+                vec2 aim = cam + (pGame->m_Controls.m_aTargetPos[g_Config.m_ClDummy] - cam) * zoom;
+                int tx = (int)floorf(aim.x / 32.0f);
+                int ty = (int)floorf(aim.y / 32.0f);
+                if(tx >= 0 && ty >= 0 && tx < m_MapWidth && ty < m_MapHeight &&
+                        (m_PfEditorMode == 1 || PfTileCanBeCustomFinish(tx, ty)))
+                {
+                        float x0 = tx * 32.0f;
+                        float y0 = ty * 32.0f;
+                        float x1 = x0 + 32.0f;
+                        float y1 = y0 + 32.0f;
+                        float r = (m_PfEditorMode == 1) ? 0.95f : 0.25f;
+                        float g = (m_PfEditorMode == 1) ? 0.20f : 0.95f;
+                        float b = (m_PfEditorMode == 1) ? 0.20f : 0.35f;
+                        if(lineSize > 0)
+                        {
+                                Graphics()->QuadsBegin();
+                                Graphics()->SetColor(r, g, b, alpha);
+                                IGraphics::CFreeformItem E0(x0 - halfWidth, y0 - halfWidth, x1 + halfWidth, y0 - halfWidth, x0 - halfWidth, y0 + halfWidth, x1 + halfWidth, y0 + halfWidth);
+                                Graphics()->QuadsDrawFreeform(&E0, 1);
+                                IGraphics::CFreeformItem E1(x0 - halfWidth, y1 - halfWidth, x1 + halfWidth, y1 - halfWidth, x0 - halfWidth, y1 + halfWidth, x1 + halfWidth, y1 + halfWidth);
+                                Graphics()->QuadsDrawFreeform(&E1, 1);
+                                IGraphics::CFreeformItem E2(x0 - halfWidth, y0 - halfWidth, x0 + halfWidth, y0 - halfWidth, x0 - halfWidth, y1 + halfWidth, x0 + halfWidth, y1 + halfWidth);
+                                Graphics()->QuadsDrawFreeform(&E2, 1);
+                                IGraphics::CFreeformItem E3(x1 - halfWidth, y0 - halfWidth, x1 + halfWidth, y0 - halfWidth, x1 - halfWidth, y1 + halfWidth, x1 + halfWidth, y1 + halfWidth);
+                                Graphics()->QuadsDrawFreeform(&E3, 1);
+                                Graphics()->QuadsEnd();
+                        }
+                        else
+                        {
+                                Graphics()->LinesBegin();
+                                Graphics()->SetColor(r, g, b, alpha);
+                                IGraphics::CLineItem L0(x0, y0, x1, y0);
+                                IGraphics::CLineItem L1(x1, y0, x1, y1);
+                                IGraphics::CLineItem L2(x1, y1, x0, y1);
+                                IGraphics::CLineItem L3(x0, y1, x0, y0);
+                                Graphics()->LinesDraw(&L0, 1);
+                                Graphics()->LinesDraw(&L1, 1);
+                                Graphics()->LinesDraw(&L2, 1);
+                                Graphics()->LinesDraw(&L3, 1);
+                                Graphics()->LinesEnd();
+                        }
+                }
+        }
 }

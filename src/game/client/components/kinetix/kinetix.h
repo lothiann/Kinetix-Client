@@ -410,6 +410,12 @@ public:
         std::mutex m_PfDataMutex;
         std::vector<PfHookSeg> m_PfVHookSegs;
 
+        int m_PfEditorMode = 0;
+        std::vector<vec2> m_PfForbiddenTiles;
+        std::vector<vec2> m_PfCustomFinishTiles;
+        unsigned char *m_pForbiddenGrid = nullptr;
+        unsigned char *m_pCustomFinishGrid = nullptr;
+
         // Per-dummy runtime state
         CBotNetDummy m_aDummies[MAX_DUMMIES];
 
@@ -498,6 +504,26 @@ public:
         bool PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::vector<vec2> &outTraj,
                              bool &outReachedFinish, bool &outDied, int &outFreezeTicks);
         bool PfBacktrack();              // try alternative candidates from backtrack buffer
+
+        void UpdatePfTileEditor();
+        void RenderPfTileEditor();
+        bool PfTileCanBeCustomFinish(int tx, int ty);
+        void PfAddForbiddenTile(int tx, int ty);
+        void PfRemoveForbiddenTile(int tx, int ty);
+        void PfAddCustomFinishTile(int tx, int ty);
+        void PfRemoveCustomFinishTile(int tx, int ty);
+        void PfClearForbiddenTiles();
+        void PfClearCustomFinishTiles();
+        void PfEditorBeginChange();
+        void PfEditorEndChange();
+        const std::vector<vec2> &PfActiveFinishTiles() const
+        {
+                return m_PfCustomFinishTiles.empty() ? m_PfFinishTiles : m_PfCustomFinishTiles;
+        }
+        const unsigned char *PfCustomFinishSimGrid() const
+        {
+                return m_PfCustomFinishTiles.empty() ? nullptr : m_pCustomFinishGrid;
+        }
 
         // --- State-Lattice A* (v1.56) ---
         bool PfAStarInit();

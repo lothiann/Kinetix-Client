@@ -421,6 +421,8 @@ static SRow g_PathfinderRows[] = {
         {ERowType::Expandable, "Visuals", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_VisualsChildren, 4},
         // v1.56.150: DoubleButton — Pathfinding (left) + Play (right, visible only when FINISHED).
         {ERowType::DoubleButton, "Pathfinding", "Play", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::DoubleButton, "Editor Forbidden Tiles", "Clear Forbidden Tiles", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::DoubleButton, "Editor Finish Tiles", "Clear Finish Tiles", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 
 struct SPanel
@@ -3349,6 +3351,32 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 }
                                         }
                                 }
+                                else if(str_comp(pTarget->pName, "Editor Forbidden Tiles") == 0 && pTarget->type == ERowType::DoubleButton)
+                                {
+                                        CBotNet &BN = GameClient()->m_BotNet;
+                                        const float btnW = (rw - 6.0f) * 0.5f;
+                                        if(!BN.m_PfForbiddenTiles.empty() && mousePos.x >= rx + 2.0f + btnW)
+                                                BN.PfClearForbiddenTiles();
+                                        else
+                                        {
+                                                BN.m_PfEditorMode = (BN.m_PfEditorMode == 1) ? 0 : 1;
+                                                if(BN.m_PfEditorMode != 0 && !BN.m_MapGridLoaded)
+                                                        BN.LoadMapGrid();
+                                        }
+                                }
+                                else if(str_comp(pTarget->pName, "Editor Finish Tiles") == 0 && pTarget->type == ERowType::DoubleButton)
+                                {
+                                        CBotNet &BN = GameClient()->m_BotNet;
+                                        const float btnW = (rw - 6.0f) * 0.5f;
+                                        if(!BN.m_PfCustomFinishTiles.empty() && mousePos.x >= rx + 2.0f + btnW)
+                                                BN.PfClearCustomFinishTiles();
+                                        else
+                                        {
+                                                BN.m_PfEditorMode = (BN.m_PfEditorMode == 2) ? 0 : 2;
+                                                if(BN.m_PfEditorMode != 0 && !BN.m_MapGridLoaded)
+                                                        BN.LoadMapGrid();
+                                        }
+                                }
                                 // v1.56.90: Dummies Button (Connect Dummy, Switch to Main)
                                 else if(str_comp(row.pName, "Dummies") == 0 && pTarget->type == ERowType::Button)
                                 {
@@ -5031,6 +5059,41 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                                 IGraphics::CORNER_ALL, rightCol);
                                         const float rw2 = TextRender()->TextWidth(14.0f, pRightLabel);
                                         DrawText(rx2 + (btnW - rw2) * 0.5f, ry + 8.0f, 14.0f, pRightLabel,
+                                                ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                                }
+                        }
+                        else if(str_comp(row.pName, "Editor Forbidden Tiles") == 0 || str_comp(row.pName, "Editor Finish Tiles") == 0)
+                        {
+                                CBotNet &BN = GameClient()->m_BotNet;
+                                const bool isForbidden = (str_comp(row.pName, "Editor Forbidden Tiles") == 0);
+                                const bool editorActive = isForbidden ? (BN.m_PfEditorMode == 1) : (BN.m_PfEditorMode == 2);
+                                const bool clearVisible = isForbidden ? !BN.m_PfForbiddenTiles.empty() : !BN.m_PfCustomFinishTiles.empty();
+                                ColorRGBA leftCol = editorActive
+                                        ? ColorRGBA(0xffc43d3d, true).WithAlpha(alpha)
+                                        : ColorRGBA(0xff3da35a, true).WithAlpha(alpha);
+                                const char *pLeftLabel = editorActive ? "Exit Editor" : row.pName;
+                                const char *pClearLabel = isForbidden ? "Clear Forbidden Tiles" : "Clear Finish Tiles";
+                                if(!clearVisible)
+                                {
+                                        DrawRoundedRect(rx + 2.0f, ry + 2.0f, rw - 4.0f, rh - 4.0f, 4.0f,
+                                                IGraphics::CORNER_ALL, leftCol);
+                                        const float lw = TextRender()->TextWidth(13.0f, pLeftLabel);
+                                        DrawText(rx + (rw - lw) * 0.5f, ry + 8.0f, 13.0f, pLeftLabel,
+                                                ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                                }
+                                else
+                                {
+                                        const float btnW = (rw - 6.0f) * 0.5f;
+                                        DrawRoundedRect(rx + 2.0f, ry + 2.0f, btnW, rh - 4.0f, 4.0f,
+                                                IGraphics::CORNER_ALL, leftCol);
+                                        const float lw = TextRender()->TextWidth(11.0f, pLeftLabel);
+                                        DrawText(rx + 2.0f + (btnW - lw) * 0.5f, ry + 8.0f, 11.0f, pLeftLabel,
+                                                ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                                        const float rx2 = rx + 2.0f + btnW + 2.0f;
+                                        DrawRoundedRect(rx2, ry + 2.0f, btnW, rh - 4.0f, 4.0f,
+                                                IGraphics::CORNER_ALL, ColorRGBA(0xffe69528, true).WithAlpha(alpha));
+                                        const float rw2 = TextRender()->TextWidth(11.0f, pClearLabel);
+                                        DrawText(rx2 + (btnW - rw2) * 0.5f, ry + 8.0f, 11.0f, pClearLabel,
                                                 ColorRGBA(0xffffffff, true).WithAlpha(alpha));
                                 }
                         }

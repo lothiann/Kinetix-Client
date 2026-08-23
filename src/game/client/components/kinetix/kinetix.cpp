@@ -58,6 +58,9 @@ CBotNet::CBotNet()
         m_pfDist = nullptr;
         m_pfVisited = nullptr;
         m_aLastMapName[0] = '\0';
+        m_PfEditorMode = 0;
+        m_pForbiddenGrid = nullptr;
+        m_pCustomFinishGrid = nullptr;
 
         // Per-dummy state is auto-initialized by CBotNetDummy constructor
 }
@@ -71,8 +74,10 @@ CBotNet::~CBotNet()
         if(m_pfDist) delete[] m_pfDist;
         if(m_pfVisited) delete[] m_pfVisited;
         if(m_PfPlayerPenalty) delete[] m_PfPlayerPenalty;
-        if(m_PfFlowField) delete[] m_PfFlowField;
-        if(m_PfScoreField) delete[] m_PfScoreField;
+	if(m_PfFlowField) delete[] m_PfFlowField;
+	if(m_PfScoreField) delete[] m_PfScoreField;
+	if(m_pForbiddenGrid) delete[] m_pForbiddenGrid;
+	if(m_pCustomFinishGrid) delete[] m_pCustomFinishGrid;
 }
 
 // =========================================================
@@ -256,6 +261,8 @@ void CBotNet::OnUpdate()
         // v1.56.151: Fly Ride — pilot hooks/hammers nearest dummy, WASD moves anchor.
         UpdateFlyRide();
 
+        UpdatePfTileEditor();
+
         CGameClient *pGame = GameClient();
         if(!pGame->m_Snap.m_pLocalInfo)
                 return;
@@ -345,6 +352,8 @@ void CBotNet::OnRender()
         // Pathfinder tab: render the accumulated trajectory whenever the state
         // machine has produced a path (RUNNING or FINISHED).  This is INDEPENDENT
         // of g_Config.m_KxKinodynamic so the tab works even when kinodynamic A* is off.
+        RenderPfTileEditor();
+
         if(m_PfState != PF_STATE_IDLE)
                 RenderPathfinderPath();
 

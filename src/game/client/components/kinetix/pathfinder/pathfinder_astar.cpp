@@ -148,7 +148,7 @@ bool CBotNet::PfAStarInit()
 		return false;
 	if(!m_PfBaseWorld->GetCharacterById(LocalID))
 		return false;
-	if(m_PfFinishTiles.empty())
+	if(PfActiveFinishTiles().empty())
 		return false;
 
         m_PfANodes.clear();
@@ -157,9 +157,10 @@ bool CBotNet::PfAStarInit()
         m_PfAGoalIdx = -1;
         m_PfAExpandCount = 0;
 
-        vec2 endPos = m_PfFinishTiles[0];
+        const std::vector<vec2> &vFinishes = PfActiveFinishTiles();
+        vec2 endPos = vFinishes[0];
         float bestDist = 1e18f;
-        for(const vec2 &fp : m_PfFinishTiles)
+        for(const vec2 &fp : vFinishes)
         {
                 float d = distance(fp, m_PfCurPos);
                 if(d < bestDist) { bestDist = d; endPos = fp; }
@@ -220,9 +221,10 @@ int CBotNet::PfAStarStep()
                 dbg_msg("pathfinder", "A* progress: %d expansions, %zu nodes, open=%zu",
                         m_PfAExpandCount, m_PfANodes.size(), m_PfAOpen.size());
 
-        vec2 endPos = m_PfFinishTiles[0];
+        const std::vector<vec2> &vFinishes = PfActiveFinishTiles();
+        vec2 endPos = vFinishes[0];
         float bestDist = 1e18f;
-        for(const vec2 &fp : m_PfFinishTiles)
+        for(const vec2 &fp : vFinishes)
         {
                 float d = distance(fp, m_PfCurPos);
                 if(d < bestDist) { bestDist = d; endPos = fp; }
@@ -280,7 +282,8 @@ int CBotNet::PfAStarStep()
                         emptyInputs[t].m_TargetY = -1;
                 }
                 PfChunkResult res;
-                PfSimulateChunk(&FutureWorld, LocalID, pBot, emptyInputs, RootStartTick + cur.TickOffset, res);
+                PfSimulateChunk(&FutureWorld, LocalID, pBot, emptyInputs, RootStartTick + cur.TickOffset, res,
+                        m_pForbiddenGrid, PfCustomFinishSimGrid());
                 if(res.died && !res.reachedFinish)
                         return 0;
 
@@ -407,7 +410,8 @@ int CBotNet::PfAStarStep()
                         }
                         { CCharacterCore c = pBot->GetCore(); c.m_JumpedTotal = cur.Core.m_JumpedTotal; pBot->SetCore(c); }
                         PfChunkResult res;
-                        PfSimulateChunk(&FutureWorld, LocalID, pBot, ind.inputs, RootStartTick + cur.TickOffset, res);
+                        PfSimulateChunk(&FutureWorld, LocalID, pBot, ind.inputs, RootStartTick + cur.TickOffset, res,
+                                m_pForbiddenGrid, PfCustomFinishSimGrid());
                         ind.endPos = res.endPos; ind.endVel = res.endVel;
                         ind.endHookState = res.endHookState; ind.endHookPos = res.endHookPos;
                         ind.endHookDir = res.endHookDir; ind.endHookTick = res.endHookTick;
@@ -531,7 +535,8 @@ int CBotNet::PfAStarStep()
                                 if(!pBot) continue;
                                 { CCharacterCore c = pBot->GetCore(); c.m_JumpedTotal = cur.Core.m_JumpedTotal; pBot->SetCore(c); }
                                 PfChunkResult res;
-                                PfSimulateChunk(&FutureWorld, LocalID, pBot, oneTick, RootStartTick + cur.TickOffset, res);
+                                PfSimulateChunk(&FutureWorld, LocalID, pBot, oneTick, RootStartTick + cur.TickOffset, res,
+                                        m_pForbiddenGrid, PfCustomFinishSimGrid());
                                 float s = PfScoreChunk(cur.Pos, res.endPos, res.reachedFinish, res.died && !res.reachedFinish, res.freezeTicks);
                                 seeds.push_back({s, inp});
                         }
@@ -742,7 +747,8 @@ int CBotNet::PfAStarStep()
                                         PfChunkResult res;
                                         std::vector<CNetObj_PlayerInput> oneInput = {cands[ci]};
                                         PfSimulateChunk(&FutureWorld, LocalID, pBot, oneInput,
-                                                        RootStartTick + cur.TickOffset + tick, res);
+                                                        RootStartTick + cur.TickOffset + tick, res,
+                                                        m_pForbiddenGrid, PfCustomFinishSimGrid());
 
                                         if(res.died && !res.reachedFinish)
                                                 continue;
@@ -899,7 +905,7 @@ int CBotNet::PfAStarStep()
                                                 { CCharacterCore c = pBot->GetCore(); c.m_JumpedTotal = cur.Core.m_JumpedTotal; pBot->SetCore(c); }
 
                                                 PfChunkResult res;
-                                                PfSimulateChunk(&FutureWorld, LocalID, pBot, inSeq, RootStartTick + cur.TickOffset, res);
+                                                PfSimulateChunk(&FutureWorld, LocalID, pBot, inSeq, RootStartTick + cur.TickOffset, res, m_pForbiddenGrid, PfCustomFinishSimGrid());
                                                 if(res.died && !res.reachedFinish)
                                                         continue;
 
@@ -960,7 +966,7 @@ int CBotNet::PfAStarStep()
                                         { CCharacterCore c = pBot->GetCore(); c.m_JumpedTotal = cur.Core.m_JumpedTotal; pBot->SetCore(c); }
 
                                         PfChunkResult res;
-                                        PfSimulateChunk(&FutureWorld, LocalID, pBot, inSeq, RootStartTick + cur.TickOffset, res);
+                                        PfSimulateChunk(&FutureWorld, LocalID, pBot, inSeq, RootStartTick + cur.TickOffset, res, m_pForbiddenGrid, PfCustomFinishSimGrid());
                                         if(res.died && !res.reachedFinish)
                                                 continue;
 
@@ -1018,7 +1024,7 @@ int CBotNet::PfAStarStep()
                                         { CCharacterCore c = pBot->GetCore(); c.m_JumpedTotal = cur.Core.m_JumpedTotal; pBot->SetCore(c); }
 
                                         PfChunkResult res;
-                                        PfSimulateChunk(&FutureWorld, LocalID, pBot, inSeq, RootStartTick + cur.TickOffset, res);
+                                        PfSimulateChunk(&FutureWorld, LocalID, pBot, inSeq, RootStartTick + cur.TickOffset, res, m_pForbiddenGrid, PfCustomFinishSimGrid());
                                         if(res.died && !res.reachedFinish)
                                                 continue;
 

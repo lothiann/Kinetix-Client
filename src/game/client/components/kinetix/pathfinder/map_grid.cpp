@@ -41,6 +41,10 @@ void CBotNet::LoadMapGrid()
                 delete[] m_pfVisited;
         if(m_PfPlayerPenalty)
                 delete[] m_PfPlayerPenalty;
+        if(m_pForbiddenGrid)
+                delete[] m_pForbiddenGrid;
+        if(m_pCustomFinishGrid)
+                delete[] m_pCustomFinishGrid;
 
         // v1.56.164: invalidate dependent BFS caches. Previously these survived
         // a grid reload — m_PfFlowField kept its OLD buffer (allocated for the
@@ -66,6 +70,8 @@ void CBotNet::LoadMapGrid()
         m_PfScoreFieldW = 0;
         m_PfScoreFieldH = 0;
         m_PfFinishTiles.clear();
+        m_PfForbiddenTiles.clear();
+        m_PfCustomFinishTiles.clear();
 
         m_MapWidth = Width;
         m_MapHeight = Height;
@@ -76,9 +82,13 @@ void CBotNet::LoadMapGrid()
         m_pfDist = new float[Size];
         m_pfVisited = new bool[Size];
         m_PfPlayerPenalty = new float[Size];
+        m_pForbiddenGrid = new unsigned char[Size];
+        m_pCustomFinishGrid = new unsigned char[Size];
 
         mem_zero(m_pMapGrid, Size);
         mem_zero(m_pFrontGrid, Size);
+        mem_zero(m_pForbiddenGrid, Size);
+        mem_zero(m_pCustomFinishGrid, Size);
 
         CTile *pTiles = (CTile *)pMap->GetData(pGameLayer->m_Data);
         if(pTiles)
@@ -140,6 +150,8 @@ bool CBotNet::IsTileWalkable(int tx, int ty)
         if(tx < 0 || ty < 0 || tx >= m_MapWidth || ty >= m_MapHeight)
                 return false;
         int idx = ty * m_MapWidth + tx;
+        if(m_pForbiddenGrid && m_pForbiddenGrid[idx])
+                return false;
         unsigned char tile = m_pMapGrid[idx];
         if(tile == TILE_SOLID || tile == TILE_DEATH || tile == TILE_NOHOOK)
                 return false;
@@ -168,6 +180,8 @@ float CBotNet::GetTileCost(int tx, int ty)
         if(tx < 0 || ty < 0 || tx >= m_MapWidth || ty >= m_MapHeight)
                 return -1.0f;
         int idx = ty * m_MapWidth + tx;
+        if(m_pForbiddenGrid && m_pForbiddenGrid[idx])
+                return -1.0f;
         unsigned char tile = m_pMapGrid[idx];
         if(tile == TILE_SOLID || tile == TILE_DEATH || tile == TILE_NOHOOK)
                 return -1.0f;
