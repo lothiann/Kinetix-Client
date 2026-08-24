@@ -307,49 +307,28 @@ static inline void PfSimulateChunk(CGameWorld *pWorld, int PredictedCharId, CCha
                 if(pBot->m_FreezeTime > 0)
                         out.freezeTicks++;
 
-                // Finish detection: check 5 sample points around the tee using
-                // GetTileIndex/GetFrontTileIndex (raw m_Index — NOT GetTile which
-                // filters to [SOLID..NOLASER] and would miss TILE_FINISH=34).
                 const CCharacterCore &c = pBot->GetCore();
-                float r = CCharacterCore::PhysicalSize() / 3.0f;
-                const vec2 pts[5] = {
-                        c.m_Pos,
-                        vec2(c.m_Pos.x + r, c.m_Pos.y - r),
-                        vec2(c.m_Pos.x + r, c.m_Pos.y + r),
-                        vec2(c.m_Pos.x - r, c.m_Pos.y - r),
-                        vec2(c.m_Pos.x - r, c.m_Pos.y + r)};
                 CCollision *pColl = pWorld->Collision();
                 int collW = pColl->GetWidth();
                 int collH = pColl->GetHeight();
-                for(int k = 0; k < 5; k++)
+                int tc = round_to_int(c.m_Pos.x / 32.0f);
+                int tr = round_to_int(c.m_Pos.y / 32.0f);
+                if(tc >= 0 && tr >= 0 && tc < collW && tr < collH)
                 {
-                        int tc = round_to_int(pts[k].x / 32.0f);
-                        int tr = round_to_int(pts[k].y / 32.0f);
-                        if(tc < 0 || tr < 0 || tc >= collW || tr >= collH)
-                                continue;
                         int MapIndex = tr * collW + tc;
                         if(pForbiddenGrid && pForbiddenGrid[MapIndex])
-                        {
                                 out.died = true;
-                                break;
-                        }
-                        if(pCustomFinishGrid)
+                        else if(pCustomFinishGrid)
                         {
                                 if(pCustomFinishGrid[MapIndex])
-                                {
                                         out.reachedFinish = true;
-                                        break;
-                                }
                         }
                         else
                         {
                                 int Tile = pColl->GetTileIndex(MapIndex);
                                 int FTile = pColl->GetFrontTileIndex(MapIndex);
                                 if(Tile == TILE_FINISH || FTile == TILE_FINISH)
-                                {
                                         out.reachedFinish = true;
-                                        break;
-                                }
                         }
                 }
                 if(out.died || out.reachedFinish)

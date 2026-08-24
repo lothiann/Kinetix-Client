@@ -3308,6 +3308,7 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 else if(BN.m_PfState == PF_STATE_RUNNING)
                                                 {
                                                         BN.m_PfState = PF_STATE_FINISHED;
+                                                                                BN.PfThreadStop();
                                                         // Stop pressed: if A* hasn't reached goal yet, try to
                                                         // reconstruct best partial path so kx_pf_play works.
                                                         if(!BN.m_PfAPathReady && !BN.m_PfAOpen.empty())
