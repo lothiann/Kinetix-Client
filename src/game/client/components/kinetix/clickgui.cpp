@@ -410,12 +410,16 @@ static SRow g_VisualsChildren[] = {
         {ERowType::Toggle, "Show branches", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Show speed", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
+static const char *const g_PfEffortOpts[] = {"Low", "Medium", "High", "Ultra", "Max", "Custom"};
+static const char *const g_PfAlgorithmOpts[] = {"BFS", "RHEA"};
 static SRow g_PathfinderRows[] = {
+        {ERowType::Dropdown, "Effort", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_PfEffortOpts, 6, 0, nullptr, 0},
+        {ERowType::Dropdown, "Algorithm", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_PfAlgorithmOpts, 2, 0, nullptr, 0},
         {ERowType::Slider, "Chunk size", nullptr, false, false, 1.0f, 50.0f, 1.0f, 20.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Hook angles", nullptr, false, false, 4.0f, 32.0f, 1.0f, 9.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Candidates", nullptr, false, false, 50.0f, 2000.0f, 10.0f, 200.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Search budget", nullptr, false, false, 256.0f, 200000.0f, 1000.0f, 6000.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Performance", nullptr, false, false, 1.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Advanced search", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Expandable, "Score method", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ScoreMethodChildren, 2},
         {ERowType::Expandable, "Penalties", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_PenaltiesChildren, 7},
         {ERowType::Expandable, "Visuals", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_VisualsChildren, 4},
@@ -506,6 +510,20 @@ static SPanel g_Panels[NUM_PANELS] = {
 // Mirror aim X/Y visible only when Aim mode = Mirror (valueIdx=1).
 // Smart aim visible only when Aim mode = Smart (valueIdx=0).
 // All other rows always visible.
+static bool PfRowVisible(const SRow *pRows, int rowCount, int idx)
+{
+        if(idx < 0 || idx >= rowCount)
+                return false;
+        const SRow &row = pRows[idx];
+        if(str_comp(row.pName, "Search budget") == 0)
+                return g_Config.m_KxPfEffort == 5 && g_Config.m_KxPfAdvancedSearch == 0;
+        if(str_comp(row.pName, "Chunk size") == 0 || str_comp(row.pName, "Hook angles") == 0 ||
+           str_comp(row.pName, "Candidates") == 0 || str_comp(row.pName, "Score method") == 0 ||
+           str_comp(row.pName, "Penalties") == 0)
+                return g_Config.m_KxPfEffort == 5;
+        return true;
+}
+
 static bool FunctionsRowVisible(const SRow *pRows, int rowCount, int idx)
 {
         if(idx < 0 || idx >= rowCount)
@@ -1342,8 +1360,12 @@ void CClickGui::OnRender()
                                         row.value = (float)g_Config.m_KxPfCandidates;
                                 else if(str_comp(row.pName, "Performance") == 0)
                                         row.value = (float)g_Config.m_KxPfPerf;
-                                else if(str_comp(row.pName, "Advanced search") == 0)
-                                        row.on = g_Config.m_KxPfAdvancedSearch != 0;
+                                else if(str_comp(row.pName, "Effort") == 0)
+                                        row.valueIdx = g_Config.m_KxPfEffort;
+                                else if(str_comp(row.pName, "Algorithm") == 0)
+                                        row.valueIdx = g_Config.m_KxPfAdvancedSearch != 0 ? 1 : 0;
+                                else if(str_comp(row.pName, "Search budget") == 0)
+                                        row.value = (float)g_Config.m_KxPfSearchBudget;
                                 // Settings → IRC/Spoofer top-level expandables are master toggles.
                                 else if(str_comp(row.pName, "IRC") == 0)
                                         row.on = g_Config.m_KxIrcEnabled != 0;
@@ -2468,6 +2490,8 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                 g_Config.m_KxPfCandidates = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Performance") == 0)
                                 g_Config.m_KxPfPerf = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Search budget") == 0)
+                                g_Config.m_KxPfSearchBudget = (int)pTarget->value;
                         // v1.56.83: AimBot/TriggerBot per-weapon sliders (disambiguate by parent expandable)
                         else if(m_DragSliderChild >= 0 && m_DragSliderPanel >= 0)
                         {
@@ -3193,8 +3217,6 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         else if(str_comp(pTarget->pName, "Show speed") == 0)
                                                 g_Config.m_KxPfShowSpeed = pTarget->on ? 1 : 0;
                                         // Pathfinder top-level
-                                        else if(str_comp(pTarget->pName, "Advanced search") == 0)
-                                                g_Config.m_KxPfAdvancedSearch = pTarget->on ? 1 : 0;
                                         // Settings → IRC/Spoofer expandables are master toggles.
                                         else if(str_comp(pTarget->pName, "IRC") == 0)
                                                 g_Config.m_KxIrcEnabled = pTarget->on ? 1 : 0;
@@ -3553,6 +3575,8 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         g_Config.m_KxPfCandidates = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Performance") == 0)
                                         g_Config.m_KxPfPerf = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Search budget") == 0)
+                                        g_Config.m_KxPfSearchBudget = (int)pTarget->value;
                                 return;
                         }
                         if(pTarget->type == ERowType::Dropdown || pTarget->type == ERowType::ToggleDropdown)
@@ -3699,6 +3723,8 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                 // Conditional visibility: skip hidden rows in Functions panel.
                 if(str_comp(panel.pTitle, "Functions") == 0 && !FunctionsRowVisible(panel.pRows, panel.rowCount, r))
                         continue;
+                if(str_comp(panel.pTitle, "Pathfinder") == 0 && !PfRowVisible(panel.pRows, panel.rowCount, r))
+                        continue;
                 const float rh = RowHeight(row.type);
                 if(r == m_DropdownRow && m_DropdownChild < 0)
                 {
@@ -3767,6 +3793,10 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                                                 g_Config.m_KxEspMode = o;
                                         else if(str_comp(target.pName, "ESP Style") == 0)
                                                 g_Config.m_KxEspStyle = o;
+                                        else if(str_comp(target.pName, "Effort") == 0)
+                                                g_Config.m_KxPfEffort = o;
+                                        else if(str_comp(target.pName, "Algorithm") == 0)
+                                                g_Config.m_KxPfAdvancedSearch = (o == 1) ? 1 : 0;
                                         m_DropdownOpen = false;
                                         return true;
                                 }
@@ -3960,6 +3990,8 @@ void CClickGui::RenderDropdownPopup(float alpha)
                 SRow &row = panel.pRows[r];
                 // Conditional visibility: skip hidden rows in Functions panel.
                 if(str_comp(panel.pTitle, "Functions") == 0 && !FunctionsRowVisible(panel.pRows, panel.rowCount, r))
+                        continue;
+                if(str_comp(panel.pTitle, "Pathfinder") == 0 && !PfRowVisible(panel.pRows, panel.rowCount, r))
                         continue;
                 const float rh = RowHeight(row.type);
                 if(r == m_DropdownRow && m_DropdownChild < 0)
@@ -4240,6 +4272,8 @@ bool CClickGui::HitTestRow(vec2 mousePos, int panelIdx, int &outRow, int &outChi
                 // Conditional visibility: skip hidden rows in Functions panel.
                 if(str_comp(g_Panels[panelIdx].pTitle, "Functions") == 0 && !FunctionsRowVisible(g_Panels[panelIdx].pRows, g_Panels[panelIdx].rowCount, r))
                         continue;
+                if(str_comp(g_Panels[panelIdx].pTitle, "Pathfinder") == 0 && !PfRowVisible(g_Panels[panelIdx].pRows, g_Panels[panelIdx].rowCount, r))
+                        continue;
                 const float rh = RowHeight(row.type);
                 const float rw = PANEL_WIDTH - BODY_PADDING * 2;
                 if(PointInRect(mousePos, bodyX, cursorY, rw, rh))
@@ -4455,6 +4489,7 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
         // Previously: YGNodeNew + YGNodeCalculateLayout every frame (240/sec).
         // Now: only on actual layout changes.
         const bool isFunctionsPanel = (str_comp(panel.pTitle, "Functions") == 0);
+        const bool isPathfinderPanel = (str_comp(panel.pTitle, "Pathfinder") == 0);
 
         // Build the layout signature: hash of (row index, child included?) bits.
         // Children are included when m_AnimExpand > 0 (covers expanded + animating).
@@ -4463,6 +4498,8 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
         {
                 const SRow &row = panel.pRows[r];
                 if(isFunctionsPanel && !FunctionsRowVisible(panel.pRows, panel.rowCount, r))
+                        continue;
+                if(isPathfinderPanel && !PfRowVisible(panel.pRows, panel.rowCount, r))
                         continue;
                 sig = sig * 31u + (unsigned)r + 1u;
                 if(row.type == ERowType::Expandable && row.pChildren && row.m_AnimExpand > 0.0f)
@@ -4532,6 +4569,8 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                         {
                                 SRow &row = panel.pRows[r];
                                 if(isFunctionsPanel && !FunctionsRowVisible(panel.pRows, panel.rowCount, r))
+                                        continue;
+                                if(isPathfinderPanel && !PfRowVisible(panel.pRows, panel.rowCount, r))
                                         continue;
                                 addRowNode(row, false);
                                 if(row.type == ERowType::Expandable && row.pChildren && row.m_AnimExpand > 0.0f)
@@ -4603,6 +4642,8 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
         {
                 SRow &row = panel.pRows[r];
                 if(isFunctionsPanel && !FunctionsRowVisible(panel.pRows, panel.rowCount, r))
+                        continue;
+                if(isPathfinderPanel && !PfRowVisible(panel.pRows, panel.rowCount, r))
                         continue;
                 if(row.type == ERowType::Expandable && row.pChildren && row.m_AnimExpand > 0.0f && row.m_AnimExpand < 1.0f)
                 {
@@ -4759,6 +4800,8 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                 SRow &row = panel.pRows[r];
                 // Conditional visibility: skip hidden rows in Functions panel.
                 if(str_comp(panel.pTitle, "Functions") == 0 && !FunctionsRowVisible(panel.pRows, panel.rowCount, r))
+                        continue;
+                if(str_comp(panel.pTitle, "Pathfinder") == 0 && !PfRowVisible(panel.pRows, panel.rowCount, r))
                         continue;
                 const YGNodeRef node = rowNodes[rowIdx];
                 const float rxLocal = YGNodeLayoutGetLeft(node);

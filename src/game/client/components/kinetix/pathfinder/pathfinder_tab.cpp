@@ -398,7 +398,7 @@ float CBotNet::PfScoreChunk(const vec2 &startPos, const vec2 &endPos, bool reach
 
 	// Flow-field alignment: cosine between the movement vector and the
 	// distance gradient (+1 = toward finish, -1 = away).
-	if(g_Config.m_KxPfScoreFlow && m_PfFlowField && m_MapWidth > 0 && m_MapHeight > 0)
+	if(PfEffortScoreFlow() && m_PfFlowField && m_MapWidth > 0 && m_MapHeight > 0)
 	{
 		vec2 move = endPos - startPos;
 		float moveLen = sqrtf(move.x * move.x + move.y * move.y);
@@ -430,7 +430,7 @@ float CBotNet::PfScoreChunk(const vec2 &startPos, const vec2 &endPos, bool reach
 	}
 
 	// Distance reduction on the 4x-resolution score field (sub-tile precision).
-	if(g_Config.m_KxPfScoreDist && m_PfScoreField && m_PfScoreFieldW > 0 && m_PfScoreFieldH > 0)
+	if(PfEffortScoreDist() && m_PfScoreField && m_PfScoreFieldW > 0 && m_PfScoreFieldH > 0)
 	{
 		int sx = pf_clamp((int)(startPos.x / 8.0f), 0, m_PfScoreFieldW - 1);
 		int sy = pf_clamp((int)(startPos.y / 8.0f), 0, m_PfScoreFieldH - 1);
@@ -449,10 +449,10 @@ float CBotNet::PfScoreChunk(const vec2 &startPos, const vec2 &endPos, bool reach
 	if(reachedFinish)
 		score += 1000000.0f;
 
-	if(died && g_Config.m_KxPfFineDeath)
+	if(died && PfEffortFineDeath())
 		score -= 10000.0f;
 
-	if(g_Config.m_KxPfFineFreeze)
+	if(PfEffortFineFreeze())
 		score -= freezeTicks * (10.0f + m_PfTotalFreezeTicks / 8.0f);
 
 	if(distance(endPos, startPos) < 2.0f)
@@ -499,7 +499,7 @@ void CBotNet::UpdatePathfinder()
 			m_PfState = PF_STATE_FINISHED;
 			return;
 		}
-		int ChunkSize = pf_clamp(g_Config.m_KxPfChunkSize, CConfig::PF_CHUNK_SIZE_MIN, PF_TAB_MAX_CHUNK_TICKS);
+		int ChunkSize = PfEffortChunkTicks();
 		size_t endIdx = m_PfFullInputsIdx + (size_t)ChunkSize;
 		if(endIdx > m_PfFullInputs.size())
 			endIdx = m_PfFullInputs.size();
@@ -627,8 +627,8 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
 	if(!pGame->m_PredictedWorld.GetCharacterById(LocalID))
 		return false;
 
-	int ChunkSize = pf_clamp(g_Config.m_KxPfChunkSize, CConfig::PF_CHUNK_SIZE_MIN, PF_TAB_MAX_CHUNK_TICKS);
-	int HookAngles = pf_clamp(g_Config.m_KxPfHookAngles, CConfig::PF_HOOK_ANGLES_MIN, CConfig::PF_HOOK_ANGLES_MAX);
+	int ChunkSize = PfEffortChunkTicks();
+	int HookAngles = PfEffortHookAngles();
 
 	CGameWorld FutureWorld;
 	FutureWorld.CopyWorld(&pGame->m_PredictedWorld);

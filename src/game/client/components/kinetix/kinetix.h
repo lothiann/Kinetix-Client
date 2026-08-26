@@ -61,6 +61,20 @@ static const int PF_TAB_ALGORITHM_COUNT = 15;
 static const int PF_BACKTRACK_DEPTH = 5;
 // PF_BACKTRACK_CANDIDATES removed — now dynamic via KxPfBacktrackCandidates (100-1400)
 
+int PfEffortChunkTicks();
+int PfEffortHookAngles();
+int PfEffortSearchBudget();
+int PfEffortCandidates();
+bool PfEffortScoreDist();
+bool PfEffortScoreFlow();
+bool PfEffortFineFreeze();
+bool PfEffortFineRetract();
+bool PfEffortFineDeath();
+bool PfEffortFineWall();
+bool PfEffortFineAir();
+bool PfEffortFineHookFire();
+bool PfEffortFineStuck();
+
 // Per-tick hook segment: tee position + hook attach/fly position at one tick.
 // Used by PfSimulateChunk (PfChunkResult) and AStarNode to capture ALL hook
 // fire/hold cycles inside a chunk, not just the final state.
