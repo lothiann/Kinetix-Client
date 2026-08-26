@@ -138,7 +138,8 @@ int PfEffortCandidates()
 
 bool PfEffortScoreDist() { return g_Config.m_KxPfEffort == 5 ? g_Config.m_KxPfScoreDist != 0 : true; }
 bool PfEffortScoreFlow() { return g_Config.m_KxPfEffort == 5 ? g_Config.m_KxPfScoreFlow != 0 : true; }
-bool PfEffortFineFreeze() { return g_Config.m_KxPfEffort == 5 ? g_Config.m_KxPfFineFreeze != 0 : true; }
+bool PfEffortFineFreeze() { return g_Config.m_KxPfEffort == 5 ? g_Config.m_KxPfFineFreeze != 0 : false; }
+bool PfEffortFreezeSupport() { return g_Config.m_KxPfEffort == 5 ? g_Config.m_KxPfFreezeSupport != 0 : false; }
 bool PfEffortFineRetract() { return g_Config.m_KxPfEffort == 5 ? g_Config.m_KxPfFineRetract != 0 : false; }
 bool PfEffortFineDeath() { return g_Config.m_KxPfEffort == 5 ? g_Config.m_KxPfFineDeath != 0 : true; }
 bool PfEffortFineWall() { return g_Config.m_KxPfEffort == 5 ? g_Config.m_KxPfFineWall != 0 : false; }
@@ -674,6 +675,8 @@ int CBotNet::PfAStarStep()
 				break;
 			if(ind.died && !ind.reachedFinish)
 				continue;
+			if(ind.freezeTicks > 0 && !PfEffortFreezeSupport())
+				continue;
 			if(ind.inputs.empty())
 				continue;
 			CCharacterCore endCore = cur.Core;
@@ -814,6 +817,8 @@ int CBotNet::PfAStarStep()
 				m_pForbiddenGrid, PfCustomFinishSimGrid());
 			simsUsed++;
 			if(res.died && !res.reachedFinish)
+				return -1;
+			if(res.freezeTicks > 0 && !PfEffortFreezeSupport())
 				return -1;
 			ExNode ch;
 			ch.core = par.core;

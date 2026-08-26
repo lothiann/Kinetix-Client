@@ -67,6 +67,7 @@ int PfEffortSearchBudget();
 int PfEffortCandidates();
 bool PfEffortScoreDist();
 bool PfEffortScoreFlow();
+bool PfEffortFreezeSupport();
 bool PfEffortFineFreeze();
 bool PfEffortFineRetract();
 bool PfEffortFineDeath();

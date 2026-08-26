@@ -330,7 +330,7 @@ void CBotNet::PfComputeFlowField()
 			(m_PfStartPos.x != 0.0f || m_PfStartPos.y != 0.0f))
 			phase1ReachedStart = m_PfFlowField[startTY * m_MapWidth + startTX] < 1e17f;
 	}
-	if(!phase1ReachedStart)
+	if(!phase1ReachedStart && !PfEffortFreezeSupport())
 		PfBfsFill(m_PfFlowField, m_MapWidth, m_MapHeight, vSrcTiles, fnTileWalk, fnTileFreeze, true);
 
 	// Score field: 4x resolution (8px cells) for sub-tile distance scoring.
@@ -383,7 +383,7 @@ void CBotNet::PfComputeFlowField()
 			(m_PfStartPos.x != 0.0f || m_PfStartPos.y != 0.0f))
 			scorePhase1ReachedStart = m_PfScoreField[startSCY * m_PfScoreFieldW + startSCX] < 1e17f;
 	}
-	if(!scorePhase1ReachedStart)
+	if(!scorePhase1ReachedStart && !PfEffortFreezeSupport())
 		PfBfsFill(m_PfScoreField, m_PfScoreFieldW, m_PfScoreFieldH, vSrcSub, fnSubWalk, fnSubFreeze, true);
 }
 
@@ -753,6 +753,8 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
 		pBot->m_FreezeTime = savedFreeze;
 
 		if(res.died && !res.reachedFinish)
+			return;
+		if(res.freezeTicks > 0 && !PfEffortFreezeSupport())
 			return;
 
 		float score = PfScoreChunk(m_PfCurPos, res.endPos, res.reachedFinish, res.died, res.freezeTicks);

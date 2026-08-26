@@ -420,6 +420,7 @@ static SRow g_PathfinderRows[] = {
         {ERowType::Slider, "Candidates", nullptr, false, false, 50.0f, 2000.0f, 10.0f, 200.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Search budget", nullptr, false, false, 256.0f, 200000.0f, 1000.0f, 6000.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Performance", nullptr, false, false, 1.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Freeze Support (Beta)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Expandable, "Score method", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ScoreMethodChildren, 2},
         {ERowType::Expandable, "Penalties", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_PenaltiesChildren, 7},
         {ERowType::Expandable, "Visuals", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_VisualsChildren, 4},
@@ -518,8 +519,8 @@ static bool PfRowVisible(const SRow *pRows, int rowCount, int idx)
         if(str_comp(row.pName, "Search budget") == 0)
                 return g_Config.m_KxPfEffort == 5 && g_Config.m_KxPfAdvancedSearch == 0;
         if(str_comp(row.pName, "Chunk size") == 0 || str_comp(row.pName, "Hook angles") == 0 ||
-           str_comp(row.pName, "Candidates") == 0 || str_comp(row.pName, "Score method") == 0 ||
-           str_comp(row.pName, "Penalties") == 0)
+           str_comp(row.pName, "Candidates") == 0 || str_comp(row.pName, "Freeze Support (Beta)") == 0 ||
+           str_comp(row.pName, "Score method") == 0 || str_comp(row.pName, "Penalties") == 0)
                 return g_Config.m_KxPfEffort == 5;
         return true;
 }
@@ -700,6 +701,13 @@ static bool SpooferChildVisible(const SRow *pChildren, int childCount, int idx)
 // v1.56.210: "Gradient" toggle visible only with Rainbow ON (gradient has no
 // effect without rainbow rotation). "Step" slider visible only when BOTH
 // Rainbow AND Gradient are ON — it controls the per-segment hue increment.
+static bool PenaltiesChildVisible(const SRow *pChildren, int childCount, int idx)
+{
+        if(idx < 0 || idx >= childCount)
+                return false;
+        return str_comp(pChildren[idx].pName, "Freeze penalty") != 0 || (g_Config.m_KxPfEffort == 5 && g_Config.m_KxPfFreezeSupport != 0);
+}
+
 static bool LineRenderingChildVisible(const SRow *pChildren, int childCount, int idx)
 {
         if(idx < 0 || idx >= childCount)
@@ -1366,6 +1374,8 @@ void CClickGui::OnRender()
                                         row.valueIdx = g_Config.m_KxPfAdvancedSearch != 0 ? 1 : 0;
                                 else if(str_comp(row.pName, "Search budget") == 0)
                                         row.value = (float)g_Config.m_KxPfSearchBudget;
+                                else if(str_comp(row.pName, "Freeze Support (Beta)") == 0)
+                                        row.on = g_Config.m_KxPfFreezeSupport != 0;
                                 // Settings → IRC/Spoofer top-level expandables are master toggles.
                                 else if(str_comp(row.pName, "IRC") == 0)
                                         row.on = g_Config.m_KxIrcEnabled != 0;
@@ -1376,6 +1386,8 @@ void CClickGui::OnRender()
                                 for(int c = 0; c < row.childCount; ++c)
                                 {
                                         SRow &child = row.pChildren[c];
+                                if(str_comp(row.pName, "Penalties") == 0 && !PenaltiesChildVisible(row.pChildren, row.childCount, c))
+                                        continue;
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;
                                                         if(str_comp(row.pName, "AimBot") == 0 && !AimBotChildVisible(row.pChildren, row.childCount, c))
@@ -3217,6 +3229,8 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         else if(str_comp(pTarget->pName, "Show speed") == 0)
                                                 g_Config.m_KxPfShowSpeed = pTarget->on ? 1 : 0;
                                         // Pathfinder top-level
+                                        else if(str_comp(pTarget->pName, "Freeze Support (Beta)") == 0)
+                                                g_Config.m_KxPfFreezeSupport = pTarget->on ? 1 : 0;
                                         // Settings → IRC/Spoofer expandables are master toggles.
                                         else if(str_comp(pTarget->pName, "IRC") == 0)
                                                 g_Config.m_KxIrcEnabled = pTarget->on ? 1 : 0;
@@ -3809,6 +3823,8 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                         for(int c = 0; c < row.childCount; ++c)
                         {
                                 SRow &child = row.pChildren[c];
+                                if(str_comp(row.pName, "Penalties") == 0 && !PenaltiesChildVisible(row.pChildren, row.childCount, c))
+                                        continue;
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;
                                                         if(str_comp(row.pName, "AimBot") == 0 && !AimBotChildVisible(row.pChildren, row.childCount, c))
@@ -4029,6 +4045,8 @@ void CClickGui::RenderDropdownPopup(float alpha)
                         for(int c = 0; c < row.childCount; ++c)
                         {
                                 SRow &child = row.pChildren[c];
+                                if(str_comp(row.pName, "Penalties") == 0 && !PenaltiesChildVisible(row.pChildren, row.childCount, c))
+                                        continue;
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;
                                                         if(str_comp(row.pName, "AimBot") == 0 && !AimBotChildVisible(row.pChildren, row.childCount, c))
@@ -4292,6 +4310,8 @@ bool CClickGui::HitTestRow(vec2 mousePos, int panelIdx, int &outRow, int &outChi
                         for(int c = 0; c < row.childCount; ++c)
                         {
                                 SRow &child = row.pChildren[c];
+                                if(str_comp(row.pName, "Penalties") == 0 && !PenaltiesChildVisible(row.pChildren, row.childCount, c))
+                                        continue;
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;
                                                         if(str_comp(row.pName, "AimBot") == 0 && !AimBotChildVisible(row.pChildren, row.childCount, c))
@@ -4506,6 +4526,8 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                 {
                         for(int c = 0; c < row.childCount; ++c)
                         {
+                                if(str_comp(row.pName, "Penalties") == 0 && !PenaltiesChildVisible(row.pChildren, row.childCount, c))
+                                        continue;
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;
                                                         if(str_comp(row.pName, "AimBot") == 0 && !AimBotChildVisible(row.pChildren, row.childCount, c))
@@ -4577,6 +4599,8 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                 {
                                         for(int c = 0; c < row.childCount; ++c)
                                         {
+                                                if(str_comp(row.pName, "Penalties") == 0 && !PenaltiesChildVisible(row.pChildren, row.childCount, c))
+                                                        continue;
                                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                                         continue;
                                                         if(str_comp(row.pName, "AimBot") == 0 && !AimBotChildVisible(row.pChildren, row.childCount, c))
@@ -4652,6 +4676,8 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                         int visibleCount = 0;
                         for(int c = 0; c < row.childCount; ++c)
                         {
+                                if(str_comp(row.pName, "Penalties") == 0 && !PenaltiesChildVisible(row.pChildren, row.childCount, c))
+                                        continue;
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;
                                                         if(str_comp(row.pName, "AimBot") == 0 && !AimBotChildVisible(row.pChildren, row.childCount, c))
@@ -5209,6 +5235,8 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                 // subsequent rows read the correct Yoga nodes.
                                 for(int c = 0; c < row.childCount; ++c)
                                 {
+                                        if(str_comp(row.pName, "Penalties") == 0 && !PenaltiesChildVisible(row.pChildren, row.childCount, c))
+                                                continue;
                                         if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                                 continue;
                                                         if(str_comp(row.pName, "AimBot") == 0 && !AimBotChildVisible(row.pChildren, row.childCount, c))
@@ -5250,6 +5278,7 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                         int preIdx = rowIdx;
                         for(int c = 0; c < row.childCount; ++c)
                         {
+                                if(str_comp(row.pName, "Penalties") == 0 && !PenaltiesChildVisible(row.pChildren, row.childCount, c)) continue;
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c)) continue;
                                 if(str_comp(row.pName, "AimBot") == 0 && !AimBotChildVisible(row.pChildren, row.childCount, c)) continue;
                                 if(str_comp(row.pName, "TriggerBot") == 0 && !TriggerBotChildVisible(row.pChildren, row.childCount, c)) continue;
@@ -5285,6 +5314,8 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                         for(int c = 0; c < row.childCount; ++c)
                         {
                                 SRow &child = row.pChildren[c];
+                                if(str_comp(row.pName, "Penalties") == 0 && !PenaltiesChildVisible(row.pChildren, row.childCount, c))
+                                        continue;
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;
                                                         if(str_comp(row.pName, "AimBot") == 0 && !AimBotChildVisible(row.pChildren, row.childCount, c))
