@@ -37,6 +37,8 @@ void CBotNet::PfClearSearchState()
 	m_PfFullInputsIdx = 0;
 	m_PfGoActive = false;
 	m_PfGoIdx = 0;
+	m_PfUiBestDone = 0;
+	m_PfUiBestTotal = 0;
 }
 
 // Start a fresh search from the active player's predicted state.
@@ -610,15 +612,37 @@ void CBotNet::PfGetUiStats(bool &outRunning, bool &outFinished, float &outPercen
 
 		int flowTotal = 0;
 		int flowDone = 0;
+		bool flowValid = false;
+		bool probeLive = false;
 		vec2 probePos = m_PfCurPos;
-		if(m_PfAPathReady)
 		{
 			std::lock_guard<std::mutex> lk(m_PfDataMutex);
-			size_t i = m_PfFullInputsIdx;
-			if(i > 0)
-				i--;
-			if(i < m_PfVPath.size())
-				probePos = m_PfVPath[i];
+			if(m_PfAPathReady)
+			{
+				size_t i = m_PfFullInputsIdx;
+				if(i > 0)
+					i--;
+				if(i < m_PfVPath.size())
+				{
+					probePos = m_PfVPath[i];
+					probeLive = true;
+				}
+			}
+			else if(m_MapGridLoaded && m_PfFlowField && m_MapWidth > 0 && m_MapHeight > 0)
+			{
+				for(size_t i = m_PfVPath.size(); i-- > 0;)
+				{
+					vec2 p = m_PfVPath[i];
+					int fx = pf_clamp((int)(p.x / 32.0f), 0, m_MapWidth - 1);
+					int fy = pf_clamp((int)(p.y / 32.0f), 0, m_MapHeight - 1);
+					if(m_PfFlowField[fy * m_MapWidth + fx] < 1e17f)
+					{
+						probePos = p;
+						probeLive = true;
+						break;
+					}
+				}
+			}
 		}
 		if(m_MapGridLoaded && m_PfFlowField && m_MapWidth > 0 && m_MapHeight > 0)
 		{
@@ -629,7 +653,7 @@ void CBotNet::PfGetUiStats(bool &outRunning, bool &outFinished, float &outPercen
 			};
 			float dStart = fnDist(m_PfStartPos);
 			float dCur = fnDist(probePos);
-			if(dStart < 1e17f && dStart > 0.001f && dCur < 1e17f)
+			if(probeLive && dStart < 1e17f && dStart > 0.001f && dCur < 1e17f)
 			{
 				float fDone = dStart - dCur;
 				if(fDone < 0.0f)
@@ -638,10 +662,13 @@ void CBotNet::PfGetUiStats(bool &outRunning, bool &outFinished, float &outPercen
 					fDone = dStart;
 				flowTotal = (int)(dStart + 0.5f);
 				flowDone = (int)(fDone + 0.5f);
+				m_PfUiBestTotal = flowTotal;
+				m_PfUiBestDone = flowDone;
+				flowValid = true;
 			}
 		}
 
-		if(m_PfAPathReady || flowDone > 0)
+		if(flowValid)
 		{
 			outTotalTiles = flowTotal;
 			outDoneTiles = flowDone;
@@ -651,6 +678,14 @@ void CBotNet::PfGetUiStats(bool &outRunning, bool &outFinished, float &outPercen
 				if(outPercent > 100.0f)
 					outPercent = 100.0f;
 			}
+		}
+		else if(m_PfUiBestTotal > 0)
+		{
+			outTotalTiles = m_PfUiBestTotal;
+			outDoneTiles = m_PfUiBestDone;
+			outPercent = 100.0f * (float)m_PfUiBestDone / (float)m_PfUiBestTotal;
+			if(outPercent > 100.0f)
+				outPercent = 100.0f;
 		}
 		else
 		{

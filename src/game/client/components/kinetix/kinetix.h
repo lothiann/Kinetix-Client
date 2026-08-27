@@ -362,6 +362,8 @@ public:
 	int m_PfAExpandCount;
 	std::atomic<float> m_PfABestH{1e18f};
 	float m_PfAHRoot = 1e18f;
+	int m_PfUiBestDone = 0;
+	int m_PfUiBestTotal = 0;
         std::vector<CNetObj_PlayerInput> m_PfFullInputs;
         size_t m_PfFullInputsIdx;
 
