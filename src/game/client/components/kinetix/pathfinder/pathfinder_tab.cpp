@@ -330,7 +330,7 @@ void CBotNet::PfComputeFlowField()
 			(m_PfStartPos.x != 0.0f || m_PfStartPos.y != 0.0f))
 			phase1ReachedStart = m_PfFlowField[startTY * m_MapWidth + startTX] < 1e17f;
 	}
-	if(!phase1ReachedStart && !PfEffortFreezeSupport())
+	if(!phase1ReachedStart)
 		PfBfsFill(m_PfFlowField, m_MapWidth, m_MapHeight, vSrcTiles, fnTileWalk, fnTileFreeze, true);
 
 	// Score field: 4x resolution (8px cells) for sub-tile distance scoring.
@@ -383,7 +383,7 @@ void CBotNet::PfComputeFlowField()
 			(m_PfStartPos.x != 0.0f || m_PfStartPos.y != 0.0f))
 			scorePhase1ReachedStart = m_PfScoreField[startSCY * m_PfScoreFieldW + startSCX] < 1e17f;
 	}
-	if(!scorePhase1ReachedStart && !PfEffortFreezeSupport())
+	if(!scorePhase1ReachedStart)
 		PfBfsFill(m_PfScoreField, m_PfScoreFieldW, m_PfScoreFieldH, vSrcSub, fnSubWalk, fnSubFreeze, true);
 }
 
@@ -391,7 +391,7 @@ void CBotNet::PfComputeFlowField()
 // the score only RANKS candidates inside RHEA/beam/sweep, it never enters
 // the A* node cost G.
 float CBotNet::PfScoreChunk(const vec2 &startPos, const vec2 &endPos, bool reachedFinish, bool died,
-	int freezeTicks) const
+	int freezeTicks, bool applyFreezePenalty) const
 {
 	float score = 0.0f;
 	const float INF = 1e17f;
@@ -452,13 +452,21 @@ float CBotNet::PfScoreChunk(const vec2 &startPos, const vec2 &endPos, bool reach
 	if(died && PfEffortFineDeath())
 		score -= 10000.0f;
 
-	if(PfEffortFineFreeze())
+	if(applyFreezePenalty)
 		score -= freezeTicks * (10.0f + m_PfTotalFreezeTicks / 8.0f);
 
 	if(distance(endPos, startPos) < 2.0f)
 		score -= 500.0f;
 
 	return score;
+}
+
+#include <chrono>
+
+static double PfNowSec()
+{
+	using namespace std::chrono;
+	return duration<double>(steady_clock::now().time_since_epoch()).count();
 }
 
 // Per-update step of the state machine. The search itself runs on the
@@ -531,6 +539,9 @@ void CBotNet::UpdatePathfinder()
 	{
 		int bestIdx = -1;
 		float bestH = 1e18f;
+		int bestCleanIdx = -1;
+		float bestCleanH = 1e18f;
+		bool allowFrozen = PfEffortFreezeSupport();
 		for(size_t i = 0; i < m_PfANodes.size(); i++)
 		{
 			if(m_PfANodes[i].ParentIdx < 0)
@@ -540,7 +551,14 @@ void CBotNet::UpdatePathfinder()
 				bestH = m_PfANodes[i].H;
 				bestIdx = (int)i;
 			}
+			if(!allowFrozen && m_PfANodes[i].FreezeChainTicks <= 0 && m_PfANodes[i].H < bestCleanH)
+			{
+				bestCleanH = m_PfANodes[i].H;
+				bestCleanIdx = (int)i;
+			}
 		}
+		if(bestCleanIdx >= 0)
+			bestIdx = bestCleanIdx;
 		if(bestIdx >= 0)
 		{
 			m_PfAGoalIdx = bestIdx;
@@ -559,6 +577,113 @@ void CBotNet::UpdatePathfinder()
 			dbg_msg("pathfinder", "no path found (%d expansions, %zu nodes)", m_PfAExpandCount, m_PfANodes.size());
 	}
 	m_PfState = PF_STATE_FINISHED;
+}
+
+void CBotNet::PfGetUiStats(bool &outRunning, bool &outFinished, float &outPercent,
+	int &outDoneTiles, int &outTotalTiles, double &outElapsedSec, double &outEtaSec,
+	double &outPathTimeSec, double &outGenTimeSec)
+{
+	outRunning = (m_PfState == PF_STATE_RUNNING);
+	outFinished = (m_PfState == PF_STATE_FINISHED);
+	outPercent = 0.0f;
+	outDoneTiles = 0;
+	outTotalTiles = 0;
+	outElapsedSec = 0.0;
+	outEtaSec = -1.0;
+	outPathTimeSec = 0.0;
+	outGenTimeSec = 0.0;
+
+	if(outRunning && m_PfGenLastState != PF_STATE_RUNNING)
+	{
+		m_PfGenStartTime = PfNowSec();
+		m_PfGenEndTime = 0.0;
+	}
+	if(m_PfGenLastState == PF_STATE_RUNNING && m_PfState == PF_STATE_FINISHED && m_PfGenEndTime <= 0.0)
+		m_PfGenEndTime = PfNowSec();
+	m_PfGenLastState = m_PfState;
+
+	if(outRunning)
+	{
+		outElapsedSec = (m_PfGenStartTime > 0.0) ? PfNowSec() - m_PfGenStartTime : 0.0;
+		if(outElapsedSec < 0.0)
+			outElapsedSec = 0.0;
+
+		int flowTotal = 0;
+		int flowDone = 0;
+		vec2 probePos = m_PfCurPos;
+		if(m_PfAPathReady)
+		{
+			std::lock_guard<std::mutex> lk(m_PfDataMutex);
+			size_t i = m_PfFullInputsIdx;
+			if(i > 0)
+				i--;
+			if(i < m_PfVPath.size())
+				probePos = m_PfVPath[i];
+		}
+		if(m_MapGridLoaded && m_PfFlowField && m_MapWidth > 0 && m_MapHeight > 0)
+		{
+			auto fnDist = [&](const vec2 &pos) -> float {
+				int tx = pf_clamp((int)(pos.x / 32.0f), 0, m_MapWidth - 1);
+				int ty = pf_clamp((int)(pos.y / 32.0f), 0, m_MapHeight - 1);
+				return m_PfFlowField[ty * m_MapWidth + tx];
+			};
+			float dStart = fnDist(m_PfStartPos);
+			float dCur = fnDist(probePos);
+			if(dStart < 1e17f && dStart > 0.001f && dCur < 1e17f)
+			{
+				float fDone = dStart - dCur;
+				if(fDone < 0.0f)
+					fDone = 0.0f;
+				if(fDone > dStart)
+					fDone = dStart;
+				flowTotal = (int)(dStart + 0.5f);
+				flowDone = (int)(fDone + 0.5f);
+			}
+		}
+
+		if(m_PfAPathReady || flowDone > 0)
+		{
+			outTotalTiles = flowTotal;
+			outDoneTiles = flowDone;
+			if(flowTotal > 0)
+			{
+				outPercent = 100.0f * (float)flowDone / (float)flowTotal;
+				if(outPercent > 100.0f)
+					outPercent = 100.0f;
+			}
+		}
+		else
+		{
+			float hRoot = m_PfAHRoot;
+			float hBest = m_PfABestH.load(std::memory_order_relaxed);
+			if(hRoot > 0.001f && hRoot < 1e17f && hBest < hRoot)
+			{
+				float frac = (hRoot - hBest) / hRoot;
+				if(frac < 0.0f)
+					frac = 0.0f;
+				outPercent = 100.0f * frac;
+				if(outPercent > 95.0f)
+					outPercent = 95.0f;
+				outTotalTiles = flowTotal;
+				outDoneTiles = (int)((float)flowTotal * frac + 0.5f);
+			}
+		}
+
+		if(outPercent >= 0.5f && outElapsedSec > 0.05)
+			outEtaSec = outElapsedSec * (100.0f - outPercent) / outPercent;
+	}
+
+	if(outFinished)
+	{
+		outPathTimeSec = (double)m_PfFullInputs.size() / 50.0;
+		if(m_PfGenStartTime > 0.0)
+		{
+			double endTime = (m_PfGenEndTime > m_PfGenStartTime) ? m_PfGenEndTime : PfNowSec();
+			outGenTimeSec = endTime - m_PfGenStartTime;
+			if(outGenTimeSec < 0.0)
+				outGenTimeSec = 0.0;
+		}
+	}
 }
 
 // Try an alternative candidate from the backtrack buffer (legacy chunk loop).
@@ -738,7 +863,10 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
 	const int N = pf_clamp(g_Config.m_KxPfBacktrackCandidates, CConfig::PF_CANDIDATES_MIN, dynMax);
 	std::vector<CandidateResult> topCandidates(N);
 	for(int i = 0; i < N; i++)
+	{
 		topCandidates[i].score = -1e18f;
+		topCandidates[i].freezeTicks = 0;
+	}
 
 	auto fnSimulateCandidate = [&](const std::vector<CNetObj_PlayerInput> &inSeq) {
 		CCharacterCore savedCore = pBot->GetCore();
@@ -753,8 +881,6 @@ bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::
 		pBot->m_FreezeTime = savedFreeze;
 
 		if(res.died && !res.reachedFinish)
-			return;
-		if(res.freezeTicks > 0 && !PfEffortFreezeSupport())
 			return;
 
 		float score = PfScoreChunk(m_PfCurPos, res.endPos, res.reachedFinish, res.died, res.freezeTicks);

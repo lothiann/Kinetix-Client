@@ -412,6 +412,12 @@ static SRow g_VisualsChildren[] = {
 };
 static const char *const g_PfEffortOpts[] = {"Low", "Medium", "High", "Ultra", "Max", "Custom"};
 static const char *const g_PfAlgorithmOpts[] = {"BFS", "RHEA"};
+static char g_PfDyn_Progress[96];
+static char g_PfDyn_Eta[64];
+static char g_PfDyn_Time[96];
+static bool g_PfShowRunLabels = false;
+static bool g_PfShowStatLabels = false;
+
 static SRow g_PathfinderRows[] = {
         {ERowType::Dropdown, "Effort", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_PfEffortOpts, 6, 0, nullptr, 0},
         {ERowType::Dropdown, "Algorithm", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_PfAlgorithmOpts, 2, 0, nullptr, 0},
@@ -428,6 +434,9 @@ static SRow g_PathfinderRows[] = {
         {ERowType::DoubleButton, "Pathfinding", "Play", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::DoubleButton, "Editor Forbidden Tiles", "Clear Forbidden Tiles", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::DoubleButton, "Editor Finish Tiles", "Clear Finish Tiles", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_PfDyn_Progress, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_PfDyn_Eta, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_PfDyn_Time, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 
 struct SPanel
@@ -522,6 +531,10 @@ static bool PfRowVisible(const SRow *pRows, int rowCount, int idx)
            str_comp(row.pName, "Candidates") == 0 || str_comp(row.pName, "Freeze Support (Beta)") == 0 ||
            str_comp(row.pName, "Score method") == 0 || str_comp(row.pName, "Penalties") == 0)
                 return g_Config.m_KxPfEffort == 5;
+        if(row.pName == g_PfDyn_Progress || row.pName == g_PfDyn_Eta)
+                return g_PfShowRunLabels;
+        if(row.pName == g_PfDyn_Time)
+                return g_PfShowStatLabels;
         return true;
 }
 
@@ -1237,6 +1250,42 @@ void CClickGui::UpdateInfoRows()
 
         // --- AVG FPS ---
         str_format(g_InfoDyn_Fps, sizeof(g_InfoDyn_Fps), "AVG FPS: %d", (int)(m_AvgFps + 0.5f));
+}
+
+void CClickGui::UpdatePathfinderLabels()
+{
+        CBotNet &BN = GameClient()->m_BotNet;
+        bool running = false;
+        bool finished = false;
+        float pct = 0.0f;
+        int doneTiles = 0;
+        int totalTiles = 0;
+        double elapsedSec = 0.0;
+        double etaSec = -1.0;
+        double pathTimeSec = 0.0;
+        double genTimeSec = 0.0;
+        BN.PfGetUiStats(running, finished, pct, doneTiles, totalTiles, elapsedSec, etaSec, pathTimeSec, genTimeSec);
+        g_PfShowRunLabels = running;
+        g_PfShowStatLabels = finished;
+        if(running)
+        {
+                if(totalTiles > 0)
+                        str_format(g_PfDyn_Progress, sizeof(g_PfDyn_Progress),
+                                "Progress: ~%d%% / 100%% | %d / ~%d", (int)(pct + 0.5f), doneTiles, totalTiles);
+                else if(pct >= 0.5f)
+                        str_format(g_PfDyn_Progress, sizeof(g_PfDyn_Progress),
+                                "Progress: ~%d%% / 100%%", (int)(pct + 0.5f));
+                else
+                        str_copy(g_PfDyn_Progress, "Progress: --", sizeof(g_PfDyn_Progress));
+                if(etaSec > 0.0)
+                        str_format(g_PfDyn_Eta, sizeof(g_PfDyn_Eta), "ETA: ~%.1fs", etaSec);
+                else
+                        str_copy(g_PfDyn_Eta, "ETA: --", sizeof(g_PfDyn_Eta));
+        }
+        else if(finished)
+        {
+                str_format(g_PfDyn_Time, sizeof(g_PfDyn_Time), "Time: %.1fs | GTime: %.1fs", pathTimeSec, genTimeSec);
+        }
 }
 
 // ============================================================================
@@ -2261,6 +2310,7 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
         // v1.56.176: refresh Info panel dynamic text (client identity + FPS).
         // Runs every frame so AVG FPS stays live and spoofed settings update.
         UpdateInfoRows();
+        UpdatePathfinderLabels();
 
         // v1.56.77: rainbow color rotation. When enabled, overwrite m_AccentColorRGBA
         // each frame with a hue-rotating color. HSV→RGB conversion inline.

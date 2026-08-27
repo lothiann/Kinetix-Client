@@ -346,6 +346,7 @@ public:
                 int PrimIdx;     // -1 = root, 0..15 = primitives, 99 = FREEZE_SKIP
                 int PrimTicks;
                 int TickOffset;
+                int FreezeChainTicks = 0;
                 std::vector<vec2> Traj; // cached per-tick trajectory from parent.Pos to this.Pos
                 std::vector<CNetObj_PlayerInput> Inputs; // cached inputs for this primitive
                 // Per-tick hook segments inside this primitive's chunk (tee pos → hook pos).
@@ -357,8 +358,10 @@ public:
         std::unordered_map<uint64_t, float> m_PfABestG;
         int m_PfAGoalIdx;
         bool m_PfAStarted;
-        bool m_PfAPathReady;
-        int m_PfAExpandCount;
+	bool m_PfAPathReady;
+	int m_PfAExpandCount;
+	std::atomic<float> m_PfABestH{1e18f};
+	float m_PfAHRoot = 1e18f;
         std::vector<CNetObj_PlayerInput> m_PfFullInputs;
         size_t m_PfFullInputsIdx;
 
@@ -425,7 +428,10 @@ public:
         std::mutex m_PfDataMutex;
         std::vector<PfHookSeg> m_PfVHookSegs;
 
-        int m_PfEditorMode = 0;
+	int m_PfEditorMode = 0;
+	double m_PfGenStartTime = 0.0;
+	double m_PfGenEndTime = 0.0;
+	int m_PfGenLastState = 0;
         std::vector<vec2> m_PfForbiddenTiles;
         std::vector<vec2> m_PfCustomFinishTiles;
         unsigned char *m_pForbiddenGrid = nullptr;
@@ -514,8 +520,11 @@ public:
         std::vector<vec2> m_LaserUnfreezePath;
         int64_t m_LaserUnfreezePathTime = 0;
         void PfComputeFlowField();          // multi-source BFS to all finish tiles -> m_PfFlowField
+        void PfGetUiStats(bool &outRunning, bool &outFinished, float &outPercent, int &outDoneTiles,
+                int &outTotalTiles, double &outElapsedSec, double &outEtaSec,
+                double &outPathTimeSec, double &outGenTimeSec);
         float PfScoreChunk(const vec2 &startPos, const vec2 &endPos, bool reachedFinish, bool died,
-                           int freezeTicks) const;
+                           int freezeTicks, bool applyFreezePenalty = true) const;
         bool PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::vector<vec2> &outTraj,
                              bool &outReachedFinish, bool &outDied, int &outFreezeTicks);
         bool PfBacktrack();              // try alternative candidates from backtrack buffer

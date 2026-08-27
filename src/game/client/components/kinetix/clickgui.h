@@ -214,6 +214,7 @@ private:
         // (client name/version/hash + AVG FPS) based on the "Show spoofed"
         // toggle and live config. Called from OnRender each frame.
         void UpdateInfoRows();
+        void UpdatePathfinderLabels();
 
         // Panel geometry — scaled up again 1.2x in v1.56.39 for readability.
         static constexpr float PANEL_WIDTH = 300.0f;
