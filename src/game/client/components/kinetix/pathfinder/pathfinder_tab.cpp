@@ -525,6 +525,14 @@ void CBotNet::UpdatePathfinder()
 	if(result == 0)
 		return; // still searching
 
+	if(result == 1 && !PfEffortFreezeSupport()
+		&& m_PfAGoalIdx >= 0 && m_PfAGoalIdx < (int)m_PfANodes.size()
+		&& m_PfANodes[m_PfAGoalIdx].FreezeChainTicks > 0)
+	{
+		dbg_msg("pathfinder", "result rejected: goal node carries %d freeze ticks", m_PfANodes[m_PfAGoalIdx].FreezeChainTicks);
+		result = -1;
+	}
+
 	if(result == 1)
 	{
 		PfAStarReconstruct();
@@ -561,6 +569,8 @@ void CBotNet::UpdatePathfinder()
 		}
 		if(bestCleanIdx >= 0)
 			bestIdx = bestCleanIdx;
+		else if(!allowFrozen)
+			bestIdx = -1;
 		if(bestIdx >= 0)
 		{
 			m_PfAGoalIdx = bestIdx;

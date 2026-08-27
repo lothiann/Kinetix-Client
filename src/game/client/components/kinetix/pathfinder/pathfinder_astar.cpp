@@ -351,6 +351,8 @@ int CBotNet::PfAStarStep()
 		const std::vector<CNetObj_PlayerInput> &inputs, const std::vector<vec2> &traj,
 		const std::vector<PfHookSeg> &hookSegs, int ticks, float extraCost, int chunkFreezeTicks, int primIdx) -> bool
 	{
+		if(!PfEffortFreezeSupport() && cur.FreezeChainTicks + chunkFreezeTicks > 0)
+			return false;
 		vec2 childPos = endCore.m_Pos;
 		bool endGrounded = pColl->IsOnGround(childPos, CCharacterCore::PhysicalSize());
 		uint64_t key = PfAStarKey(endCore, endFreezeTime, endGrounded);
@@ -1026,6 +1028,12 @@ void CBotNet::PfAStarReconstruct()
 	PfThreadStop();
 	if(m_PfAGoalIdx < 0 || m_PfAGoalIdx >= (int)m_PfANodes.size())
 		return;
+	if(!PfEffortFreezeSupport() && m_PfANodes[m_PfAGoalIdx].FreezeChainTicks > 0)
+	{
+		dbg_msg("pathfinder", "reconstruction rejected: goal node carries %d freeze ticks", m_PfANodes[m_PfAGoalIdx].FreezeChainTicks);
+		m_PfAGoalIdx = -1;
+		return;
+	}
 
 	PfAStarResimulatePath(m_PfAGoalIdx);
 
