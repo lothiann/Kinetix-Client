@@ -231,6 +231,7 @@ void CGameClient::OnConsoleInit()
                                                   &m_Menus,
                                                   &m_Controls,
                                                   &m_TouchControls,
+                                                  &m_BotNet,
                                                   &m_Binds});
 
         // initialize client data

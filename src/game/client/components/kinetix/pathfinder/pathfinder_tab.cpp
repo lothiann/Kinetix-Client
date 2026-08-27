@@ -533,6 +533,14 @@ void CBotNet::UpdatePathfinder()
 		result = -1;
 	}
 
+	if(result == 1
+		&& m_PfAGoalIdx >= 0 && m_PfAGoalIdx < (int)m_PfANodes.size()
+		&& m_PfANodes[m_PfAGoalIdx].ForbiddenChainTicks > 0)
+	{
+		dbg_msg("pathfinder", "result rejected: goal node carries %d forbidden ticks", m_PfANodes[m_PfAGoalIdx].ForbiddenChainTicks);
+		result = -1;
+	}
+
 	if(result == 1)
 	{
 		PfAStarReconstruct();
@@ -561,7 +569,7 @@ void CBotNet::UpdatePathfinder()
 				bestH = m_PfANodes[i].H;
 				bestIdx = (int)i;
 			}
-			if(!allowFrozen && m_PfANodes[i].FreezeChainTicks <= 0 && m_PfANodes[i].H < bestCleanH)
+			if(!allowFrozen && m_PfANodes[i].FreezeChainTicks <= 0 && m_PfANodes[i].ForbiddenChainTicks <= 0 && m_PfANodes[i].H < bestCleanH)
 			{
 				bestCleanH = m_PfANodes[i].H;
 				bestCleanIdx = (int)i;
@@ -570,6 +578,8 @@ void CBotNet::UpdatePathfinder()
 		if(bestCleanIdx >= 0)
 			bestIdx = bestCleanIdx;
 		else if(!allowFrozen)
+			bestIdx = -1;
+		if(bestIdx >= 0 && m_PfANodes[bestIdx].ForbiddenChainTicks > 0)
 			bestIdx = -1;
 		if(bestIdx >= 0)
 		{
@@ -1229,12 +1239,24 @@ void CBotNet::PfClearCustomFinishTiles()
 void CBotNet::UpdatePfTileEditor()
 {
 	if(m_PfEditorMode == 0)
+	{
+		m_PfEditCleaned = false;
 		return;
+	}
+	CGameClient *pGame = GameClient();
+	if(pGame && !m_PfEditCleaned)
+	{
+		CNetObj_PlayerInput &In = pGame->m_Controls.m_aInputData[g_Config.m_ClDummy];
+		In.m_Fire &= ~1;
+		In.m_Hook = 0;
+		m_PfEditCleaned = true;
+	}
 	if(g_Config.m_ClClickGui != 0)
 		return;
-	CGameClient *pGame = GameClient();
 	if(!pGame || pGame->m_Menus.IsActive())
 		return;
+	bool lmb = Input()->KeyIsPressed(KEY_MOUSE_1) || m_PfEditFireHeld;
+	bool rmb = Input()->KeyIsPressed(KEY_MOUSE_2) || m_PfEditHookHeld;
 	if(!m_MapGridLoaded)
 		LoadMapGrid();
 	if(!m_MapGridLoaded || !m_pForbiddenGrid || !m_pCustomFinishGrid)
@@ -1245,8 +1267,6 @@ void CBotNet::UpdatePfTileEditor()
 	int ty = (int)floorf(aim.y / 32.0f);
 	if(tx < 0 || ty < 0 || tx >= m_MapWidth || ty >= m_MapHeight)
 		return;
-	bool lmb = Input()->KeyIsPressed(KEY_MOUSE_1);
-	bool rmb = Input()->KeyIsPressed(KEY_MOUSE_2);
 	if(m_PfEditorMode == 1)
 	{
 		if(lmb && !rmb)

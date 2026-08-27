@@ -178,7 +178,9 @@ static bool PfIsAtFinishPos(const std::vector<vec2> &vFinishes, const vec2 &pos)
 {
 	for(const vec2 &fp : vFinishes)
 	{
-		if(fabsf(pos.x - fp.x) < 40.0f && fabsf(pos.y - fp.y) < 40.0f)
+		int tx = (int)floorf(fp.x / 32.0f);
+		int ty = (int)floorf(fp.y / 32.0f);
+		if(round_to_int(pos.x / 32.0f) == tx && round_to_int(pos.y / 32.0f) == ty)
 			return true;
 	}
 	return false;
@@ -295,7 +297,7 @@ int CBotNet::PfAStarStep()
 		return -1;
 	}
 
-	int maxNodes = pf_clamp(g_Config.m_KxPfAStarNodeBudget, 1000, 1000000);
+	int maxNodes = pf_clamp(g_Config.m_KxPfAStarNodeBudget, 1000, 100000000);
 	int W = pf_clamp(g_Config.m_KxPfAStarWeight, 1, 20);
 	const int maxTicks = 4000;
 
@@ -326,6 +328,8 @@ int CBotNet::PfAStarStep()
 	{
 		if(!PfEffortFreezeSupport() && cur.FreezeChainTicks > 0)
 			return 0;
+		if(cur.ForbiddenChainTicks > 0)
+			return 0;
 		m_PfAGoalIdx = curIdx;
 		return 1;
 	}
@@ -349,9 +353,11 @@ int CBotNet::PfAStarStep()
 	// penalty. Dedup via BestG with a monotonic G makes this sound.
 	auto fnPushChild = [&](const CCharacterCore &endCore, int endFreezeTime,
 		const std::vector<CNetObj_PlayerInput> &inputs, const std::vector<vec2> &traj,
-		const std::vector<PfHookSeg> &hookSegs, int ticks, float extraCost, int chunkFreezeTicks, int primIdx) -> bool
+		const std::vector<PfHookSeg> &hookSegs, int ticks, float extraCost, int chunkFreezeTicks, int chunkForbiddenTicks, int primIdx) -> bool
 	{
 		if(!PfEffortFreezeSupport() && cur.FreezeChainTicks + chunkFreezeTicks > 0)
+			return false;
+		if(cur.ForbiddenChainTicks + chunkForbiddenTicks > 0)
 			return false;
 		vec2 childPos = endCore.m_Pos;
 		bool endGrounded = pColl->IsOnGround(childPos, CCharacterCore::PhysicalSize());
@@ -376,6 +382,7 @@ int CBotNet::PfAStarStep()
 		child.PrimTicks = ticks;
 		child.TickOffset = cur.TickOffset + ticks;
 		child.FreezeChainTicks = cur.FreezeChainTicks + chunkFreezeTicks;
+		child.ForbiddenChainTicks = cur.ForbiddenChainTicks + chunkForbiddenTicks;
 		child.Traj = traj;
 		child.HookSegs = hookSegs;
 		child.Inputs = inputs;
@@ -436,7 +443,7 @@ int CBotNet::PfAStarStep()
 		endCore.m_HookTick = res.endHookTick;
 		endCore.m_Jumped = res.endJumped;
 		endCore.m_JumpedTotal = res.endJumpedTotal;
-		fnPushChild(endCore, res.endFreezeTime, res.inputs, res.traj, res.hookSegs, ft, 0.0f, ft, 99);
+		fnPushChild(endCore, res.endFreezeTime, res.inputs, res.traj, res.hookSegs, ft, 0.0f, ft, res.forbiddenTicks, 99);
 		return 0;
 	}
 
@@ -623,6 +630,7 @@ int CBotNet::PfAStarStep()
 			ind.reachedFinish = res.reachedFinish;
 			ind.died = res.died && !res.reachedFinish;
 			ind.freezeTicks = res.freezeTicks;
+			ind.forbiddenTicks = res.forbiddenTicks;
 			ind.fitness = PfScoreChunk(cur.Pos, res.endPos, res.reachedFinish, ind.died, res.freezeTicks);
 			// Cache traj + hookSegs from THIS simulation — pushing must never
 			// re-simulate (the world drifts between sims, v1.56.161 BUG2).
@@ -696,7 +704,7 @@ int CBotNet::PfAStarStep()
 			endCore.m_Jumped = ind.endJumped;
 			endCore.m_JumpedTotal = ind.endJumpedTotal;
 			if(fnPushChild(endCore, ind.endFreezeTime, ind.inputs, ind.traj, ind.hookSegs,
-				ChunkSize, PfAStarStuckPenalty(cur.Pos, ind.endPos), ind.freezeTicks, 0))
+				ChunkSize, PfAStarStuckPenalty(cur.Pos, ind.endPos), ind.freezeTicks, ind.forbiddenTicks, 0))
 				pushed++;
 		}
 		return 0;
@@ -711,6 +719,7 @@ int CBotNet::PfAStarStep()
 			int tick = 0;
 			float score = 0.0f;
 			int freezeTicks = 0;
+			int forbiddenTicks = 0;
 			int parentIdx = -1;
 			CNetObj_PlayerInput action;
 			std::vector<PfHookSeg> edgeSegs;
@@ -844,6 +853,7 @@ int CBotNet::PfAStarStep()
 			ch.score = par.score + PfScoreChunk(par.pos, res.endPos,
 				res.reachedFinish, res.died && !res.reachedFinish, par.freezeTicks + res.freezeTicks);
 			ch.freezeTicks = par.freezeTicks + res.freezeTicks;
+			ch.forbiddenTicks = par.forbiddenTicks + res.forbiddenTicks;
 			ch.blocked = parentBlocked || thisBlocked;
 			ch.parentIdx = parentIdx;
 			ch.action = inp;
@@ -958,7 +968,7 @@ int CBotNet::PfAStarStep()
 		if(inputs.empty())
 			continue;
 		if(fnPushChild(pool[idx].core, pool[idx].freezeTime, inputs, traj, segs,
-			pf_max(1, (int)inputs.size()), PfAStarStuckPenalty(cur.Pos, pool[idx].pos), pool[idx].freezeTicks, 0))
+			pf_max(1, (int)inputs.size()), PfAStarStuckPenalty(cur.Pos, pool[idx].pos), pool[idx].freezeTicks, pool[idx].forbiddenTicks, 0))
 			pushed++;
 	}
 	}
@@ -1031,6 +1041,12 @@ void CBotNet::PfAStarReconstruct()
 	if(!PfEffortFreezeSupport() && m_PfANodes[m_PfAGoalIdx].FreezeChainTicks > 0)
 	{
 		dbg_msg("pathfinder", "reconstruction rejected: goal node carries %d freeze ticks", m_PfANodes[m_PfAGoalIdx].FreezeChainTicks);
+		m_PfAGoalIdx = -1;
+		return;
+	}
+	if(m_PfANodes[m_PfAGoalIdx].ForbiddenChainTicks > 0)
+	{
+		dbg_msg("pathfinder", "reconstruction rejected: goal node carries %d forbidden ticks", m_PfANodes[m_PfAGoalIdx].ForbiddenChainTicks);
 		m_PfAGoalIdx = -1;
 		return;
 	}

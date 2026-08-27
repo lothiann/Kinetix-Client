@@ -347,6 +347,7 @@ public:
                 int PrimTicks;
                 int TickOffset;
                 int FreezeChainTicks = 0;
+                int ForbiddenChainTicks = 0;
                 std::vector<vec2> Traj; // cached per-tick trajectory from parent.Pos to this.Pos
                 std::vector<CNetObj_PlayerInput> Inputs; // cached inputs for this primitive
                 // Per-tick hook segments inside this primitive's chunk (tee pos → hook pos).
@@ -385,6 +386,7 @@ public:
                 bool reachedFinish = false;
                 bool died = false;
                 int freezeTicks = 0;
+                int forbiddenTicks = 0;
                 // v1.56.161 (BUG2 root cause): cache traj + hookSegs from fnEvaluate
                 // so fnPushToAStar does NOT need to re-simulate. Re-simulation was
                 // racy — FutureWorld state (switchers, tune) drifts between fnEvaluate
@@ -431,6 +433,9 @@ public:
         std::vector<PfHookSeg> m_PfVHookSegs;
 
 	int m_PfEditorMode = 0;
+	bool m_PfEditFireHeld = false;
+	bool m_PfEditHookHeld = false;
+	bool m_PfEditCleaned = false;
 	double m_PfGenStartTime = 0.0;
 	double m_PfGenEndTime = 0.0;
 	int m_PfGenLastState = 0;
@@ -462,6 +467,7 @@ public:
         void OnRender() override;
         void OnReset() override;
         void OnMapLoad() override;
+        bool OnInput(const IInput::CEvent &Event) override;
 
         // Process one inactive dummy
         void ProcessDummy(int Dummy);

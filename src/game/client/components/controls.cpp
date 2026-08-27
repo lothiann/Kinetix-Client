@@ -91,10 +91,36 @@ void CControls::ConKeyInputCounter(IConsole::IResult *pResult, void *pUserData)
         if((pState->m_pControls->GameClient()->m_GameInfo.m_BugDDRaceInput && pState->m_pControls->GameClient()->m_Snap.m_SpecInfo.m_Active) || pState->m_pControls->GameClient()->m_Spectator.IsActive())
                 return;
 
-        int *pVariable = pState->m_apVariables[g_Config.m_ClDummy];
-        if(((*pVariable) & 1) != pResult->GetInteger(0))
-                (*pVariable)++;
-        *pVariable &= INPUT_STATE_MASK;
+	int *pVariable = pState->m_apVariables[g_Config.m_ClDummy];
+	if(((*pVariable) & 1) != pResult->GetInteger(0))
+		(*pVariable)++;
+	*pVariable &= INPUT_STATE_MASK;
+}
+
+void CControls::ConKeyInputPfEditFire(IConsole::IResult *pResult, void *pUserData)
+{
+	CInputState *pState = (CInputState *)pUserData;
+	CBotNet &BN = pState->m_pControls->GameClient()->m_BotNet;
+	if(BN.m_PfEditorMode != 0)
+	{
+		BN.m_PfEditFireHeld = pResult->GetInteger(0) != 0;
+		return;
+	}
+	BN.m_PfEditFireHeld = false;
+	ConKeyInputCounter(pResult, pUserData);
+}
+
+void CControls::ConKeyInputPfEditHook(IConsole::IResult *pResult, void *pUserData)
+{
+	CInputState *pState = (CInputState *)pUserData;
+	CBotNet &BN = pState->m_pControls->GameClient()->m_BotNet;
+	if(BN.m_PfEditorMode != 0)
+	{
+		BN.m_PfEditHookHeld = pResult->GetInteger(0) != 0;
+		return;
+	}
+	BN.m_PfEditHookHeld = false;
+	ConKeyInputState(pResult, pUserData);
 }
 
 struct CInputSet
@@ -137,11 +163,11 @@ void CControls::OnConsoleInit()
         }
         {
                 static CInputState s_State = {this, {&m_aInputData[0].m_Hook, &m_aInputData[1].m_Hook, &m_aInputData[2].m_Hook, &m_aInputData[3].m_Hook, &m_aInputData[4].m_Hook, &m_aInputData[5].m_Hook, &m_aInputData[6].m_Hook, &m_aInputData[7].m_Hook}};
-                Console()->Register("+hook", "", CFGFLAG_CLIENT, ConKeyInputState, &s_State, "Hook");
+                Console()->Register("+hook", "", CFGFLAG_CLIENT, ConKeyInputPfEditHook, &s_State, "Hook");
         }
         {
                 static CInputState s_State = {this, {&m_aInputData[0].m_Fire, &m_aInputData[1].m_Fire, &m_aInputData[2].m_Fire, &m_aInputData[3].m_Fire, &m_aInputData[4].m_Fire, &m_aInputData[5].m_Fire, &m_aInputData[6].m_Fire, &m_aInputData[7].m_Fire}};
-                Console()->Register("+fire", "", CFGFLAG_CLIENT, ConKeyInputCounter, &s_State, "Fire");
+                Console()->Register("+fire", "", CFGFLAG_CLIENT, ConKeyInputPfEditFire, &s_State, "Fire");
         }
         {
                 static CInputState s_State = {this, {&m_aShowHookColl[0], &m_aShowHookColl[1], &m_aShowHookColl[2], &m_aShowHookColl[3], &m_aShowHookColl[4], &m_aShowHookColl[5], &m_aShowHookColl[6], &m_aShowHookColl[7]}};

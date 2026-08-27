@@ -80,6 +80,20 @@ CBotNet::~CBotNet()
 	if(m_pCustomFinishGrid) delete[] m_pCustomFinishGrid;
 }
 
+bool CBotNet::OnInput(const IInput::CEvent &Event)
+{
+	if(m_PfEditorMode == 0)
+		return false;
+	if(g_Config.m_ClClickGui != 0)
+		return false;
+	CGameClient *pGame = GameClient();
+	if(!pGame || pGame->m_Menus.IsActive())
+		return false;
+	if(Event.m_Key != KEY_MOUSE_1 && Event.m_Key != KEY_MOUSE_2)
+		return false;
+	return (Event.m_Flags & (IInput::FLAG_PRESS | IInput::FLAG_RELEASE)) != 0;
+}
+
 // =========================================================
 // ON CONSOLE INIT
 // =========================================================

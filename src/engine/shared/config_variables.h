@@ -426,7 +426,7 @@ MACRO_CONFIG_INT(KxPfHookAngles, kx_pf_hook_angles, 9, 4, 32, CFGFLAG_CLIENT | C
 MACRO_CONFIG_INT(KxPfHorizon, kx_pf_horizon, 6, 1, 50, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: ticks to apply per chunk before re-planning (1-chunk_size)")
 MACRO_CONFIG_INT(KxPfBacktrackCandidates, kx_pf_backtrack_candidates, 100, PF_CANDIDATES_MIN, PF_CANDIDATES_MAX, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: top-N candidates kept per chunk for backtracking")
 MACRO_CONFIG_INT(KxPfAStarWeight, kx_pf_astar_weight, 3, 1, 20, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: A* heuristic weight (1=optimal, higher=faster but suboptimal)")
-MACRO_CONFIG_INT(KxPfAStarNodeBudget, kx_pf_astar_node_budget, 100000, 1000, 1000000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: A* max nodes before giving up (1000-1000000)")
+MACRO_CONFIG_INT(KxPfAStarNodeBudget, kx_pf_astar_node_budget, 10000000, 1000, 100000000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: A* max nodes before giving up (1000-100000000)")
 MACRO_CONFIG_INT(KxPfPerf, kx_pf_perf, 100, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: performance budget per tick in % (1-100; lower = slower but smoother, spreads chunk generation across many ticks)")
 MACRO_CONFIG_INT(KxPfAdvancedSearch, kx_pf_advanced_search, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: RHEA (Rolling Horizon Evolutionary Algorithm) — evolves a population of input sequences per chunk. When off, uses default fixed-input candidates.")
 MACRO_CONFIG_INT(KxPfRheaGenerations, kx_pf_rhea_generations, 10, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder RHEA: number of evolution generations per chunk (more = better candidates but slower)")

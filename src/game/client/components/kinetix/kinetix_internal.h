@@ -79,6 +79,7 @@ struct PfChunkResult
         bool reachedFinish = false;
         bool died = false;
         int freezeTicks = 0;
+        int forbiddenTicks = 0;
         int endFreezeTime = 0; // bot's m_FreezeTime at end of chunk (0 = not frozen)
         int endHookState = 0;
         vec2 endHookPos, endHookDir;
@@ -249,6 +250,27 @@ static inline bool PfCheckFreeze(CGameWorld *pWorld, CCharacter *pBot, vec2 prev
         return foundFreeze;
 }
 
+static inline bool PfLineTouchesForbidden(const unsigned char *pForbiddenGrid, int GridW, int GridH, vec2 From, vec2 To)
+{
+        if(!pForbiddenGrid)
+                return false;
+        vec2 Delta = To - From;
+        float Len = length(Delta);
+        int Steps = (int)(Len / 4.0f) + 1;
+        for(int i = 0; i <= Steps; i++)
+        {
+                float t = (float)i / (float)Steps;
+                vec2 p = From + Delta * t;
+                int tx = (int)floorf(p.x / 32.0f);
+                int ty = (int)floorf(p.y / 32.0f);
+                if(tx < 0 || ty < 0 || tx >= GridW || ty >= GridH)
+                        continue;
+                if(pForbiddenGrid[ty * GridW + tx])
+                        return true;
+        }
+        return false;
+}
+
 // Simulate one candidate input sequence through the REAL CCharacter in a cloned
 // CGameWorld.  Freeze/finish/death are detected by DDNet's own logic, not by
 // hand-rolled tile checks.
@@ -263,6 +285,7 @@ static inline void PfSimulateChunk(CGameWorld *pWorld, int PredictedCharId, CCha
         out.reachedFinish = false;
         out.died = false;
         out.freezeTicks = 0;
+        out.forbiddenTicks = 0;
         out.endFreezeTime = 0;
 
         int prevHookState = pBot->GetCore().m_HookState; // state at start of chunk (before tick 0)
@@ -291,6 +314,12 @@ static inline void PfSimulateChunk(CGameWorld *pWorld, int PredictedCharId, CCha
                         PfCheckFreeze(pWorld, pBot, prevSimPos, pBot->m_Pos);
                 }
 
+                if(PfLineTouchesForbidden(pForbiddenGrid, pWorld->Collision()->GetWidth(), pWorld->Collision()->GetHeight(), prevSimPos, pBot->m_Pos))
+                {
+                        out.forbiddenTicks++;
+                        out.died = true;
+                }
+
                 out.traj.push_back(pBot->m_Pos);
 
                 // Record hook segment ONLY at the moment of grab — i.e. when hook state
@@ -313,12 +342,10 @@ static inline void PfSimulateChunk(CGameWorld *pWorld, int PredictedCharId, CCha
                 int collH = pColl->GetHeight();
                 int tc = round_to_int(c.m_Pos.x / 32.0f);
                 int tr = round_to_int(c.m_Pos.y / 32.0f);
-                if(tc >= 0 && tr >= 0 && tc < collW && tr < collH)
+                if(!out.died && tc >= 0 && tr >= 0 && tc < collW && tr < collH)
                 {
                         int MapIndex = tr * collW + tc;
-                        if(pForbiddenGrid && pForbiddenGrid[MapIndex])
-                                out.died = true;
-                        else if(pCustomFinishGrid)
+                        if(pCustomFinishGrid)
                         {
                                 if(pCustomFinishGrid[MapIndex])
                                         out.reachedFinish = true;
