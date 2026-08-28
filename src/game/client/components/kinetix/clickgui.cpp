@@ -412,6 +412,9 @@ static SRow g_VisualsChildren[] = {
 };
 static const char *const g_PfEffortOpts[] = {"Low", "Medium", "High", "Ultra", "Max", "Custom"};
 static const char *const g_PfAlgorithmOpts[] = {"BFS", "RHEA"};
+static SRow g_PfFreedomPathChildren[] = {
+        {ERowType::Slider, "Ratio", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "x", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
 static char g_PfDyn_Progress[96];
 static char g_PfDyn_Eta[64];
 static char g_PfDyn_Time[96];
@@ -421,6 +424,7 @@ static bool g_PfShowStatLabels = false;
 static SRow g_PathfinderRows[] = {
         {ERowType::Dropdown, "Effort", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_PfEffortOpts, 6, 0, nullptr, 0},
         {ERowType::Dropdown, "Algorithm", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_PfAlgorithmOpts, 2, 0, nullptr, 0},
+        {ERowType::Expandable, "Freedom Path", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_PfFreedomPathChildren, 1},
         {ERowType::Slider, "Chunk size", nullptr, false, false, 1.0f, 50.0f, 1.0f, 20.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Hook angles", nullptr, false, false, 4.0f, 32.0f, 1.0f, 9.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Candidates", nullptr, false, false, 50.0f, 2000.0f, 10.0f, 200.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
@@ -433,6 +437,8 @@ static SRow g_PathfinderRows[] = {
         // v1.56.150: DoubleButton — Pathfinding (left) + Play (right, visible only when FINISHED).
         {ERowType::DoubleButton, "Pathfinding", "Play", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::DoubleButton, "Editor Forbidden Tiles", "Clear Forbidden Tiles", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Tunnel size", nullptr, false, false, 0.0f, 10.0f, 1.0f, 2.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Button, "Generate tunnel", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::DoubleButton, "Editor Finish Tiles", "Clear Finish Tiles", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Label, g_PfDyn_Progress, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Label, g_PfDyn_Eta, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
@@ -1425,6 +1431,10 @@ void CClickGui::OnRender()
                                         row.value = (float)g_Config.m_KxPfSearchBudget;
                                 else if(str_comp(row.pName, "Freeze Support (Beta)") == 0)
                                         row.on = g_Config.m_KxPfFreezeSupport != 0;
+                                else if(str_comp(row.pName, "Freedom Path") == 0)
+                                        row.on = g_Config.m_KxPfFreedom != 0;
+                                else if(str_comp(row.pName, "Tunnel size") == 0)
+                                        row.value = (float)g_Config.m_KxPfTunnelSize;
                                 // Settings → IRC/Spoofer top-level expandables are master toggles.
                                 else if(str_comp(row.pName, "IRC") == 0)
                                         row.on = g_Config.m_KxIrcEnabled != 0;
@@ -1459,6 +1469,8 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                                 child.value = (float)g_Config.m_KxDummyHammerLatencyMs;
                                         else if(str_comp(child.pName, "Latency (ms)") == 0 && str_comp(row.pName, "Copy Moves Latency") == 0)
                                                 child.value = (float)g_Config.m_KxCopyMovesLatency;
+                                        else if(str_comp(child.pName, "Ratio") == 0 && str_comp(row.pName, "Freedom Path") == 0)
+                                                child.value = (float)g_Config.m_KxPfFreedomRatio / 10.0f;
                                         else if(str_comp(child.pName, "Filter: Jump") == 0)
                                                 child.on = g_Config.m_KxDummyCopyMovesFilterJump != 0;
                                         else if(str_comp(child.pName, "Filter: Direction") == 0)
@@ -2455,6 +2467,8 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                         }
                         else if(str_comp(pTarget->pName, "Latency (ms)") == 0 && str_comp(row.pName, "Copy Moves Latency") == 0)
                                 g_Config.m_KxCopyMovesLatency = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Ratio") == 0 && str_comp(row.pName, "Freedom Path") == 0)
+                                g_Config.m_KxPfFreedomRatio = (int)(pTarget->value * 10.0f + 0.5f);
                         else if(str_comp(pTarget->pName, "Max Distance") == 0 && str_comp(row.pName, "Auto fly") == 0)
                                 g_Config.m_KxDummyHammerAutoMaxDist = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Version ID") == 0)
@@ -2554,6 +2568,8 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                 g_Config.m_KxPfPerf = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Search budget") == 0)
                                 g_Config.m_KxPfSearchBudget = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Tunnel size") == 0)
+                                g_Config.m_KxPfTunnelSize = (int)pTarget->value;
                         // v1.56.83: AimBot/TriggerBot per-weapon sliders (disambiguate by parent expandable)
                         else if(m_DragSliderChild >= 0 && m_DragSliderPanel >= 0)
                         {
@@ -3281,6 +3297,8 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         // Pathfinder top-level
                                         else if(str_comp(pTarget->pName, "Freeze Support (Beta)") == 0)
                                                 g_Config.m_KxPfFreezeSupport = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Freedom Path") == 0)
+                                                g_Config.m_KxPfFreedom = pTarget->on ? 1 : 0;
                                         // Settings → IRC/Spoofer expandables are master toggles.
                                         else if(str_comp(pTarget->pName, "IRC") == 0)
                                                 g_Config.m_KxIrcEnabled = pTarget->on ? 1 : 0;
@@ -3464,6 +3482,10 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                         BN.LoadMapGrid();
                                         }
                                 }
+                                else if(str_comp(pTarget->pName, "Generate tunnel") == 0 && pTarget->type == ERowType::Button)
+                                {
+                                        GameClient()->m_BotNet.PfGenerateTunnel();
+                                }
                                 // v1.56.90: Dummies Button (Connect Dummy, Switch to Main)
                                 else if(str_comp(row.pName, "Dummies") == 0 && pTarget->type == ERowType::Button)
                                 {
@@ -3561,6 +3583,8 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         g_Config.m_KxDummyHammerLatencyMs = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Latency (ms)") == 0 && str_comp(row.pName, "Copy Moves Latency") == 0)
                                         g_Config.m_KxCopyMovesLatency = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Ratio") == 0 && str_comp(row.pName, "Freedom Path") == 0)
+                                        g_Config.m_KxPfFreedomRatio = (int)(pTarget->value * 10.0f + 0.5f);
                                 else if(str_comp(pTarget->pName, "Max Distance") == 0 && str_comp(row.pName, "Auto fly") == 0)
                                         g_Config.m_KxDummyHammerAutoMaxDist = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Version ID") == 0)
@@ -3641,6 +3665,8 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         g_Config.m_KxPfPerf = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Search budget") == 0)
                                         g_Config.m_KxPfSearchBudget = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Tunnel size") == 0)
+                                        g_Config.m_KxPfTunnelSize = (int)pTarget->value;
                                 return;
                         }
                         if(pTarget->type == ERowType::Dropdown || pTarget->type == ERowType::ToggleDropdown)

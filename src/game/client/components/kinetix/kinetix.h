@@ -548,6 +548,7 @@ public:
         void PfClearCustomFinishTiles();
         void PfEditorBeginChange();
         void PfEditorEndChange();
+        void PfGenerateTunnel();            // tunnel generator (Path/Map mode) -> forbidden zones
         const std::vector<vec2> &PfActiveFinishTiles() const
         {
                 return m_PfCustomFinishTiles.empty() ? m_PfFinishTiles : m_PfCustomFinishTiles;

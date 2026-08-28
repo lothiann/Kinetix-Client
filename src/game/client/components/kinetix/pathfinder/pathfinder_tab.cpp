@@ -182,7 +182,7 @@ namespace
 {
 	template<typename TWalk, typename TFreeze>
 	void PfBfsFill(float *pField, int FW, int FH, const std::vector<std::pair<int, int>> &vSources,
-		TWalk fnWalk, TFreeze fnFreeze, bool freezePassable)
+		TWalk fnWalk, TFreeze fnFreeze, bool freezePassable, const float *pHop = nullptr)
 	{
 		int Size = FW * FH;
 		for(int i = 0; i < Size; i++)
@@ -201,6 +201,9 @@ namespace
 		};
 
 		auto eikonal = [&](int x, int y) -> float {
+			float hop = pHop ? pHop[y * FW + x] : 1.0f;
+			if(hop < 0.0001f)
+				hop = 0.0001f;
 			float txm = (x > 0 && state[y * FW + (x - 1)] == 2) ? pField[y * FW + (x - 1)] : 1e18f;
 			float txp = (x < FW - 1 && state[y * FW + (x + 1)] == 2) ? pField[y * FW + (x + 1)] : 1e18f;
 			float tym = (y > 0 && state[(y - 1) * FW + x] == 2) ? pField[(y - 1) * FW + x] : 1e18f;
@@ -208,12 +211,12 @@ namespace
 			float a = std::min(txm, txp);
 			float b = std::min(tym, typ);
 			if(a >= 1e17f && b >= 1e17f) return 1e18f;
-			if(a >= 1e17f) return b + 1.0f;
-			if(b >= 1e17f) return a + 1.0f;
+			if(a >= 1e17f) return b + hop;
+			if(b >= 1e17f) return a + hop;
 			float diff = a - b;
 			if(diff < 0.0f) diff = -diff;
-			if(diff >= 1.0f) return std::min(a, b) + 1.0f;
-			return (a + b + std::sqrt(2.0f - diff * diff)) * 0.5f;
+			if(diff >= hop) return std::min(a, b) + hop;
+			return (a + b + std::sqrt(2.0f * hop * hop - diff * diff)) * 0.5f;
 		};
 
 		auto relax = [&](int x, int y) {
@@ -322,7 +325,58 @@ void CBotNet::PfComputeFlowField()
 		vSrcTiles.emplace_back(tx, ty);
 	}
 
-	PfBfsFill(m_PfFlowField, m_MapWidth, m_MapHeight, vSrcTiles, fnTileWalk, fnTileFreeze, false);
+	// Freedom Path: tiles far from any non-air tile (walls, freeze,
+	// teleports, painted forbidden zones) are cheaper to traverse, so
+	// the flow field prefers open space. Ratio is stored x10 in config;
+	// the per-tile speed is squared so the modifier has real teeth.
+	const float freedomRatio = (g_Config.m_KxPfFreedom != 0) ? (float)g_Config.m_KxPfFreedomRatio / 10.0f : 0.0f;
+	std::vector<float> vHop;
+	if(freedomRatio > 0.0f)
+	{
+		std::vector<int> vClear(Size, -1);
+		std::vector<std::pair<int, int>> vBfs;
+		vBfs.reserve(Size);
+		for(int ty = 0; ty < m_MapHeight; ty++)
+		{
+			for(int tx = 0; tx < m_MapWidth; tx++)
+			{
+				int idx = ty * m_MapWidth + tx;
+				if(m_pMapGrid[idx] != TILE_AIR || m_pFrontGrid[idx] != TILE_AIR ||
+					(m_pForbiddenGrid && m_pForbiddenGrid[idx]))
+				{
+					vClear[idx] = 0;
+					vBfs.push_back(std::make_pair(tx, ty));
+				}
+			}
+		}
+		static const int s_hopDr[] = {-1, 1, 0, 0};
+		static const int s_hopDc[] = {0, 0, -1, 1};
+		for(size_t qi = 0; qi < vBfs.size(); qi++)
+		{
+			int x = vBfs[qi].first, y = vBfs[qi].second;
+			int d = vClear[y * m_MapWidth + x];
+			for(int k = 0; k < 4; k++)
+			{
+				int nx = x + s_hopDc[k], ny = y + s_hopDr[k];
+				if(nx < 0 || ny < 0 || nx >= m_MapWidth || ny >= m_MapHeight)
+					continue;
+				int nIdx = ny * m_MapWidth + nx;
+				if(vClear[nIdx] >= 0)
+					continue;
+				vClear[nIdx] = d + 1;
+				vBfs.push_back(std::make_pair(nx, ny));
+			}
+		}
+		vHop.resize(Size);
+		for(int i = 0; i < Size; i++)
+		{
+			float speed = 1.0f + freedomRatio * (float)vClear[i];
+			vHop[i] = 1.0f / (speed * speed);
+		}
+	}
+	const float *pHop = vHop.empty() ? nullptr : vHop.data();
+
+	PfBfsFill(m_PfFlowField, m_MapWidth, m_MapHeight, vSrcTiles, fnTileWalk, fnTileFreeze, false, pHop);
 
 	bool phase1ReachedStart = false;
 	{
@@ -333,7 +387,7 @@ void CBotNet::PfComputeFlowField()
 			phase1ReachedStart = m_PfFlowField[startTY * m_MapWidth + startTX] < 1e17f;
 	}
 	if(!phase1ReachedStart)
-		PfBfsFill(m_PfFlowField, m_MapWidth, m_MapHeight, vSrcTiles, fnTileWalk, fnTileFreeze, true);
+		PfBfsFill(m_PfFlowField, m_MapWidth, m_MapHeight, vSrcTiles, fnTileWalk, fnTileFreeze, true, pHop);
 
 	// Score field: 4x resolution (8px cells) for sub-tile distance scoring.
 	m_PfScoreFieldW = m_MapWidth * 4;

@@ -2608,6 +2608,7 @@ if(CLIENT)
     components/kinetix/pathfinder/pathfinder.cpp
     components/kinetix/pathfinder/pathfinder_astar.cpp
     components/kinetix/pathfinder/pathfinder_tab.cpp
+    components/kinetix/pathfinder/pathfinder_tunnel.cpp
     components/local_server.cpp
     components/local_server.h
     components/mapimages.cpp
