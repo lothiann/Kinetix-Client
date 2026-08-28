@@ -18,8 +18,7 @@
 //   G negative, corrupt the BestG dedup and burn the node budget on
 //   garbage branches (the "pathfinder gives up with forbidden zones"
 //   bug).
-//   TickOffset = true simulated ticks from the run start; the search
-//   depth cap uses TickOffset, not G.
+//   TickOffset = true simulated ticks from the run start.
 // =========================================================
 
 // Deterministic PRNG for RHEA. Reset at the start of every run so the
@@ -299,7 +298,6 @@ int CBotNet::PfAStarStep()
 
 	int maxNodes = pf_clamp(g_Config.m_KxPfAStarNodeBudget, 1000, 100000000);
 	int W = pf_clamp(g_Config.m_KxPfAStarWeight, 1, 20);
-	const int maxTicks = 4000;
 
 	if((int)m_PfANodes.size() > maxNodes)
 	{
@@ -333,11 +331,6 @@ int CBotNet::PfAStarStep()
 		m_PfAGoalIdx = curIdx;
 		return 1;
 	}
-
-	// Depth cap on simulated ticks. G may carry penalties; TickOffset is
-	// the true sim-tick depth.
-	if(cur.TickOffset >= maxTicks)
-		return 0;
 
 	int LocalID = m_PfLocalID;
 
