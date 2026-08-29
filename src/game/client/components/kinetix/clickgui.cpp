@@ -412,6 +412,24 @@ static SRow g_VisualsChildren[] = {
 };
 static const char *const g_PfEffortOpts[] = {"Low", "Medium", "High", "Ultra", "Max", "Custom"};
 static const char *const g_PfAlgorithmOpts[] = {"BFS", "RHEA"};
+static const char *const g_PfAStarWeightOpts[] = {"Low", "Medium", "High", "XHigh", "XXHigh", "Ultra", "XUltra", "Max"};
+static const int g_PfAStarWeightValues[] = {20, 17, 15, 13, 10, 7, 5, 1};
+
+static int PfAStarWeightIdx(int weight)
+{
+        int best = 0;
+        int bestDist = 1 << 30;
+        for(int i = 0; i < (int)(sizeof(g_PfAStarWeightValues) / sizeof(g_PfAStarWeightValues[0])); ++i)
+        {
+                int d = weight > g_PfAStarWeightValues[i] ? weight - g_PfAStarWeightValues[i] : g_PfAStarWeightValues[i] - weight;
+                if(d < bestDist)
+                {
+                        bestDist = d;
+                        best = i;
+                }
+        }
+        return best;
+}
 static SRow g_PfFreedomPathChildren[] = {
         {ERowType::Slider, "Ratio", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "x", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
@@ -423,11 +441,14 @@ static bool g_PfShowStatLabels = false;
 
 static SRow g_PathfinderRows[] = {
         {ERowType::Dropdown, "Effort", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_PfEffortOpts, 6, 0, nullptr, 0},
+        {ERowType::Dropdown, "A* Weight", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_PfAStarWeightOpts, 8, 0, nullptr, 0},
         {ERowType::Dropdown, "Algorithm", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_PfAlgorithmOpts, 2, 0, nullptr, 0},
         {ERowType::Expandable, "Freedom Path", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_PfFreedomPathChildren, 1},
         {ERowType::Slider, "Chunk size", nullptr, false, false, 1.0f, 50.0f, 1.0f, 20.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Hook angles", nullptr, false, false, 4.0f, 32.0f, 1.0f, 9.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Candidates", nullptr, false, false, 50.0f, 2000.0f, 10.0f, 200.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "A* Weight", nullptr, false, false, 1.0f, 20.0f, 1.0f, 3.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Evolutions", nullptr, false, false, 1.0f, 100.0f, 1.0f, 10.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Search budget", nullptr, false, false, 256.0f, 200000.0f, 1000.0f, 6000.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Performance", nullptr, false, false, 1.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Freeze Support (Beta)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
@@ -533,6 +554,10 @@ static bool PfRowVisible(const SRow *pRows, int rowCount, int idx)
         const SRow &row = pRows[idx];
         if(str_comp(row.pName, "Search budget") == 0)
                 return g_Config.m_KxPfEffort == 5 && g_Config.m_KxPfAdvancedSearch == 0;
+        if(str_comp(row.pName, "A* Weight") == 0)
+                return row.type == ERowType::Dropdown ? g_Config.m_KxPfEffort != 5 : g_Config.m_KxPfEffort == 5;
+        if(str_comp(row.pName, "Evolutions") == 0)
+                return g_Config.m_KxPfEffort == 5 && g_Config.m_KxPfAdvancedSearch != 0;
         if(str_comp(row.pName, "Chunk size") == 0 || str_comp(row.pName, "Hook angles") == 0 ||
            str_comp(row.pName, "Candidates") == 0 || str_comp(row.pName, "Freeze Support (Beta)") == 0 ||
            str_comp(row.pName, "Score method") == 0 || str_comp(row.pName, "Penalties") == 0)
@@ -1421,6 +1446,15 @@ void CClickGui::OnRender()
                                         row.value = (float)g_Config.m_KxPfHookAngles;
                                 else if(str_comp(row.pName, "Candidates") == 0)
                                         row.value = (float)g_Config.m_KxPfCandidates;
+                                else if(str_comp(row.pName, "A* Weight") == 0)
+                                {
+                                        if(row.type == ERowType::Slider)
+                                                row.value = (float)g_Config.m_KxPfAStarWeight;
+                                        else
+                                                row.valueIdx = PfAStarWeightIdx(g_Config.m_KxPfAStarWeight);
+                                }
+                                else if(str_comp(row.pName, "Evolutions") == 0)
+                                        row.value = (float)g_Config.m_KxPfRheaGenerations;
                                 else if(str_comp(row.pName, "Performance") == 0)
                                         row.value = (float)g_Config.m_KxPfPerf;
                                 else if(str_comp(row.pName, "Effort") == 0)
@@ -2564,6 +2598,10 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                 g_Config.m_KxPfHookAngles = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Candidates") == 0)
                                 g_Config.m_KxPfCandidates = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "A* Weight") == 0)
+                                g_Config.m_KxPfAStarWeight = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Evolutions") == 0)
+                                g_Config.m_KxPfRheaGenerations = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Performance") == 0)
                                 g_Config.m_KxPfPerf = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Search budget") == 0)
@@ -3661,6 +3699,10 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         g_Config.m_KxPfHookAngles = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Candidates") == 0)
                                         g_Config.m_KxPfCandidates = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "A* Weight") == 0)
+                                        g_Config.m_KxPfAStarWeight = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Evolutions") == 0)
+                                        g_Config.m_KxPfRheaGenerations = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Performance") == 0)
                                         g_Config.m_KxPfPerf = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Search budget") == 0)
@@ -3885,6 +3927,8 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                                                 g_Config.m_KxEspStyle = o;
                                         else if(str_comp(target.pName, "Effort") == 0)
                                                 g_Config.m_KxPfEffort = o;
+                                        else if(str_comp(target.pName, "A* Weight") == 0 && o >= 0 && o < (int)(sizeof(g_PfAStarWeightValues) / sizeof(g_PfAStarWeightValues[0])))
+                                                g_Config.m_KxPfAStarWeight = g_PfAStarWeightValues[o];
                                         else if(str_comp(target.pName, "Algorithm") == 0)
                                                 g_Config.m_KxPfAdvancedSearch = (o == 1) ? 1 : 0;
                                         m_DropdownOpen = false;

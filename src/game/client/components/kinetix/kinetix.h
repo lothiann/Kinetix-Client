@@ -65,6 +65,7 @@ int PfEffortChunkTicks();
 int PfEffortHookAngles();
 int PfEffortSearchBudget();
 int PfEffortCandidates();
+int PfEffortGenerations();
 bool PfEffortScoreDist();
 bool PfEffortScoreFlow();
 bool PfEffortFreezeSupport();

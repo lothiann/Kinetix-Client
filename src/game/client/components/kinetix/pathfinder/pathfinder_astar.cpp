@@ -135,6 +135,17 @@ int PfEffortCandidates()
 	return 2000;
 }
 
+int PfEffortGenerations()
+{
+	if(g_Config.m_KxPfEffort == 5)
+	{
+		int v = g_Config.m_KxPfRheaGenerations;
+		return v < 1 ? 1 : (v > 100 ? 100 : v);
+	}
+	static const int s_aGenerations[5] = {5, 10, 10, 10, 15};
+	return s_aGenerations[g_Config.m_KxPfEffort];
+}
+
 bool PfEffortScoreDist() { return g_Config.m_KxPfEffort == 5 ? g_Config.m_KxPfScoreDist != 0 : true; }
 bool PfEffortScoreFlow() { return g_Config.m_KxPfEffort == 5 ? g_Config.m_KxPfScoreFlow != 0 : true; }
 bool PfEffortFineFreeze() { return g_Config.m_KxPfEffort == 5 ? g_Config.m_KxPfFineFreeze != 0 : false; }
@@ -491,7 +502,7 @@ int CBotNet::PfAStarStep()
 	if(g_Config.m_KxPfAdvancedSearch)
 	{
 		int popSize = PfEffortCandidates();
-		int numGenerations = pf_clamp(g_Config.m_KxPfRheaGenerations, 1, 100);
+		int numGenerations = PfEffortGenerations();
 		int pushCount = pf_clamp(g_Config.m_KxPfBacktrackCandidates, 1, popSize);
 
 		auto fnAimFor = [&](int angleIdx) -> vec2 {
