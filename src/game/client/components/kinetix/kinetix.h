@@ -431,6 +431,9 @@ public:
         std::atomic<int> m_PfThreadResult{0};
         std::mutex m_PfDataMutex;
         std::vector<PfHookSeg> m_PfVHookSegs;
+        std::vector<vec2> m_PfVPathRender;
+        std::vector<PfHookSeg> m_PfVHookSegsRender;
+        std::vector<std::pair<vec2, vec2>> m_PfVBranchSegsRender;
 
 	int m_PfEditorMode = 0;
 	bool m_PfEditFireHeld = false;
@@ -527,7 +530,7 @@ public:
         // Laser unfreeze path storage (for Show attempt rendering)
         std::vector<vec2> m_LaserUnfreezePath;
         int64_t m_LaserUnfreezePathTime = 0;
-        void PfComputeFlowField();          // multi-source BFS to all finish tiles -> m_PfFlowField
+        void PfComputeFlowField(const vec2 &StartPos); // multi-source BFS to all finish tiles -> m_PfFlowField
         void PfGetUiStats(bool &outRunning, bool &outFinished, float &outPercent, int &outDoneTiles,
                 int &outTotalTiles, double &outElapsedSec, double &outEtaSec,
                 double &outPathTimeSec, double &outGenTimeSec);

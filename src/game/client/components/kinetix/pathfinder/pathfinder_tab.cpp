@@ -103,7 +103,7 @@ void CBotNet::PfResetRun()
 		m_PfFlowField = nullptr;
 	}
 	m_PfFinishTiles.clear();
-	PfComputeFlowField();
+	PfComputeFlowField(m_PfStartPos);
 
 	const std::vector<vec2> &vFinishes = PfActiveFinishTiles();
 	if(vFinishes.empty())
@@ -155,7 +155,7 @@ bool CBotNet::ApplyPfGoInput(CNetObj_PlayerInput *pInput)
 	pInput->m_Direction = In.m_Direction;
 	pInput->m_Jump = In.m_Jump;
 	pInput->m_Hook = In.m_Hook;
-	if(In.m_Hook != 0 && m_PfGoPrevHook == 0)
+	if(In.m_Hook != 0 && (m_PfGoPrevHook == 0 || m_PfGoIdx == 0))
 	{
 		pInput->m_TargetX = In.m_TargetX;
 		pInput->m_TargetY = In.m_TargetY;
@@ -275,7 +275,7 @@ namespace
 	}
 } // namespace
 
-void CBotNet::PfComputeFlowField()
+void CBotNet::PfComputeFlowField(const vec2 &StartPos)
 {
 	if(!m_MapGridLoaded || m_MapWidth <= 0 || m_MapHeight <= 0)
 		return;
@@ -380,13 +380,13 @@ void CBotNet::PfComputeFlowField()
 
 	bool phase1ReachedStart = false;
 	{
-		int startTX = (int)(m_PfStartPos.x / 32.0f);
-		int startTY = (int)(m_PfStartPos.y / 32.0f);
+		int startTX = (int)(StartPos.x / 32.0f);
+		int startTY = (int)(StartPos.y / 32.0f);
 		if(startTX >= 0 && startTY >= 0 && startTX < m_MapWidth && startTY < m_MapHeight &&
-			(m_PfStartPos.x != 0.0f || m_PfStartPos.y != 0.0f))
+			(StartPos.x != 0.0f || StartPos.y != 0.0f))
 			phase1ReachedStart = m_PfFlowField[startTY * m_MapWidth + startTX] < 1e17f;
 	}
-	if(!phase1ReachedStart)
+	if(!phase1ReachedStart && g_Config.m_KxPfFreezeSupport != 0)
 		PfBfsFill(m_PfFlowField, m_MapWidth, m_MapHeight, vSrcTiles, fnTileWalk, fnTileFreeze, true, pHop);
 
 	// Score field: 4x resolution (8px cells) for sub-tile distance scoring.
@@ -433,13 +433,13 @@ void CBotNet::PfComputeFlowField()
 
 	bool scorePhase1ReachedStart = false;
 	{
-		int startSCX = (int)(m_PfStartPos.x / 8.0f);
-		int startSCY = (int)(m_PfStartPos.y / 8.0f);
+		int startSCX = (int)(StartPos.x / 8.0f);
+		int startSCY = (int)(StartPos.y / 8.0f);
 		if(startSCX >= 0 && startSCY >= 0 && startSCX < m_PfScoreFieldW && startSCY < m_PfScoreFieldH &&
-			(m_PfStartPos.x != 0.0f || m_PfStartPos.y != 0.0f))
+			(StartPos.x != 0.0f || StartPos.y != 0.0f))
 			scorePhase1ReachedStart = m_PfScoreField[startSCY * m_PfScoreFieldW + startSCX] < 1e17f;
 	}
-	if(!scorePhase1ReachedStart)
+	if(!scorePhase1ReachedStart && g_Config.m_KxPfFreezeSupport != 0)
 		PfBfsFill(m_PfScoreField, m_PfScoreFieldW, m_PfScoreFieldH, vSrcSub, fnSubWalk, fnSubFreeze, true);
 }
 
@@ -540,7 +540,7 @@ void CBotNet::UpdatePathfinder()
 	}
 
 	if(m_PfFlowField == nullptr || (m_PfFinishTiles.empty() && m_PfCustomFinishTiles.empty()))
-		PfComputeFlowField();
+		PfComputeFlowField(m_PfStartPos);
 	if(m_PfFinishTiles.empty() && m_PfCustomFinishTiles.empty())
 	{
 		dbg_msg("pathfinder", "no finish tiles — stopping");
@@ -1430,13 +1430,16 @@ void CBotNet::RenderPfTileEditor()
 
 void CBotNet::RenderPathfinderPath()
 {
-	std::vector<vec2> vPath;
-	std::vector<PfHookSeg> vHookSegs;
 	{
-		std::lock_guard<std::mutex> lock(m_PfDataMutex);
-		vPath = m_PfVPath;
-		vHookSegs = m_PfVHookSegs;
+		std::unique_lock<std::mutex> lock(m_PfDataMutex, std::try_to_lock);
+		if(lock.owns_lock())
+		{
+			m_PfVPathRender = m_PfVPath;
+			m_PfVHookSegsRender = m_PfVHookSegs;
+		}
 	}
+	std::vector<vec2> &vPath = m_PfVPathRender;
+	std::vector<PfHookSeg> &vHookSegs = m_PfVHookSegsRender;
 	if(vPath.empty())
 		return;
 
@@ -1533,18 +1536,22 @@ void CBotNet::RenderPathfinderPath()
 	if(g_Config.m_KxPfShowBranches)
 	{
 		float HalfWidth = 0.5f + (float)(LineSize - 1) * 0.25f;
-		std::vector<std::pair<vec2, vec2>> vBranchSegs;
 		{
-			std::lock_guard<std::mutex> lock(m_PfDataMutex);
-			for(size_t i = 1; i < m_PfANodes.size(); i++)
+			std::unique_lock<std::mutex> lock(m_PfDataMutex, std::try_to_lock);
+			if(lock.owns_lock())
 			{
-				AStarNode &node = m_PfANodes[i];
-				if(node.ParentIdx < 0 || node.Traj.size() < 2)
-					continue;
-				for(size_t k = 1; k < node.Traj.size(); k++)
-					vBranchSegs.emplace_back(node.Traj[k - 1], node.Traj[k]);
+				m_PfVBranchSegsRender.clear();
+				for(size_t i = 1; i < m_PfANodes.size(); i++)
+				{
+					AStarNode &node = m_PfANodes[i];
+					if(node.ParentIdx < 0 || node.Traj.size() < 2)
+						continue;
+					for(size_t k = 1; k < node.Traj.size(); k++)
+						m_PfVBranchSegsRender.emplace_back(node.Traj[k - 1], node.Traj[k]);
+				}
 			}
 		}
+		std::vector<std::pair<vec2, vec2>> &vBranchSegs = m_PfVBranchSegsRender;
 		if(!vBranchSegs.empty())
 		{
 			if(LineSize > 0)

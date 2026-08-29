@@ -84,7 +84,7 @@ void CBotNet::PfGenerateTunnel()
 		m_PfFlowField = nullptr;
 	}
 	m_PfFinishTiles.clear();
-	PfComputeFlowField();
+	PfComputeFlowField(vec2(startTX * 32.0f + 16.0f, startTY * 32.0f + 16.0f));
 	if(!m_PfFlowField)
 	{
 		dbg_msg("pathfinder", "tunnel: flow field unavailable");
