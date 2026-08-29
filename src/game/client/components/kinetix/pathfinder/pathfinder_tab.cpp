@@ -1699,4 +1699,32 @@ void CBotNet::RenderPathfinderPath()
 		}
 		Graphics()->LinesEnd();
 	}
+
+	if(m_PfState == PF_STATE_RUNNING && vPath.size() >= 2)
+	{
+		vec2 tip = vPath[vPath.size() - 1];
+		vec2 Dir = tip - vPath[vPath.size() - 2];
+		float Len = length(Dir);
+		if(Len > 0.001f)
+		{
+			Dir /= Len;
+			GameClient()->m_Effects.SmokeTrail(tip, Dir * -10.0f, ConfigAlpha, 0.0f);
+			if(GameClient()->m_GameSkin.m_aSpriteWeaponProjectiles[WEAPON_GRENADE].IsValid())
+			{
+				static float s_GrenadeTime = 0.0f;
+				static float s_GrenadeLastLocalTime = LocalTime();
+				s_GrenadeTime += (LocalTime() - s_GrenadeLastLocalTime) * GameClient()->GetAnimationPlaybackSpeed();
+				s_GrenadeLastLocalTime = LocalTime();
+				Graphics()->TextureSet(GameClient()->m_GameSkin.m_aSpriteWeaponProjectiles[WEAPON_GRENADE]);
+				Graphics()->SetColor(1.0f, 1.0f, 1.0f, ConfigAlpha);
+				Graphics()->QuadsBegin();
+				Graphics()->QuadsSetSubset(0, 0, 1, 1);
+				Graphics()->QuadsSetRotation(s_GrenadeTime * pi * 2 * 2);
+				IGraphics::CQuadItem Quad(tip.x, tip.y, 32.0f, 32.0f);
+				Graphics()->QuadsDraw(&Quad, 1);
+				Graphics()->QuadsEnd();
+				Graphics()->QuadsSetRotation(0);
+			}
+		}
+	}
 }
