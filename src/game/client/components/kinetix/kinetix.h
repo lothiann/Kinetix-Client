@@ -443,6 +443,10 @@ public:
 	double m_PfGenStartTime = 0.0;
 	double m_PfGenEndTime = 0.0;
 	int m_PfGenLastState = 0;
+	bool m_PfSpecFollow = false;
+	bool m_PfSpecWasInSpec = false;
+	bool m_PfSpecCamInit = false;
+	vec2 m_PfSpecCamPos = vec2(0.0f, 0.0f);
         std::vector<vec2> m_PfForbiddenTiles;
         std::vector<vec2> m_PfCustomFinishTiles;
         unsigned char *m_pForbiddenGrid = nullptr;
@@ -570,8 +574,12 @@ public:
         void PfAStarResimulatePath(int targetIdx);  // re-simulate path root→target, fill m_PfVPath
         float PfAStarHeuristic(const vec2 &pos, const vec2 &endPos);
         void PfThreadWorker();
-        void PfThreadStart();
-        void PfThreadStop();
+	void PfThreadStart();
+	void PfThreadStop();
+	void PfSpectateStart();
+	void PfSpectateStop();
+	void PfSpectateReset();
+	bool PfSpectateUpdateCamera(vec2 &outCamPos);
 
         // --- Console commands ---
         static void ConRandomAim(IConsole::IResult *pResult, void *pUserData);

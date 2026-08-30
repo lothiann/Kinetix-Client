@@ -1072,13 +1072,20 @@ void CGameClient::UpdatePositions()
                         vec2(m_Snap.m_pLocalCharacter->m_X, m_Snap.m_pLocalCharacter->m_Y), Client()->IntraGameTick(g_Config.m_ClDummy));
         }
 
-        // spectator position
-        if(m_Snap.m_SpecInfo.m_Active)
-        {
-                if(m_MultiViewActivated)
-                {
-                        HandleMultiView();
-                }
+	// spectator position
+	vec2 PfSpecCam;
+	const bool PfSpecFollowCam = m_BotNet.PfSpectateUpdateCamera(PfSpecCam);
+	if(m_Snap.m_SpecInfo.m_Active)
+	{
+		if(m_MultiViewActivated)
+		{
+			HandleMultiView();
+		}
+		else if(PfSpecFollowCam)
+		{
+			m_Snap.m_SpecInfo.m_Position = PfSpecCam;
+			m_Snap.m_SpecInfo.m_UsePosition = true;
+		}
                 else if(Client()->State() == IClient::STATE_DEMOPLAYBACK && m_DemoSpecId != SPEC_FOLLOW && m_Snap.m_SpecInfo.m_SpectatorId != SPEC_FREEVIEW)
                 {
                         m_Snap.m_SpecInfo.m_Position = mix(

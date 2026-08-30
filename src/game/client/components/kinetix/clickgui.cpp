@@ -3403,14 +3403,20 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 {
                                         CBotNet &BN = GameClient()->m_BotNet;
                                         const bool playVisible = (BN.m_PfState == PF_STATE_FINISHED);
+                                        const bool specVisible = (BN.m_PfState == PF_STATE_RUNNING);
                                         bool playClicked = false;
-                                        if(playVisible && pTarget->type == ERowType::DoubleButton)
+                                        bool specClicked = false;
+                                        if(pTarget->type == ERowType::DoubleButton && (playVisible || specVisible))
                                         {
-                                                // Determine click zone: left half = Pathfinding, right half = Play.
                                                 const float btnW = (rw - 6.0f) * 0.5f;
                                                 const float zone1End = rx + 2.0f + btnW;
                                                 if(mousePos.x >= zone1End)
-                                                        playClicked = true;
+                                                {
+                                                        if(playVisible)
+                                                                playClicked = true;
+                                                        else
+                                                                specClicked = true;
+                                                }
                                         }
 
                                         if(playClicked)
@@ -3437,6 +3443,19 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                                 BN.m_PfGoIdx = 0;
                                                                 dbg_msg("pathfinder", "kx_pf_play 1: playback started (%d ticks)", (int)BN.m_PfFullInputs.size());
                                                         }
+                                                }
+                                        }
+                                        else if(specClicked)
+                                        {
+                                                if(BN.m_PfSpecFollow)
+                                                {
+                                                        BN.PfSpectateStop();
+                                                        dbg_msg("pathfinder", "kx_pf_spectate 0: grenade follow disabled");
+                                                }
+                                                else
+                                                {
+                                                        BN.PfSpectateStart();
+                                                        dbg_msg("pathfinder", "kx_pf_spectate 1: grenade follow enabled");
                                                 }
                                         }
                                         else
@@ -5220,14 +5239,35 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                 }
 
                                 const bool playVisible = (BN.m_PfState == PF_STATE_FINISHED);
+                                const bool specVisible = (BN.m_PfState == PF_STATE_RUNNING);
                                 if(!playVisible)
                                 {
-                                        // Play hidden — Pathfinding full width.
-                                        DrawRoundedRect(rx + 2.0f, ry + 2.0f, rw - 4.0f, rh - 4.0f, 4.0f,
-                                                IGraphics::CORNER_ALL, leftCol);
-                                        const float lw = TextRender()->TextWidth(16.0f, pLeftLabel);
-                                        DrawText(rx + (rw - lw) * 0.5f, ry + 8.0f, 16.0f, pLeftLabel,
-                                                ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                                        if(specVisible)
+                                        {
+                                                const float btnW = (rw - 6.0f) * 0.5f;
+                                                DrawRoundedRect(rx + 2.0f, ry + 2.0f, btnW, rh - 4.0f, 4.0f,
+                                                        IGraphics::CORNER_ALL, leftCol);
+                                                const float lw = TextRender()->TextWidth(14.0f, pLeftLabel);
+                                                DrawText(rx + 2.0f + (btnW - lw) * 0.5f, ry + 8.0f, 14.0f, pLeftLabel,
+                                                        ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                                                const ColorRGBA specCol = ColorRGBA(0xff3d7ac4, true).WithAlpha(alpha);
+                                                const char *pSpecLabel = BN.m_PfSpecFollow ? "Unspectate" : "Spectate";
+                                                const float rx2 = rx + 2.0f + btnW + 2.0f;
+                                                DrawRoundedRect(rx2, ry + 2.0f, btnW, rh - 4.0f, 4.0f,
+                                                        IGraphics::CORNER_ALL, specCol);
+                                                const float rw2 = TextRender()->TextWidth(14.0f, pSpecLabel);
+                                                DrawText(rx2 + (btnW - rw2) * 0.5f, ry + 8.0f, 14.0f, pSpecLabel,
+                                                        ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                                        }
+                                        else
+                                        {
+                                                // Play hidden — Pathfinding full width.
+                                                DrawRoundedRect(rx + 2.0f, ry + 2.0f, rw - 4.0f, rh - 4.0f, 4.0f,
+                                                        IGraphics::CORNER_ALL, leftCol);
+                                                const float lw = TextRender()->TextWidth(16.0f, pLeftLabel);
+                                                DrawText(rx + (rw - lw) * 0.5f, ry + 8.0f, 16.0f, pLeftLabel,
+                                                        ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                                        }
                                 }
                                 else
                                 {

@@ -1728,3 +1728,92 @@ void CBotNet::RenderPathfinderPath()
 		}
 	}
 }
+
+void CBotNet::PfSpectateStart()
+{
+	m_PfSpecFollow = true;
+	m_PfSpecWasInSpec = false;
+	m_PfSpecCamInit = false;
+	m_PfSpecCamPos = vec2(0.0f, 0.0f);
+	if(!GameClient()->m_Snap.m_SpecInfo.m_Active)
+		GameClient()->m_Chat.SendChat(0, "/pause");
+}
+
+void CBotNet::PfSpectateStop()
+{
+	PfSpectateReset();
+	GameClient()->m_Chat.SendChat(0, "/pause");
+}
+
+void CBotNet::PfSpectateReset()
+{
+	m_PfSpecFollow = false;
+	m_PfSpecWasInSpec = false;
+	m_PfSpecCamInit = false;
+}
+
+bool CBotNet::PfSpectateUpdateCamera(vec2 &outCamPos)
+{
+	if(!m_PfSpecFollow)
+		return false;
+	if(m_PfState != PF_STATE_RUNNING)
+	{
+		PfSpectateReset();
+		return false;
+	}
+	CGameClient *pGame = GameClient();
+	if(!pGame)
+	{
+		PfSpectateReset();
+		return false;
+	}
+	const bool InSpec = pGame->m_Snap.m_SpecInfo.m_Active;
+	if(InSpec)
+		m_PfSpecWasInSpec = true;
+	else if(m_PfSpecWasInSpec)
+	{
+		PfSpectateReset();
+		return false;
+	}
+	if(!InSpec)
+		return false;
+
+	vec2 tip;
+	bool hasTip = false;
+	{
+		std::unique_lock<std::mutex> lock(m_PfDataMutex, std::try_to_lock);
+		if(lock.owns_lock() && m_PfVPath.size() >= 2)
+		{
+			tip = m_PfVPath[m_PfVPath.size() - 1];
+			hasTip = true;
+		}
+	}
+	if(hasTip)
+	{
+		if(!m_PfSpecCamInit)
+		{
+			m_PfSpecCamPos = tip;
+			m_PfSpecCamInit = true;
+		}
+		else
+		{
+			const vec2 Delta = tip - m_PfSpecCamPos;
+			const float dist = length(Delta);
+			float dt = Client()->RenderFrameTime();
+			dt = std::clamp(dt, 0.001f, 0.05f);
+			const float MaxSpeed = 2500.0f;
+			const float EaseRate = 3.0f;
+			float Step = dist * (1.0f - std::exp(-EaseRate * dt));
+			if(Step > MaxSpeed * dt)
+				Step = MaxSpeed * dt;
+			if(dist <= Step)
+				m_PfSpecCamPos = tip;
+			else
+				m_PfSpecCamPos += Delta * (Step / dist);
+		}
+	}
+	if(!m_PfSpecCamInit)
+		return false;
+	outCamPos = m_PfSpecCamPos;
+	return true;
+}
