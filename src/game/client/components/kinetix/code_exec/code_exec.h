@@ -4,6 +4,12 @@
 #include <game/client/component.h>
 #include <engine/console.h>
 
+#include <atomic>
+#include <string>
+
+struct lua_Debug;
+struct lua_State;
+
 namespace sol { class state; }
 
 // =========================================================
@@ -49,28 +55,25 @@ public:
         void OnConsoleInit() override;
         void OnInit() override;
         void OnShutdown() override;
-        void OnUpdate() override;
+        void OnRender() override;
         void OnReset() override;
 
-        // Execute a Lua script string
-        bool Execute(const char *pCode);
+	// Execute a Lua script string
+	bool Execute(const char *pCode, const char *pChunkName = "script");
 
-        // Stop the currently running script (uses lua_sethook to interrupt)
-        void Stop();
+	// Stop the currently running script (abandons the coroutine)
+	void Stop();
 
         // Get current execution state
-        EExecState GetState() const { return m_State; }
+        EExecState GetState() const { return (EExecState)m_State.load(); }
 
         // Get last error message
         const char *GetLastError() const;
 
-        // The Lua source code buffer (edited in UI)
-        char m_aCodeBuffer[65536];
+	// The Lua source code buffer (edited in UI)
+	char m_aCodeBuffer[65536];
 
-        // Public so LuaAbortHook (static function) can read it
-        volatile bool m_AbortRequested;
-
-        // --- Multiline editor state ---
+	// --- Multiline editor state ---
         bool m_EditorActive;           // true when the code editor has focus
         bool m_MouseSelecting;         // true while mouse drag selects text
         int m_CursorPos;               // byte offset of cursor in m_aCodeBuffer
@@ -96,10 +99,18 @@ public:
         int GetLineLength(int Line) const;
 
 private:
-        // Lua state — allocated on heap due to size
-        sol::state *m_pLua;
+	// Lua state — allocated on heap due to size
+	sol::state *m_pLua;
 
-        EExecState m_State;
+	// Registry reference to the running coroutine thread (-1 = none)
+	int m_CoroutineRef;
+
+	std::atomic<int> m_State;
+	std::atomic<bool> m_StopRequested;
+	bool m_WasRunning;
+        int m_InstructionCounter;
+        lua_State *m_pCoroutine;
+        bool m_InResume;
         char m_aLastError[1024];
 
         // Register all bindings (game state, chat, input, etc.)
@@ -107,6 +118,12 @@ private:
 
         // Register raw C++ class access (direct pointers, usertypes)
         void RegisterRawAPI();
+
+        static const int HOOK_INSTRUCTION_INTERVAL = 1000;
+        static const int RESUME_INSTRUCTION_BUDGET = 200000;
+
+        // Instruction-count hook: aborts the script when stop was requested
+        static void LuaStepHook(lua_State *L, lua_Debug *ar);
 
         // Console commands
         static void ConExec(IConsole::IResult *pResult, void *pUserData);

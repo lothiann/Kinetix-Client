@@ -28,6 +28,7 @@
 #include <base/color.h>
 #include <base/vmath.h>
 
+#include <string>
 #include <vector>
 
 #include <yoga/Yoga.h>
@@ -48,7 +49,7 @@ public:
         bool OnCursorMove(float x, float y, IInput::ECursorType CursorType) override;
         bool OnTouchState(const std::vector<IInput::CTouchFingerState> &vTouchFingerStates) override;
 
-        static constexpr int NUM_PANELS = 6;
+        static constexpr int NUM_PANELS = 7;
 
 private:
         // Animation state: 0.0 = fully closed, 1.0 = fully open.
@@ -201,10 +202,14 @@ private:
                 unsigned signature = 0;
         };
         SLayoutCache m_aLayoutCache[NUM_PANELS];
-        bool m_aLayoutCacheDirty[NUM_PANELS] = {true, true, true, true, true, true}; // v1.56.176: 6 panels
+        bool m_aLayoutCacheDirty[NUM_PANELS] = {true, true, true, true, true, true, true}; // v1.56.176: 7 panels
 
         // v1.56.90: Dummies Send toggle state (per-dummy, ClickGUI-local).
         bool m_aDummySendEnabled[8] = {};
+
+        bool m_FileBrowserOpen = false;
+        std::vector<std::string> m_vScriptBrowserFiles;
+        float m_FileBrowserScroll = 0.0f;
 
         // v1.56.60: advance all per-row / per-panel animations toward their targets.
         // Called once per frame from OnRender before any drawing.
@@ -215,6 +220,13 @@ private:
         // toggle and live config. Called from OnRender each frame.
         void UpdateInfoRows();
         void UpdatePathfinderLabels();
+        void UpdateCodeExecRows();
+        void OpenScriptPicker();
+        void OnScriptPicked(const char *pPath, bool ViaStorage);
+        void ExecuteSelectedScript();
+        void RefreshScriptBrowserList();
+        void RenderFileBrowser(float alpha);
+        void HandleFileBrowserClick(vec2 mousePos);
 
         // Panel geometry — scaled up again 1.2x in v1.56.39 for readability.
         static constexpr float PANEL_WIDTH = 300.0f;

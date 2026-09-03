@@ -10,6 +10,9 @@
 #include <game/client/components/kinetix/clickgui.h>
 #include <game/client/components/kinetix/kinetix_internal.h>
 #include <game/client/components/kinetix/kinetix.h>
+#include <game/client/components/chat.h>
+#include <game/client/components/kinetix/code_exec/code_exec.h>
+#include <game/client/components/kinetix/code_exec/file_dialog.h>
 
 #include <yoga/Yoga.h>
 
@@ -27,6 +30,7 @@
 #include <engine/input.h>
 #include <engine/keys.h>
 #include <engine/shared/config.h>
+#include <engine/storage.h>
 #include <engine/textrender.h>
 
 #include <game/client/components/console.h>
@@ -36,7 +40,7 @@
 namespace {
 // Total number of ClickGUI panels. Must match CClickGui::NUM_PANELS in .h.
 // v1.56.177: was stale at 5 — caused "too many initializers" on g_Panels[6].
-constexpr int NUM_PANELS = 6;
+constexpr int NUM_PANELS = 7;
 } // namespace
 
 // ============================================================================
@@ -534,6 +538,31 @@ static SRow g_InfoRows[] = {
         {ERowType::Button, "TikTok", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 
+static char g_ExecDyn_Path[560];
+static char g_ExecDyn_Name[160];
+static char g_ExecDyn_Version[96];
+static char g_ExecDyn_Author[160];
+static char g_ExecDyn_Desc[320];
+static char g_ExecDyn_Btn[16] = "Execute";
+static char g_ExecScriptPath[1024];
+static char g_ExecScriptName[128];
+static bool g_ExecScriptViaStorage = false;
+static bool g_ExecLoaded = false;
+static bool g_ExecHasName = false;
+static bool g_ExecHasVersion = false;
+static bool g_ExecHasAuthor = false;
+static bool g_ExecHasDesc = false;
+
+static SRow g_CodeExecRows[] = {
+        {ERowType::Button, "Pick File", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_ExecDyn_Path, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_ExecDyn_Name, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_ExecDyn_Version, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_ExecDyn_Author, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_ExecDyn_Desc, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Button, g_ExecDyn_Btn, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
+
 static SPanel g_Panels[NUM_PANELS] = {
         {"Functions", g_FunctionsRows, sizeof(g_FunctionsRows) / sizeof(g_FunctionsRows[0])},
         {"Advanced", g_AdvancedRows, sizeof(g_AdvancedRows) / sizeof(g_AdvancedRows[0])},
@@ -541,6 +570,7 @@ static SPanel g_Panels[NUM_PANELS] = {
         {"Pathfinder", g_PathfinderRows, sizeof(g_PathfinderRows) / sizeof(g_PathfinderRows[0])},
         {"Binds", g_BindsRows, sizeof(g_BindsRows) / sizeof(g_BindsRows[0])},
         {"Info", g_InfoRows, sizeof(g_InfoRows) / sizeof(g_InfoRows[0])},
+        {"Code Execution (Lua)", g_CodeExecRows, sizeof(g_CodeExecRows) / sizeof(g_CodeExecRows[0])},
 };
 
 // Conditional visibility for Functions panel top-level rows.
@@ -589,6 +619,47 @@ static bool FunctionsRowVisible(const SRow *pRows, int rowCount, int idx)
                 return isMirror;
         if(str_comp(row.pName, "Smart aim") == 0)
                 return !isMirror;
+        return true;
+}
+
+static bool CodeExecRowVisible(const SRow *pRows, int rowCount, int idx)
+{
+        if(idx < 0 || idx >= rowCount)
+                return false;
+        const SRow &row = pRows[idx];
+        if(row.pName == g_ExecDyn_Path)
+                return g_ExecLoaded;
+        if(row.pName == g_ExecDyn_Name)
+                return g_ExecHasName;
+        if(row.pName == g_ExecDyn_Version)
+                return g_ExecHasVersion;
+        if(row.pName == g_ExecDyn_Author)
+                return g_ExecHasAuthor;
+        if(row.pName == g_ExecDyn_Desc)
+                return g_ExecHasDesc;
+        return true;
+}
+
+static bool ExecParseHeaderLine(const char *pLine, int LineLen, const char *pKeyName, char *pValue, int ValueSize)
+{
+        const int KeyLen = str_length(pKeyName);
+        if(LineLen <= KeyLen || str_comp_nocase_num(pLine, pKeyName, KeyLen) != 0 || pLine[KeyLen] != ':')
+                return false;
+        const char *pVal = pLine + KeyLen + 1;
+        int ValLen = LineLen - KeyLen - 1;
+        while(ValLen > 0 && (*pVal == ' ' || *pVal == '\t'))
+        {
+                pVal++;
+                ValLen--;
+        }
+        while(ValLen > 0 && (pVal[ValLen - 1] == ' ' || pVal[ValLen - 1] == '\t'))
+                ValLen--;
+        if(ValLen <= 0)
+                return false;
+        if(ValLen > ValueSize - 1)
+                ValLen = ValueSize - 1;
+        mem_copy(pValue, pVal, ValLen);
+        pValue[ValLen] = '\0';
         return true;
 }
 
@@ -1319,6 +1390,258 @@ void CClickGui::UpdatePathfinderLabels()
         }
 }
 
+void CClickGui::UpdateCodeExecRows()
+{
+        CCodeExec &CE = GameClient()->m_CodeExec;
+        str_copy(g_ExecDyn_Btn, CE.GetState() == CCodeExec::STATE_RUNNING ? "Stop" : "Execute", sizeof(g_ExecDyn_Btn));
+}
+
+void CClickGui::OpenScriptPicker()
+{
+#if defined(CONF_FAMILY_WINDOWS)
+        char aPath[1024];
+        if(KxPickScriptFile(aPath, sizeof(aPath)))
+                OnScriptPicked(aPath, false);
+#else
+        m_FileBrowserOpen = true;
+        m_FileBrowserScroll = 0.0f;
+        RefreshScriptBrowserList();
+#endif
+}
+
+static int ScriptBrowserListCb(const char *pName, int IsDir, int DirType, void *pUser)
+{
+        (void)DirType;
+        auto *pFiles = (std::vector<std::string> *)pUser;
+        if(IsDir || !pName || pName[0] == '.')
+                return 0;
+        const int Len = str_length(pName);
+        if(Len > 4 && (str_comp_nocase(pName + Len - 4, ".lua") == 0 || str_comp_nocase(pName + Len - 4, ".txt") == 0))
+                pFiles->emplace_back(pName);
+        return 0;
+}
+
+void CClickGui::RefreshScriptBrowserList()
+{
+        m_vScriptBrowserFiles.clear();
+        Storage()->CreateFolder("scripts", IStorage::TYPE_SAVE);
+        Storage()->ListDirectory(IStorage::TYPE_SAVE, "scripts", ScriptBrowserListCb, &m_vScriptBrowserFiles);
+        std::sort(m_vScriptBrowserFiles.begin(), m_vScriptBrowserFiles.end());
+}
+
+void CClickGui::OnScriptPicked(const char *pPath, bool ViaStorage)
+{
+        g_ExecScriptViaStorage = ViaStorage;
+        str_copy(g_ExecScriptPath, pPath, sizeof(g_ExecScriptPath));
+
+        const char *pFileName = pPath;
+        for(const char *p = pPath; *p; p++)
+        {
+                if(*p == '/' || *p == '\\')
+                        pFileName = p + 1;
+        }
+        str_copy(g_ExecScriptName, pFileName, sizeof(g_ExecScriptName));
+
+        g_ExecLoaded = false;
+        g_ExecHasName = false;
+        g_ExecHasVersion = false;
+        g_ExecHasAuthor = false;
+        g_ExecHasDesc = false;
+
+        if(str_length(g_ExecScriptPath) > 56)
+                str_format(g_ExecDyn_Path, sizeof(g_ExecDyn_Path), "File: ..%s", g_ExecScriptPath + str_length(g_ExecScriptPath) - 54);
+        else
+                str_format(g_ExecDyn_Path, sizeof(g_ExecDyn_Path), "File: %s", g_ExecScriptPath);
+
+        void *pContent = nullptr;
+        unsigned Len = 0;
+        const bool Read = Storage()->ReadFile(g_ExecScriptPath, ViaStorage ? IStorage::TYPE_SAVE : IStorage::TYPE_ABSOLUTE, &pContent, &Len);
+        if(!Read || (!pContent && Len > 0))
+        {
+                GameClient()->m_Chat.AddLine(CChat::LUA_MSG, 0, "Code Exec: failed to read script file");
+                return;
+        }
+
+        if(pContent)
+        {
+                const char *p = (const char *)pContent;
+                if(Len >= 3 && (unsigned char)p[0] == 0xEF && (unsigned char)p[1] == 0xBB && (unsigned char)p[2] == 0xBF)
+                        p += 3;
+                const char *pEnd = (const char *)pContent + Len;
+                int LinesChecked = 0;
+                while(p < pEnd && LinesChecked < 32)
+                {
+                        const char *pLineEnd = p;
+                        while(pLineEnd < pEnd && *pLineEnd != '\n' && *pLineEnd != '\r')
+                                pLineEnd++;
+                        LinesChecked++;
+
+                        const char *pKey = p;
+                        int KeyLen = (int)(pLineEnd - pKey);
+                        while(KeyLen > 0 && (*pKey == ' ' || *pKey == '\t'))
+                        {
+                                pKey++;
+                                KeyLen--;
+                        }
+                        if(KeyLen < 2 || pKey[0] != '-' || pKey[1] != '-')
+                                break;
+                        pKey += 2;
+                        KeyLen -= 2;
+                        while(KeyLen > 0 && (*pKey == ' ' || *pKey == '\t'))
+                        {
+                                pKey++;
+                                KeyLen--;
+                        }
+
+                        char aValue[288];
+                        if(ExecParseHeaderLine(pKey, KeyLen, "NAME", aValue, sizeof(aValue)))
+                        {
+                                str_format(g_ExecDyn_Name, sizeof(g_ExecDyn_Name), "NAME: %s", aValue);
+                                g_ExecHasName = true;
+                        }
+                        else if(ExecParseHeaderLine(pKey, KeyLen, "VERSION", aValue, sizeof(aValue)))
+                        {
+                                str_format(g_ExecDyn_Version, sizeof(g_ExecDyn_Version), "VERSION: %s", aValue);
+                                g_ExecHasVersion = true;
+                        }
+                        else if(ExecParseHeaderLine(pKey, KeyLen, "AUTHOR", aValue, sizeof(aValue)))
+                        {
+                                str_format(g_ExecDyn_Author, sizeof(g_ExecDyn_Author), "AUTHOR: %s", aValue);
+                                g_ExecHasAuthor = true;
+                        }
+                        else if(ExecParseHeaderLine(pKey, KeyLen, "DESCRIPTION", aValue, sizeof(aValue)))
+                        {
+                                str_format(g_ExecDyn_Desc, sizeof(g_ExecDyn_Desc), "DESCRIPTION: %s", aValue);
+                                g_ExecHasDesc = true;
+                        }
+
+                        p = pLineEnd;
+                        while(p < pEnd && (*p == '\n' || *p == '\r'))
+                                p++;
+                }
+                free(pContent);
+        }
+
+        g_ExecLoaded = true;
+}
+
+void CClickGui::ExecuteSelectedScript()
+{
+        if(!g_ExecLoaded)
+                return;
+        void *pContent = nullptr;
+        unsigned Len = 0;
+        if(!Storage()->ReadFile(g_ExecScriptPath, g_ExecScriptViaStorage ? IStorage::TYPE_SAVE : IStorage::TYPE_ABSOLUTE, &pContent, &Len) || !pContent)
+        {
+                GameClient()->m_Chat.AddLine(CChat::LUA_MSG, 0, "Code Exec: failed to read script file");
+                return;
+        }
+        static char s_aCode[262144];
+        unsigned CopyLen = Len;
+        if(CopyLen > sizeof(s_aCode) - 1)
+                CopyLen = sizeof(s_aCode) - 1;
+        mem_copy(s_aCode, pContent, CopyLen);
+        s_aCode[CopyLen] = '\0';
+        free(pContent);
+        GameClient()->m_CodeExec.Execute(s_aCode, g_ExecScriptName);
+}
+
+void CClickGui::RenderFileBrowser(float alpha)
+{
+        const float screenW = VScreenWidth();
+        const float screenH = VScreenHeight();
+        const float boxW = 420.0f;
+        const float rowH = 30.0f;
+        const int fileCount = (int)m_vScriptBrowserFiles.size();
+        const int visibleRows = fileCount > 0 ? (fileCount < 8 ? fileCount : 8) : 2;
+        const float listH = (float)visibleRows * rowH;
+        const float boxH = 52.0f + listH + 4.0f + 34.0f + 8.0f;
+        const float boxX = (screenW - boxW) * 0.5f;
+        const float boxY = (screenH - boxH) * 0.5f;
+        const float listX = boxX + 8.0f;
+        const float listY = boxY + 52.0f;
+        const float cancelY = listY + listH + 4.0f;
+
+        DrawRoundedRect(0.0f, 0.0f, screenW, screenH, 0.0f, IGraphics::CORNER_NONE,
+                ColorRGBA(0xff000000, true).WithAlpha(alpha * 0.5f));
+        DrawRoundedRect(boxX - 1.0f, boxY - 1.0f, boxW + 2.0f, boxH + 2.0f, 6.0f, IGraphics::CORNER_ALL,
+                ColorRGBA(0xff2a2a3e, true).WithAlpha(alpha));
+        DrawRoundedRect(boxX, boxY, boxW, boxH, 6.0f, IGraphics::CORNER_ALL,
+                ColorRGBA(0xff0d0d18, true).WithAlpha(alpha));
+
+        DrawText(boxX + 12.0f, boxY + 10.0f, 18.0f, "Select script file",
+                ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+
+        char aComplete[1024];
+        Storage()->GetCompletePath(IStorage::TYPE_SAVE, "scripts", aComplete, sizeof(aComplete));
+        const int CompleteLen = str_length(aComplete);
+        if(CompleteLen > 54)
+                str_format(aComplete, sizeof(aComplete), "..%s", aComplete + CompleteLen - 52);
+        DrawText(boxX + 12.0f, boxY + 32.0f, 12.0f, aComplete,
+                ColorRGBA(0xff8888a0, true).WithAlpha(alpha));
+
+        if(fileCount == 0)
+        {
+                DrawText(listX, listY + 4.0f, 16.0f, "No .lua/.txt files found",
+                        ColorRGBA(0xffd8d8e8, true).WithAlpha(alpha));
+                DrawText(listX, listY + 4.0f + rowH, 14.0f, "Put your scripts into the folder above",
+                        ColorRGBA(0xff8888a0, true).WithAlpha(alpha));
+        }
+        else
+        {
+                ClipEnableVirtual(listX, listY, boxW - 16.0f, listH);
+                const int firstRow = (int)(m_FileBrowserScroll / rowH);
+                for(int i = firstRow; i < fileCount; i++)
+                {
+                        const float rowY = listY + (float)i * rowH - m_FileBrowserScroll;
+                        if(rowY + rowH < listY || rowY > listY + listH)
+                                continue;
+                        if(PointInRect(m_MousePos, listX, rowY, boxW - 16.0f, rowH))
+                                DrawRoundedRect(listX, rowY, boxW - 16.0f, rowH, 2.0f, IGraphics::CORNER_ALL,
+                                        ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha * 0.5f));
+                        DrawText(listX + 6.0f, rowY + 6.0f, 16.0f, m_vScriptBrowserFiles[i].c_str(),
+                                ColorRGBA(0xffd8d8e8, true).WithAlpha(alpha));
+                }
+                Graphics()->ClipDisable();
+        }
+
+        const bool cancelHover = PointInRect(m_MousePos, boxX, cancelY, boxW, 34.0f);
+        DrawRoundedRect(boxX, cancelY, boxW, 34.0f, 4.0f, IGraphics::CORNER_ALL,
+                ColorRGBA(cancelHover ? m_AccentColorRGBA : 0xff282834u, true).WithAlpha(cancelHover ? alpha * 0.6f : alpha));
+        DrawText(boxX + boxW * 0.5f, cancelY + 7.0f, 18.0f, "Cancel",
+                ColorRGBA(0xffffffff, true).WithAlpha(alpha), TEXTALIGN_CENTER);
+}
+
+void CClickGui::HandleFileBrowserClick(vec2 mousePos)
+{
+        const float screenW = VScreenWidth();
+        const float screenH = VScreenHeight();
+        const float boxW = 420.0f;
+        const float rowH = 30.0f;
+        const int fileCount = (int)m_vScriptBrowserFiles.size();
+        const int visibleRows = fileCount > 0 ? (fileCount < 8 ? fileCount : 8) : 2;
+        const float listH = (float)visibleRows * rowH;
+        const float boxH = 52.0f + listH + 4.0f + 34.0f + 8.0f;
+        const float boxX = (screenW - boxW) * 0.5f;
+        const float boxY = (screenH - boxH) * 0.5f;
+        const float listX = boxX + 8.0f;
+        const float listY = boxY + 52.0f;
+
+        if(fileCount > 0 && PointInRect(mousePos, listX, listY, boxW - 16.0f, listH))
+        {
+                const int hit = (int)((mousePos.y - listY + m_FileBrowserScroll) / rowH);
+                if(hit >= 0 && hit < fileCount)
+                {
+                        char aPath[1024];
+                        str_format(aPath, sizeof(aPath), "scripts/%s", m_vScriptBrowserFiles[hit].c_str());
+                        m_FileBrowserOpen = false;
+                        OnScriptPicked(aPath, true);
+                }
+                return;
+        }
+        m_FileBrowserOpen = false;
+}
+
 // ============================================================================
 // CClickGui — component lifecycle
 // ============================================================================
@@ -1327,6 +1650,7 @@ void CClickGui::OnReset()
 {
         m_AnimProgress = 0.0f;
         m_WasOpen = false;
+        m_FileBrowserOpen = false;
         m_Dragging = false;
         m_DragPanelIdx = -1;
         m_DragSliderPanel = -1;
@@ -2357,6 +2681,7 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
         // Runs every frame so AVG FPS stays live and spoofed settings update.
         UpdateInfoRows();
         UpdatePathfinderLabels();
+        UpdateCodeExecRows();
 
         // v1.56.77: rainbow color rotation. When enabled, overwrite m_AccentColorRGBA
         // each frame with a hue-rotating color. HSV→RGB conversion inline.
@@ -2759,6 +3084,9 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
         // Render dropdown popup ON TOP of all panels (if open).
         RenderDropdownPopup(alpha);
 
+        if(m_FileBrowserOpen)
+                RenderFileBrowser(alpha);
+
         TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
 }
 
@@ -2783,6 +3111,7 @@ bool CClickGui::OnInput(const IInput::CEvent &Event)
         {
                 if(m_InputEditing)
                         HandleTextInput(Event);
+                m_FileBrowserOpen = false;
                 g_Config.m_ClClickGui = 0;
                 return true;
         }
@@ -3005,6 +3334,12 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                 // Click outside dropdown → close it (and don't fall through to row
                 // beneath, matching HTML select behavior).
                 m_DropdownOpen = false;
+                return;
+        }
+
+        if(m_FileBrowserOpen)
+        {
+                HandleFileBrowserClick(mousePos);
                 return;
         }
 
@@ -3543,6 +3878,20 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 {
                                         GameClient()->m_BotNet.PfGenerateTunnel();
                                 }
+                                else if(str_comp(pTarget->pName, "Pick File") == 0 && pTarget->type == ERowType::Button)
+                                {
+                                        OpenScriptPicker();
+                                        return;
+                                }
+                                else if(pTarget->pName == g_ExecDyn_Btn)
+                                {
+                                        CCodeExec &CE = GameClient()->m_CodeExec;
+                                        if(CE.GetState() == CCodeExec::STATE_RUNNING)
+                                                CE.Stop();
+                                        else
+                                                ExecuteSelectedScript();
+                                        return;
+                                }
                                 // v1.56.90: Dummies Button (Connect Dummy, Switch to Main)
                                 else if(str_comp(row.pName, "Dummies") == 0 && pTarget->type == ERowType::Button)
                                 {
@@ -3814,6 +4163,18 @@ void CClickGui::HandleMouseUp(vec2 mousePos)
 
 bool CClickGui::ScrollPanelAt(vec2 mousePos, float dir)
 {
+        if(m_FileBrowserOpen)
+        {
+                const int fileCount = (int)m_vScriptBrowserFiles.size();
+                const int visibleRows = fileCount > 0 ? (fileCount < 8 ? fileCount : 8) : 2;
+                const float maxScroll = (float)fileCount * 30.0f - (float)visibleRows * 30.0f;
+                m_FileBrowserScroll += dir;
+                if(m_FileBrowserScroll < 0.0f)
+                        m_FileBrowserScroll = 0.0f;
+                if(m_FileBrowserScroll > maxScroll)
+                        m_FileBrowserScroll = maxScroll;
+                return true;
+        }
         // Iterate panels top-to-bottom (high z first).
         int order[NUM_PANELS];
         for(int i = 0; i < NUM_PANELS; ++i)
@@ -4431,6 +4792,8 @@ bool CClickGui::HitTestRow(vec2 mousePos, int panelIdx, int &outRow, int &outChi
                         continue;
                 if(str_comp(g_Panels[panelIdx].pTitle, "Pathfinder") == 0 && !PfRowVisible(g_Panels[panelIdx].pRows, g_Panels[panelIdx].rowCount, r))
                         continue;
+                if(str_comp(g_Panels[panelIdx].pTitle, "Code Execution (Lua)") == 0 && !CodeExecRowVisible(g_Panels[panelIdx].pRows, g_Panels[panelIdx].rowCount, r))
+                        continue;
                 const float rh = RowHeight(row.type);
                 const float rw = PANEL_WIDTH - BODY_PADDING * 2;
                 if(PointInRect(mousePos, bodyX, cursorY, rw, rh))
@@ -4649,6 +5012,7 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
         // Now: only on actual layout changes.
         const bool isFunctionsPanel = (str_comp(panel.pTitle, "Functions") == 0);
         const bool isPathfinderPanel = (str_comp(panel.pTitle, "Pathfinder") == 0);
+        const bool isCodeExecPanel = (str_comp(panel.pTitle, "Code Execution (Lua)") == 0);
 
         // Build the layout signature: hash of (row index, child included?) bits.
         // Children are included when m_AnimExpand > 0 (covers expanded + animating).
@@ -4660,6 +5024,12 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                         continue;
                 if(isPathfinderPanel && !PfRowVisible(panel.pRows, panel.rowCount, r))
                         continue;
+                if(isCodeExecPanel)
+                {
+                        if(!CodeExecRowVisible(panel.pRows, panel.rowCount, r))
+                                continue;
+                        sig = sig * 31u + 7u;
+                }
                 sig = sig * 31u + (unsigned)r + 1u;
                 if(row.type == ERowType::Expandable && row.pChildren && row.m_AnimExpand > 0.0f)
                 {
@@ -4732,6 +5102,8 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                 if(isFunctionsPanel && !FunctionsRowVisible(panel.pRows, panel.rowCount, r))
                                         continue;
                                 if(isPathfinderPanel && !PfRowVisible(panel.pRows, panel.rowCount, r))
+                                        continue;
+                                if(isCodeExecPanel && !CodeExecRowVisible(panel.pRows, panel.rowCount, r))
                                         continue;
                                 addRowNode(row, false);
                                 if(row.type == ERowType::Expandable && row.pChildren && row.m_AnimExpand > 0.0f)
@@ -4807,6 +5179,8 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                 if(isFunctionsPanel && !FunctionsRowVisible(panel.pRows, panel.rowCount, r))
                         continue;
                 if(isPathfinderPanel && !PfRowVisible(panel.pRows, panel.rowCount, r))
+                        continue;
+                if(isCodeExecPanel && !CodeExecRowVisible(panel.pRows, panel.rowCount, r))
                         continue;
                 if(row.type == ERowType::Expandable && row.pChildren && row.m_AnimExpand > 0.0f && row.m_AnimExpand < 1.0f)
                 {
@@ -4967,6 +5341,8 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                 if(str_comp(panel.pTitle, "Functions") == 0 && !FunctionsRowVisible(panel.pRows, panel.rowCount, r))
                         continue;
                 if(str_comp(panel.pTitle, "Pathfinder") == 0 && !PfRowVisible(panel.pRows, panel.rowCount, r))
+                        continue;
+                if(str_comp(panel.pTitle, "Code Execution (Lua)") == 0 && !CodeExecRowVisible(panel.pRows, panel.rowCount, r))
                         continue;
                 const YGNodeRef node = rowNodes[rowIdx];
                 const float rxLocal = YGNodeLayoutGetLeft(node);

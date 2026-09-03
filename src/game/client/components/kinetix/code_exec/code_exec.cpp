@@ -51,6 +51,7 @@
 #include <game/client/prediction/entities/plasma.h>
 #include <engine/shared/config.h>
 #include <base/str.h>
+#include <base/time.h>
 #include <engine/console.h>
 #include <engine/client/client.h>
 #include <base/vmath.h>
@@ -61,19 +62,32 @@
 #include <cstdio>
 #include <cstring>
 
-static void LuaAbortHook(lua_State *L, lua_Debug *ar)
+static CCodeExec *s_pHookInstance = nullptr;
+
+void CCodeExec::LuaStepHook(lua_State *L, lua_Debug *ar)
 {
         (void)ar;
-        sol::state_view lua(L);
-        CCodeExec *pSelf = lua["__code_exec_ptr"].get_or<CCodeExec*>(nullptr);
-        if(pSelf && pSelf->m_AbortRequested)
-                luaL_error(L, "Script aborted by user");
+        if(!s_pHookInstance)
+                return;
+        if(s_pHookInstance->m_StopRequested.load(std::memory_order_relaxed))
+                luaL_error(L, "script stopped");
+        s_pHookInstance->m_InstructionCounter += HOOK_INSTRUCTION_INTERVAL;
+        if(s_pHookInstance->m_InstructionCounter >= RESUME_INSTRUCTION_BUDGET)
+        {
+                s_pHookInstance->m_InstructionCounter = 0;
+                lua_yield(L, 0);
+        }
 }
 
 CCodeExec::CCodeExec() :
-        m_State(STATE_IDLE),
-        m_AbortRequested(false),
         m_pLua(nullptr),
+        m_CoroutineRef(-1),
+        m_State(STATE_IDLE),
+        m_StopRequested(false),
+        m_WasRunning(false),
+        m_InstructionCounter(0),
+        m_pCoroutine(nullptr),
+        m_InResume(false),
         m_EditorActive(false),
         m_MouseSelecting(false),
         m_CursorPos(0),
@@ -89,6 +103,7 @@ CCodeExec::CCodeExec() :
 
 CCodeExec::~CCodeExec()
 {
+        Stop();
         if(m_pLua)
         {
                 delete m_pLua;
@@ -104,6 +119,7 @@ void CCodeExec::OnConsoleInit()
 
 void CCodeExec::OnInit()
 {
+        s_pHookInstance = this;
         m_pLua = new sol::state();
         m_pLua->open_libraries(
                 sol::lib::base, sol::lib::string, sol::lib::math,
@@ -114,23 +130,19 @@ void CCodeExec::OnInit()
         // print() — outputs to in-game chat
         m_pLua->set_function("print", [this](sol::variadic_args va) {
                 std::string result;
-                sol::state_view sv(m_pLua->lua_state());
-                sol::function tostring_fn = sv["tostring"];
                 for(auto it = va.begin(); it != va.end(); ++it)
                 {
                         if(it != va.begin()) result += "\t";
-                        auto obj = *it;
-                        if(tostring_fn.valid())
-                        {
-                                std::string s = tostring_fn(obj);
-                                result += s;
-                        }
+                        sol::object obj = *it;
+                        lua_State *L = obj.lua_state();
+                        obj.push();
+                        size_t Len = 0;
+                        const char *pStr = luaL_tolstring(L, -1, &Len);
+                        if(pStr)
+                                result.append(pStr, Len);
                         else
-                        {
-                                sol::optional<std::string> str = obj.get<sol::optional<std::string>>();
-                                if(str) result += *str;
-                                else result += sol::type_name(m_pLua->lua_state(), obj.get_type());
-                        }
+                                result += lua_typename(L, lua_type(L, -1));
+                        lua_pop(L, 2);
                 }
                 GameClient()->m_Chat.AddLine(CChat::LUA_MSG, 0, result.c_str());
         });
@@ -145,21 +157,55 @@ void CCodeExec::OnShutdown()
         if(m_pLua) { delete m_pLua; m_pLua = nullptr; }
 }
 
-void CCodeExec::OnUpdate() {}
+void CCodeExec::OnRender()
+{
+        if(m_State.load() != STATE_RUNNING || !m_pCoroutine)
+                return;
+        m_InstructionCounter = 0;
+        m_InResume = true;
+        int NumResults = 0;
+        const int Status = lua_resume(m_pCoroutine, nullptr, 0, &NumResults);
+        m_InResume = false;
+        if(Status == LUA_OK || Status == LUA_YIELD)
+                lua_pop(m_pCoroutine, NumResults);
+        if(Status != LUA_YIELD)
+        {
+                if(Status != LUA_OK && !m_StopRequested.load())
+                {
+                        const char *pErrMsg = lua_tostring(m_pCoroutine, -1) ? lua_tostring(m_pCoroutine, -1) : "Unknown execution error";
+                        str_copy(m_aLastError, pErrMsg, sizeof(m_aLastError));
+                }
+                if(m_CoroutineRef != -1)
+                {
+                        luaL_unref(m_pLua->lua_state(), LUA_REGISTRYINDEX, m_CoroutineRef);
+                        m_CoroutineRef = -1;
+                }
+                m_pCoroutine = nullptr;
+                m_State = (Status == LUA_OK || m_StopRequested.load()) ? STATE_IDLE : STATE_ERROR;
+                if(m_State.load() == STATE_ERROR)
+                {
+                        char aBuf[1024];
+                        str_format(aBuf, sizeof(aBuf), "Lua error: %s", m_aLastError);
+                        GameClient()->m_Chat.AddLine(CChat::LUA_MSG, 0, aBuf);
+                }
+                m_WasRunning = false;
+        }
+}
 
 void CCodeExec::OnReset() { Stop(); }
 
 const char *CCodeExec::GetLastError() const { return m_aLastError; }
 
-bool CCodeExec::Execute(const char *pCode)
+bool CCodeExec::Execute(const char *pCode, const char *pChunkName)
 {
-        if(!m_pLua || !pCode) return false;
+        if(!m_pLua || !pCode || m_InResume) return false;
         Stop();
-        m_AbortRequested = false;
         m_aLastError[0] = '\0';
-        m_State = STATE_RUNNING;
-        (*m_pLua)["__code_exec_ptr"] = this;
-        lua_sethook(m_pLua->lua_state(), LuaAbortHook, LUA_MASKCOUNT, 1000);
+
+        char aChunk[128];
+        str_format(aChunk, sizeof(aChunk), "=%s", pChunkName);
+
+        lua_State *L = m_pLua->lua_state();
 
         // Sanitize the source start. If the editor buffer got a stray UTF-8
         // BOM (EF BB BF) or a leading continuation byte (10xxxxxx) at offset 0
@@ -174,41 +220,44 @@ bool CCodeExec::Execute(const char *pCode)
         while((unsigned char)pSrc[0] >= 0x80 && (unsigned char)pSrc[0] <= 0xBF)
                 pSrc++;
 
-        sol::load_result load = m_pLua->load(pSrc);
-        if(!load.valid())
+        if(luaL_loadbuffer(L, pSrc, str_length(pSrc), aChunk) != LUA_OK)
         {
-                sol::optional<sol::error> maybe_err = load;
-                const char *pErrMsg = maybe_err ? maybe_err->what() : "Unknown load error";
+                const char *pErrMsg = lua_tostring(L, -1) ? lua_tostring(L, -1) : "Unknown load error";
                 str_copy(m_aLastError, pErrMsg, sizeof(m_aLastError));
                 char aBuf[1024]; str_format(aBuf, sizeof(aBuf), "Lua load error: %s", pErrMsg);
                 GameClient()->m_Chat.AddLine(CChat::LUA_MSG, 0, aBuf);
+                lua_pop(L, 1);
                 m_State = STATE_ERROR;
-                lua_sethook(m_pLua->lua_state(), nullptr, 0, 0);
                 return false;
         }
 
-        sol::protected_function_result result = load();
-        if(!result.valid())
-        {
-                sol::optional<sol::error> maybe_err = result;
-                const char *pErrMsg = maybe_err ? maybe_err->what() : "Unknown execution error";
-                str_copy(m_aLastError, pErrMsg, sizeof(m_aLastError));
-                char aBuf[1024]; str_format(aBuf, sizeof(aBuf), "Lua error: %s", pErrMsg);
-                GameClient()->m_Chat.AddLine(CChat::LUA_MSG, 0, aBuf);
-                m_State = STATE_ERROR;
-                lua_sethook(m_pLua->lua_state(), nullptr, 0, 0);
-                return false;
-        }
+        lua_newthread(L);
+        m_pCoroutine = lua_tothread(L, -1);
+        m_CoroutineRef = luaL_ref(L, LUA_REGISTRYINDEX);
+        lua_xmove(L, m_pCoroutine, 1);
+        lua_sethook(m_pCoroutine, LuaStepHook, LUA_MASKCOUNT, HOOK_INSTRUCTION_INTERVAL);
+        m_InstructionCounter = 0;
 
-        lua_sethook(m_pLua->lua_state(), nullptr, 0, 0);
-        m_State = STATE_IDLE;
+        m_StopRequested = false;
+        m_WasRunning = true;
+        m_State = STATE_RUNNING;
         return true;
 }
 
 void CCodeExec::Stop()
 {
-        if(m_State == STATE_RUNNING) m_AbortRequested = true;
+        if(m_InResume)
+                return;
+        m_StopRequested = true;
+        m_WasRunning = false;
+        m_pCoroutine = nullptr;
         m_State = STATE_IDLE;
+        if(m_CoroutineRef != -1)
+        {
+                if(m_pLua)
+                        luaL_unref(m_pLua->lua_state(), LUA_REGISTRYINDEX, m_CoroutineRef);
+                m_CoroutineRef = -1;
+        }
 }
 
 // =============================================================
@@ -242,6 +291,11 @@ void CCodeExec::RegisterBindings()
                 "distance", [](vec2 &a, vec2 &b) -> float { return distance(a, b); },
                 "angle", [](vec2 &v) -> float { return angle(v); }
         );
+
+        lua.set_function("vec2", sol::overload(
+                []() -> vec2 { return vec2(); },
+                [](float x, float y) -> vec2 { return vec2(x, y); }
+        ));
 
         // ===== Global constants =====
         auto CONST = lua["CONST"].get_or_create<sol::table>();

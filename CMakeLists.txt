@@ -736,6 +736,7 @@ if(TARGET_OS STREQUAL "windows")
   list(APPEND PLATFORM_LIBS shell32.lib)
   list(APPEND PLATFORM_LIBS ntdll.lib) # https://github.com/ddnet/ddnet/issues/6725
   list(APPEND PLATFORM_LIBS uuid.lib) # FOLDERID_RoamingAppData
+  list(APPEND PLATFORM_LIBS comdlg32.lib) # GetOpenFileNameW (script file picker)
 elseif(TARGET_OS STREQUAL "mac")
   find_library(CARBON Carbon)
   find_library(COCOA Cocoa)
@@ -2582,6 +2583,8 @@ if(CLIENT)
     components/kinetix/code_exec/code_exec.cpp
     components/kinetix/code_exec/code_exec.h
     components/kinetix/code_exec/code_exec_bindings.cpp
+    components/kinetix/code_exec/file_dialog.cpp
+    components/kinetix/code_exec/file_dialog.h
     components/kinetix/console_commands.cpp
     components/kinetix/dummies/dummy_helpers.cpp
     components/kinetix/dummies/dummy_management.cpp

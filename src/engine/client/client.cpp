@@ -5448,6 +5448,7 @@ int main(int argc, const char **argv)
         // Do not automatically translate touch events to mouse events and vice versa.
         SDL_SetHint("SDL_TOUCH_MOUSE_EVENTS", "0");
         SDL_SetHint("SDL_MOUSE_TOUCH_EVENTS", "0");
+        SDL_SetHint("SDL_MOUSE_FOCUS_CLICKTHROUGH", "1");
 
         // Support longer IME composition strings (enables SDL_TEXTEDITING_EXT).
 #if SDL_VERSION_ATLEAST(2, 0, 22)
