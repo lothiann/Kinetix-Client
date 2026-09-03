@@ -161,11 +161,18 @@ void CCodeExec::OnRender()
 {
         if(m_State.load() != STATE_RUNNING || !m_pCoroutine)
                 return;
+        float aSaveScreen[4];
+        Graphics()->GetScreen(&aSaveScreen[0], &aSaveScreen[1], &aSaveScreen[2], &aSaveScreen[3]);
+        const ColorRGBA SaveTextColor = TextRender()->GetTextColor();
+        const ColorRGBA SaveTextOutlineColor = TextRender()->GetTextOutlineColor();
         m_InstructionCounter = 0;
         m_InResume = true;
         int NumResults = 0;
         const int Status = lua_resume(m_pCoroutine, nullptr, 0, &NumResults);
         m_InResume = false;
+        TextRender()->TextColor(SaveTextColor);
+        TextRender()->TextOutlineColor(SaveTextOutlineColor);
+        Graphics()->MapScreen(aSaveScreen[0], aSaveScreen[1], aSaveScreen[2], aSaveScreen[3]);
         if(Status == LUA_OK || Status == LUA_YIELD)
                 lua_pop(m_pCoroutine, NumResults);
         if(Status != LUA_YIELD)

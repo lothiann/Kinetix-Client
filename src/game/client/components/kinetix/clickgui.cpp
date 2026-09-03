@@ -5577,6 +5577,20 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                         pLabel = "Finish";
                                 }
                         }
+                        if(row.pName == g_ExecDyn_Btn)
+                        {
+                                CCodeExec &CE = GameClient()->m_CodeExec;
+                                if(CE.GetState() == CCodeExec::STATE_RUNNING)
+                                {
+                                        btnCol = ColorRGBA(0xffc43d3d, true).WithAlpha(alpha);
+                                        pLabel = "Stop";
+                                }
+                                else
+                                {
+                                        btnCol = ColorRGBA(0xff3da35a, true).WithAlpha(alpha);
+                                        pLabel = "Execute";
+                                }
+                        }
                         // Button background (full row width, centered).
                         DrawRoundedRect(rx + 2.0f, ry + 2.0f, rw - 4.0f, rh - 4.0f, 4.0f,
                                 IGraphics::CORNER_ALL, btnCol);

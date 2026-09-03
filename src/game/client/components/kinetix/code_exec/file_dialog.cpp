@@ -24,6 +24,19 @@ bool KxPickScriptFile(char *pBuf, int BufSize)
 	wchar_t aWideCwd[1024];
 	const DWORD CurDirLen = GetCurrentDirectoryW(1024, aWideCwd);
 
+	wchar_t aWideScripts[1024];
+	LPCWSTR pInitialDir = NULL;
+	if(CurDirLen > 0 && CurDirLen < 880)
+	{
+		DWORD Len = CurDirLen;
+		if(aWideCwd[Len - 1] != L'\\' && aWideCwd[Len - 1] != L'/')
+			aWideScripts[Len++] = L'\\';
+		lstrcpyW(aWideScripts + Len, L"data\\scripts");
+		const DWORD Attr = GetFileAttributesW(aWideScripts);
+		if(Attr != INVALID_FILE_ATTRIBUTES && (Attr & FILE_ATTRIBUTE_DIRECTORY))
+			pInitialDir = aWideScripts;
+	}
+
 	OPENFILENAMEW Ofn;
 	mem_zero(&Ofn, sizeof(Ofn));
 	Ofn.lStructSize = sizeof(Ofn);
@@ -31,6 +44,7 @@ bool KxPickScriptFile(char *pBuf, int BufSize)
 	Ofn.lpstrFilter = L"Lua scripts (*.lua, *.txt)\0*.lua;*.txt\0All files (*.*)\0*.*\0";
 	Ofn.lpstrFile = aWidePath;
 	Ofn.nMaxFile = 1024;
+	Ofn.lpstrInitialDir = pInitialDir;
 	Ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY;
 
 	const BOOL Picked = GetOpenFileNameW(&Ofn);
