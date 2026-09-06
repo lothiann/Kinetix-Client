@@ -843,7 +843,48 @@ bool CTouchControls::LoadConfigurationFromFile(int StorageType)
 
         const bool Result = ParseConfiguration(pFileData, FileLength);
         free(pFileData);
+        if(Result)
+                LoadOverlayButtons();
         return Result;
+}
+
+void CTouchControls::LoadOverlayButtons()
+{
+        static constexpr const char *const OVERLAY_CONFIGURATION =
+                "{\"touch-buttons\": [{\"x\": 1000, \"y\": 450000, \"w\": 65000, \"h\": 100000, \"shape\": \"rect\", \"visibilities\": [\"-demo-player\"], \"behavior\": {\"type\": \"bind\", \"label\": \"ClickGUI\", \"label-type\": \"plain\", \"command\": \"toggle cl_clickgui 1 0\"}}]}";
+        json_settings JsonSettings{};
+        char aError[256];
+        json_value *pConfiguration = JsonParseEx(&JsonSettings, static_cast<const json_char *>(OVERLAY_CONFIGURATION), str_length(OVERLAY_CONFIGURATION), aError);
+        if(pConfiguration == nullptr)
+        {
+                log_error("touch_controls", "Failed to parse overlay configuration (invalid json): '%s'", aError);
+                return;
+        }
+        if(pConfiguration->type != json_object)
+        {
+                json_value_free(pConfiguration);
+                return;
+        }
+
+        const json_value &TouchButtons = (*pConfiguration)["touch-buttons"];
+        if(TouchButtons.type == json_array)
+        {
+                for(unsigned ButtonIndex = 0; ButtonIndex < TouchButtons.u.array.length; ++ButtonIndex)
+                {
+                        std::optional<CTouchButton> ParsedButton = ParseButton(&TouchButtons[ButtonIndex]);
+                        if(ParsedButton.has_value())
+                        {
+                                m_vTouchButtons.push_back(std::move(ParsedButton.value()));
+                        }
+                }
+        }
+        json_value_free(pConfiguration);
+
+        for(CTouchButton &TouchButton : m_vTouchButtons)
+        {
+                TouchButton.UpdatePointers();
+                TouchButton.UpdateScreenFromUnitRect();
+        }
 }
 
 bool CTouchControls::LoadConfigurationFromClipboard()

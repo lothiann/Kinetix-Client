@@ -230,22 +230,6 @@
 			}
 		},
 		{
-			"x": 416667,
-			"y": 133333,
-			"w": 83333,
-			"h": 66667,
-			"shape": "rect",
-			"visibilities": [
-				"extra-menu"
-			],
-			"behavior": {
-				"type": "bind",
-				"label": "ClickGUI",
-				"label-type": "localized",
-				"command": "toggle cl_clickgui 1 0"
-			}
-		},
-		{
 			"x": 16667,
 			"y": 333333,
 			"w": 83333,

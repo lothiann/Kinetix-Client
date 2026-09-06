@@ -51,6 +51,7 @@ public:
 
 	bool LoadConfigurationFromFile(int StorageType);
 	bool LoadConfigurationFromClipboard();
+	void LoadOverlayButtons();
 	bool SaveConfigurationToFile();
 	void SaveConfigurationToClipboard();
 
