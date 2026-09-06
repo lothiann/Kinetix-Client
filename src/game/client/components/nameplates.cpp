@@ -11,6 +11,7 @@
 #include <game/client/animstate.h>
 #include <game/client/gameclient.h>
 #include <game/client/components/kinetix/irc.h>
+#include <game/client/components/kinetix/tas.h>
 #include <game/client/prediction/entities/character.h>
 
 #include <memory>
@@ -896,10 +897,12 @@ void CNamePlates::ResetNamePlates()
 
 void CNamePlates::OnRender()
 {
-        if(Client()->State() != IClient::STATE_ONLINE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
-                return;
+	if(Client()->State() != IClient::STATE_ONLINE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
+		return;
+	if(GameClient()->m_Tas.IsJoined())
+		return;
 
-        int ShowDirection = g_Config.m_ClShowDirection;
+	int ShowDirection = g_Config.m_ClShowDirection;
 #if defined(CONF_VIDEORECORDER)
         if(IVideo::Current())
                 ShowDirection = g_Config.m_ClVideoShowDirection;

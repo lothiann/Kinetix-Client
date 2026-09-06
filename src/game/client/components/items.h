@@ -15,7 +15,6 @@ class CLaserData;
 class CItems : public CComponent
 {
 	void RenderProjectile(const CProjectileData *pCurrent, int ItemId);
-	void RenderPickup(const CNetObj_Pickup *pPrev, const CNetObj_Pickup *pCurrent, bool IsPredicted, int Flags);
 	void RenderFlags();
 	void RenderFlag(const CNetObj_Flag *pPrev, const CNetObj_Flag *pCurrent, const CNetObj_GameData *pPrevGameData, const CNetObj_GameData *pCurGameData);
 	void RenderLaser(const CLaserData *pCurrent, bool IsPredicted = false);
@@ -27,6 +26,7 @@ public:
 	void OnRender() override;
 	void OnInit() override;
 
+	void RenderPickup(const CNetObj_Pickup *pPrev, const CNetObj_Pickup *pCurrent, bool IsPredicted, int Flags);
 	void ReconstructSmokeTrail(const CProjectileData *pCurrent, int DestroyTick);
 	void RenderLaser(vec2 From, vec2 Pos, ColorRGBA OuterColor, ColorRGBA InnerColor, float TicksBody, float TicksHead, int Type) const;
 

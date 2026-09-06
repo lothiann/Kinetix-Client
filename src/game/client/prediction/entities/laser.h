@@ -20,6 +20,13 @@ public:
 	const vec2 &GetDir() const { return m_Dir; } // v1.56.178: trajectory component reads direction for bounce prediction
 	const int &GetOwner() const { return m_Owner; }
 	const int &GetEvalTick() const { return m_EvalTick; }
+	const vec2 &GetPrevPos() const { return m_PrevPos; }
+	float GetEnergy() const { return m_Energy; }
+	int GetBounces() const { return m_Bounces; }
+	bool GetZeroEnergyBounceInLastTick() const { return m_ZeroEnergyBounceInLastTick; }
+	// Full state restore for the TAS rewind (the snapshot ctor only knows the
+	// net data — the live energy/direction/bounce state is private).
+	void Restore(const CLaserData &Data, vec2 Dir, vec2 PrevPos, float Energy, int Bounces, int Owner, bool ZeroEnergyBounce);
 	CLaser(CGameWorld *pGameWorld, int Id, CLaserData *pLaser);
 	bool Match(CLaser *pLaser);
 	CLaserData GetData() const;

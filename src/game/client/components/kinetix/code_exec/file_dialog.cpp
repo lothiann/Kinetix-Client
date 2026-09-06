@@ -57,8 +57,57 @@ bool KxPickScriptFile(char *pBuf, int BufSize)
 
 	return WideCharToMultiByte(CP_UTF8, 0, aWidePath, -1, pBuf, BufSize, NULL, NULL) > 0;
 }
+
+bool KxPickTasFile(char *pBuf, int BufSize)
+{
+	wchar_t aWidePath[1024];
+	aWidePath[0] = L'\0';
+
+	wchar_t aWideCwd[1024];
+	const DWORD CurDirLen = GetCurrentDirectoryW(1024, aWideCwd);
+
+	wchar_t aWideTas[1024];
+	LPCWSTR pInitialDir = NULL;
+	if(CurDirLen > 0 && CurDirLen < 880)
+	{
+		DWORD Len = CurDirLen;
+		if(aWideCwd[Len - 1] != L'\\' && aWideCwd[Len - 1] != L'/')
+			aWideTas[Len++] = L'\\';
+		lstrcpyW(aWideTas + Len, L"data\\tas");
+		const DWORD Attr = GetFileAttributesW(aWideTas);
+		if(Attr != INVALID_FILE_ATTRIBUTES && (Attr & FILE_ATTRIBUTE_DIRECTORY))
+			pInitialDir = aWideTas;
+	}
+
+	OPENFILENAMEW Ofn;
+	mem_zero(&Ofn, sizeof(Ofn));
+	Ofn.lStructSize = sizeof(Ofn);
+	Ofn.hwndOwner = GetActiveWindow();
+	Ofn.lpstrFilter = L"TAS files (*.tas)\0*.tas\0All files (*.*)\0*.*\0";
+	Ofn.lpstrFile = aWidePath;
+	Ofn.nMaxFile = 1024;
+	Ofn.lpstrInitialDir = pInitialDir;
+	Ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY;
+
+	const BOOL Picked = GetOpenFileNameW(&Ofn);
+
+	if(CurDirLen > 0 && CurDirLen < 1024)
+		SetCurrentDirectoryW(aWideCwd);
+
+	if(!Picked)
+		return false;
+
+	return WideCharToMultiByte(CP_UTF8, 0, aWidePath, -1, pBuf, BufSize, NULL, NULL) > 0;
+}
 #else
 bool KxPickScriptFile(char *pBuf, int BufSize)
+{
+	(void)pBuf;
+	(void)BufSize;
+	return false;
+}
+
+bool KxPickTasFile(char *pBuf, int BufSize)
 {
 	(void)pBuf;
 	(void)BufSize;

@@ -2,5 +2,6 @@
 #define GAME_CLIENT_COMPONENTS_KINETIX_CODE_EXEC_FILE_DIALOG_H
 
 bool KxPickScriptFile(char *pBuf, int BufSize);
+bool KxPickTasFile(char *pBuf, int BufSize);
 
 #endif // GAME_CLIENT_COMPONENTS_KINETIX_CODE_EXEC_FILE_DIALOG_H

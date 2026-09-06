@@ -27,6 +27,7 @@
 #include <game/client/components/kinetix/basic_avoid_freeze.h>
 #include <game/client/components/kinetix/bot_control.h>
 #include <game/client/components/kinetix/kinetix.h>
+#include <game/client/components/kinetix/tas.h>
 
 CControls::CControls()
 {
@@ -593,6 +594,11 @@ int CControls::SnapInput(int *pData)
                         if(g_Config.m_KxAttack || g_Config.m_KxCopyMoves || g_Config.m_KxRandomAim || g_Config.m_KxAtkPathfinder)
                                 Send = true;
                 }
+
+                // TAS real replay: force-send every tick so the recorded take
+                // plays back at exact tick timing.
+                if(GameClient()->m_Tas.IsRealPlaying())
+                        Send = true;
         }
 
         // copy and return size
@@ -674,7 +680,7 @@ int CControls::SnapInput(int *pData)
         static vec2 s_RobotAim = vec2(0, 0);
         static bool s_RobotInit = false;
 
-        if(g_Config.m_KxFakeAim)
+        if(g_Config.m_KxFakeAim && !GameClient()->m_Tas.FakeAimActive())
         {
                 // Detect weapon fire via 1-tick prediction.
                 // This catches EVERY real shot (not just the rising edge of
@@ -763,7 +769,7 @@ int CControls::SnapInput(int *pData)
         // Fake aim generation — skipped when laser unfreeze active (laser has priority)
         // v1.56.204: skipped when PfGo applied aim this tick (hook rising edge),
         // but otherwise Fake Aim can coexist with PfGo playback.
-        if(g_Config.m_KxFakeAim && !laserAimActive && !GameClient()->m_BotNet.m_PfGoAimedThisTick)
+        if(g_Config.m_KxFakeAim && !laserAimActive && !GameClient()->m_BotNet.m_PfGoAimedThisTick && !GameClient()->m_Tas.FakeAimActive())
         {
                 // Decide: real or fake
                 if(willFire || hookPress)
@@ -836,12 +842,30 @@ int CControls::SnapInput(int *pData)
                 //       pData modified after mem_copy for server-only fake.
         }
 
+        // TAS Fake Aim: while a take is executed the rendered aim comes from
+        // the TAS (Real/Smooth/...) instead of the live mouse. Render-only —
+        // the input sent to the server stays the recorded one.
+        if(GameClient()->m_Tas.IsRealPlaying() && GameClient()->m_Tas.FakeAimActive())
+        {
+                vec2 TasAim(0.0f, 0.0f);
+                if(GameClient()->m_Tas.FakeAimOffset(&TasAim))
+                {
+                        m_FakeAimRenderActive = true;
+                        m_FakeAimRenderOffset = TasAim;
+                }
+        }
+
+        // TAS real replay: execute the recorded take on the real player.
+        // Last among the overrides (right before mem_copy) so the recorded
+        // movement/aim/fire win over every other input source.
+        GameClient()->m_Tas.ApplyTasRealInput(&m_aInputData[g_Config.m_ClDummy]);
+
         m_LastSendTime = time_get();
         mem_copy(pData, &m_aInputData[g_Config.m_ClDummy], sizeof(m_aInputData[0]));
 
         // Fake Aim show for me = OFF: modify pData AFTER mem_copy.
         // Server gets fake, local prediction keeps real aim.
-        if(fakeActive && !fakeShowForMe)
+        if(fakeActive && !fakeShowForMe && !GameClient()->m_Tas.IsRealPlaying())
         {
                 CNetObj_PlayerInput *pSend = (CNetObj_PlayerInput *)pData;
                 pSend->m_TargetX = (int)fakeOffset.x;
@@ -858,7 +882,7 @@ int CControls::SnapInput(int *pData)
         //     live m_aMousePos.
         // The aim actually sent to the server (m_aInputData / pData) is not
         // touched here — this only affects the rendered character angle.
-        if(g_Config.m_KxFakeAim && s_HaveLastFake)
+        if(g_Config.m_KxFakeAim && s_HaveLastFake && !GameClient()->m_Tas.FakeAimActive())
         {
                 // Figure out whether this tick is a release tick.
                 bool aimOwnedByComponent = laserAimActive || GameClient()->m_BotNet.m_PfGoAimedThisTick;
@@ -921,7 +945,9 @@ void CControls::OnRender()
                 // make sure to compensate for smooth dyncam to ensure the cursor stays still in world space if zoomed
                 vec2 DyncamOffsetDelta = GameClient()->m_Camera.m_DyncamTargetCameraOffset - GameClient()->m_Camera.m_aDyncamCurrentCameraOffset[g_Config.m_ClDummy];
                 float Zoom = GameClient()->m_Camera.m_Zoom;
-                m_aTargetPos[g_Config.m_ClDummy] = GameClient()->m_LocalCharacterPos + m_aMousePos[g_Config.m_ClDummy] - DyncamOffsetDelta + DyncamOffsetDelta / Zoom;
+		// TAS fake world: anchor the cursor to the fake tee, not the real one
+		const vec2 CursorAnchor = (GameClient()->m_Tas.IsJoined() && !GameClient()->m_Tas.IsDead()) ? GameClient()->m_Tas.PlaygroundTeeRenderPos() : GameClient()->m_LocalCharacterPos;
+		m_aTargetPos[g_Config.m_ClDummy] = CursorAnchor + m_aMousePos[g_Config.m_ClDummy] - DyncamOffsetDelta + DyncamOffsetDelta / Zoom;
         }
         else if(GameClient()->m_Snap.m_SpecInfo.m_Active && GameClient()->m_Snap.m_SpecInfo.m_UsePosition)
         {

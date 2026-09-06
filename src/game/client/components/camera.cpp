@@ -410,6 +410,13 @@ void CCamera::OnRender()
         if(m_CameraSmoothing)
                 m_Center = m_CameraSmoothingCenter;
 
+        // TAS fake world: camera follows the fake tee while joined.
+        if(GameClient()->m_Tas.IsJoined() && !GameClient()->m_Tas.IsDead() &&
+                !GameClient()->m_Snap.m_SpecInfo.m_Active)
+        {
+                m_Center = GameClient()->m_Tas.PlaygroundTeeRenderPos() + m_aDyncamCurrentCameraOffset[g_Config.m_ClDummy];
+        }
+
         m_PrevCenter = m_Center;
         m_PrevSpecId = SpecId;
 

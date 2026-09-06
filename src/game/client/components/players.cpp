@@ -148,8 +148,8 @@ float CPlayers::GetPlayerTargetAngle(
         {
                 // Fake Aim: if active and show_for_me, use fake offset for character
                 if(GameClient()->m_Controls.m_FakeAimRenderActive &&
-                   g_Config.m_KxFakeAimShowForMe &&
-                   g_Config.m_KxFakeAim)
+                   ((g_Config.m_KxFakeAimShowForMe && g_Config.m_KxFakeAim) ||
+                    GameClient()->m_Tas.FakeAimActive()))
                 {
                         vec2 Direction = normalize(GameClient()->m_Controls.m_FakeAimRenderOffset);
                         if(Direction == vec2(0.0f, 0.0f))
@@ -564,6 +564,8 @@ void CPlayers::RenderHook(
         float Alpha = (OtherTeam || ClientId < 0) ? g_Config.m_ClShowOthersAlpha / 100.0f : 1.0f;
         if(ClientId == -2) // ghost
                 Alpha = g_Config.m_ClRaceGhostAlpha / 100.0f;
+        if(ClientId == -1) // TAS fake tee
+                Alpha = 1.0f;
 
         RenderInfo.m_Size = 64.0f;
 
@@ -575,7 +577,7 @@ void CPlayers::RenderHook(
 
         // draw hook
         Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
-        if(ClientId < 0)
+        if(ClientId == -2)
                 Graphics()->SetColor(1.0f, 1.0f, 1.0f, 0.5f);
 
         vec2 Pos = Position;
@@ -637,6 +639,8 @@ void CPlayers::RenderPlayer(
         float Alpha = (OtherTeam || ClientId < 0) ? g_Config.m_ClShowOthersAlpha / 100.0f : 1.0f;
         if(ClientId == -2) // ghost
                 Alpha = g_Config.m_ClRaceGhostAlpha / 100.0f;
+        if(ClientId == -1) // TAS fake tee
+                Alpha = 1.0f;
         // TODO: snd_game_volume_others
         const float Volume = 1.0f;
 
@@ -662,6 +666,11 @@ void CPlayers::RenderPlayer(
                 PredictLocalWeapons = true;
                 AttackTime = (Client()->PredIntraGameTick(g_Config.m_ClDummy) + (Client()->PredGameTick(g_Config.m_ClDummy) - 1 - Player.m_AttackTick)) / (float)Client()->GameTickSpeed();
                 LastAttackTime = (s_LastPredIntraTick + (Client()->PredGameTick(g_Config.m_ClDummy) - 1 - Player.m_AttackTick)) / (float)Client()->GameTickSpeed();
+        }
+        if(ClientId == -1) // TAS fake tee: the attack age is fake-tick based, interpolated by the caller
+        {
+                AttackTime = mix((float)Prev.m_AttackTick, (float)Player.m_AttackTick, Intra) / (float)Client()->GameTickSpeed();
+                LastAttackTime = AttackTime;
         }
         float AttackTicksPassed = AttackTime * (float)Client()->GameTickSpeed();
 
@@ -1006,6 +1015,10 @@ inline bool CPlayers::IsPlayerInfoAvailable(int ClientId) const
 void CPlayers::OnRender()
 {
         if(Client()->State() != IClient::STATE_ONLINE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
+                return;
+
+        // TAS fake world: hide all real players, the fake tee renders instead.
+        if(GameClient()->m_Tas.IsJoined())
                 return;
 
         // update render info for ninja

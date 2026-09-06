@@ -87,6 +87,8 @@ public:
 	// Setters/Getters because i don't want to modify vanilla vars access modifiers
 	int GetLastWeapon() const { return m_LastWeapon; }
 	void SetLastWeapon(int LastWeap) { m_LastWeapon = LastWeap; }
+	int GetReloadTimer() const { return m_ReloadTimer; }
+	void SetReloadTimer(int ReloadTimer) { m_ReloadTimer = ReloadTimer; }
 	int GetActiveWeapon() const { return m_Core.m_ActiveWeapon; }
 	void SetActiveWeapon(int ActiveWeapon);
 	CCharacterCore GetCore() { return m_Core; }
@@ -111,6 +113,9 @@ public:
 	}
 	int GetJumped() const { return m_Core.m_Jumped; }
 	int GetAttackTick() const { return m_AttackTick; }
+	void SetAttackTick(int AttackTick) { m_AttackTick = AttackTick; }
+	const CNetObj_PlayerInput &GetLatestInput() const { return m_LatestInput; }
+	void SetLatestInput(const CNetObj_PlayerInput &LatestInput) { m_LatestInput = LatestInput; }
 	int GetStrongWeakId() const { return m_StrongWeakId; }
 
 	CCharacter(CGameWorld *pGameWorld, int Id, CNetObj_Character *pChar, CNetObj_DDNetCharacter *pExtended = nullptr);

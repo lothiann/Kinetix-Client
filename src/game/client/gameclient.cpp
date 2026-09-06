@@ -185,6 +185,7 @@ void CGameClient::OnConsoleInit()
                                               &m_Ghost,
                                               &m_Players,
                                               &m_BotNet, // moved here so world-space renders (Pathfinder, Show Path) draw ON TOP of the map
+                                              &m_Tas, // TAS fake world (fake tee + fake projectiles) render on top of map
                                               &m_AimBot, // AimBot/TriggerBot rendering (FOV/Radius circles)
                                               &m_BasicAvoidFreeze, // Basic Avoid Freeze - override input to avoid freeze
                                               &m_Esp, // ESP lines (Layer 0 = behind fg blocks; Layer>0 deferred to m_KinetixLines)
@@ -621,7 +622,20 @@ void CGameClient::OnDummySwap()
 int CGameClient::OnSnapInput(int *pData, int Conn, bool Force)
 {
         if(Conn == g_Config.m_ClDummy)
+        {
+                // TAS fake world: the keyboard belongs to the fake tee. Run
+                // SnapInput anyway so m_aInputData (read by CTas::LiveInput)
+                // follows the real keys, then zero the packed input so the
+                // server and the local prediction (Client()->GetInput) see a
+                // standing character.
+                if(m_Tas.IsJoined())
+                {
+                        const int Size = m_Controls.SnapInput(pData);
+                        mem_zero(pData, sizeof(CNetObj_PlayerInput));
+                        return Size;
+                }
                 return m_Controls.SnapInput(pData);
+        }
 
         if(Conn < 0 || Conn >= MAX_DUMMIES)
                 return 0;

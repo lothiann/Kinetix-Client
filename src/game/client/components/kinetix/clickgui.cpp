@@ -23,6 +23,7 @@
 #include <base/color.h>
 #include <base/mem.h>
 #include <base/str.h>
+#include <base/time.h>
 #include <base/vmath.h>
 
 #include <engine/client.h>
@@ -40,7 +41,7 @@
 namespace {
 // Total number of ClickGUI panels. Must match CClickGui::NUM_PANELS in .h.
 // v1.56.177: was stale at 5 — caused "too many initializers" on g_Panels[6].
-constexpr int NUM_PANELS = 7;
+constexpr int NUM_PANELS = 8;
 } // namespace
 
 // ============================================================================
@@ -369,9 +370,9 @@ static SRow g_RainbowChildren[] = {
 // v1.56.210: Added Gradient toggle + Step slider per-component. Both visible
 // only when Rainbow is ON (gradient has no effect without rainbow). Speed
 // slider min lowered from 0.1 to 0 (frozen rainbow is now possible).
-static const char *const g_LineComponentOpts[] = {"AimBot", "TriggerBot", "Trajectory", "Laser Unfreeze", "Pathfinder", "ESP"};
+static const char *const g_LineComponentOpts[] = {"AimBot", "TriggerBot", "Trajectory", "Laser Unfreeze", "Pathfinder", "ESP", "TAS"};
 static SRow g_LineRenderingChildren[] = {
-        {ERowType::Dropdown, "Component", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_LineComponentOpts, 6, 0, nullptr, 0},
+        {ERowType::Dropdown, "Component", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_LineComponentOpts, 7, 0, nullptr, 0},
         {ERowType::Input, "Line color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ffbf00", "hex...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Line size", nullptr, false, false, 0.0f, 20.0f, 1.0f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Line opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 80.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
@@ -386,6 +387,7 @@ static SRow g_SettingsRows[] = {
         {ERowType::Expandable, "Rainbow color", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowChildren, 1},
         {ERowType::Input, "Panel Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "161622", "hex...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "BG blackout", nullptr, false, false, 0.0f, 100.0f, 1.0f, 30.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "ClickGUI Scale", nullptr, false, false, 0.1f, 2.0f, 0.1f, 1.0f, "x", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Expandable, "Line rendering", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LineRenderingChildren, 9},
         {ERowType::Expandable, "IRC", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_IrcChildren, 2},
         {ERowType::Expandable, "Spoofer", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_SpooferChildren, 7},
@@ -479,6 +481,13 @@ struct SPanel
 
 // v1.56.89: Binds panel — input fields for binding keys to toggle commands.
 // On input commit (focus lost), executes: bind <input_value> toggle <cmd> 1 0
+static SRow g_BindsTasChildren[] = {
+        {ERowType::Input, "Record", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Pause", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Rewind", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Forward", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
+};
+
 static SRow g_BindsRows[] = {
         {ERowType::Input, "ClickGUI", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Input, "AimBot", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
@@ -491,6 +500,7 @@ static SRow g_BindsRows[] = {
         {ERowType::Input, "ESP", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Input, "Basic Avoid Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Input, "Block", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Expandable, "TAS", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BindsTasChildren, 4},
 };
 
 // v1.56.176: Info panel — client identity + version + FPS + social links.
@@ -563,6 +573,57 @@ static SRow g_CodeExecRows[] = {
         {ERowType::Button, g_ExecDyn_Btn, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 
+// ---------- TAS panel (8) ----------
+// Dynamic labels are rewritten every frame by UpdateTasRows().
+static char g_TasDyn_Action[32] = "Play";
+static char g_TasDyn_Join[40] = "Join Playground";
+static char g_TasDyn_Status[192] = "";
+static char g_TasDyn_SaveCreated[64] = "";
+static bool g_TasFileHasBuffer = false;
+static bool g_TasFilePicked = false;
+        static const char *const g_TasModeOpts[] = {"Play", "Record"};
+        // TAS Fake Aim: rendered-aim modes for playback (visible in Play mode).
+        static const char *const g_TasFakeAimModeOpts[] = {"Real", "Smooth", "Random", "Robot", "Spin", "Lag"};
+        static SRow g_TasFakeAimChildren[] = {
+                {ERowType::Dropdown, "Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TasFakeAimModeOpts, 6, 0, nullptr, 0},
+        };
+        // Auto Rewind/Forward: per-tile auto actions, Record mode only. The
+        // Tile dropdown selects the tile being edited; Mode and the tick
+        // slider are per tile (0 ticks = disabled).
+        static const char *const g_TasAutoTileOpts[] = {"Freeze", "Teleport", "Death"};
+        static const char *const g_TasAutoModeOpts[] = {"Rewind", "Forward"};
+        static SRow g_TasAutoRfChildren[] = {
+                {ERowType::Dropdown, "Tile", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TasAutoTileOpts, 3, 0, nullptr, 0},
+                {ERowType::Dropdown, "Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TasAutoModeOpts, 2, 0, nullptr, 0},
+                {ERowType::Slider, "Rewind Ticks", nullptr, false, false, 0.0f, 100.0f, 1.0f, 0.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        };
+        static SRow g_TasVisualsChildren[] = {
+                {ERowType::Toggle, "Show Path", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+                {ERowType::Toggle, "Show Hooks", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+                {ERowType::Toggle, "Show Speed", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+                {ERowType::Toggle, "Trajectory", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        };
+
+static SRow g_TasRows[] = {
+	{ERowType::Dropdown, "Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TasModeOpts, 2, 0, nullptr, 0},
+	{ERowType::DoubleButton, "Pick File", "Unpick File", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+	{ERowType::Button, g_TasDyn_Action, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+	{ERowType::Input, "Map", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "map...", nullptr, 0, 0, nullptr, 0},
+	{ERowType::Input, "Name", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "name...", nullptr, 0, 0, nullptr, 0},
+	{ERowType::Input, "Author", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "author...", nullptr, 0, 0, nullptr, 0},
+	{ERowType::Label, g_TasDyn_SaveCreated, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+	{ERowType::Button, "Save", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+	{ERowType::Button, g_TasDyn_Join, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "TPS", nullptr, false, false, 1.0f, 50.0f, 1.0f, 50.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Pause", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Expandable, "Auto Rewind/Forward", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TasAutoRfChildren, 3},
+        {ERowType::Expandable, "Fake Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TasFakeAimChildren, 1},
+        {ERowType::Expandable, "Visuals", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TasVisualsChildren, 4},
+        {ERowType::Button, "Forward", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Button, "Rewind", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_TasDyn_Status, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
+
 static SPanel g_Panels[NUM_PANELS] = {
         {"Functions", g_FunctionsRows, sizeof(g_FunctionsRows) / sizeof(g_FunctionsRows[0])},
         {"Advanced", g_AdvancedRows, sizeof(g_AdvancedRows) / sizeof(g_AdvancedRows[0])},
@@ -571,6 +632,7 @@ static SPanel g_Panels[NUM_PANELS] = {
         {"Binds", g_BindsRows, sizeof(g_BindsRows) / sizeof(g_BindsRows[0])},
         {"Info", g_InfoRows, sizeof(g_InfoRows) / sizeof(g_InfoRows[0])},
         {"Code Execution (Lua)", g_CodeExecRows, sizeof(g_CodeExecRows) / sizeof(g_CodeExecRows[0])},
+        {"TAS", g_TasRows, sizeof(g_TasRows) / sizeof(g_TasRows[0])},
 };
 
 // Conditional visibility for Functions panel top-level rows.
@@ -637,6 +699,55 @@ static bool CodeExecRowVisible(const SRow *pRows, int rowCount, int idx)
                 return g_ExecHasAuthor;
         if(row.pName == g_ExecDyn_Desc)
                 return g_ExecHasDesc;
+        return true;
+}
+
+// TAS panel: the "Fake Aim" expandable is a Play-mode tool — hidden while
+// Mode = Record (its children are skipped together with the row).
+static bool TasRowVisible(const SRow *pRows, int rowCount, int idx)
+{
+        if(idx < 0 || idx >= rowCount)
+                return false;
+        const SRow &row = pRows[idx];
+        if(str_comp(row.pName, "Fake Aim") == 0)
+        {
+                for(int i = 0; i < rowCount; ++i)
+                        if(str_comp(pRows[i].pName, "Mode") == 0)
+                                return pRows[i].valueIdx == 0;
+        }
+        if(str_comp(row.pName, "Auto Rewind/Forward") == 0)
+        {
+                for(int i = 0; i < rowCount; ++i)
+                        if(str_comp(pRows[i].pName, "Mode") == 0)
+                                return pRows[i].valueIdx == 1;
+        }
+        if(row.pName == g_TasDyn_SaveCreated)
+                return g_TasFileHasBuffer;
+        if(str_comp(row.pName, "Map") == 0 || str_comp(row.pName, "Name") == 0 ||
+                str_comp(row.pName, "Author") == 0 || str_comp(row.pName, "Save") == 0)
+                return g_TasFileHasBuffer;
+        return true;
+}
+
+static bool TasVisualsChildVisible(const SRow *pChildren, int childCount, int idx)
+{
+        if(idx < 0 || idx >= childCount)
+                return false;
+        const SRow &row = pChildren[idx];
+        if(str_comp(row.pName, "Trajectory") == 0)
+        {
+                int Mode = 0;
+                for(size_t r = 0; r < sizeof(g_TasRows) / sizeof(g_TasRows[0]); ++r)
+                        if(str_comp(g_TasRows[r].pName, "Mode") == 0)
+                                Mode = g_TasRows[r].valueIdx;
+                return Mode == 0 && g_Config.m_KxShowTrajectory != 0;
+        }
+        if(str_comp(row.pName, "Show Speed") == 0)
+        {
+                for(int i = 0; i < childCount; ++i)
+                        if(str_comp(pChildren[i].pName, "Show Path") == 0)
+                                return pChildren[i].on != 0;
+        }
         return true;
 }
 
@@ -1043,9 +1154,12 @@ vec2 CClickGui::SlotHomePos(int slot) const
 
         // Phase 2: overflow slots (firstRowCount..NUM_PANELS-1) stack below the
         // column with the least bottom, accounting for already-stacked panels.
-        // colBottom tracks each column's current bottom; colCount tracks how
-        // many overflow panels a column already absorbed (used as tie-breaker
-        // so panels spread evenly even while heights are still animating/0).
+        // Overflow panels are assigned tallest-first: the tallest panel that
+        // still needs a column goes onto the shortest column, then the next
+        // tallest, and so on. colBottom tracks each column's current bottom;
+        // colCount tracks how many overflow panels a column already absorbed
+        // (used as tie-breaker so panels spread evenly even while heights are
+        // still animating/0).
         float colBottom[NUM_PANELS];
         int colCount[NUM_PANELS];
         for(int c = 0; c < firstRowCount; ++c)
@@ -1055,8 +1169,21 @@ vec2 CClickGui::SlotHomePos(int slot) const
                 colCount[c] = 0;
         }
 
-        for(int s = firstRowCount; s <= slot && s < NUM_PANELS; ++s)
+        bool placed[NUM_PANELS] = {};
+        vec2 placedPos[NUM_PANELS];
+        for(int n = 0; n < NUM_PANELS - firstRowCount; ++n)
         {
+                int bestSlot = -1;
+                for(int s = firstRowCount; s < NUM_PANELS; ++s)
+                {
+                        if(placed[s])
+                                continue;
+                        if(bestSlot < 0 || m_aPanelCurrentHeight[m_aPanelOrder[s]] > m_aPanelCurrentHeight[m_aPanelOrder[bestSlot]])
+                                bestSlot = s;
+                }
+                if(bestSlot < 0)
+                        break;
+
                 // Find column with the least bottom (ties → least stacked).
                 int bestCol = 0;
                 for(int c = 1; c < firstRowCount; ++c)
@@ -1066,14 +1193,15 @@ vec2 CClickGui::SlotHomePos(int slot) const
                                 bestCol = c;
                 }
 
-                if(s == slot)
-                        return vec2(startX + bestCol * (PANEL_WIDTH + spacingX), colBottom[bestCol] + spacingY);
-
-                // Update column bottom for the next overflow slot.
-                const int panelIdx = m_aPanelOrder[s];
+                const int panelIdx = m_aPanelOrder[bestSlot];
+                placedPos[bestSlot] = vec2(startX + bestCol * (PANEL_WIDTH + spacingX), colBottom[bestCol] + spacingY);
+                placed[bestSlot] = true;
                 colBottom[bestCol] += spacingY + m_aPanelCurrentHeight[panelIdx];
                 colCount[bestCol]++;
         }
+
+        if(slot >= firstRowCount && slot < NUM_PANELS && placed[slot])
+                return placedPos[slot];
 
         return vec2(startX, startY);
 }
@@ -1396,6 +1524,177 @@ void CClickGui::UpdateCodeExecRows()
         str_copy(g_ExecDyn_Btn, CE.GetState() == CCodeExec::STATE_RUNNING ? "Stop" : "Execute", sizeof(g_ExecDyn_Btn));
 }
 
+void CClickGui::UpdateTasRows()
+{
+        SPanel *pPanel = nullptr;
+        for(int p = 0; p < NUM_PANELS; ++p)
+        {
+                if(str_comp(g_Panels[p].pTitle, "TAS") == 0)
+                {
+                        pPanel = &g_Panels[p];
+                        break;
+                }
+        }
+        if(!pPanel)
+                return;
+
+	// Push UI -> engine (the panel owns TPS / Pause / Mode).
+	CTas &Tas = GameClient()->m_Tas;
+	// One-time pull of persisted settings into the static rows: without this
+	// the zero-initialized rows would push their defaults over the cvars
+	// restored from settings.cfg on every startup.
+	static bool s_TasRowsInit = false;
+	if(!s_TasRowsInit)
+	{
+		s_TasRowsInit = true;
+		for(int r = 0; r < pPanel->rowCount; ++r)
+		{
+			SRow &Row = pPanel->pRows[r];
+			if(str_comp(Row.pName, "Auto Rewind/Forward") == 0)
+			{
+				Row.on = Tas.AutoRfEnabled();
+				Row.expanded = Row.on;
+				for(int c = 0; c < Row.childCount; ++c)
+				{
+					SRow &Child = Row.pChildren[c];
+					if(str_comp(Child.pName, "Mode") == 0)
+						Child.valueIdx = Tas.AutoRfMode();
+					else if(str_comp(Child.pName, "Rewind Ticks") == 0 || str_comp(Child.pName, "Forward Ticks") == 0)
+					{
+						Child.value = (float)Tas.AutoRfTicks();
+						Child.pName = Tas.AutoRfForward() ? "Forward Ticks" : "Rewind Ticks";
+					}
+				}
+			}
+			else if(str_comp(Row.pName, "Fake Aim") == 0)
+			{
+				Row.on = Tas.FakeAimEnabled();
+				Row.expanded = Row.on;
+				if(Row.pChildren)
+					for(int c = 0; c < Row.childCount; ++c)
+						if(str_comp(Row.pChildren[c].pName, "Mode") == 0)
+							Row.pChildren[c].valueIdx = Tas.FakeAimMode();
+			}
+			else if(str_comp(Row.pName, "Visuals") == 0)
+			{
+				if(Row.pChildren)
+					for(int c = 0; c < Row.childCount; ++c)
+					{
+						SRow &Child = Row.pChildren[c];
+						if(str_comp(Child.pName, "Show Path") == 0)
+							Child.on = g_Config.m_KxTasShowPath != 0;
+						else if(str_comp(Child.pName, "Show Hooks") == 0)
+							Child.on = g_Config.m_KxTasShowHooks != 0;
+						else if(str_comp(Child.pName, "Show Speed") == 0)
+							Child.on = g_Config.m_KxTasShowSpeed != 0;
+						else if(str_comp(Child.pName, "Trajectory") == 0)
+							Child.on = g_Config.m_KxTasShowTrajectory != 0;
+					}
+			}
+		}
+	}
+	for(int r = 0; r < pPanel->rowCount; ++r)
+        {
+                SRow &Row = pPanel->pRows[r];
+                if(str_comp(Row.pName, "TPS") == 0)
+                        Tas.SetTps(Row.value);
+				else if(str_comp(Row.pName, "Pause") == 0)
+					Row.on = Tas.Paused();
+			else if(str_comp(Row.pName, "Mode") == 0)
+				Tas.SetMode(Row.valueIdx);
+			else if(str_comp(Row.pName, "Fake Aim") == 0)
+			{
+				Tas.SetFakeAimEnabled(Row.on);
+				if(Row.pChildren)
+					for(int c = 0; c < Row.childCount; ++c)
+						if(str_comp(Row.pChildren[c].pName, "Mode") == 0)
+							Tas.SetFakeAimMode(Row.pChildren[c].valueIdx);
+			}
+			else if(str_comp(Row.pName, "Auto Rewind/Forward") == 0)
+			{
+				Tas.SetAutoRfEnabled(Row.on);
+				if(Row.pChildren)
+				{
+					const int TileBefore = Tas.AutoRfTile();
+					bool TileChanged = false;
+					for(int c = 0; c < Row.childCount; ++c)
+					{
+						SRow &Child = Row.pChildren[c];
+						if(str_comp(Child.pName, "Tile") == 0)
+						{
+							Tas.SetAutoRfTile(Child.valueIdx);
+							TileChanged = Tas.AutoRfTile() != TileBefore;
+						}
+						else if(str_comp(Child.pName, "Mode") == 0)
+						{
+							if(!TileChanged)
+								Tas.SetAutoRfMode(Child.valueIdx);
+							Child.valueIdx = Tas.AutoRfMode();
+						}
+						else if(str_comp(Child.pName, "Rewind Ticks") == 0 || str_comp(Child.pName, "Forward Ticks") == 0)
+						{
+							if(!TileChanged)
+								Tas.SetAutoRfTicks((int)Child.value);
+							Child.value = (float)Tas.AutoRfTicks();
+							Child.pName = Tas.AutoRfForward() ? "Forward Ticks" : "Rewind Ticks";
+						}
+					}
+				}
+			}
+			else if(str_comp(Row.pName, "Visuals") == 0)
+			{
+				if(Row.pChildren)
+					for(int c = 0; c < Row.childCount; ++c)
+					{
+						SRow &Child = Row.pChildren[c];
+						if(str_comp(Child.pName, "Show Path") == 0)
+							g_Config.m_KxTasShowPath = Child.on ? 1 : 0;
+						else if(str_comp(Child.pName, "Show Hooks") == 0)
+							g_Config.m_KxTasShowHooks = Child.on ? 1 : 0;
+						else if(str_comp(Child.pName, "Show Speed") == 0)
+							g_Config.m_KxTasShowSpeed = Child.on ? 1 : 0;
+						else if(str_comp(Child.pName, "Trajectory") == 0)
+							g_Config.m_KxTasShowTrajectory = Child.on ? 1 : 0;
+					}
+			}
+        }
+
+        // Pull engine -> UI (dynamic button labels + status line).
+        if(Tas.Mode() == 1)
+                str_copy(g_TasDyn_Action, Tas.IsRecording() ? "Stop" : "Record", sizeof(g_TasDyn_Action));
+        else
+                str_copy(g_TasDyn_Action, (Tas.IsPlaying() || Tas.IsRealPlaying()) ? "Stop" : "Play", sizeof(g_TasDyn_Action));
+        str_copy(g_TasDyn_Join, Tas.IsJoined() ? "Leave Playground" : "Join Playground", sizeof(g_TasDyn_Join));
+
+	const char *pState = "IDLE";
+	if(Tas.IsRecording())
+		pState = "RECORDING";
+	else if(Tas.IsRealPlaying())
+		pState = "EXECUTING";
+	else if(Tas.IsPlaying())
+		pState = "PLAYING";
+	else if(Tas.IsJoined())
+		pState = "LIVE";
+        if(Tas.IsDead())
+                pState = "DEAD";
+        else if(Tas.Paused() && Tas.IsJoined())
+                pState = "PAUSED";
+
+	char aExec[32] = "";
+	if(Tas.IsRealPlaying())
+		str_format(aExec, sizeof(aExec), " | exec %d/%d", Tas.RealPlayIdx(), Tas.SavedCount());
+	str_format(g_TasDyn_Status, sizeof(g_TasDyn_Status),
+		"%s | tick %d | hist %d | rec %d | saved %d | play %d%s%s",
+		pState, Tas.PlaygroundTick(), Tas.HistoryCount(), Tas.RecordCount(),
+		Tas.SavedCount(), Tas.PlayIdx(), aExec, Tas.Desynced() ? " | DESYNC" : "");
+
+	g_TasFileHasBuffer = (Tas.IsRecording() ? Tas.RecordCount() > 0 : Tas.SavedCount() > 0);
+	g_TasFilePicked = Tas.FilePicked();
+	char aNowCreated[64];
+	str_timestamp_format(aNowCreated, sizeof(aNowCreated), "%H:%M | %d.%m.%Y");
+	str_format(g_TasDyn_SaveCreated, sizeof(g_TasDyn_SaveCreated), "Created: %s", aNowCreated);
+}
+
 void CClickGui::OpenScriptPicker()
 {
 #if defined(CONF_FAMILY_WINDOWS)
@@ -1688,7 +1987,7 @@ void CClickGui::OnRender()
         // geometry, so panels keep the same physical size on every resolution
         // as they have at 1920x1080.
         const float physH = (float)Graphics()->ScreenHeight();
-        m_UiScale = (physH > 0.0f) ? (physH / 1080.0f) : 1.0f;
+        m_UiScale = ((physH > 0.0f) ? (physH / 1080.0f) : 1.0f) * (g_Config.m_KxClickGuiScale / 10.0f);
 
         // Mouse position in virtual units (physical px / scale).
         // v1.56.218: while a touch finger drives the GUI (Android), keep the
@@ -1731,8 +2030,8 @@ void CClickGui::OnRender()
                                 // Advanced → Laser unfreeze expandable is master toggle.
                                 else if(str_comp(row.pName, "Laser unfreeze") == 0)
                                         row.on = g_Config.m_KxLaserUnfreeze != 0;
-                                else if(str_comp(row.pName, "Fake Aim") == 0)
-                                        row.on = g_Config.m_KxFakeAim != 0;
+				else if(str_comp(row.pName, "Fake Aim") == 0 && str_comp(g_Panels[p].pTitle, "Advanced") == 0)
+					row.on = g_Config.m_KxFakeAim != 0;
                                 else if(str_comp(row.pName, "ESP") == 0)
                                         row.on = g_Config.m_KxEsp != 0;
                                 else if(str_comp(row.pName, "Basic Avoid Freeze") == 0)
@@ -1804,6 +2103,8 @@ void CClickGui::OnRender()
                                 {
                                         SRow &child = row.pChildren[c];
                                 if(str_comp(row.pName, "Penalties") == 0 && !PenaltiesChildVisible(row.pChildren, row.childCount, c))
+                                        continue;
+                                if(str_comp(row.pName, "Visuals") == 0 && !TasVisualsChildVisible(row.pChildren, row.childCount, c))
                                         continue;
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;
@@ -1919,8 +2220,8 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                         else if(str_comp(child.pName, "Trigger ticks") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
                                                 child.value = (float)g_Config.m_KxBafTriggerTicks;
                                         // Fake Aim children
-                                        else if(str_comp(child.pName, "Mode") == 0 && str_comp(row.pName, "Fake Aim") == 0)
-                                                child.valueIdx = g_Config.m_KxFakeAimMode;
+					else if(str_comp(child.pName, "Mode") == 0 && str_comp(row.pName, "Fake Aim") == 0 && str_comp(g_Panels[p].pTitle, "Advanced") == 0)
+						child.valueIdx = g_Config.m_KxFakeAimMode;
                                         else if(str_comp(child.pName, "Speed") == 0 && str_comp(row.pName, "Fake Aim") == 0)
                                                 child.value = (float)g_Config.m_KxFakeAimSpeed;
                                         else if(str_comp(child.pName, "Show for me") == 0)
@@ -2525,6 +2826,11 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                         // v1.56.199: sync BG blackout slider from m_BgBlackout.
                         else if(str_comp(row.pName, "BG blackout") == 0 && row.type == ERowType::Slider)
                                 row.value = (float)m_BgBlackout;
+                        else if(str_comp(row.pName, "ClickGUI Scale") == 0 && row.type == ERowType::Slider)
+                        {
+                                if(!(m_DragSliderPanel == p && m_DragSliderRow == r && m_DragSliderChild == -1))
+                                        row.value = g_Config.m_KxClickGuiScale / 10.0f;
+                        }
                         // v1.56.199: Binds panel — sync input fields with actual bound keys
                         // every frame (not just on open), so console bind changes appear
                         // immediately while ClickGUI is open.
@@ -2553,6 +2859,28 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                                 else
                                                         str_copy(row.m_aInputBuf, "", sizeof(row.m_aInputBuf));
                                                 row.m_InputInitialized = true;
+                                        }
+                                }
+                        }
+                        else if(p == 4 && row.type == ERowType::Expandable && str_comp(row.pName, "TAS") == 0)
+                        {
+                                for(int c = 0; c < row.childCount; ++c)
+                                {
+                                        SRow &child = row.pChildren[c];
+                                        const char *pCmd = nullptr;
+                                        if(str_comp(child.pName, "Record") == 0) pCmd = "toggle kx_tas_record 1 0";
+                                        else if(str_comp(child.pName, "Pause") == 0) pCmd = "toggle kx_tas_pause 1 0";
+                                        else if(str_comp(child.pName, "Rewind") == 0) pCmd = "kx_tas_rewind";
+                                        else if(str_comp(child.pName, "Forward") == 0) pCmd = "kx_tas_forward";
+                                        if(pCmd && (!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c))
+                                        {
+                                                char aKey[64];
+                                                GameClient()->m_Binds.GetKey(pCmd, aKey, sizeof(aKey));
+                                                if(aKey[0])
+                                                        str_copy(child.m_aInputBuf, aKey, sizeof(child.m_aInputBuf));
+                                                else
+                                                        str_copy(child.m_aInputBuf, "", sizeof(child.m_aInputBuf));
+                                                child.m_InputInitialized = true;
                                         }
                                 }
                         }
@@ -2596,6 +2924,7 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                                 case KX_LINE_LASER_UNFREEZE: child.on = g_Config.m_KxLineLaserUnfreezeRainbow != 0; break;
                                                 case KX_LINE_PATHFINDER: child.on = g_Config.m_KxLinePathfinderRainbow != 0; break;
                                                 case KX_LINE_ESP: child.on = g_Config.m_KxLineEspRainbow != 0; break;
+                                                case KX_LINE_TAS: child.on = g_Config.m_KxLineTasRainbow != 0; break;
                                                 }
                                         }
                                         else if(str_comp(child.pName, "Speed") == 0)
@@ -2608,6 +2937,7 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                                 case KX_LINE_LASER_UNFREEZE: child.value = (float)g_Config.m_KxLineLaserUnfreezeRainbowSpeed / 10.0f; break;
                                                 case KX_LINE_PATHFINDER: child.value = (float)g_Config.m_KxLinePathfinderRainbowSpeed / 10.0f; break;
                                                 case KX_LINE_ESP: child.value = (float)g_Config.m_KxLineEspRainbowSpeed / 10.0f; break;
+                                                case KX_LINE_TAS: child.value = (float)g_Config.m_KxLineTasRainbowSpeed / 10.0f; break;
                                                 }
                                         }
                                         // v1.56.210: Gradient toggle per-component
@@ -2621,6 +2951,7 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                                 case KX_LINE_LASER_UNFREEZE: child.on = g_Config.m_KxLineLaserUnfreezeGradient != 0; break;
                                                 case KX_LINE_PATHFINDER: child.on = g_Config.m_KxLinePathfinderGradient != 0; break;
                                                 case KX_LINE_ESP: child.on = g_Config.m_KxLineEspGradient != 0; break;
+                                                case KX_LINE_TAS: child.on = g_Config.m_KxLineTasGradient != 0; break;
                                                 }
                                         }
                                         // v1.56.210: Step slider per-component (hue increment per segment)
@@ -2634,6 +2965,7 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                                 case KX_LINE_LASER_UNFREEZE: child.value = (float)g_Config.m_KxLineLaserUnfreezeGradientStep; break;
                                                 case KX_LINE_PATHFINDER: child.value = (float)g_Config.m_KxLinePathfinderGradientStep; break;
                                                 case KX_LINE_ESP: child.value = (float)g_Config.m_KxLineEspGradientStep; break;
+                                                case KX_LINE_TAS: child.value = (float)g_Config.m_KxLineTasGradientStep; break;
                                                 }
                                         }
                                         else if(str_comp(child.pName, "Layer") == 0)
@@ -2682,6 +3014,7 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
         UpdateInfoRows();
         UpdatePathfinderLabels();
         UpdateCodeExecRows();
+        UpdateTasRows();
 
         // v1.56.77: rainbow color rotation. When enabled, overwrite m_AccentColorRGBA
         // each frame with a hue-rotating color. HSV→RGB conversion inline.
@@ -2806,6 +3139,7 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                 case KX_LINE_LASER_UNFREEZE: g_Config.m_KxLineLaserUnfreezeRainbowSpeed = rawVal; break;
                                 case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderRainbowSpeed = rawVal; break;
                                 case KX_LINE_ESP: g_Config.m_KxLineEspRainbowSpeed = rawVal; break;
+                                case KX_LINE_TAS: g_Config.m_KxLineTasRainbowSpeed = rawVal; break;
                                 }
                         }
                         // v1.56.210: Line rendering per-component Step slider (hue increment per segment)
@@ -2822,6 +3156,7 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                 case KX_LINE_LASER_UNFREEZE: g_Config.m_KxLineLaserUnfreezeGradientStep = rawVal; break;
                                 case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderGradientStep = rawVal; break;
                                 case KX_LINE_ESP: g_Config.m_KxLineEspGradientStep = rawVal; break;
+                                case KX_LINE_TAS: g_Config.m_KxLineTasGradientStep = rawVal; break;
                                 }
                         }
                         else if(str_comp(pTarget->pName, "Latency (ms)") == 0 && str_comp(row.pName, "Copy Moves Latency") == 0)
@@ -2866,6 +3201,7 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                         case KX_LINE_LASER_UNFREEZE: g_Config.m_KxLineLaserUnfreezeSize = (int)pTarget->value; break;
                                         case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderSize = (int)pTarget->value; break;
                                         case KX_LINE_ESP: g_Config.m_KxLineEspSize = (int)pTarget->value; break;
+                                        case KX_LINE_TAS: g_Config.m_KxLineTasSize = (int)pTarget->value; break;
                                         }
                                         }
                                 else // Line opacity
@@ -2878,6 +3214,7 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                         case KX_LINE_LASER_UNFREEZE: g_Config.m_KxLineLaserUnfreezeAlpha = (int)pTarget->value; break;
                                         case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderAlpha = (int)pTarget->value; break;
                                         case KX_LINE_ESP: g_Config.m_KxLineEspAlpha = (int)pTarget->value; break;
+                                        case KX_LINE_TAS: g_Config.m_KxLineTasAlpha = (int)pTarget->value; break;
                                         }
                                         }
                         }
@@ -3434,7 +3771,8 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         (str_comp(pTarget->pName, "Score method") == 0 ||
                                          str_comp(pTarget->pName, "Penalties") == 0 ||
                                          str_comp(pTarget->pName, "Visuals") == 0 ||
-                                         str_comp(pTarget->pName, "Line rendering") == 0);
+                                         str_comp(pTarget->pName, "Line rendering") == 0 ||
+                                         str_comp(pTarget->pName, "TAS") == 0);
                                 // Click on check area or name area → toggle on/off (or expand for visual).
                                 const float toggleEndX = rx + rw - (pTarget->type == ERowType::Expandable ? ARROW_W + 4.0f : (pTarget->type == ERowType::ToggleDropdown ? DROPDOWN_W + 4.0f : 0.0f));
                                 if(mousePos.x < toggleEndX)
@@ -3457,10 +3795,12 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         // Advanced → Laser unfreeze expandable is master toggle.
                                         else if(str_comp(pTarget->pName, "Laser unfreeze") == 0)
                                                 g_Config.m_KxLaserUnfreeze = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Fake Aim") == 0)
-                                                g_Config.m_KxFakeAim = pTarget->on ? 1 : 0;
+					else if(str_comp(pTarget->pName, "Fake Aim") == 0 && str_comp(g_Panels[i].pTitle, "Advanced") == 0)
+						g_Config.m_KxFakeAim = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "ESP") == 0)
                                                 g_Config.m_KxEsp = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Pause") == 0 && str_comp(panel.pTitle, "TAS") == 0)
+                                                GameClient()->m_Tas.SetPaused(pTarget->on);
                                         else if(str_comp(pTarget->pName, "Basic Avoid Freeze") == 0)
                                                 g_Config.m_KxBasicAvoidFreeze = pTarget->on ? 1 : 0;
                                         // Functions panel — Fly/Copy Moves sub-section
@@ -3709,6 +4049,7 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 case KX_LINE_LASER_UNFREEZE: g_Config.m_KxLineLaserUnfreezeRainbow = pTarget->on ? 1 : 0; break;
                                                 case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderRainbow = pTarget->on ? 1 : 0; break;
                                                 case KX_LINE_ESP: g_Config.m_KxLineEspRainbow = pTarget->on ? 1 : 0; break;
+                                                case KX_LINE_TAS: g_Config.m_KxLineTasRainbow = pTarget->on ? 1 : 0; break;
                                                 }
                                         }
                                         // v1.56.210: Line rendering per-component Gradient toggle
@@ -3724,6 +4065,7 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 case KX_LINE_LASER_UNFREEZE: g_Config.m_KxLineLaserUnfreezeGradient = pTarget->on ? 1 : 0; break;
                                                 case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderGradient = pTarget->on ? 1 : 0; break;
                                                 case KX_LINE_ESP: g_Config.m_KxLineEspGradient = pTarget->on ? 1 : 0; break;
+                                                case KX_LINE_TAS: g_Config.m_KxLineTasGradient = pTarget->on ? 1 : 0; break;
                                                 }
                                         }
                                         return;
@@ -3878,6 +4220,82 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 {
                                         GameClient()->m_BotNet.PfGenerateTunnel();
                                 }
+                                // TAS panel buttons.
+                                else if(pTarget->pName == g_TasDyn_Action)
+                                {
+                                        CTas &Tas = GameClient()->m_Tas;
+                                        if(Tas.Mode() == 1)
+                                                Tas.ToggleRecord();
+                                        else
+                                                Tas.TogglePlay();
+                                }
+                                else if(pTarget->pName == g_TasDyn_Join)
+                                {
+                                        GameClient()->m_Tas.JoinLeavePlayground();
+                                }
+                                else if(str_comp(pTarget->pName, "Forward") == 0 && pTarget->type == ERowType::Button)
+                                {
+                                        GameClient()->m_Tas.StepForward();
+                                }
+                                else if(str_comp(pTarget->pName, "Rewind") == 0 && pTarget->type == ERowType::Button)
+                                {
+                                        GameClient()->m_Tas.StepRewind();
+                                }
+                                else if(str_comp(pTarget->pName, "Pick File") == 0 && pTarget->type == ERowType::DoubleButton)
+                                {
+                                        CTas &Tas = GameClient()->m_Tas;
+                                        const float btnW = (rw - 6.0f) * 0.5f;
+                                        if(g_TasFilePicked && mousePos.x >= rx + 2.0f + btnW)
+                                        {
+                                                Tas.UnpickFile();
+                                        }
+                                        else
+                                        {
+                                                char aTasPath[1024];
+                                                if(KxPickTasFile(aTasPath, sizeof(aTasPath)))
+                                                {
+                                                        Tas.PickFile(aTasPath);
+                                                        if(Tas.FilePicked())
+                                                        {
+                                                                for(SRow &R : g_TasRows)
+                                                                {
+                                                                        if(str_comp(R.pName, "Map") == 0)
+                                                                        {
+                                                                                str_copy(R.m_aInputBuf, Tas.PickedMap(), sizeof(R.m_aInputBuf));
+                                                                                R.m_InputInitialized = true;
+                                                                        }
+                                                                        else if(str_comp(R.pName, "Name") == 0)
+                                                                        {
+                                                                                str_copy(R.m_aInputBuf, Tas.PickedName(), sizeof(R.m_aInputBuf));
+                                                                                R.m_InputInitialized = true;
+                                                                        }
+                                                                        else if(str_comp(R.pName, "Author") == 0)
+                                                                        {
+                                                                                str_copy(R.m_aInputBuf, Tas.PickedAuthor(), sizeof(R.m_aInputBuf));
+                                                                                R.m_InputInitialized = true;
+                                                                        }
+                                                                }
+                                                        }
+                                                }
+                                                return;
+                                        }
+                                }
+                                else if(str_comp(pTarget->pName, "Save") == 0 && pTarget->type == ERowType::Button)
+                                {
+                                        const char *pMap = "";
+                                        const char *pName = "";
+                                        const char *pAuthor = "";
+                                        for(SRow &R : g_TasRows)
+                                        {
+                                                if(str_comp(R.pName, "Map") == 0)
+                                                        pMap = R.m_aInputBuf;
+                                                else if(str_comp(R.pName, "Name") == 0)
+                                                        pName = R.m_aInputBuf;
+                                                else if(str_comp(R.pName, "Author") == 0)
+                                                        pAuthor = R.m_aInputBuf;
+                                        }
+                                        GameClient()->m_Tas.SaveTake(pMap, pName, pAuthor);
+                                }
                                 else if(str_comp(pTarget->pName, "Pick File") == 0 && pTarget->type == ERowType::Button)
                                 {
                                         OpenScriptPicker();
@@ -4030,6 +4448,7 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 case KX_LINE_LASER_UNFREEZE: g_Config.m_KxLineLaserUnfreezeSize = (int)pTarget->value; break;
                                                 case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderSize = (int)pTarget->value; break;
                                                 case KX_LINE_ESP: g_Config.m_KxLineEspSize = (int)pTarget->value; break;
+                                                case KX_LINE_TAS: g_Config.m_KxLineTasSize = (int)pTarget->value; break;
                                                 }
                                                 }
                                         else // Line opacity
@@ -4042,6 +4461,7 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 case KX_LINE_LASER_UNFREEZE: g_Config.m_KxLineLaserUnfreezeAlpha = (int)pTarget->value; break;
                                                 case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderAlpha = (int)pTarget->value; break;
                                                 case KX_LINE_ESP: g_Config.m_KxLineEspAlpha = (int)pTarget->value; break;
+                                                case KX_LINE_TAS: g_Config.m_KxLineTasAlpha = (int)pTarget->value; break;
                                                 }
                                                 }
                                 }
@@ -4154,6 +4574,17 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
 
 void CClickGui::HandleMouseUp(vec2 mousePos)
 {
+        if(m_DragSliderPanel >= 0)
+        {
+                SPanel &panel = g_Panels[m_DragSliderPanel];
+                if(m_DragSliderRow >= 0 && m_DragSliderRow < panel.rowCount)
+                {
+                        SRow &row = panel.pRows[m_DragSliderRow];
+                        SRow *pTarget = (m_DragSliderChild >= 0 && row.pChildren) ? &row.pChildren[m_DragSliderChild] : &row;
+                        if(str_comp(pTarget->pName, "ClickGUI Scale") == 0)
+                                g_Config.m_KxClickGuiScale = (int)(pTarget->value * 10.0f + 0.5f);
+                }
+        }
         m_Dragging = false;
         m_DragPanelIdx = -1;
         m_DragSliderPanel = -1;
@@ -4222,21 +4653,23 @@ void *CClickGui::GetEditingInputRowPtr()
 
 bool CClickGui::HandleDropdownClick(vec2 mousePos)
 {
-        // Find the dropdown box position (same as where we render it).
-        if(m_DropdownPanel < 0 || m_DropdownRow < 0)
-                return false;
-        const vec2 ppos = m_aPanelPosValid[m_DropdownPanel] ? m_aPanelPos[m_DropdownPanel] : PanelHomePos(m_DropdownPanel);
-        const float bodyX = ppos.x + BODY_PADDING;
-        float cursorY = ppos.y + HEADER_HEIGHT + BODY_PADDING - m_aPanelScroll[m_DropdownPanel];
-        SPanel &panel = g_Panels[m_DropdownPanel];
-        for(int r = 0; r < panel.rowCount; ++r)
-        {
-                SRow &row = panel.pRows[r];
-                // Conditional visibility: skip hidden rows in Functions panel.
-                if(str_comp(panel.pTitle, "Functions") == 0 && !FunctionsRowVisible(panel.pRows, panel.rowCount, r))
-                        continue;
-                if(str_comp(panel.pTitle, "Pathfinder") == 0 && !PfRowVisible(panel.pRows, panel.rowCount, r))
-                        continue;
+	// Find the dropdown box position (same as where we render it).
+	if(m_DropdownPanel < 0 || m_DropdownRow < 0)
+		return false;
+	const vec2 ppos = m_aPanelPosValid[m_DropdownPanel] ? m_aPanelPos[m_DropdownPanel] : PanelHomePos(m_DropdownPanel);
+	const float bodyX = ppos.x + BODY_PADDING;
+	float cursorY = ppos.y + HEADER_HEIGHT + BODY_PADDING - m_aPanelScroll[m_DropdownPanel];
+	SPanel &panel = g_Panels[m_DropdownPanel];
+	for(int r = 0; r < panel.rowCount; ++r)
+	{
+		SRow &row = panel.pRows[r];
+		// Conditional visibility: skip hidden rows in Functions panel.
+		if(str_comp(panel.pTitle, "Functions") == 0 && !FunctionsRowVisible(panel.pRows, panel.rowCount, r))
+			continue;
+		if(str_comp(panel.pTitle, "Pathfinder") == 0 && !PfRowVisible(panel.pRows, panel.rowCount, r))
+			continue;
+		if(str_comp(panel.pTitle, "TAS") == 0 && !TasRowVisible(panel.pRows, panel.rowCount, r))
+			continue;
                 const float rh = RowHeight(row.type);
                 if(r == m_DropdownRow && m_DropdownChild < 0)
                 {
@@ -4290,8 +4723,8 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                                                         }
                                                 }
                                         }
-                                        else if(str_comp(target.pName, "Mode") == 0)
-                                                g_Config.m_KxFakeAimMode = o;
+					else if(str_comp(target.pName, "Mode") == 0 && str_comp(panel.pTitle, "Advanced") == 0)
+						g_Config.m_KxFakeAimMode = o;
                                         // ESP dropdowns
                                         else if(str_comp(target.pName, "ESP Team") == 0)
                                                 g_Config.m_KxEspTeamFilter = o;
@@ -4324,6 +4757,8 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                         {
                                 SRow &child = row.pChildren[c];
                                 if(str_comp(row.pName, "Penalties") == 0 && !PenaltiesChildVisible(row.pChildren, row.childCount, c))
+                                        continue;
+                                if(str_comp(row.pName, "Visuals") == 0 && !TasVisualsChildVisible(row.pChildren, row.childCount, c))
                                         continue;
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;
@@ -4394,8 +4829,8 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                                                         }
                                                                 }
                                                         }
-                                                        else if(str_comp(target.pName, "Mode") == 0)
-                                                                g_Config.m_KxFakeAimMode = o;
+							else if(str_comp(target.pName, "Mode") == 0 && str_comp(row.pName, "Fake Aim") == 0 && str_comp(panel.pTitle, "Advanced") == 0)
+								g_Config.m_KxFakeAimMode = o;
                                                         // ESP dropdowns
                                                         else if(str_comp(target.pName, "ESP Team") == 0)
                                                                 g_Config.m_KxEspTeamFilter = o;
@@ -4507,9 +4942,11 @@ void CClickGui::RenderDropdownPopup(float alpha)
                 // Conditional visibility: skip hidden rows in Functions panel.
                 if(str_comp(panel.pTitle, "Functions") == 0 && !FunctionsRowVisible(panel.pRows, panel.rowCount, r))
                         continue;
-                if(str_comp(panel.pTitle, "Pathfinder") == 0 && !PfRowVisible(panel.pRows, panel.rowCount, r))
-                        continue;
-                const float rh = RowHeight(row.type);
+		if(str_comp(panel.pTitle, "Pathfinder") == 0 && !PfRowVisible(panel.pRows, panel.rowCount, r))
+			continue;
+		if(str_comp(panel.pTitle, "TAS") == 0 && !TasRowVisible(panel.pRows, panel.rowCount, r))
+			continue;
+		const float rh = RowHeight(row.type);
                 if(r == m_DropdownRow && m_DropdownChild < 0)
                 {
                         const float rw = PANEL_WIDTH - BODY_PADDING * 2;
@@ -4546,6 +4983,8 @@ void CClickGui::RenderDropdownPopup(float alpha)
                         {
                                 SRow &child = row.pChildren[c];
                                 if(str_comp(row.pName, "Penalties") == 0 && !PenaltiesChildVisible(row.pChildren, row.childCount, c))
+                                        continue;
+                                if(str_comp(row.pName, "Visuals") == 0 && !TasVisualsChildVisible(row.pChildren, row.childCount, c))
                                         continue;
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;
@@ -4790,10 +5229,12 @@ bool CClickGui::HitTestRow(vec2 mousePos, int panelIdx, int &outRow, int &outChi
                 // Conditional visibility: skip hidden rows in Functions panel.
                 if(str_comp(g_Panels[panelIdx].pTitle, "Functions") == 0 && !FunctionsRowVisible(g_Panels[panelIdx].pRows, g_Panels[panelIdx].rowCount, r))
                         continue;
-                if(str_comp(g_Panels[panelIdx].pTitle, "Pathfinder") == 0 && !PfRowVisible(g_Panels[panelIdx].pRows, g_Panels[panelIdx].rowCount, r))
-                        continue;
-                if(str_comp(g_Panels[panelIdx].pTitle, "Code Execution (Lua)") == 0 && !CodeExecRowVisible(g_Panels[panelIdx].pRows, g_Panels[panelIdx].rowCount, r))
-                        continue;
+		if(str_comp(g_Panels[panelIdx].pTitle, "Pathfinder") == 0 && !PfRowVisible(g_Panels[panelIdx].pRows, g_Panels[panelIdx].rowCount, r))
+			continue;
+		if(str_comp(g_Panels[panelIdx].pTitle, "Code Execution (Lua)") == 0 && !CodeExecRowVisible(g_Panels[panelIdx].pRows, g_Panels[panelIdx].rowCount, r))
+			continue;
+		if(str_comp(g_Panels[panelIdx].pTitle, "TAS") == 0 && !TasRowVisible(g_Panels[panelIdx].pRows, g_Panels[panelIdx].rowCount, r))
+			continue;
                 const float rh = RowHeight(row.type);
                 const float rw = PANEL_WIDTH - BODY_PADDING * 2;
                 if(PointInRect(mousePos, bodyX, cursorY, rw, rh))
@@ -4813,6 +5254,8 @@ bool CClickGui::HitTestRow(vec2 mousePos, int panelIdx, int &outRow, int &outChi
                         {
                                 SRow &child = row.pChildren[c];
                                 if(str_comp(row.pName, "Penalties") == 0 && !PenaltiesChildVisible(row.pChildren, row.childCount, c))
+                                        continue;
+                                if(str_comp(row.pName, "Visuals") == 0 && !TasVisualsChildVisible(row.pChildren, row.childCount, c))
                                         continue;
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;
@@ -4899,6 +5342,7 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
                         case KX_LINE_LASER_UNFREEZE: g_Config.m_KxLineLaserUnfreezeColor = 0xff000000u | (hex & 0xffffff); break;
                         case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderColor = 0xff000000u | (hex & 0xffffff); break;
                         case KX_LINE_ESP: g_Config.m_KxLineEspColor = 0xff000000u | (hex & 0xffffff); break;
+                        case KX_LINE_TAS: g_Config.m_KxLineTasColor = 0xff000000u | (hex & 0xffffff); break;
                         }
                 }
         }
@@ -4969,6 +5413,10 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
                 else if(str_comp(pRow->pName, "ESP") == 0) pCmd = "toggle kx_esp 1 0";
                 else if(str_comp(pRow->pName, "Basic Avoid Freeze") == 0) pCmd = "toggle kx_basic_avoid_freeze 1 0";
                 else if(str_comp(pRow->pName, "Block") == 0) pCmd = "toggle kx_attack 1 0";
+                else if(str_comp(pRow->pName, "Record") == 0) pCmd = "toggle kx_tas_record 1 0";
+                else if(str_comp(pRow->pName, "Pause") == 0) pCmd = "toggle kx_tas_pause 1 0";
+                else if(str_comp(pRow->pName, "Rewind") == 0) pCmd = "kx_tas_rewind";
+                else if(str_comp(pRow->pName, "Forward") == 0) pCmd = "kx_tas_forward";
                 if(pCmd)
                 {
                         // Find the currently bound key for this command (if any).
@@ -5022,13 +5470,15 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                 const SRow &row = panel.pRows[r];
                 if(isFunctionsPanel && !FunctionsRowVisible(panel.pRows, panel.rowCount, r))
                         continue;
-                if(isPathfinderPanel && !PfRowVisible(panel.pRows, panel.rowCount, r))
-                        continue;
-                if(isCodeExecPanel)
-                {
-                        if(!CodeExecRowVisible(panel.pRows, panel.rowCount, r))
-                                continue;
-                        sig = sig * 31u + 7u;
+		if(isPathfinderPanel && !PfRowVisible(panel.pRows, panel.rowCount, r))
+			continue;
+		if(str_comp(panel.pTitle, "TAS") == 0 && !TasRowVisible(panel.pRows, panel.rowCount, r))
+			continue;
+		if(isCodeExecPanel)
+		{
+			if(!CodeExecRowVisible(panel.pRows, panel.rowCount, r))
+				continue;
+			sig = sig * 31u + 7u;
                 }
                 sig = sig * 31u + (unsigned)r + 1u;
                 if(row.type == ERowType::Expandable && row.pChildren && row.m_AnimExpand > 0.0f)
@@ -5036,6 +5486,8 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                         for(int c = 0; c < row.childCount; ++c)
                         {
                                 if(str_comp(row.pName, "Penalties") == 0 && !PenaltiesChildVisible(row.pChildren, row.childCount, c))
+                                        continue;
+                                if(str_comp(row.pName, "Visuals") == 0 && !TasVisualsChildVisible(row.pChildren, row.childCount, c))
                                         continue;
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;
@@ -5101,16 +5553,22 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                 SRow &row = panel.pRows[r];
                                 if(isFunctionsPanel && !FunctionsRowVisible(panel.pRows, panel.rowCount, r))
                                         continue;
-                                if(isPathfinderPanel && !PfRowVisible(panel.pRows, panel.rowCount, r))
-                                        continue;
-                                if(isCodeExecPanel && !CodeExecRowVisible(panel.pRows, panel.rowCount, r))
-                                        continue;
+		if(isPathfinderPanel && !PfRowVisible(panel.pRows, panel.rowCount, r))
+			continue;
+		if(isCodeExecPanel && !CodeExecRowVisible(panel.pRows, panel.rowCount, r))
+			continue;
+		if(str_comp(panel.pTitle, "TAS") == 0 && !TasRowVisible(panel.pRows, panel.rowCount, r))
+			continue;
+				if(str_comp(panel.pTitle, "TAS") == 0 && !TasRowVisible(panel.pRows, panel.rowCount, r))
+					continue;
                                 addRowNode(row, false);
                                 if(row.type == ERowType::Expandable && row.pChildren && row.m_AnimExpand > 0.0f)
                                 {
                                         for(int c = 0; c < row.childCount; ++c)
                                         {
                                                 if(str_comp(row.pName, "Penalties") == 0 && !PenaltiesChildVisible(row.pChildren, row.childCount, c))
+                                                        continue;
+                                                if(str_comp(row.pName, "Visuals") == 0 && !TasVisualsChildVisible(row.pChildren, row.childCount, c))
                                                         continue;
                                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                                         continue;
@@ -5190,6 +5648,8 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                         for(int c = 0; c < row.childCount; ++c)
                         {
                                 if(str_comp(row.pName, "Penalties") == 0 && !PenaltiesChildVisible(row.pChildren, row.childCount, c))
+                                        continue;
+                                if(str_comp(row.pName, "Visuals") == 0 && !TasVisualsChildVisible(row.pChildren, row.childCount, c))
                                         continue;
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;
@@ -5340,10 +5800,12 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                 // Conditional visibility: skip hidden rows in Functions panel.
                 if(str_comp(panel.pTitle, "Functions") == 0 && !FunctionsRowVisible(panel.pRows, panel.rowCount, r))
                         continue;
-                if(str_comp(panel.pTitle, "Pathfinder") == 0 && !PfRowVisible(panel.pRows, panel.rowCount, r))
-                        continue;
-                if(str_comp(panel.pTitle, "Code Execution (Lua)") == 0 && !CodeExecRowVisible(panel.pRows, panel.rowCount, r))
-                        continue;
+		if(str_comp(panel.pTitle, "Pathfinder") == 0 && !PfRowVisible(panel.pRows, panel.rowCount, r))
+			continue;
+		if(str_comp(panel.pTitle, "Code Execution (Lua)") == 0 && !CodeExecRowVisible(panel.pRows, panel.rowCount, r))
+			continue;
+		if(str_comp(panel.pTitle, "TAS") == 0 && !TasRowVisible(panel.pRows, panel.rowCount, r))
+			continue;
                 const YGNodeRef node = rowNodes[rowIdx];
                 const float rxLocal = YGNodeLayoutGetLeft(node);
                 const float ryLocal = YGNodeLayoutGetTop(node);
@@ -5715,6 +6177,33 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                         const float rw2 = TextRender()->TextWidth(11.0f, pClearLabel);
                                         DrawText(rx2 + (btnW - rw2) * 0.5f, ry + 8.0f, 11.0f, pClearLabel,
                                                 ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                        }
+                        }
+                        else if(str_comp(row.pName, "Pick File") == 0)
+                        {
+                                const ColorRGBA leftCol = ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha);
+                                if(!g_TasFilePicked)
+                                {
+                                        DrawRoundedRect(rx + 2.0f, ry + 2.0f, rw - 4.0f, rh - 4.0f, 4.0f,
+                                                IGraphics::CORNER_ALL, leftCol);
+                                        const float lw = TextRender()->TextWidth(16.0f, "Pick File");
+                                        DrawText(rx + (rw - lw) * 0.5f, ry + 8.0f, 16.0f, "Pick File",
+                                                ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                                }
+                                else
+                                {
+                                        const float btnW = (rw - 6.0f) * 0.5f;
+                                        DrawRoundedRect(rx + 2.0f, ry + 2.0f, btnW, rh - 4.0f, 4.0f,
+                                                IGraphics::CORNER_ALL, leftCol);
+                                        const float lw = TextRender()->TextWidth(14.0f, "Pick File");
+                                        DrawText(rx + 2.0f + (btnW - lw) * 0.5f, ry + 8.0f, 14.0f, "Pick File",
+                                                ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                                        const float rx2 = rx + 2.0f + btnW + 2.0f;
+                                        DrawRoundedRect(rx2, ry + 2.0f, btnW, rh - 4.0f, 4.0f,
+                                                IGraphics::CORNER_ALL, ColorRGBA(0xffc43d3d, true).WithAlpha(alpha));
+                                        const float rw2 = TextRender()->TextWidth(14.0f, "Unpick File");
+                                        DrawText(rx2 + (btnW - rw2) * 0.5f, ry + 8.0f, 14.0f, "Unpick File",
+                                                ColorRGBA(0xffffffff, true).WithAlpha(alpha));
                                 }
                         }
                         break;
@@ -5787,6 +6276,8 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                 {
                                         if(str_comp(row.pName, "Penalties") == 0 && !PenaltiesChildVisible(row.pChildren, row.childCount, c))
                                                 continue;
+                                        if(str_comp(row.pName, "Visuals") == 0 && !TasVisualsChildVisible(row.pChildren, row.childCount, c))
+                                                continue;
                                         if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                                 continue;
                                                         if(str_comp(row.pName, "AimBot") == 0 && !AimBotChildVisible(row.pChildren, row.childCount, c))
@@ -5829,6 +6320,8 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                         for(int c = 0; c < row.childCount; ++c)
                         {
                                 if(str_comp(row.pName, "Penalties") == 0 && !PenaltiesChildVisible(row.pChildren, row.childCount, c)) continue;
+                                if(str_comp(row.pName, "Visuals") == 0 && !TasVisualsChildVisible(row.pChildren, row.childCount, c))
+                                        continue;
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c)) continue;
                                 if(str_comp(row.pName, "AimBot") == 0 && !AimBotChildVisible(row.pChildren, row.childCount, c)) continue;
                                 if(str_comp(row.pName, "TriggerBot") == 0 && !TriggerBotChildVisible(row.pChildren, row.childCount, c)) continue;
@@ -5865,6 +6358,8 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                         {
                                 SRow &child = row.pChildren[c];
                                 if(str_comp(row.pName, "Penalties") == 0 && !PenaltiesChildVisible(row.pChildren, row.childCount, c))
+                                        continue;
+                                if(str_comp(row.pName, "Visuals") == 0 && !TasVisualsChildVisible(row.pChildren, row.childCount, c))
                                         continue;
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;

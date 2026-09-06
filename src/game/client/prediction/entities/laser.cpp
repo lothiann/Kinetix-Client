@@ -229,3 +229,20 @@ CLaserData CLaser::GetData() const
 	Result.m_SwitchNumber = m_Number;
 	return Result;
 }
+
+void CLaser::Restore(const CLaserData &Data, vec2 Dir, vec2 PrevPos, float Energy, int Bounces, int Owner, bool ZeroEnergyBounce)
+{
+	m_Pos = Data.m_To;
+	m_From = Data.m_From;
+	m_Dir = Dir;
+	m_Energy = Energy;
+	m_Bounces = Bounces;
+	m_EvalTick = Data.m_StartTick;
+	m_Owner = Owner;
+	m_PrevPos = PrevPos;
+	m_ZeroEnergyBounceInLastTick = ZeroEnergyBounce;
+	m_Type = Data.m_Type == LASERTYPE_SHOTGUN ? WEAPON_SHOTGUN : WEAPON_LASER;
+	m_TuneZone = Data.m_TuneZone;
+	m_Number = Data.m_SwitchNumber;
+	m_Layer = m_Number > 0 ? LAYER_SWITCH : LAYER_GAME;
+}

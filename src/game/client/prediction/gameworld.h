@@ -84,6 +84,7 @@ public:
 		bool m_BugDDRaceInput;
 		bool m_NoWeakHookAndBounce;
 		bool m_PredictEvents;
+		bool m_PredictTeleports = false; // fake world only: tile teleport support
 	} m_WorldConfig;
 
 	bool m_IsValidCopy;

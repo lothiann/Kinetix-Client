@@ -19,6 +19,7 @@
 #include <generated/protocol.h>
 
 #include <game/client/animstate.h>
+#include <game/client/components/kinetix/tas.h>
 #include <game/client/components/scoreboard.h>
 #include <game/client/gameclient.h>
 #include <game/client/prediction/entities/character.h>
@@ -623,9 +624,12 @@ void CHud::RenderCursor()
 
         if(Client()->State() != IClient::STATE_DEMOPLAYBACK && GameClient()->m_Snap.m_pLocalCharacter)
         {
-                // Render local cursor
-                CurWeapon = maximum(0, GameClient()->m_aClients[GameClient()->m_Snap.m_LocalClientId].m_Predicted.m_ActiveWeapon);
-                TargetPos = GameClient()->m_Controls.m_aTargetPos[g_Config.m_ClDummy];
+		// Render local cursor
+		if(GameClient()->m_Tas.IsJoined())
+			CurWeapon = maximum(0, GameClient()->m_Tas.PlaygroundWeapon());
+		else
+			CurWeapon = maximum(0, GameClient()->m_aClients[GameClient()->m_Snap.m_LocalClientId].m_Predicted.m_ActiveWeapon);
+		TargetPos = GameClient()->m_Controls.m_aTargetPos[g_Config.m_ClDummy];
         }
         else
         {
@@ -733,6 +737,12 @@ void CHud::RenderAmmoHealthAndArmor(const CNetObj_Character *pCharacter)
 {
         if(!pCharacter)
                 return;
+
+        // While in the TAS fake world the ammo/weapon HUD shows the fake tee.
+        CCharacterCore PlaygroundCore;
+        CNetObj_Character PlaygroundChar;
+        if(GameClient()->m_Tas.PlaygroundHudState(&PlaygroundCore, &PlaygroundChar))
+                pCharacter = &PlaygroundChar;
 
         bool IsSixupGameSkin = GameClient()->m_GameSkin.IsSixup();
         int QuadOffsetSixup = (IsSixupGameSkin ? 10 : 0);
@@ -845,9 +855,15 @@ void CHud::RenderPlayerState(const int ClientId)
 {
         Graphics()->SetColor(1.f, 1.f, 1.f, 1.f);
 
+        // While in the TAS fake world the player state HUD (weapons row, ammo
+        // pips, jumps indicator, capabilities) renders the fake tee.
+        CCharacterCore PlaygroundCore;
+        CNetObj_Character PlaygroundPlayer;
+        const bool PlaygroundTee = GameClient()->m_Tas.PlaygroundHudState(&PlaygroundCore, &PlaygroundPlayer);
+
         // pCharacter contains the predicted character for local players or the last snap for players who are spectated
-        CCharacterCore *pCharacter = &GameClient()->m_aClients[ClientId].m_Predicted;
-        CNetObj_Character *pPlayer = &GameClient()->m_aClients[ClientId].m_RenderCur;
+        CCharacterCore *pCharacter = PlaygroundTee ? &PlaygroundCore : &GameClient()->m_aClients[ClientId].m_Predicted;
+        CNetObj_Character *pPlayer = PlaygroundTee ? &PlaygroundPlayer : &GameClient()->m_aClients[ClientId].m_RenderCur;
         int TotalJumpsToDisplay = 0;
         if(g_Config.m_ClShowhudJumpsIndicator)
         {

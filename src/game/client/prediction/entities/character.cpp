@@ -1047,6 +1047,35 @@ void CCharacter::HandleTiles(int Index)
 		if(NewJumps != m_Core.m_Jumps)
 			m_Core.m_Jumps = NewJumps;
 	}
+
+	// teleporters (fake world only: the regular prediction stays
+	// snapshot-driven because tele outs are server-side randomness)
+	if(GameWorld()->m_WorldConfig.m_PredictTeleports)
+	{
+		int Tele = Collision()->IsTeleport(MapIndex);
+		if(Tele && !Collision()->TeleOuts(Tele - 1).empty())
+		{
+			if(!m_Core.m_Super && !m_Core.m_Invincible)
+			{
+				int Out = GameWorld()->m_Core.RandomOr0(Collision()->TeleOuts(Tele - 1).size());
+				m_Core.m_Pos = Collision()->TeleOuts(Tele - 1)[Out];
+				ResetHook();
+			}
+			return;
+		}
+		int Evil = Collision()->IsEvilTeleport(MapIndex);
+		if(Evil && !Collision()->TeleOuts(Evil - 1).empty())
+		{
+			if(!m_Core.m_Super && !m_Core.m_Invincible)
+			{
+				int Out = GameWorld()->m_Core.RandomOr0(Collision()->TeleOuts(Evil - 1).size());
+				m_Core.m_Pos = Collision()->TeleOuts(Evil - 1)[Out];
+				m_Core.m_Vel = vec2(0, 0);
+				ResetHook();
+			}
+			return;
+		}
+	}
 }
 
 void CCharacter::HandleTuneLayer()

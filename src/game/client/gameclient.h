@@ -39,6 +39,7 @@
 #include "components/kinetix/kinetix.h"
 #include "components/kinetix/irc.h"
 #include "components/kinetix/trajectory.h" // v1.56.178: per-type trajectory prediction component
+#include "components/kinetix/tas.h"
 #include "components/broadcast.h"
 #include "components/camera.h"
 #include "components/censor.h"
@@ -165,6 +166,7 @@ public:
         CBinds m_Binds;
         CBotControl m_BotControl;
         CBotNet m_BotNet;
+        CTas m_Tas;
         CAimBot m_AimBot;
         CBasicAvoidFreeze m_BasicAvoidFreeze;
         CEsp m_Esp;

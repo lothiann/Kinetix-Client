@@ -159,6 +159,15 @@ void CTrajectory::RenderTee()
         if(!pLocalChar)
                 return;
 
+        const bool TasJoined = pGame->m_Tas.IsJoined();
+        if(TasJoined)
+        {
+                LocalClientId = pGame->m_Tas.PlaygroundLocalId();
+                pLocalChar = pGame->m_Tas.Playground()->GetCharacterById(LocalClientId);
+                if(!pLocalChar)
+                        return;
+        }
+
         int NumTicks = s.m_PredictionTicks;
         if(NumTicks <= 0)
                 return;
@@ -168,7 +177,7 @@ void CTrajectory::RenderTee()
         // - Other players: only if m_ShowForOtherPlayers is on.
         std::vector<int> vPredictIds;
         vPredictIds.push_back(LocalClientId);
-        if(s.m_ShowForOtherPlayers)
+        if(s.m_ShowForOtherPlayers && !TasJoined)
         {
                 for(int i = 0; i < MAX_CLIENTS; i++)
                 {
@@ -182,7 +191,9 @@ void CTrajectory::RenderTee()
         // Collect trajectory points for all predicted characters.
         // We use ONE cloned world for all characters (cheaper than per-character).
         CGameWorld FutureWorld;
-        FutureWorld.CopyWorld(&pGame->m_PredictedWorld);
+        FutureWorld.CopyWorld(TasJoined ? pGame->m_Tas.Playground() : &pGame->m_PredictedWorld);
+        if(TasJoined)
+                FutureWorld.m_GameTick = pGame->m_Tas.PlaygroundTick();
 
         // If Simulate Players is OFF, remove other characters (keep local + entities).
         if(!s.m_SimulatePlayers)
@@ -222,7 +233,7 @@ void CTrajectory::RenderTee()
         {
                 int cid = vPredictIds[c];
                 if(cid >= 0 && cid < MAX_CLIENTS)
-                        vPerCharPoints[c].push_back(pGame->m_aClients[cid].m_RenderPos);
+                        vPerCharPoints[c].push_back(TasJoined ? pGame->m_Tas.PlaygroundTeeRenderPos() : pGame->m_aClients[cid].m_RenderPos);
         }
 
         // Simulate N ticks.
@@ -237,6 +248,12 @@ void CTrajectory::RenderTee()
                         if(!pChar)
                                 continue;
                         CNetObj_PlayerInput FutureInput = pChar->GetCore().m_Input;
+                        if(TasJoined && pGame->m_Tas.Paused() && (pGame->m_Tas.IsRecording() || !g_Config.m_KxTasShowTrajectory))
+                                FutureInput = pGame->m_Controls.m_aInputData[g_Config.m_ClDummy];
+                        else if(g_Config.m_KxTasShowTrajectory && TasJoined && pGame->m_Tas.IsPlaying())
+                                pGame->m_Tas.FutureSavedInput(pGame->m_Tas.PlayIdx() + i, &FutureInput);
+                        else if(g_Config.m_KxTasShowTrajectory && !TasJoined && pGame->m_Tas.IsRealPlaying())
+                                pGame->m_Tas.FutureSavedInput(pGame->m_Tas.RealPlayIdx() + i, &FutureInput);
                         pChar->OnDirectInput(&FutureInput);
                 }
 
@@ -248,6 +265,12 @@ void CTrajectory::RenderTee()
                         if(!pChar)
                                 continue;
                         CNetObj_PlayerInput FutureInput = pChar->GetCore().m_Input;
+                        if(TasJoined && pGame->m_Tas.Paused() && (pGame->m_Tas.IsRecording() || !g_Config.m_KxTasShowTrajectory))
+                                FutureInput = pGame->m_Controls.m_aInputData[g_Config.m_ClDummy];
+                        else if(g_Config.m_KxTasShowTrajectory && TasJoined && pGame->m_Tas.IsPlaying())
+                                pGame->m_Tas.FutureSavedInput(pGame->m_Tas.PlayIdx() + i, &FutureInput);
+                        else if(g_Config.m_KxTasShowTrajectory && !TasJoined && pGame->m_Tas.IsRealPlaying())
+                                pGame->m_Tas.FutureSavedInput(pGame->m_Tas.RealPlayIdx() + i, &FutureInput);
                         pChar->OnPredictedInput(&FutureInput);
                 }
 
@@ -342,13 +365,26 @@ void CTrajectory::RenderWeaponPredict(int WeaponType, int ClientId)
         if(!pGame->m_Snap.m_aCharacters[ClientId].m_Active)
                 return;
 
-        CCharacter *pChar = pGame->m_PredictedWorld.GetCharacterById(ClientId);
+        const bool TasJoined = pGame->m_Tas.IsJoined();
+        CCharacter *pChar;
+        vec2 MyPos;
+        if(TasJoined && ClientId == LocalClientId)
+        {
+                ClientId = pGame->m_Tas.PlaygroundLocalId();
+                pChar = pGame->m_Tas.Playground()->GetCharacterById(ClientId);
+                MyPos = pGame->m_Tas.PlaygroundTeeRenderPos();
+        }
+        else
+        {
+                pChar = pGame->m_PredictedWorld.GetCharacterById(ClientId);
+                MyPos = pGame->m_aClients[ClientId].m_RenderPos;
+        }
         if(!pChar)
                 return;
 
         // v1.56.183: use the RENDERED position (m_aClients[ClientId].m_RenderPos) like
         // aimbot.cpp:77, so the trajectory start aligns with the visible tee.
-        vec2 MyPos = pGame->m_aClients[ClientId].m_RenderPos;
+
         // v1.56.184: aim source depends on which player we're predicting for.
         // - Local player: m_Controls.m_aMousePos (live mouse, most responsive)
         // - Other players: their prediction character's m_TargetX/m_TargetY (from snapshots)
@@ -370,7 +406,9 @@ void CTrajectory::RenderWeaponPredict(int WeaponType, int ClientId)
 
         // Clone the predicted world.
         CGameWorld FutureWorld;
-        FutureWorld.CopyWorld(&pGame->m_PredictedWorld);
+        FutureWorld.CopyWorld(TasJoined ? pGame->m_Tas.Playground() : &pGame->m_PredictedWorld);
+        if(TasJoined)
+                FutureWorld.m_GameTick = pGame->m_Tas.PlaygroundTick();
 
         // v1.56.182: respect SimulatePlayers. When OFF (default), remove other
         // characters to speed up simulation (projectiles only need collision +
@@ -514,7 +552,7 @@ void CTrajectory::RenderCurrentProjectiles(int WeaponType)
         if(!pGame)
                 return;
 
-        CGameWorld *pWorld = &pGame->m_PredictedWorld;
+        CGameWorld *pWorld = pGame->m_Tas.IsJoined() ? pGame->m_Tas.Playground() : &pGame->m_PredictedWorld;
         if(!pWorld)
                 return;
 
@@ -530,7 +568,7 @@ void CTrajectory::RenderCurrentProjectiles(int WeaponType)
         }
         const STypeSettings &s = m_aTypes[trajIdx];
 
-        int LocalClientId = pGame->m_Snap.m_LocalClientId;
+        int LocalClientId = pGame->m_Tas.IsJoined() ? pGame->m_Tas.PlaygroundLocalId() : pGame->m_Snap.m_LocalClientId;
 
         // v1.56.183: collect matching projectiles as (owner, startTick) pairs.
         // When ShowForOtherPlayers is ON, track ALL players' projectiles (not just
@@ -552,6 +590,8 @@ void CTrajectory::RenderCurrentProjectiles(int WeaponType)
         // Clone the predicted world once for all matching projectiles.
         CGameWorld FutureWorld;
         FutureWorld.CopyWorld(pWorld);
+        if(pGame->m_Tas.IsJoined())
+                FutureWorld.m_GameTick = pGame->m_Tas.PlaygroundTick();
 
         // v1.56.183: build keep set — local + owners of tracked projectiles.
         // When SimulatePlayers is OFF, remove characters NOT in the keep set (speed).
@@ -632,13 +672,13 @@ void CTrajectory::RenderCurrentLasers()
         if(!pGame)
                 return;
 
-        CGameWorld *pWorld = &pGame->m_PredictedWorld;
+        CGameWorld *pWorld = pGame->m_Tas.IsJoined() ? pGame->m_Tas.Playground() : &pGame->m_PredictedWorld;
         if(!pWorld)
                 return;
 
         const STypeSettings &s = m_aTypes[TRAJ_LASER];
 
-        int LocalClientId = pGame->m_Snap.m_LocalClientId;
+        int LocalClientId = pGame->m_Tas.IsJoined() ? pGame->m_Tas.PlaygroundLocalId() : pGame->m_Snap.m_LocalClientId;
 
         // v1.56.183: build keep set from matching lasers' owners (do this on the
         // live world before cloning so we know which characters to keep).
@@ -661,6 +701,8 @@ void CTrajectory::RenderCurrentLasers()
         // Clone the predicted world.
         CGameWorld FutureWorld;
         FutureWorld.CopyWorld(pWorld);
+        if(pGame->m_Tas.IsJoined())
+                FutureWorld.m_GameTick = pGame->m_Tas.PlaygroundTick();
 
         // v1.56.183: remove characters not in keep set (unless SimulatePlayers is on).
         if(!s.m_SimulatePlayers)
@@ -761,7 +803,8 @@ void CTrajectory::OnRender()
         // Show+ShowForOtherPlayers are both ON. Each player gets their own
         // RenderWeaponPredict call (own cloned world + own aim direction).
         {
-                CCharacter *pLocalChar = pGame->m_PredictedWorld.GetCharacterById(LocalClientId);
+                const bool TasJoined = pGame->m_Tas.IsJoined();
+                CCharacter *pLocalChar = TasJoined ? pGame->m_Tas.Playground()->GetCharacterById(pGame->m_Tas.PlaygroundLocalId()) : pGame->m_PredictedWorld.GetCharacterById(LocalClientId);
                 if(pLocalChar)
                 {
                         int weapon = pLocalChar->GetActiveWeapon();

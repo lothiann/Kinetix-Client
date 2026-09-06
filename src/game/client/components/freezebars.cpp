@@ -239,4 +239,8 @@ void CFreezeBars::OnRender()
 	{
 		RenderFreezeBar(LocalClientId);
 	}
+	// TAS fake tee freeze bar: rendered from here so it sits on the same
+	// layer as the real freeze bars (CTas::OnRender runs before fg blocks).
+	if(GameClient()->m_Tas.IsJoined())
+		GameClient()->m_Tas.RenderFreezeBar();
 }

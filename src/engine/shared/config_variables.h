@@ -35,6 +35,7 @@ MACRO_CONFIG_INT(ClTouchControls, cl_touch_controls, 0, 0, 1, CFGFLAG_CLIENT | C
 // Kinetix ClickGUI overlay (bind tab "toggle cl_clickgui 1 0" to toggle).
 // Not persisted (no CFGFLAG_SAVE) so it defaults to closed on every launch.
 MACRO_CONFIG_INT(ClClickGui, cl_clickgui, 0, 0, 1, CFGFLAG_CLIENT, "Show/hide the Kinetix ClickGUI overlay")
+MACRO_CONFIG_INT(KxClickGuiScale, kx_clickgui_scale, 10, 1, 20, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "ClickGUI scale (x10: 10 = 1.0x default, 1-20 = 0.1x-2.0x)")
 
 MACRO_CONFIG_INT(ClNamePlates, cl_nameplates, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Show name plates")
 MACRO_CONFIG_INT(ClNamePlatesAlways, cl_nameplates_always, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Always show name plates regardless of distance")
@@ -310,9 +311,9 @@ MACRO_CONFIG_INT(KxLineRenderingAlpha, kx_line_rendering_alpha, 80, 0, 100, CFGF
 MACRO_CONFIG_INT(KxLineRenderingLayer, kx_line_rendering_layer, 0, 0, 10, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Line render layer: 0=behind foreground blocks, 1+=on top of blocks (deferred overlay pass)")
 
 // v1.56.108: Per-component line rendering settings.
-// Component indices: 0=AimBot 1=TriggerBot 2=Trajectory 3=LaserUnfreeze 4=Pathfinder 5=ESP
+// Component indices: 0=AimBot 1=TriggerBot 2=Trajectory 3=LaserUnfreeze 4=Pathfinder 5=ESP 6=TAS
 // KxLineRenderingLayer stays global (deferred-overlay infrastructure is shared).
-MACRO_CONFIG_INT(KxLineComponent, kx_line_component, 0, 0, 5, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Selected component for Line rendering panel (0=AimBot 1=TriggerBot 2=Trajectory 3=LaserUnfreeze 4=Pathfinder 5=ESP)")
+MACRO_CONFIG_INT(KxLineComponent, kx_line_component, 0, 0, 6, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Selected component for Line rendering panel (0=AimBot 1=TriggerBot 2=Trajectory 3=LaserUnfreeze 4=Pathfinder 5=ESP 6=TAS)")
 MACRO_CONFIG_INT(KxLineAimBotSize, kx_line_aimbot_size, 6, 0, 20, CFGFLAG_CLIENT | CFGFLAG_SAVE, "AimBot line width")
 MACRO_CONFIG_COL(KxLineAimBotColor, kx_line_aimbot_color, 4294967295, CFGFLAG_CLIENT | CFGFLAG_SAVE, "AimBot line color")
 MACRO_CONFIG_INT(KxLineAimBotAlpha, kx_line_aimbot_alpha, 80, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "AimBot line opacity")
@@ -331,6 +332,9 @@ MACRO_CONFIG_INT(KxLinePathfinderAlpha, kx_line_pathfinder_alpha, 80, 0, 100, CF
 MACRO_CONFIG_INT(KxLineEspSize, kx_line_esp_size, 6, 0, 20, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ESP line width")
 MACRO_CONFIG_COL(KxLineEspColor, kx_line_esp_color, 4294967295, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ESP line color")
 MACRO_CONFIG_INT(KxLineEspAlpha, kx_line_esp_alpha, 80, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ESP line opacity")
+MACRO_CONFIG_INT(KxLineTasSize, kx_line_tas_size, 6, 0, 20, CFGFLAG_CLIENT | CFGFLAG_SAVE, "TAS line width")
+MACRO_CONFIG_COL(KxLineTasColor, kx_line_tas_color, 4294967295, CFGFLAG_CLIENT | CFGFLAG_SAVE, "TAS line color")
+MACRO_CONFIG_INT(KxLineTasAlpha, kx_line_tas_alpha, 80, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "TAS line opacity")
 
 // v1.56.201: Per-component line rendering rainbow mode.
 // Each component has its own rainbow toggle and hue rotation speed.
@@ -360,6 +364,10 @@ MACRO_CONFIG_INT(KxLineEspRainbow, kx_line_esp_rainbow, 0, 0, 1, CFGFLAG_CLIENT 
 MACRO_CONFIG_INT(KxLineEspRainbowSpeed, kx_line_esp_rainbow_speed, 10, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ESP line rainbow speed (display = value/10)")
 MACRO_CONFIG_INT(KxLineEspGradient, kx_line_esp_gradient, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ESP line gradient (visible only with Rainbow)")
 MACRO_CONFIG_INT(KxLineEspGradientStep, kx_line_esp_gradient_step, 15, 1, 180, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ESP line gradient hue step per segment")
+MACRO_CONFIG_INT(KxLineTasRainbow, kx_line_tas_rainbow, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "TAS line rainbow mode")
+MACRO_CONFIG_INT(KxLineTasRainbowSpeed, kx_line_tas_rainbow_speed, 10, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "TAS line rainbow speed (display = value/10)")
+MACRO_CONFIG_INT(KxLineTasGradient, kx_line_tas_gradient, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "TAS line gradient (visible only with Rainbow)")
+MACRO_CONFIG_INT(KxLineTasGradientStep, kx_line_tas_gradient_step, 15, 1, 180, CFGFLAG_CLIENT | CFGFLAG_SAVE, "TAS line gradient hue step per segment")
 
 // Laser unfreeze — predictive laser self-unfreeze
 MACRO_CONFIG_INT(KxLaserUnfreeze, kx_laser_unfreeze, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Laser unfreeze: predict freeze and auto-fire laser to unfreeze self")
@@ -376,6 +384,21 @@ MACRO_CONFIG_INT(KxFakeAim, kx_fake_aim, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE 
 MACRO_CONFIG_INT(KxFakeAimMode, kx_fake_aim_mode, 0, 0, 3, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Fake Aim mode: 0=Random 1=Robot 2=Spin 3=Lag")
 MACRO_CONFIG_INT(KxFakeAimSpeed, kx_fake_aim_speed, 10, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Fake Aim: speed (how often to change for Random, rotation speed for Spin)")
 MACRO_CONFIG_INT(KxFakeAimShowForMe, kx_fake_aim_show_for_me, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Fake Aim: show fake aim on player character (not just server)")
+MACRO_CONFIG_INT(KxTasRecord, kx_tas_record, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_INSENSITIVE, "TAS: record state (0=off, 1=recording, toggles)")
+MACRO_CONFIG_INT(KxTasPause, kx_tas_pause, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_INSENSITIVE, "TAS: pause state (0=running, 1=paused, toggles)")
+MACRO_CONFIG_INT(KxTasAutoRf, kx_tas_auto_rf, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "TAS Auto RF: master toggle (Record mode only)")
+MACRO_CONFIG_INT(KxTasAutoRfFMode, kx_tas_auto_rf_f_mode, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "TAS Auto RF Freeze: 0=Rewind 1=Forward")
+MACRO_CONFIG_INT(KxTasAutoRfFTicks, kx_tas_auto_rf_f_ticks, 0, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "TAS Auto RF Freeze: action ticks (0=off)")
+MACRO_CONFIG_INT(KxTasAutoRfTMode, kx_tas_auto_rf_t_mode, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "TAS Auto RF Teleport: 0=Rewind 1=Forward")
+MACRO_CONFIG_INT(KxTasAutoRfTTicks, kx_tas_auto_rf_t_ticks, 0, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "TAS Auto RF Teleport: action ticks (0=off)")
+MACRO_CONFIG_INT(KxTasAutoRfDMode, kx_tas_auto_rf_d_mode, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "TAS Auto RF Death: 0=Rewind 1=Forward")
+MACRO_CONFIG_INT(KxTasAutoRfDTicks, kx_tas_auto_rf_d_ticks, 0, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "TAS Auto RF Death: action ticks (0=off)")
+MACRO_CONFIG_INT(KxTasFakeAim, kx_tas_fake_aim, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "TAS Fake Aim: mask the rendered aim of the replaying tee")
+MACRO_CONFIG_INT(KxTasFakeAimMode, kx_tas_fake_aim_mode, 0, 0, 5, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "TAS Fake Aim mode: 0=Real 1=Smooth 2=Random 3=Robot 4=Spin 5=Lag")
+MACRO_CONFIG_INT(KxTasShowPath, kx_tas_show_path, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "TAS Visuals: draw the saved path polyline")
+MACRO_CONFIG_INT(KxTasShowHooks, kx_tas_show_hooks, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "TAS Visuals: draw hook segments along the saved path")
+MACRO_CONFIG_INT(KxTasShowSpeed, kx_tas_show_speed, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "TAS Visuals: show speed labels along the saved path")
+MACRO_CONFIG_INT(KxTasShowTrajectory, kx_tas_show_trajectory, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "TAS Visuals: simulate and draw the upcoming trajectory of the replay")
 
 // Basic Avoid Freeze - predict freeze via brute-force input combinations.
 MACRO_CONFIG_INT(KxBasicAvoidFreeze, kx_basic_avoid_freeze, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Basic Avoid Freeze: predict freeze and override input to avoid it")

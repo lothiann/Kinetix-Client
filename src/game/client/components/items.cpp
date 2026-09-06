@@ -446,6 +446,10 @@ void CItems::OnRender()
 	if(Client()->State() != IClient::STATE_ONLINE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
 		return;
 
+	// TAS fake world: real map entities (projectiles, pickups, ...) are hidden.
+	if(GameClient()->m_Tas.IsJoined())
+		return;
+
 	bool IsSuper = GameClient()->IsLocalCharSuper();
 	int Ticks = Client()->GameTick(g_Config.m_ClDummy) % Client()->GameTickSpeed();
 	bool BlinkingPickup = (Ticks % 22) < 4;
