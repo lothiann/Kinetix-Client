@@ -123,6 +123,26 @@ bool CBinds::OnInput(const IInput::CEvent &Event)
 	const int KeyModifierMask = GetModifierMaskOfKey(Event.m_Key);
 	const int ModifierMask = GetModifierMask(Input()) & ~KeyModifierMask;
 
+	if(g_Config.m_KxEdgeBind != 0)
+	{
+		UpdateEdgeKeys();
+		if(Event.m_Key >= 0 && Event.m_Key < KEY_LAST && m_aEdgeKeys[Event.m_Key])
+		{
+			if(Event.m_Flags & IInput::FLAG_PRESS)
+			{
+				if(m_aEdgeActive[Event.m_Key] && m_aEdgeReleased[Event.m_Key])
+					return true;
+				m_aEdgeActive[Event.m_Key] = true;
+				m_aEdgeReleased[Event.m_Key] = false;
+				m_aEdgePressTime[Event.m_Key] = Client()->GlobalTime();
+			}
+			else if(Event.m_Flags & IInput::FLAG_RELEASE)
+			{
+				m_aEdgeActive[Event.m_Key] = false;
+			}
+		}
+	}
+
 	bool Handled = false;
 
 	if(Event.m_Flags & IInput::FLAG_PRESS)
@@ -218,6 +238,86 @@ bool CBinds::OnInput(const IInput::CEvent &Event)
 	}
 
 	return Handled;
+}
+
+void CBinds::OnUpdate()
+{
+	UpdateEdgeKeys();
+
+	if(g_Config.m_KxEdgeBind == 0)
+	{
+		for(int Key = KEY_FIRST; Key < KEY_LAST; Key++)
+		{
+			m_aEdgeActive[Key] = false;
+			m_aEdgeReleased[Key] = false;
+		}
+		return;
+	}
+
+	const double Now = (double)Client()->GlobalTime();
+	const double EdgeS = (double)g_Config.m_KxEdgeBindMs / 1000.0;
+
+	for(int Key = KEY_FIRST; Key < KEY_LAST; Key++)
+	{
+		if(!m_aEdgeActive[Key] || m_aEdgeReleased[Key])
+			continue;
+
+		auto ActiveBind = std::find_if(m_vActiveBinds.begin(), m_vActiveBinds.end(), [&](const CBindSlot &Bind) {
+			return Bind.m_Key == Key;
+		});
+		if(ActiveBind == m_vActiveBinds.end())
+		{
+			m_aEdgeActive[Key] = false;
+			continue;
+		}
+
+		if(GameClient()->m_Chat.IsActive() ||
+			GameClient()->m_GameConsole.IsActive() ||
+			GameClient()->m_Menus.IsActive())
+		{
+			continue;
+		}
+
+		if(Now - m_aEdgePressTime[Key] >= EdgeS)
+		{
+			if(m_aapKeyBindings[ActiveBind->m_ModifierMask][ActiveBind->m_Key])
+			{
+				Console()->ExecuteLineStroked(0, m_aapKeyBindings[ActiveBind->m_ModifierMask][ActiveBind->m_Key], IConsole::CLIENT_ID_UNSPECIFIED);
+			}
+			m_vActiveBinds.erase(ActiveBind);
+			m_aEdgeReleased[Key] = true;
+		}
+	}
+}
+
+void CBinds::UpdateEdgeKeys()
+{
+	if(str_comp(m_aEdgeButtonsCache, g_Config.m_KxEdgeBindButtons) == 0)
+		return;
+
+	str_copy(m_aEdgeButtonsCache, g_Config.m_KxEdgeBindButtons, sizeof(m_aEdgeButtonsCache));
+
+	for(int Key = KEY_FIRST; Key < KEY_LAST; Key++)
+		m_aEdgeKeys[Key] = false;
+
+	const char *pStr = g_Config.m_KxEdgeBindButtons;
+	while(*pStr)
+	{
+		while(*pStr && (*pStr == ' ' || *pStr == ',' || *pStr == ';'))
+			pStr++;
+		if(!*pStr)
+			break;
+		char aToken[64];
+		int Len = 0;
+		while(*pStr && *pStr != ' ' && *pStr != ',' && *pStr != ';' && Len < (int)sizeof(aToken) - 1)
+			aToken[Len++] = *pStr++;
+		aToken[Len] = '\0';
+		while(*pStr && *pStr != ' ' && *pStr != ',' && *pStr != ';')
+			pStr++;
+		const int Key = Input()->FindKeyByName(aToken);
+		if(Key != KEY_UNKNOWN)
+			m_aEdgeKeys[Key] = true;
+	}
 }
 
 void CBinds::UnbindAll()

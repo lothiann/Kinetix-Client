@@ -242,6 +242,15 @@ int CClient::SendMsgActive(CMsgPacker *pMsg, int Flags)
 
 void CClient::SendInfo(int Conn)
 {
+        if(!IsSixup() && g_Config.m_KxSpoofClientPreset == 1 && g_Config.m_KxSpoofTClientExtraNetmsgs)
+        {
+                char aTcVer[64];
+                str_format(aTcVer, sizeof(aTcVer), "%s built on %s, %s", g_Config.m_KxSpoofClientVersion, __DATE__, __TIME__);
+                CMsgPacker Msg(NETMSG_IAMTATER, true);
+                Msg.AddString(aTcVer);
+                SendMsg(Conn, &Msg, MSGFLAG_VITAL);
+        }
+
         CMsgPacker MsgVer(NETMSG_CLIENTVER, true);
         MsgVer.AddRaw(&m_ConnectionId, sizeof(m_ConnectionId));
         MsgVer.AddInt(GameClient()->DDNetVersion());

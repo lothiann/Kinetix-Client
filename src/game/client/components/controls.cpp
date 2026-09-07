@@ -424,8 +424,9 @@ int CControls::SnapInput(int *pData)
                                         // When off, copy everything (original behavior).
                                         const bool copyJump      = !filter || g_Config.m_KxDummyCopyMovesFilterJump;
                                         const bool copyDirection = !filter || g_Config.m_KxDummyCopyMovesFilterDirection;
-                                        const bool copyHook      = !filter || g_Config.m_KxDummyCopyMovesFilterHook;
-                                        const bool copyAim       = !filter || g_Config.m_KxDummyCopyMovesFilterAim;
+                                        const bool tfHooking = GameClient()->m_BotNet.m_TripleFlyHooking && GameClient()->m_BotNet.m_TripleFlyDummy == D;
+                                        const bool copyHook      = (!filter || g_Config.m_KxDummyCopyMovesFilterHook) && !tfHooking;
+                                        const bool copyAim       = (!filter || g_Config.m_KxDummyCopyMovesFilterAim) && !tfHooking;
                                         const bool copyFire      = !filter || g_Config.m_KxDummyCopyMovesFilterFire;
                                         const bool copyWeapon    = !filter || g_Config.m_KxDummyCopyMovesFilterWeapon;
 

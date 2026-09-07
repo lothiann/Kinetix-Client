@@ -85,6 +85,7 @@ public:
 
 	void OnConsoleInit() override;
 	bool OnInput(const IInput::CEvent &Event) override;
+	void OnUpdate() override;
 
 	// DDRace
 
@@ -93,5 +94,11 @@ public:
 private:
 	char *m_aapKeyBindings[KeyModifier::COMBINATION_COUNT][KEY_LAST];
 	std::vector<CBindSlot> m_vActiveBinds;
+	bool m_aEdgeActive[KEY_LAST] = {};
+	bool m_aEdgeReleased[KEY_LAST] = {};
+	bool m_aEdgeKeys[KEY_LAST] = {};
+	double m_aEdgePressTime[KEY_LAST] = {};
+	char m_aEdgeButtonsCache[256] = {};
+	void UpdateEdgeKeys();
 };
 #endif

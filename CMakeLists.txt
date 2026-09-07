@@ -2604,6 +2604,7 @@ if(CLIENT)
     components/kinetix/kinodynamic/kinodynamic_render.cpp
     components/kinetix/laser_unfreeze.cpp
     components/kinetix/fly_ride.cpp
+    components/kinetix/triple_fly.cpp
     components/kinetix/tas.cpp
     components/kinetix/tas.h
     components/kinetix/trajectory.cpp

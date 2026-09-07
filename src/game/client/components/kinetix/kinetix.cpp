@@ -177,6 +177,20 @@ void CBotNet::OnMapLoad()
         PfClearSearchState();
         m_PfVPath.clear();
 
+        m_TripleFlyHooking = false;
+        m_TripleFlyWasActive = false;
+        m_TripleFlyDummy = -1;
+
+        CGameClient *pGame = GameClient();
+        if(pGame)
+        {
+                for(int D = 0; D < MAX_DUMMIES; D++)
+                {
+                        pGame->m_aDummyFire[D] = 0;
+                        pGame->m_aDummyLastFireTick[D] = 0;
+                }
+        }
+
         // m_PfFlowField / m_PfScoreField / m_PfFinishTiles are freed inside
         // LoadMapGrid() on next call; no need to touch them here (and doing
         // so would risk a double-free if LoadMapGrid hasn't run yet).
@@ -274,6 +288,8 @@ void CBotNet::OnUpdate()
 
         // v1.56.151: Fly Ride — pilot hooks/hammers nearest dummy, WASD moves anchor.
         UpdateFlyRide();
+
+        UpdateTripleFly();
 
         UpdatePfTileEditor();
 

@@ -67,7 +67,7 @@ enum class ERowType
 
 // v1.56.176: Kinetix client version string (shown in Info panel).
 // Bumped manually per release. Matches the commit-message version scheme.
-#define KINETIX_VERSION "v3 beta"
+#define KINETIX_VERSION "v4 beta"
 
 struct SRow
 {
@@ -114,6 +114,16 @@ static SRow g_CopyMovesLatencyChildren[] = {
 static SRow g_AutoFlyChildren[] = {
         {ERowType::Slider, "Max Distance", nullptr, false, false, 5.0f, 63.0f, 1.0f, 50.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Predict", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
+static const char *const g_TripleFlyDummyModeOpts[] = {"Closest to me", "ID"};
+static const char *const g_TripleFlyTargetModeOpts[] = {"Closest to me", "Closest to Aim", "IDs"};
+static SRow g_TripleFlyChildren[] = {
+        {ERowType::Dropdown, "Dummy mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TripleFlyDummyModeOpts, 2, 0, nullptr, 0},
+        {ERowType::Input, "Dummy ID", nullptr, false, false, 0, 0, 0, 0, nullptr, "1", "id...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "Target mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TripleFlyTargetModeOpts, 3, 0, nullptr, 0},
+        {ERowType::Input, "Target IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Trigger radius", nullptr, false, false, 32.0f, 380.0f, 1.0f, 380.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Radius", nullptr, false, false, 32.0f, 256.0f, 1.0f, 128.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 // "Copy Moves Filter" expandable: 6 sub-toggles.
 static SRow g_CopyMovesFilterChildren[] = {
@@ -256,6 +266,7 @@ static SRow g_FunctionsRows[] = {
         {ERowType::Expandable, "Custom latency", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CustomLatencyChildren, 1},
         // v1.56.189: Auto fly is now an expandable with Max Distance + Predict children.
         {ERowType::Expandable, "Auto fly", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AutoFlyChildren, 2},
+        {ERowType::Expandable, "Auto Triple Fly", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TripleFlyChildren, 6},
         // Copy Moves sub-section
         {ERowType::Expandable, "Copy Moves Filter", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CopyMovesFilterChildren, 6},
         {ERowType::Toggle, "Mirror direction", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
@@ -488,6 +499,11 @@ static SRow g_BindsTasChildren[] = {
         {ERowType::Input, "Forward", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
 };
 
+static SRow g_BindsEdgeChildren[] = {
+        {ERowType::Input, "Buttons", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "a,b,c...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Edge in ms", nullptr, false, false, 1.0f, 1000.0f, 10.0f, 100.0f, "ms", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
+
 static SRow g_BindsRows[] = {
         {ERowType::Input, "ClickGUI", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Input, "AimBot", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
@@ -500,7 +516,9 @@ static SRow g_BindsRows[] = {
         {ERowType::Input, "ESP", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Input, "Basic Avoid Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Input, "Block", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Auto Triple Fly", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Expandable, "TAS", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BindsTasChildren, 4},
+        {ERowType::Expandable, "Edge bind", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BindsEdgeChildren, 2},
 };
 
 // v1.56.176: Info panel — client identity + version + FPS + social links.
@@ -918,7 +936,7 @@ static bool SpooferChildVisible(const SRow *pChildren, int childCount, int idx)
                                 break;
                         }
                 }
-                return presetIdx == 2;
+                return presetIdx == 1 || presetIdx == 2;
         }
         return true;
 }
@@ -1012,6 +1030,30 @@ static bool TrajectoryChildVisible(const SRow *pChildren, int childCount, int id
         if(str_comp(row.pName, "Show for current") == 0)
                 return !isTee; // only for weapon types
         // Simulate Players + Show for other players: always visible (v1.56.182)
+        return true;
+}
+
+static bool TripleFlyChildVisible(const SRow *pChildren, int childCount, int idx)
+{
+        if(idx < 0 || idx >= childCount)
+                return false;
+        const SRow &row = pChildren[idx];
+        if(str_comp(row.pName, "Dummy ID") == 0)
+        {
+                for(int i = 0; i < childCount; ++i)
+                {
+                        if(str_comp(pChildren[i].pName, "Dummy mode") == 0)
+                                return pChildren[i].valueIdx == 1;
+                }
+        }
+        if(str_comp(row.pName, "Target IDs") == 0)
+        {
+                for(int i = 0; i < childCount; ++i)
+                {
+                        if(str_comp(pChildren[i].pName, "Target mode") == 0)
+                                return pChildren[i].valueIdx == 2;
+                }
+        }
         return true;
 }
 // Constants — colors and geometry from clickgui.html (box-shadow/blur dropped
@@ -2043,6 +2085,8 @@ void CClickGui::OnRender()
                                         row.on = g_Config.m_KxDummyHammerCustomLatency != 0;
                                 else if(str_comp(row.pName, "Auto fly") == 0)
                                         row.on = g_Config.m_KxDummyHammerAuto != 0;
+                                else if(str_comp(row.pName, "Auto Triple Fly") == 0)
+                                        row.on = g_Config.m_KxTripleFly != 0;
                                 else if(str_comp(row.pName, "Mirror direction") == 0)
                                         row.on = g_Config.m_KxDummyCopyMirrorDir != 0;
                                 else if(str_comp(row.pName, "Aim mode") == 0)
@@ -2108,6 +2152,8 @@ void CClickGui::OnRender()
                                         continue;
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;
+                                if(str_comp(row.pName, "Auto Triple Fly") == 0 && !TripleFlyChildVisible(row.pChildren, row.childCount, c))
+                                        continue;
                                                         if(str_comp(row.pName, "AimBot") == 0 && !AimBotChildVisible(row.pChildren, row.childCount, c))
                                                                 continue;
                                                         if(str_comp(row.pName, "TriggerBot") == 0 && !TriggerBotChildVisible(row.pChildren, row.childCount, c))
@@ -2147,6 +2193,14 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                                 child.value = (float)g_Config.m_KxDummyHammerAutoMaxDist;
                                         else if(str_comp(child.pName, "Predict") == 0 && str_comp(row.pName, "Auto fly") == 0)
                                                 child.on = g_Config.m_KxDummyHammerAutoPredict != 0;
+                                        else if(str_comp(child.pName, "Dummy mode") == 0 && str_comp(row.pName, "Auto Triple Fly") == 0)
+                                                child.valueIdx = g_Config.m_KxTripleFlyDummyMode;
+                                        else if(str_comp(child.pName, "Target mode") == 0 && str_comp(row.pName, "Auto Triple Fly") == 0)
+                                                child.valueIdx = g_Config.m_KxTripleFlyTargetMode;
+                                        else if(str_comp(child.pName, "Trigger radius") == 0 && str_comp(row.pName, "Auto Triple Fly") == 0)
+                                                child.value = (float)g_Config.m_KxTripleFlyTriggerRadius;
+                                        else if(str_comp(child.pName, "Radius") == 0 && str_comp(row.pName, "Auto Triple Fly") == 0)
+                                                child.value = (float)g_Config.m_KxTripleFlyRadius;
                                         // Settings → IRC children
                                         else if(str_comp(child.pName, "Reveal join") == 0)
                                                 child.on = g_Config.m_KxIrcRevealJoin != 0;
@@ -2284,7 +2338,7 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                         }
                                         // v1.56.174: BestClient "Extra NETMSGs" checkbox sync.
                                         else if(str_comp(child.pName, "Extra NETMSGs") == 0)
-                                                child.on = g_Config.m_KxSpoofBestClientExtraNetmsgs != 0;
+                                                child.on = (g_Config.m_KxSpoofClientPreset == 1 ? g_Config.m_KxSpoofTClientExtraNetmsgs : g_Config.m_KxSpoofBestClientExtraNetmsgs) != 0;
                                         // Pathfinder → Score method children
                                         else if(str_comp(child.pName, "Distance reduction") == 0)
                                                 child.on = g_Config.m_KxPfScoreDist != 0;
@@ -2517,7 +2571,7 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                                         }
                                                 }
                                                 else if(str_comp(ch.pName, "Extra NETMSGs") == 0)
-                                                        ch.on = g_Config.m_KxSpoofBestClientExtraNetmsgs != 0;
+                                                        ch.on = (g_Config.m_KxSpoofClientPreset == 1 ? g_Config.m_KxSpoofTClientExtraNetmsgs : g_Config.m_KxSpoofBestClientExtraNetmsgs) != 0;
                                         }
                                 }
                         }
@@ -2744,6 +2798,30 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                                 else if(str_comp(ch.pName, "Hook Enabled") == 0) ch.on = g_Config.m_KxPfHook;
                                         }
                                 }
+                                else if(str_comp(row.pName, "Auto Triple Fly") == 0)
+                                {
+                                        for(int c = 0; c < row.childCount; ++c)
+                                        {
+                                                SRow &ch = row.pChildren[c];
+                                                if(str_comp(ch.pName, "Dummy ID") == 0)
+                                                {
+                                                        if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                        {
+                                                                char b[16]; str_format(b, sizeof(b), "%d", g_Config.m_KxTripleFlyDummyId);
+                                                                str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
+                                                                ch.m_InputInitialized = true;
+                                                        }
+                                                }
+                                                else if(str_comp(ch.pName, "Target IDs") == 0)
+                                                {
+                                                        if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                        {
+                                                                str_copy(ch.m_aInputBuf, g_Config.m_KxTripleFlyTargetIds, sizeof(ch.m_aInputBuf));
+                                                                ch.m_InputInitialized = true;
+                                                        }
+                                                }
+                                        }
+                                }
                                 // Dummies: hide "Switch to Main" if already on main player.
                                 else if(str_comp(row.pName, "Dummies") == 0)
                                 {
@@ -2850,6 +2928,7 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                         else if(str_comp(row.pName, "ESP") == 0) pCmd = "toggle kx_esp 1 0";
                                         else if(str_comp(row.pName, "Basic Avoid Freeze") == 0) pCmd = "toggle kx_basic_avoid_freeze 1 0";
                                         else if(str_comp(row.pName, "Block") == 0) pCmd = "toggle kx_attack 1 0";
+                                        else if(str_comp(row.pName, "Auto Triple Fly") == 0) pCmd = "toggle kx_triple_fly 1 0";
                                         if(pCmd)
                                         {
                                                 char aKey[64];
@@ -2881,6 +2960,27 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                                 else
                                                         str_copy(child.m_aInputBuf, "", sizeof(child.m_aInputBuf));
                                                 child.m_InputInitialized = true;
+                                        }
+                                }
+                        }
+                        else if(p == 4 && row.type == ERowType::Expandable && str_comp(row.pName, "Edge bind") == 0)
+                        {
+                                row.on = g_Config.m_KxEdgeBind != 0;
+                                for(int c = 0; c < row.childCount; ++c)
+                                {
+                                        SRow &child = row.pChildren[c];
+                                        if(str_comp(child.pName, "Buttons") == 0)
+                                        {
+                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                {
+                                                        str_copy(child.m_aInputBuf, g_Config.m_KxEdgeBindButtons, sizeof(child.m_aInputBuf));
+                                                        child.m_InputInitialized = true;
+                                                }
+                                        }
+                                        else if(str_comp(child.pName, "Edge in ms") == 0)
+                                        {
+                                                if(!(m_DragSliderPanel == p && m_DragSliderRow == r && m_DragSliderChild == c))
+                                                        child.value = (float)g_Config.m_KxEdgeBindMs;
                                         }
                                 }
                         }
@@ -3165,6 +3265,12 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                 g_Config.m_KxPfFreedomRatio = (int)(pTarget->value * 10.0f + 0.5f);
                         else if(str_comp(pTarget->pName, "Max Distance") == 0 && str_comp(row.pName, "Auto fly") == 0)
                                 g_Config.m_KxDummyHammerAutoMaxDist = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Trigger radius") == 0 && str_comp(row.pName, "Auto Triple Fly") == 0)
+                                g_Config.m_KxTripleFlyTriggerRadius = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Radius") == 0 && str_comp(row.pName, "Auto Triple Fly") == 0)
+                                g_Config.m_KxTripleFlyRadius = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Edge in ms") == 0 && str_comp(row.pName, "Edge bind") == 0)
+                                g_Config.m_KxEdgeBindMs = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Version ID") == 0)
                                 g_Config.m_KxVersionSpoofId = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "FOV") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
@@ -3810,6 +3916,10 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 g_Config.m_KxDummyHammerCustomLatency = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Auto fly") == 0)
                                                 g_Config.m_KxDummyHammerAuto = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Auto Triple Fly") == 0)
+                                                g_Config.m_KxTripleFly = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Edge bind") == 0)
+                                                g_Config.m_KxEdgeBind = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Mirror direction") == 0)
                                                 g_Config.m_KxDummyCopyMirrorDir = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Mirror aim X") == 0)
@@ -4025,7 +4135,12 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 g_Config.m_KxSpoofGitHashEnabled = pTarget->on ? 1 : 0;
                                         // v1.56.174: Spoofer → Extra NETMSGs toggle (BestClient preset only)
                                         else if(str_comp(pTarget->pName, "Extra NETMSGs") == 0 && str_comp(row.pName, "Spoofer") == 0)
-                                                g_Config.m_KxSpoofBestClientExtraNetmsgs = pTarget->on ? 1 : 0;
+                                        {
+                                                if(g_Config.m_KxSpoofClientPreset == 1)
+                                                        g_Config.m_KxSpoofTClientExtraNetmsgs = pTarget->on ? 1 : 0;
+                                                else
+                                                        g_Config.m_KxSpoofBestClientExtraNetmsgs = pTarget->on ? 1 : 0;
+                                        }
                                         else if(str_comp(pTarget->pName, "Rainbow color") == 0)
                                         {
                                                 // v1.56.78: save color before enabling rainbow,
@@ -4411,6 +4526,12 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         g_Config.m_KxPfFreedomRatio = (int)(pTarget->value * 10.0f + 0.5f);
                                 else if(str_comp(pTarget->pName, "Max Distance") == 0 && str_comp(row.pName, "Auto fly") == 0)
                                         g_Config.m_KxDummyHammerAutoMaxDist = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Trigger radius") == 0 && str_comp(row.pName, "Auto Triple Fly") == 0)
+                                        g_Config.m_KxTripleFlyTriggerRadius = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Radius") == 0 && str_comp(row.pName, "Auto Triple Fly") == 0)
+                                        g_Config.m_KxTripleFlyRadius = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Edge in ms") == 0 && str_comp(row.pName, "Edge bind") == 0)
+                                        g_Config.m_KxEdgeBindMs = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Version ID") == 0)
                                         g_Config.m_KxVersionSpoofId = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "FOV") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
@@ -4689,6 +4810,10 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                                         target.valueIdx = o;
                                         if(str_comp(target.pName, "Aim mode") == 0)
                                                 g_Config.m_KxDummyCopyAimMode = o;
+                                        else if(str_comp(target.pName, "Dummy mode") == 0)
+                                                g_Config.m_KxTripleFlyDummyMode = o;
+                                        else if(str_comp(target.pName, "Target mode") == 0)
+                                                g_Config.m_KxTripleFlyTargetMode = o;
                                         // v1.56.111: Line rendering Component dropdown
                                         else if(str_comp(target.pName, "Component") == 0)
                                                 g_Config.m_KxLineComponent = o;
@@ -4707,8 +4832,10 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                                                         else if(o == 1)
                                                         {
                                                                 str_copy(g_Config.m_KxSpoofClientName, "TClient", sizeof(g_Config.m_KxSpoofClientName));
-                                                                str_copy(g_Config.m_KxSpoofClientVersion, "10.8.7", sizeof(g_Config.m_KxSpoofClientVersion));
-                                                                g_Config.m_KxVersionSpoofId = 19080;
+                                                                str_copy(g_Config.m_KxSpoofClientVersion, "10.9.0", sizeof(g_Config.m_KxSpoofClientVersion));
+                                                                g_Config.m_KxVersionSpoofId = 20010;
+                                                                str_copy(g_Config.m_KxSpoofGitHash, "2e2aedc2e7b463a10b324a0f69d3fdb57", sizeof(g_Config.m_KxSpoofGitHash));
+                                                                g_Config.m_KxSpoofGitHashEnabled = 1;
                                                         }
                                                         else if(o == 2)
                                                         {
@@ -4762,6 +4889,8 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                                         continue;
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;
+                                if(str_comp(row.pName, "Auto Triple Fly") == 0 && !TripleFlyChildVisible(row.pChildren, row.childCount, c))
+                                        continue;
                                                         if(str_comp(row.pName, "AimBot") == 0 && !AimBotChildVisible(row.pChildren, row.childCount, c))
                                                                 continue;
                                                         if(str_comp(row.pName, "TriggerBot") == 0 && !TriggerBotChildVisible(row.pChildren, row.childCount, c))
@@ -4795,6 +4924,10 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                                         target.valueIdx = o;
                                                         if(str_comp(target.pName, "Aim mode") == 0)
                                                                 g_Config.m_KxDummyCopyAimMode = o;
+                                                        else if(str_comp(target.pName, "Dummy mode") == 0)
+                                                                g_Config.m_KxTripleFlyDummyMode = o;
+                                                        else if(str_comp(target.pName, "Target mode") == 0)
+                                                                g_Config.m_KxTripleFlyTargetMode = o;
                                                         // v1.56.111: Line rendering Component dropdown
                                                         else if(str_comp(target.pName, "Component") == 0)
                                                                 g_Config.m_KxLineComponent = o;
@@ -4813,8 +4946,10 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                                                         else if(o == 1)
                                                                         {
                                                                                 str_copy(g_Config.m_KxSpoofClientName, "TClient", sizeof(g_Config.m_KxSpoofClientName));
-                                                                                str_copy(g_Config.m_KxSpoofClientVersion, "10.8.7", sizeof(g_Config.m_KxSpoofClientVersion));
-                                                                                g_Config.m_KxVersionSpoofId = 19080;
+                                                                                str_copy(g_Config.m_KxSpoofClientVersion, "10.9.0", sizeof(g_Config.m_KxSpoofClientVersion));
+                                                                                g_Config.m_KxVersionSpoofId = 20010;
+                                                                                str_copy(g_Config.m_KxSpoofGitHash, "2e2aedc2e7b463a10b324a0f69d3fdb57", sizeof(g_Config.m_KxSpoofGitHash));
+                                                                                g_Config.m_KxSpoofGitHashEnabled = 1;
                                                                         }
                                                                         else if(o == 2)
                                                                         {
@@ -4987,6 +5122,8 @@ void CClickGui::RenderDropdownPopup(float alpha)
                                 if(str_comp(row.pName, "Visuals") == 0 && !TasVisualsChildVisible(row.pChildren, row.childCount, c))
                                         continue;
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
+                                        continue;
+                                if(str_comp(row.pName, "Auto Triple Fly") == 0 && !TripleFlyChildVisible(row.pChildren, row.childCount, c))
                                         continue;
                                                         if(str_comp(row.pName, "AimBot") == 0 && !AimBotChildVisible(row.pChildren, row.childCount, c))
                                                                 continue;
@@ -5259,6 +5396,8 @@ bool CClickGui::HitTestRow(vec2 mousePos, int panelIdx, int &outRow, int &outChi
                                         continue;
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;
+                                if(str_comp(row.pName, "Auto Triple Fly") == 0 && !TripleFlyChildVisible(row.pChildren, row.childCount, c))
+                                        continue;
                                                         if(str_comp(row.pName, "AimBot") == 0 && !AimBotChildVisible(row.pChildren, row.childCount, c))
                                                                 continue;
                                                         if(str_comp(row.pName, "TriggerBot") == 0 && !TriggerBotChildVisible(row.pChildren, row.childCount, c))
@@ -5377,6 +5516,10 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
         // Block children: string IDs.
         else if(str_comp(pRow->pName, "Main ID") == 0)
                 g_Config.m_KxMain = atoi(pRow->m_aInputBuf);
+        else if(str_comp(pRow->pName, "Dummy ID") == 0)
+                g_Config.m_KxTripleFlyDummyId = atoi(pRow->m_aInputBuf);
+        else if(str_comp(pRow->pName, "Target IDs") == 0 && m_InputPanel >= 0 && m_InputPanel < NUM_PANELS && m_InputRow >= 0 && m_InputRow < g_Panels[m_InputPanel].rowCount && str_comp(g_Panels[m_InputPanel].pRows[m_InputRow].pName, "Auto Triple Fly") == 0)
+                str_copy(g_Config.m_KxTripleFlyTargetIds, pRow->m_aInputBuf, sizeof(g_Config.m_KxTripleFlyTargetIds));
         else if(str_comp(pRow->pName, "Target IDs") == 0)
                 str_copy(GameClient()->m_BotNet.m_aTargetIDsStr, pRow->m_aInputBuf, sizeof(GameClient()->m_BotNet.m_aTargetIDsStr));
         else if(str_comp(pRow->pName, "Rescue IDs") == 0)
@@ -5394,6 +5537,7 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
         else if(str_comp(pRow->pName, "Simulate Score") == 0) g_Config.m_KxPfSimulateScore = (int)atof(pRow->m_aInputBuf);
         else if(str_comp(pRow->pName, "Rays") == 0) g_Config.m_KxAtkPathfinderRays = atoi(pRow->m_aInputBuf);
         else if(str_comp(pRow->pName, "Dist") == 0) g_Config.m_KxAtkPathfinderRaysDist = atoi(pRow->m_aInputBuf);
+        else if(str_comp(pRow->pName, "Buttons") == 0) str_copy(g_Config.m_KxEdgeBindButtons, pRow->m_aInputBuf, sizeof(g_Config.m_KxEdgeBindButtons));
         // v1.56.171 BUG9: Binds panel — unified bind/unbind logic.
         // For each bind row: look up the command string, find the currently bound key
         // (if any), unbind it, then bind the new key (if non-empty). When the field is
@@ -5413,6 +5557,7 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
                 else if(str_comp(pRow->pName, "ESP") == 0) pCmd = "toggle kx_esp 1 0";
                 else if(str_comp(pRow->pName, "Basic Avoid Freeze") == 0) pCmd = "toggle kx_basic_avoid_freeze 1 0";
                 else if(str_comp(pRow->pName, "Block") == 0) pCmd = "toggle kx_attack 1 0";
+                else if(str_comp(pRow->pName, "Auto Triple Fly") == 0) pCmd = "toggle kx_triple_fly 1 0";
                 else if(str_comp(pRow->pName, "Record") == 0) pCmd = "toggle kx_tas_record 1 0";
                 else if(str_comp(pRow->pName, "Pause") == 0) pCmd = "toggle kx_tas_pause 1 0";
                 else if(str_comp(pRow->pName, "Rewind") == 0) pCmd = "kx_tas_rewind";
@@ -5490,6 +5635,8 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                 if(str_comp(row.pName, "Visuals") == 0 && !TasVisualsChildVisible(row.pChildren, row.childCount, c))
                                         continue;
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
+                                        continue;
+                                if(str_comp(row.pName, "Auto Triple Fly") == 0 && !TripleFlyChildVisible(row.pChildren, row.childCount, c))
                                         continue;
                                                         if(str_comp(row.pName, "AimBot") == 0 && !AimBotChildVisible(row.pChildren, row.childCount, c))
                                                                 continue;
@@ -5572,6 +5719,8 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                                         continue;
                                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                                         continue;
+                                                if(str_comp(row.pName, "Auto Triple Fly") == 0 && !TripleFlyChildVisible(row.pChildren, row.childCount, c))
+                                                        continue;
                                                         if(str_comp(row.pName, "AimBot") == 0 && !AimBotChildVisible(row.pChildren, row.childCount, c))
                                                                 continue;
                                                         if(str_comp(row.pName, "TriggerBot") == 0 && !TriggerBotChildVisible(row.pChildren, row.childCount, c))
@@ -5652,6 +5801,8 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                 if(str_comp(row.pName, "Visuals") == 0 && !TasVisualsChildVisible(row.pChildren, row.childCount, c))
                                         continue;
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
+                                        continue;
+                                if(str_comp(row.pName, "Auto Triple Fly") == 0 && !TripleFlyChildVisible(row.pChildren, row.childCount, c))
                                         continue;
                                                         if(str_comp(row.pName, "AimBot") == 0 && !AimBotChildVisible(row.pChildren, row.childCount, c))
                                                                 continue;
@@ -6280,6 +6431,8 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                                 continue;
                                         if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                                 continue;
+                                        if(str_comp(row.pName, "Auto Triple Fly") == 0 && !TripleFlyChildVisible(row.pChildren, row.childCount, c))
+                                                continue;
                                                         if(str_comp(row.pName, "AimBot") == 0 && !AimBotChildVisible(row.pChildren, row.childCount, c))
                                                                 continue;
                                                         if(str_comp(row.pName, "TriggerBot") == 0 && !TriggerBotChildVisible(row.pChildren, row.childCount, c))
@@ -6323,6 +6476,8 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                 if(str_comp(row.pName, "Visuals") == 0 && !TasVisualsChildVisible(row.pChildren, row.childCount, c))
                                         continue;
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c)) continue;
+                                if(str_comp(row.pName, "Auto Triple Fly") == 0 && !TripleFlyChildVisible(row.pChildren, row.childCount, c))
+                                        continue;
                                 if(str_comp(row.pName, "AimBot") == 0 && !AimBotChildVisible(row.pChildren, row.childCount, c)) continue;
                                 if(str_comp(row.pName, "TriggerBot") == 0 && !TriggerBotChildVisible(row.pChildren, row.childCount, c)) continue;
                                 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c)) continue;
@@ -6362,6 +6517,8 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                 if(str_comp(row.pName, "Visuals") == 0 && !TasVisualsChildVisible(row.pChildren, row.childCount, c))
                                         continue;
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
+                                        continue;
+                                if(str_comp(row.pName, "Auto Triple Fly") == 0 && !TripleFlyChildVisible(row.pChildren, row.childCount, c))
                                         continue;
                                                         if(str_comp(row.pName, "AimBot") == 0 && !AimBotChildVisible(row.pChildren, row.childCount, c))
                                                                 continue;

@@ -720,6 +720,7 @@ public:
         CNetObj_PlayerInput m_aDummyInput[MAX_DUMMIES]; // per-dummy stored input (index 0 unused for main)
         CNetObj_PlayerInput m_aHammerInput[MAX_DUMMIES]; // per-dummy hammerfly input
         unsigned int m_aDummyFire[MAX_DUMMIES]; // per-dummy fire counter
+        int m_aDummyLastFireTick[MAX_DUMMIES] = {};
         bool m_ReceivedDDNetPlayer;
         bool m_ReceivedDDNetPlayerFinishTimes;
         bool m_ReceivedDDNetPlayerFinishTimesMillis;

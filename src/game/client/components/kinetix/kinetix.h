@@ -531,6 +531,10 @@ public:
         int m_FlyRidePilotDir = 0;          // -1 left, 0 none, +1 right (read by CControls::SnapInput)
         int m_FlyRidePilotHook = 0;         // 0 or 1 (read by CControls::SnapInput)
         int m_FlyRideTargetDummy = -1;      // nearest dummy index (for cleanup)
+        void UpdateTripleFly();
+        bool m_TripleFlyWasActive = false;
+        int m_TripleFlyDummy = -1;
+        bool m_TripleFlyHooking = false;
 
         // Laser unfreeze path storage (for Show attempt rendering)
         std::vector<vec2> m_LaserUnfreezePath;
