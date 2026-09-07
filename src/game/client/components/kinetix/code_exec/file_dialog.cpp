@@ -99,6 +99,73 @@ bool KxPickTasFile(char *pBuf, int BufSize)
 
 	return WideCharToMultiByte(CP_UTF8, 0, aWidePath, -1, pBuf, BufSize, NULL, NULL) > 0;
 }
+#elif defined(CONF_PLATFORM_ANDROID)
+
+#include <base/str.h>
+#include <base/system.h>
+
+#include <SDL.h>
+#include <jni.h>
+
+#include <mutex>
+
+static std::mutex s_PickLock;
+static int s_PickResultKind = -1;
+static char s_aPickResultPath[IO_MAX_PATH_LENGTH] = {};
+
+constexpr uint32_t COMMAND_USER = 0x8000;
+constexpr uint32_t COMMAND_PICK_FILE = COMMAND_USER + 2;
+
+extern "C" JNIEXPORT void JNICALL Java_org_ddnet_client_ClientActivity_nativeOnFilePicked(JNIEnv *pEnv, jclass, jint Kind, jstring Path)
+{
+	char aPath[IO_MAX_PATH_LENGTH];
+	aPath[0] = '\0';
+	if(Path)
+	{
+		const char *pUtf = pEnv->GetStringUTFChars(Path, nullptr);
+		if(pUtf)
+		{
+			str_copy(aPath, pUtf, sizeof(aPath));
+			pEnv->ReleaseStringUTFChars(Path, pUtf);
+		}
+	}
+	std::lock_guard<std::mutex> Lock(s_PickLock);
+	s_PickResultKind = Kind;
+	str_copy(s_aPickResultPath, aPath, sizeof(s_aPickResultPath));
+}
+
+bool KxPickFileAsync(int Kind)
+{
+	if(Kind != KXFILEPICK_SCRIPT && Kind != KXFILEPICK_TAS)
+		return false;
+
+	JNIEnv *pEnv = static_cast<JNIEnv *>(SDL_AndroidGetJNIEnv());
+	jobject Activity = (jobject)SDL_AndroidGetActivity();
+	if(!pEnv || !Activity)
+		return false;
+	jclass ActivityClass = pEnv->GetObjectClass(Activity);
+
+	jmethodID MethodId = pEnv->GetStaticMethodID(ActivityClass, "sendMessage", "(II)Z");
+	const bool Dispatched = MethodId && pEnv->CallStaticBooleanMethod(ActivityClass, MethodId, (jint)COMMAND_PICK_FILE, (jint)Kind) != JNI_FALSE;
+
+	pEnv->DeleteLocalRef(ActivityClass);
+	pEnv->DeleteLocalRef(Activity);
+
+	return Dispatched;
+}
+
+bool KxPickFilePump(int *pKind, char *pPath, int BufSize)
+{
+	std::lock_guard<std::mutex> Lock(s_PickLock);
+	if(s_PickResultKind < 0)
+		return false;
+	*pKind = s_PickResultKind;
+	str_copy(pPath, s_aPickResultPath, BufSize);
+	s_PickResultKind = -1;
+	s_aPickResultPath[0] = '\0';
+	return true;
+}
+
 #else
 bool KxPickScriptFile(char *pBuf, int BufSize)
 {
@@ -110,6 +177,22 @@ bool KxPickScriptFile(char *pBuf, int BufSize)
 bool KxPickTasFile(char *pBuf, int BufSize)
 {
 	(void)pBuf;
+	(void)BufSize;
+	return false;
+}
+#endif
+
+#if !defined(CONF_PLATFORM_ANDROID)
+bool KxPickFileAsync(int Kind)
+{
+	(void)Kind;
+	return false;
+}
+
+bool KxPickFilePump(int *pKind, char *pPath, int BufSize)
+{
+	(void)pKind;
+	(void)pPath;
 	(void)BufSize;
 	return false;
 }

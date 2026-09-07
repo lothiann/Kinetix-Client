@@ -1739,6 +1739,8 @@ void CClickGui::UpdateTasRows()
 
 void CClickGui::OpenScriptPicker()
 {
+        if(KxPickFileAsync(KXFILEPICK_SCRIPT))
+                return;
 #if defined(CONF_FAMILY_WINDOWS)
         char aPath[1024];
         if(KxPickScriptFile(aPath, sizeof(aPath)))
@@ -2037,6 +2039,42 @@ void CClickGui::OnRender()
         // devices and would reset the cursor to 0,0 every frame.
         if(!m_TouchActive)
                 m_MousePos = Input()->NativeMousePos() / m_UiScale;
+
+        int PickKind = -1;
+        char aPickPath[1024];
+        if(KxPickFilePump(&PickKind, aPickPath, sizeof(aPickPath)) && aPickPath[0])
+        {
+                if(PickKind == KXFILEPICK_TAS)
+                {
+                        CTas &Tas = GameClient()->m_Tas;
+                        Tas.PickFile(aPickPath);
+                        if(Tas.FilePicked())
+                        {
+                                for(SRow &R : g_TasRows)
+                                {
+                                        if(str_comp(R.pName, "Map") == 0)
+                                        {
+                                                str_copy(R.m_aInputBuf, Tas.PickedMap(), sizeof(R.m_aInputBuf));
+                                                R.m_InputInitialized = true;
+                                        }
+                                        else if(str_comp(R.pName, "Name") == 0)
+                                        {
+                                                str_copy(R.m_aInputBuf, Tas.PickedName(), sizeof(R.m_aInputBuf));
+                                                R.m_InputInitialized = true;
+                                        }
+                                        else if(str_comp(R.pName, "Author") == 0)
+                                        {
+                                                str_copy(R.m_aInputBuf, Tas.PickedAuthor(), sizeof(R.m_aInputBuf));
+                                                R.m_InputInitialized = true;
+                                        }
+                                }
+                        }
+                }
+                else if(PickKind == KXFILEPICK_SCRIPT)
+                {
+                        OnScriptPicked(aPickPath, false);
+                }
+        }
 
         // Detect transition 0->1 (opening): pick fresh random offscreen positions
         // for each panel and initialize panel positions to home (if first open).
@@ -3634,8 +3672,7 @@ bool CClickGui::OnTouchState(const std::vector<IInput::CTouchFingerState> &vTouc
                 // as m_MousePos from NativeMousePos on desktop.
                 const vec2 ScreenSize = vec2((float)Graphics()->ScreenWidth(), (float)Graphics()->ScreenHeight());
                 const vec2 FingerPos = vTouchFingerStates.front().m_Position;
-                const float scale = (Graphics()->ScreenHeight() > 0.0f) ? (Graphics()->ScreenHeight() / 1080.0f) : 1.0f;
-                m_MousePos = vec2(FingerPos.x * ScreenSize.x, FingerPos.y * ScreenSize.y) / scale;
+                m_MousePos = vec2(FingerPos.x * ScreenSize.x, FingerPos.y * ScreenSize.y) / (m_UiScale > 0.0f ? m_UiScale : 1.0f);
 
                 // True if the press lands on something that needs an immediate
                 // press-down (drag interactions), not a deferred tap.
@@ -4366,6 +4403,8 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         }
                                         else
                                         {
+                                                if(KxPickFileAsync(KXFILEPICK_TAS))
+                                                        return;
                                                 char aTasPath[1024];
                                                 if(KxPickTasFile(aTasPath, sizeof(aTasPath)))
                                                 {

@@ -70,6 +70,7 @@ CTouchControls::CTouchButton::CTouchButton(CTouchButton &&Other) noexcept :
         m_Shape(Other.m_Shape),
         m_vVisibilities(Other.m_vVisibilities),
         m_pBehavior(std::move(Other.m_pBehavior)),
+        m_Overlay(Other.m_Overlay),
         m_VisibilityCached(false)
 {
         Other.m_pTouchControls = nullptr;
@@ -89,6 +90,7 @@ CTouchControls::CTouchButton &CTouchControls::CTouchButton::operator=(CTouchButt
         m_Shape = Other.m_Shape;
         m_vVisibilities = Other.m_vVisibilities;
         m_pBehavior = std::move(Other.m_pBehavior);
+        m_Overlay = Other.m_Overlay;
         m_VisibilityCached = false;
         UpdatePointers();
         UpdateScreenFromUnitRect();
@@ -875,6 +877,7 @@ void CTouchControls::LoadOverlayButtons()
                         if(ParsedButton.has_value())
                         {
                                 m_vTouchButtons.push_back(std::move(ParsedButton.value()));
+                                m_vTouchButtons.back().m_Overlay = true;
                         }
                 }
         }
@@ -890,7 +893,10 @@ void CTouchControls::LoadOverlayButtons()
 bool CTouchControls::LoadConfigurationFromClipboard()
 {
         std::string Clipboard = Input()->GetClipboardText();
-        return ParseConfiguration(Clipboard.c_str(), Clipboard.size());
+        const bool Result = ParseConfiguration(Clipboard.c_str(), Clipboard.size());
+        if(Result)
+                LoadOverlayButtons();
+        return Result;
 }
 
 bool CTouchControls::SaveConfigurationToFile()
@@ -1766,6 +1772,8 @@ void CTouchControls::WriteConfiguration(CJsonWriter *pWriter)
         pWriter->BeginArray();
         for(CTouchButton &TouchButton : m_vTouchButtons)
         {
+                if(TouchButton.m_Overlay)
+                        continue;
                 TouchButton.WriteToConfiguration(pWriter);
         }
         pWriter->EndArray();

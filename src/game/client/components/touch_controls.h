@@ -201,6 +201,7 @@ public:
 		std::vector<CButtonVisibility> m_vVisibilities;
 		std::unique_ptr<CTouchButtonBehavior> m_pBehavior; // nullptr = default. In button editor the default is bind behavior with nothing.
 
+		bool m_Overlay = false;
 		bool m_VisibilityCached;
 		std::chrono::nanoseconds m_VisibilityStartTime;
 
