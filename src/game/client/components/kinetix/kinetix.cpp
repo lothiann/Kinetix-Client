@@ -94,6 +94,72 @@ bool CBotNet::OnInput(const IInput::CEvent &Event)
 	return (Event.m_Flags & (IInput::FLAG_PRESS | IInput::FLAG_RELEASE)) != 0;
 }
 
+static void ConDummySwitch(IConsole::IResult *pResult, void *pUserData)
+{
+        ((CBotNet *)pUserData)->SmartDummySwitch();
+}
+
+void CBotNet::SmartDummySwitch()
+{
+        const int Cur = g_Config.m_ClDummy;
+        int Next = -1;
+        if(g_Config.m_KxSdsMode == 0)
+        {
+                for(int Off = 1; Off <= MAX_DUMMIES && Next < 0; Off++)
+                {
+                        const int D = (Cur + Off) % MAX_DUMMIES;
+                        if(D == 0 || Client()->DummyConnected(D))
+                                Next = D;
+                }
+        }
+        else
+        {
+                int aIds[MAX_DUMMIES];
+                int NumIds = 0;
+                const char *pCursor = g_Config.m_KxSdsDummyIds;
+                while(*pCursor && NumIds < MAX_DUMMIES)
+                {
+                        while(*pCursor == ' ' || *pCursor == '\t')
+                                pCursor++;
+                        if(*pCursor < '0' || *pCursor > '9')
+                                break;
+                        int V = 0;
+                        while(*pCursor >= '0' && *pCursor <= '9')
+                        {
+                                V = V * 10 + (*pCursor - '0');
+                                pCursor++;
+                        }
+                        if(V < MAX_DUMMIES)
+                                aIds[NumIds++] = V;
+                        while(*pCursor && *pCursor != ',')
+                                pCursor++;
+                        if(*pCursor == ',')
+                                pCursor++;
+                }
+                if(NumIds > 0)
+                {
+                        int Pos = -1;
+                        for(int i = 0; i < NumIds; i++)
+                        {
+                                if(aIds[i] == Cur)
+                                {
+                                        Pos = i;
+                                        break;
+                                }
+                        }
+                        const int Start = Pos >= 0 ? Pos : NumIds - 1;
+                        for(int Off = 1; Off <= NumIds && Next < 0; Off++)
+                        {
+                                const int D = aIds[(Start + Off) % NumIds];
+                                if(D == 0 || Client()->DummyConnected(D))
+                                        Next = D;
+                        }
+                }
+        }
+        if(Next >= 0 && Next != Cur)
+                g_Config.m_ClDummy = Next;
+}
+
 // =========================================================
 // ON CONSOLE INIT
 // =========================================================
@@ -119,7 +185,8 @@ void CBotNet::OnConsoleInit()
 
         // Pathfinder tab (Kinetix→Pathfinder) — chunk-based mini TAS maker
         Console()->Register("kx_pf_live", "i[state]", CFGFLAG_CLIENT, ConPfLive, this, "Pathfinder tab: 0=idle, 1=running, 2=finished");
-        Console()->Register("kx_pf_play", "i[on]", CFGFLAG_CLIENT, ConPfGo, this, "Pathfinder: 1=replay path on real player (needs FINISHED state), 0=stop");
+	Console()->Register("kx_pf_play", "i[on]", CFGFLAG_CLIENT, ConPfGo, this, "Pathfinder: 1=replay path on real player (needs FINISHED state), 0=stop");
+	Console()->Register("kx_dummy_switch", "", CFGFLAG_CLIENT, ConDummySwitch, this, "Switch to next dummy (smart dummy switch)");
 }
 
 // =========================================================

@@ -503,8 +503,16 @@ static SRow g_BindsEdgeChildren[] = {
         {ERowType::Input, "Buttons", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "a,b,c...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Edge in ms", nullptr, false, false, 1.0f, 1000.0f, 10.0f, 100.0f, "ms", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
+static const char *const g_BindsModeOpts[] = {"Merge", "Override"};
+static const char *const g_SdsModeOpts[] = {"Loop all", "Order targets"};
+static SRow g_BindsSdsChildren[] = {
+        {ERowType::Input, "Button", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_SdsModeOpts, 2, 0, nullptr, 0},
+        {ERowType::Input, "Dummy IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "0,1,3,5...", nullptr, 0, 0, nullptr, 0},
+};
 
 static SRow g_BindsRows[] = {
+        {ERowType::Dropdown, "Bind Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_BindsModeOpts, 2, 0, nullptr, 0},
         {ERowType::Input, "ClickGUI", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Input, "AimBot", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Input, "TriggerBot", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
@@ -519,6 +527,7 @@ static SRow g_BindsRows[] = {
         {ERowType::Input, "Auto Triple Fly", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Expandable, "TAS", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BindsTasChildren, 4},
         {ERowType::Expandable, "Edge bind", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BindsEdgeChildren, 2},
+        {ERowType::Expandable, "Smart dummy switch", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BindsSdsChildren, 3},
 };
 
 // v1.56.176: Info panel — client identity + version + FPS + social links.
@@ -983,6 +992,14 @@ static bool LineRenderingChildVisible(const SRow *pChildren, int childCount, int
                 }
                 return false;
         }
+        return true;
+}
+static bool BindsChildVisible(const SRow *pChildren, int childCount, int idx)
+{
+        if(idx < 0 || idx >= childCount)
+                return false;
+        if(str_comp(pChildren[idx].pName, "Dummy IDs") == 0)
+                return g_Config.m_KxSdsMode == 1;
         return true;
 }
 // v1.56.129: BAF — "Angles" + "Silent" visible only when Aim toggle is on.
@@ -2208,6 +2225,8 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c))
         continue;
+if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c))
+        continue;
                                         if(str_comp(child.pName, "Latency (ms)") == 0 && str_comp(row.pName, "Custom latency") == 0)
                                                 child.value = (float)g_Config.m_KxDummyHammerLatencyMs;
                                         else if(str_comp(child.pName, "Latency (ms)") == 0 && str_comp(row.pName, "Copy Moves Latency") == 0)
@@ -2947,6 +2966,8 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                 if(!(m_DragSliderPanel == p && m_DragSliderRow == r && m_DragSliderChild == -1))
                                         row.value = g_Config.m_KxClickGuiScale / 10.0f;
                         }
+                        else if(p == 4 && row.type == ERowType::Dropdown && str_comp(row.pName, "Bind Mode") == 0)
+                                row.valueIdx = g_Config.m_KxBindsMode;
                         // v1.56.199: Binds panel — sync input fields with actual bound keys
                         // every frame (not just on open), so console bind changes appear
                         // immediately while ClickGUI is open.
@@ -2970,7 +2991,10 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                         if(pCmd)
                                         {
                                                 char aKey[64];
-                                                GameClient()->m_Binds.GetKey(pCmd, aKey, sizeof(aKey));
+                                                if(g_Config.m_KxBindsMode == 0)
+                                                        GameClient()->m_Binds.GetKeySegment(pCmd, aKey, sizeof(aKey));
+                                                else
+                                                        GameClient()->m_Binds.GetKey(pCmd, aKey, sizeof(aKey));
                                                 if(aKey[0])
                                                         str_copy(row.m_aInputBuf, aKey, sizeof(row.m_aInputBuf));
                                                 else
@@ -2992,7 +3016,10 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                         if(pCmd && (!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c))
                                         {
                                                 char aKey[64];
-                                                GameClient()->m_Binds.GetKey(pCmd, aKey, sizeof(aKey));
+                                                if(g_Config.m_KxBindsMode == 0)
+                                                        GameClient()->m_Binds.GetKeySegment(pCmd, aKey, sizeof(aKey));
+                                                else
+                                                        GameClient()->m_Binds.GetKey(pCmd, aKey, sizeof(aKey));
                                                 if(aKey[0])
                                                         str_copy(child.m_aInputBuf, aKey, sizeof(child.m_aInputBuf));
                                                 else
@@ -3019,6 +3046,39 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                         {
                                                 if(!(m_DragSliderPanel == p && m_DragSliderRow == r && m_DragSliderChild == c))
                                                         child.value = (float)g_Config.m_KxEdgeBindMs;
+                                        }
+                                }
+                        }
+                        else if(p == 4 && row.type == ERowType::Expandable && str_comp(row.pName, "Smart dummy switch") == 0)
+                        {
+                                for(int c = 0; c < row.childCount; ++c)
+                                {
+                                        SRow &child = row.pChildren[c];
+                                        if(str_comp(child.pName, "Button") == 0)
+                                        {
+                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                {
+                                                        char aKey[64];
+                                                        if(g_Config.m_KxBindsMode == 0)
+                                                                GameClient()->m_Binds.GetKeySegment("kx_dummy_switch", aKey, sizeof(aKey));
+                                                        else
+                                                                GameClient()->m_Binds.GetKey("kx_dummy_switch", aKey, sizeof(aKey));
+                                                        if(aKey[0])
+                                                                str_copy(child.m_aInputBuf, aKey, sizeof(child.m_aInputBuf));
+                                                        else
+                                                                str_copy(child.m_aInputBuf, "", sizeof(child.m_aInputBuf));
+                                                        child.m_InputInitialized = true;
+                                                }
+                                        }
+                                        else if(str_comp(child.pName, "Mode") == 0)
+                                                child.valueIdx = g_Config.m_KxSdsMode;
+                                        else if(str_comp(child.pName, "Dummy IDs") == 0)
+                                        {
+                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                {
+                                                        str_copy(child.m_aInputBuf, g_Config.m_KxSdsDummyIds, sizeof(child.m_aInputBuf));
+                                                        child.m_InputInitialized = true;
+                                                }
                                         }
                                 }
                         }
@@ -4856,6 +4916,8 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                                         // v1.56.111: Line rendering Component dropdown
                                         else if(str_comp(target.pName, "Component") == 0)
                                                 g_Config.m_KxLineComponent = o;
+                                        else if(str_comp(target.pName, "Bind Mode") == 0)
+                                                g_Config.m_KxBindsMode = o;
                                         else if(str_comp(target.pName, "Client preset") == 0)
                                         {
                                                 g_Config.m_KxSpoofClientPreset = o;
@@ -4946,6 +5008,8 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c))
         continue;
+if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c))
+        continue;
                                 const float crh = RowHeight(child.type);
                                 if(r == m_DropdownRow && c == m_DropdownChild)
                                 {
@@ -4970,6 +5034,8 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                                         // v1.56.111: Line rendering Component dropdown
                                                         else if(str_comp(target.pName, "Component") == 0)
                                                                 g_Config.m_KxLineComponent = o;
+                                                        else if(str_comp(target.pName, "Mode") == 0 && str_comp(row.pName, "Smart dummy switch") == 0)
+                                                                g_Config.m_KxSdsMode = o;
                                                         else if(str_comp(target.pName, "Client preset") == 0)
                                                         {
                                                                 g_Config.m_KxSpoofClientPreset = o;
@@ -5179,6 +5245,8 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c))
+        continue;
+if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c))
         continue;
                                 const float crh = RowHeight(child.type);
                                 if(r == m_DropdownRow && c == m_DropdownChild)
@@ -5453,6 +5521,8 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c))
         continue;
+if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c))
+        continue;
                                 const float crh = RowHeight(child.type);
                                 const float crw = rw - SUB_LIST_INDENT;
                                 if(PointInRect(mousePos, bodyX + SUB_LIST_INDENT, cursorY, crw, crh))
@@ -5577,6 +5647,7 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
         else if(str_comp(pRow->pName, "Rays") == 0) g_Config.m_KxAtkPathfinderRays = atoi(pRow->m_aInputBuf);
         else if(str_comp(pRow->pName, "Dist") == 0) g_Config.m_KxAtkPathfinderRaysDist = atoi(pRow->m_aInputBuf);
         else if(str_comp(pRow->pName, "Buttons") == 0) str_copy(g_Config.m_KxEdgeBindButtons, pRow->m_aInputBuf, sizeof(g_Config.m_KxEdgeBindButtons));
+        else if(str_comp(pRow->pName, "Dummy IDs") == 0) str_copy(g_Config.m_KxSdsDummyIds, pRow->m_aInputBuf, sizeof(g_Config.m_KxSdsDummyIds));
         // v1.56.171 BUG9: Binds panel — unified bind/unbind logic.
         // For each bind row: look up the command string, find the currently bound key
         // (if any), unbind it, then bind the new key (if non-empty). When the field is
@@ -5600,25 +5671,35 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
                 else if(str_comp(pRow->pName, "Record") == 0) pCmd = "toggle kx_tas_record 1 0";
                 else if(str_comp(pRow->pName, "Pause") == 0) pCmd = "toggle kx_tas_pause 1 0";
                 else if(str_comp(pRow->pName, "Rewind") == 0) pCmd = "kx_tas_rewind";
-                else if(str_comp(pRow->pName, "Forward") == 0) pCmd = "kx_tas_forward";
+                                else if(str_comp(pRow->pName, "Forward") == 0) pCmd = "kx_tas_forward";
+                                else if(str_comp(pRow->pName, "Button") == 0) pCmd = "kx_dummy_switch";
                 if(pCmd)
                 {
-                        // Find the currently bound key for this command (if any).
-                        char aOldKey[64];
-                        GameClient()->m_Binds.GetKey(pCmd, aOldKey, sizeof(aOldKey));
-                        // If the old key differs from the new one, unbind the old key.
-                        if(aOldKey[0] && str_comp(aOldKey, pRow->m_aInputBuf) != 0)
+                        if(g_Config.m_KxBindsMode == 0)
                         {
-                                char ub[80];
-                                str_format(ub, sizeof(ub), "unbind \"%s\"", aOldKey);
-                                Console()->ExecuteLine(ub, -1, false);
+                                GameClient()->m_Binds.RemoveBindSegment(pCmd);
+                                if(pRow->m_aInputBuf[0])
+                                        GameClient()->m_Binds.AddBindSegment(pRow->m_aInputBuf, pCmd);
                         }
-                        // If the new key is non-empty, bind it.
-                        if(pRow->m_aInputBuf[0])
+                        else
                         {
-                                char cmd[256];
-                                str_format(cmd, sizeof(cmd), "bind \"%s\" %s", pRow->m_aInputBuf, pCmd);
-                                Console()->ExecuteLine(cmd, -1, false);
+                                // Find the currently bound key for this command (if any).
+                                char aOldKey[64];
+                                GameClient()->m_Binds.GetKey(pCmd, aOldKey, sizeof(aOldKey));
+                                // If the old key differs from the new one, unbind the old key.
+                                if(aOldKey[0] && str_comp(aOldKey, pRow->m_aInputBuf) != 0)
+                                {
+                                        char ub[80];
+                                        str_format(ub, sizeof(ub), "unbind \"%s\"", aOldKey);
+                                        Console()->ExecuteLine(ub, -1, false);
+                                }
+                                // If the new key is non-empty, bind it.
+                                if(pRow->m_aInputBuf[0])
+                                {
+                                        char cmd[256];
+                                        str_format(cmd, sizeof(cmd), "bind \"%s\" %s", pRow->m_aInputBuf, pCmd);
+                                        Console()->ExecuteLine(cmd, -1, false);
+                                }
                         }
                 }
         }
@@ -5692,6 +5773,8 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c))
+        continue;
+if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c))
         continue;
                                 sig = sig * 31u + (unsigned)(c + 100);
                         }
@@ -5776,6 +5859,8 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c))
         continue;
+if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c))
+        continue;
                                                 addRowNode(row.pChildren[c], true);
                                         }
                                 }
@@ -5858,6 +5943,8 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c))
+        continue;
+if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c))
         continue;
                                 childrenBlockH += RowHeight(row.pChildren[c].type);
                                 visibleCount++;
@@ -6488,6 +6575,8 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c))
         continue;
+if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c))
+        continue;
                                         ++rowIdx;
                                 }
                                 // Update rowYOffset for lower rows (children are hidden).
@@ -6526,6 +6615,7 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
                                 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c)) continue;
                                 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c))
                                         continue;
+                                if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) continue;
                                 const YGNodeRef pn = rowNodes[preIdx];
                                 const float py2 = bodyY + YGNodeLayoutGetTop(pn) + rowYOffset;
                                 const float ph2 = YGNodeLayoutGetHeight(pn);
@@ -6574,6 +6664,8 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c))
+        continue;
+if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c))
         continue;
                                 const YGNodeRef cnode = rowNodes[rowIdx];
                                 const float crx = bodyX + YGNodeLayoutGetLeft(cnode);

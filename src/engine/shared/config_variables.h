@@ -1105,3 +1105,6 @@ MACRO_CONFIG_INT(KxTriggerBot, kx_triggerbot, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_
 /*
  * Add config variables for mods below this comment to avoid merge conflicts.
  */
+MACRO_CONFIG_INT(KxBindsMode, kx_binds_mode, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Binds panel bind mode: 0=merge (append to existing bind), 1=override")
+MACRO_CONFIG_INT(KxSdsMode, kx_sds_mode, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Smart dummy switch mode: 0=loop all connected dummies, 1=order targets")
+MACRO_CONFIG_STR(KxSdsDummyIds, kx_sds_dummy_ids, 32, "", CFGFLAG_CLIENT | CFGFLAG_SAVE, "Smart dummy switch: comma-separated dummy ids (0-7)")

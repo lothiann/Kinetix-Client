@@ -645,8 +645,10 @@ public:
         static void ConPfHorizon(IConsole::IResult *pResult, void *pUserData);
         static void ConPfGo(IConsole::IResult *pResult, void *pUserData);       // kx_pf_play 0|1  (1=play path on real player, 0=stop)
 
-        // Placeholder processing for kx_send and UI Send Command
-        static std::string ReplacePlaceholders(const std::string &Cmd, int DummyIndex, CGameClient *pGame);
+	// Placeholder processing for kx_send and UI Send Command
+	static std::string ReplacePlaceholders(const std::string &Cmd, int DummyIndex, CGameClient *pGame);
+
+	void SmartDummySwitch();
 
 private:
         // =========================================================

@@ -78,6 +78,9 @@ public:
 	const char *Get(int KeyId, int ModifierCombination) const;
 	const char *Get(const CBindSlot &BindSlot) const;
 	void GetKey(const char *pBindStr, char *pBuf, size_t BufSize) const;
+	bool GetKeySegment(const char *pSegment, char *pBuf, size_t BufSize) const;
+	void AddBindSegment(const char *pKeyName, const char *pSegment);
+	void RemoveBindSegment(const char *pSegment);
 	static int GetModifierMask(IInput *pInput);
 	static int GetModifierMaskOfKey(int Key);
 	static const char *GetModifierName(int Modifier);

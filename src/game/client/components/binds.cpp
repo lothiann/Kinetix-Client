@@ -364,6 +364,115 @@ void CBinds::GetKey(const char *pBindStr, char *pBuf, size_t BufSize) const
 	}
 }
 
+static bool BindHasSegment(const char *pBind, const char *pSegment)
+{
+	const int SegLen = str_length(pSegment);
+	const char *pCursor = pBind;
+	while(*pCursor)
+	{
+		while(*pCursor == ' ' || *pCursor == '\t')
+			pCursor++;
+		const char *pSegEnd = pCursor;
+		while(*pSegEnd && *pSegEnd != ';')
+			pSegEnd++;
+		int Len = (int)(pSegEnd - pCursor);
+		while(Len > 0 && (pCursor[Len - 1] == ' ' || pCursor[Len - 1] == '\t'))
+			Len--;
+		if(Len == SegLen && mem_comp(pCursor, pSegment, Len) == 0)
+			return true;
+		if(!*pSegEnd)
+			break;
+		pCursor = pSegEnd + 1;
+	}
+	return false;
+}
+
+bool CBinds::GetKeySegment(const char *pSegment, char *pBuf, size_t BufSize) const
+{
+	pBuf[0] = '\0';
+	for(int Modifier = KeyModifier::NONE; Modifier < KeyModifier::COMBINATION_COUNT; Modifier++)
+	{
+		for(int KeyId = KEY_FIRST; KeyId < KEY_LAST; KeyId++)
+		{
+			const char *pBind = Get(KeyId, Modifier);
+			if(!pBind[0])
+				continue;
+			if(BindHasSegment(pBind, pSegment))
+			{
+				GetKeyBindName(KeyId, Modifier, pBuf, BufSize);
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+void CBinds::AddBindSegment(const char *pKeyName, const char *pSegment)
+{
+	for(int Modifier = KeyModifier::NONE; Modifier < KeyModifier::COMBINATION_COUNT; Modifier++)
+	{
+		for(int KeyId = KEY_FIRST; KeyId < KEY_LAST; KeyId++)
+		{
+			char aName[64];
+			GetKeyBindName(KeyId, Modifier, aName, sizeof(aName));
+			if(str_comp_nocase(aName, pKeyName) != 0)
+				continue;
+			char aNew[1024];
+			const char *pOld = Get(KeyId, Modifier);
+			if(!pOld[0])
+				str_copy(aNew, pSegment, sizeof(aNew));
+			else if(BindHasSegment(pOld, pSegment))
+				str_copy(aNew, pOld, sizeof(aNew));
+			else
+				str_format(aNew, sizeof(aNew), "%s; %s", pOld, pSegment);
+			Bind(KeyId, aNew, false, Modifier);
+			return;
+		}
+	}
+}
+
+void CBinds::RemoveBindSegment(const char *pSegment)
+{
+	const int SegLen = str_length(pSegment);
+	for(int Modifier = KeyModifier::NONE; Modifier < KeyModifier::COMBINATION_COUNT; Modifier++)
+	{
+		for(int KeyId = KEY_FIRST; KeyId < KEY_LAST; KeyId++)
+		{
+			const char *pBind = Get(KeyId, Modifier);
+			if(!pBind[0] || !BindHasSegment(pBind, pSegment))
+				continue;
+
+			char aNew[1024];
+			aNew[0] = '\0';
+			const char *pCursor = pBind;
+			while(*pCursor)
+			{
+				while(*pCursor == ' ' || *pCursor == '\t')
+					pCursor++;
+				const char *pSegEnd = pCursor;
+				while(*pSegEnd && *pSegEnd != ';')
+					pSegEnd++;
+				int Len = (int)(pSegEnd - pCursor);
+				while(Len > 0 && (pCursor[Len - 1] == ' ' || pCursor[Len - 1] == '\t'))
+					Len--;
+				if(Len > 0 && !(Len == SegLen && mem_comp(pCursor, pSegment, Len) == 0))
+				{
+					char aSegment[256];
+					str_truncate(aSegment, sizeof(aSegment), pCursor, Len);
+					if(aNew[0])
+						str_append(aNew, "; ", sizeof(aNew));
+					str_append(aNew, aSegment, sizeof(aNew));
+				}
+				if(!*pSegEnd)
+					break;
+				pCursor = pSegEnd + 1;
+			}
+			Bind(KeyId, aNew, false, Modifier);
+			return;
+		}
+	}
+}
+
 void CBinds::SetDefaults()
 {
 	UnbindAll();
