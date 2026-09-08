@@ -1117,7 +1117,8 @@ static constexpr float ARROW_W = 18.0f;
 static constexpr float DROPDOWN_W = 120.0f;
 static constexpr float DROPDOWN_H = 24.0f;
 static constexpr float SLIDER_TRACK_H = 6.0f;
-static constexpr float SLIDER_THUMB_R = 8.0f;
+static constexpr float SLIDER_THUMB_W = 18.0f;
+static constexpr float SLIDER_THUMB_H = 10.0f;
 static constexpr float SUB_LIST_INDENT = 22.0f;
 
 // Offscreen margin: how far outside the visible screen panels fly when hidden.
@@ -1444,6 +1445,8 @@ void CClickGui::UpdateAnimations(float dt)
                 const float target = m_aPanelCollapsed[i] ? 1.0f : 0.0f;
                 lerpToward(m_aPanelCollapseAnim[i], target, expandSpeed);
         }
+
+        lerpToward(m_DropdownAnim, m_DropdownOpen ? 1.0f : 0.0f, 8.0f);
 
         // Per-row expand animations across all panels.
         for(int p = 0; p < NUM_PANELS; ++p)
@@ -5169,8 +5172,50 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
 
 void CClickGui::RenderDropdownPopup(float alpha)
 {
-        if(!m_DropdownOpen || m_DropdownPanel < 0 || m_DropdownRow < 0)
+        if((!m_DropdownOpen && m_DropdownAnim <= 0.0f) || m_DropdownPanel < 0 || m_DropdownRow < 0)
                 return;
+        const float animT = std::clamp(m_DropdownAnim, 0.0f, 1.0f);
+        const float openT = 1.0f - (1.0f - animT) * (1.0f - animT) * (1.0f - animT);
+        auto RenderList = [&](SRow &target, float ddX, float ddY) {
+                const float itemStep = DROPDOWN_H + 2.0f;
+                const float popupH = target.optionCount * itemStep + 4.0f;
+                const float popY = ddY + DROPDOWN_H + 2.0f;
+                const float bgH = popupH * openT;
+                DrawRoundedRect(ddX - 4.0f, popY + 2.0f, DROPDOWN_W + 8.0f, bgH + 2.0f, 6.0f,
+                        IGraphics::CORNER_ALL,
+                        ColorRGBA(0xff000000, true).WithAlpha(alpha * 0.3f * openT));
+                DrawRoundedRect(ddX - 1.0f, popY - 1.0f, DROPDOWN_W + 2.0f, bgH + 2.0f, 4.0f,
+                        IGraphics::CORNER_ALL,
+                        ColorRGBA(COL_INPUT_BORDER, true).WithAlpha(alpha * openT));
+                DrawRoundedRect(ddX, popY, DROPDOWN_W, bgH, 4.0f,
+                        IGraphics::CORNER_ALL,
+                        ColorRGBA(0xff0d0d18, true).WithAlpha(alpha * openT));
+                for(int o = 0; o < target.optionCount; ++o)
+                {
+                        const float itemY = popY + 2.0f + o * itemStep;
+                        const float reveal = (popY + bgH - itemY) / DROPDOWN_H;
+                        if(reveal <= 0.0f)
+                                continue;
+                        const float ia = std::clamp(reveal, 0.0f, 1.0f) * openT;
+                        const bool hovered = PointInRect(m_MousePos, ddX, itemY, DROPDOWN_W, DROPDOWN_H);
+                        if(hovered)
+                        {
+                                DrawRoundedRect(ddX + 2.0f, itemY, DROPDOWN_W - 4.0f, DROPDOWN_H, 3.0f,
+                                        IGraphics::CORNER_ALL,
+                                        ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha * 0.4f * ia));
+                        }
+                        if(o == target.valueIdx)
+                        {
+                                DrawRoundedRect(ddX + 3.0f, itemY + 6.0f, 2.5f, DROPDOWN_H - 12.0f, 1.0f,
+                                        IGraphics::CORNER_ALL,
+                                        ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha * ia));
+                        }
+                        const ColorRGBA optCol = (o == target.valueIdx)
+                                ? ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha * ia)
+                                : ColorRGBA(0xffd8d8e8, true).WithAlpha(alpha * ia);
+                        DrawText(ddX + 10.0f, itemY + 5.0f, 14.0f, target.pOptions[o], optCol);
+                }
+        };
         // Locate the dropdown box position (mirror HandleDropdownClick traversal).
         const vec2 ppos = m_aPanelPosValid[m_DropdownPanel] ? m_aPanelPos[m_DropdownPanel] : PanelHomePos(m_DropdownPanel);
         const float bodyX = ppos.x + BODY_PADDING;
@@ -5192,28 +5237,7 @@ void CClickGui::RenderDropdownPopup(float alpha)
                         const float rw = PANEL_WIDTH - BODY_PADDING * 2;
                         const float ddX = bodyX + rw - DROPDOWN_W - 2.0f;
                         const float ddY = cursorY + (rh - DROPDOWN_H) * 0.5f;
-                        SRow &target = row;
-                        // Popup background.
-                        const float popupH = target.optionCount * (DROPDOWN_H + 2.0f) + 4.0f;
-                        DrawRoundedRect(ddX, ddY + DROPDOWN_H + 2.0f, DROPDOWN_W, popupH,
-                                3.0f, IGraphics::CORNER_ALL,
-                                ColorRGBA(0xff0d0d18, true).WithAlpha(alpha));
-                        // Option rows.
-                        for(int o = 0; o < target.optionCount; ++o)
-                        {
-                                const float itemY = ddY + DROPDOWN_H + 4.0f + o * (DROPDOWN_H + 2.0f);
-                                const bool hovered = PointInRect(m_MousePos, ddX, itemY, DROPDOWN_W, DROPDOWN_H);
-                                if(hovered)
-                                {
-                                        DrawRoundedRect(ddX, itemY, DROPDOWN_W, DROPDOWN_H, 2.0f,
-                                                IGraphics::CORNER_ALL,
-                                                ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha * 0.5f));
-                                }
-                                const ColorRGBA optCol = (o == target.valueIdx)
-                                        ? ColorRGBA(0xffff9d4e, true).WithAlpha(alpha) // highlight selected
-                                        : ColorRGBA(0xffd8d8e8, true).WithAlpha(alpha);
-                                DrawText(ddX + 5.0f, itemY + 4.0f, 14.0f, target.pOptions[o], optCol);
-                        }
+                        RenderList(row, ddX, ddY);
                         return;
                 }
                 cursorY += rh + ROW_GAP;
@@ -5255,26 +5279,7 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                         const float crw = rw - SUB_LIST_INDENT;
                                         const float ddX = bodyX + SUB_LIST_INDENT + crw - DROPDOWN_W - 2.0f;
                                         const float ddY = cursorY + (crh - DROPDOWN_H) * 0.5f;
-                                        SRow &target = child;
-                                        const float popupH = target.optionCount * (DROPDOWN_H + 2.0f) + 4.0f;
-                                        DrawRoundedRect(ddX, ddY + DROPDOWN_H + 2.0f, DROPDOWN_W, popupH,
-                                                3.0f, IGraphics::CORNER_ALL,
-                                                ColorRGBA(0xff0d0d18, true).WithAlpha(alpha));
-                                        for(int o = 0; o < target.optionCount; ++o)
-                                        {
-                                                const float itemY = ddY + DROPDOWN_H + 4.0f + o * (DROPDOWN_H + 2.0f);
-                                                const bool hovered = PointInRect(m_MousePos, ddX, itemY, DROPDOWN_W, DROPDOWN_H);
-                                                if(hovered)
-                                                {
-                                                        DrawRoundedRect(ddX, itemY, DROPDOWN_W, DROPDOWN_H, 2.0f,
-                                                                IGraphics::CORNER_ALL,
-                                                                ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha * 0.5f));
-                                                }
-                                                const ColorRGBA optCol = (o == target.valueIdx)
-                                                        ? ColorRGBA(0xffff9d4e, true).WithAlpha(alpha)
-                                                        : ColorRGBA(0xffd8d8e8, true).WithAlpha(alpha);
-                                                DrawText(ddX + 5.0f, itemY + 4.0f, 14.0f, target.pOptions[o], optCol);
-                                        }
+                                        RenderList(child, ddX, ddY);
                                         return;
                                 }
                                 cursorY += crh + ROW_GAP;
@@ -6181,11 +6186,9 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                         pct = std::clamp(pct, 0.0f, 1.0f);
                         const float thumbX = trackX + trackW * pct;
                         const float thumbY = trackY + SLIDER_TRACK_H * 0.5f;
-                        Graphics()->TextureClear();
-                        Graphics()->QuadsBegin();
-                        Graphics()->SetColor(ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha));
-                        Graphics()->DrawCircle(thumbX, thumbY, SLIDER_THUMB_R, 12);
-                        Graphics()->QuadsEnd();
+                        DrawRoundedRect(thumbX - SLIDER_THUMB_W * 0.5f, thumbY - SLIDER_THUMB_H * 0.5f,
+                                SLIDER_THUMB_W, SLIDER_THUMB_H, 3.0f, IGraphics::CORNER_ALL,
+                                ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha));
                         break;
                 }
                 case ERowType::Input:
@@ -6726,11 +6729,9 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                         cpct = std::clamp(cpct, 0.0f, 1.0f);
                                         const float thX = trx + trW * cpct;
                                         const float thY = trY + SLIDER_TRACK_H * 0.5f;
-                                        Graphics()->TextureClear();
-                                        Graphics()->QuadsBegin();
-                                        Graphics()->SetColor(ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha));
-                                        Graphics()->DrawCircle(thX, thY, SLIDER_THUMB_R, 12);
-                                        Graphics()->QuadsEnd();
+                                        DrawRoundedRect(thX - SLIDER_THUMB_W * 0.5f, thY - SLIDER_THUMB_H * 0.5f,
+                                                SLIDER_THUMB_W, SLIDER_THUMB_H, 3.0f, IGraphics::CORNER_ALL,
+                                                ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha));
                                         break;
                                 }
                                 case ERowType::Input:
@@ -6807,7 +6808,10 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                         DrawText(crx + 1.0f + CHECK_W * 0.5f, cry + 3.0f - 2.0f, 22.0f, "\xe2\x9c\x95",
                                                                                                 ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha), TEXTALIGN_CENTER);
                                         }
-                                        DrawText(crx + CHECK_W + 4.0f, cry + 5.0f, 17.0f, child.pName, cText);
+                                        if(child.type == ERowType::ToggleDropdown)
+                                                DrawText(crx + CHECK_W + 4.0f, cry + 5.0f, 17.0f, child.pName, cText);
+                                        else
+                                                DrawText(crx + 2.0f, cry + 5.0f, 17.0f, child.pName, cText);
                                         const float ddx = crx + crw - DROPDOWN_W - 2.0f;
                                         const float ddy = cry + (crh - DROPDOWN_H) * 0.5f;
                                         DrawRoundedRect(ddx, ddy, DROPDOWN_W, DROPDOWN_H, 2.0f,

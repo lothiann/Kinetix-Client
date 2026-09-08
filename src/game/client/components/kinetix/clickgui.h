@@ -128,6 +128,7 @@ private:
         int m_DropdownPanel = -1;
         int m_DropdownRow = -1;
         int m_DropdownChild = -1;
+        float m_DropdownAnim = 0.0f;
 
         // Input field editing state: when active, keystrokes go into the buffer.
         bool m_InputEditing = false;
