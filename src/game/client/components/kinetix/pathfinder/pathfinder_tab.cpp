@@ -38,8 +38,6 @@ void CBotNet::PfClearSearchState()
 	m_PfAExpandCount = 0;
 	m_PfFullInputs.clear();
 	m_PfFullInputsIdx = 0;
-	m_PfGoActive = false;
-	m_PfGoIdx = 0;
 	m_PfUiBestDone = 0;
 	m_PfUiBestTotal = 0;
 }
@@ -139,35 +137,23 @@ void CBotNet::PfResetRun()
 	m_PfAStarted = true;
 }
 
-// kx_pf_play: apply the next path tick to the real player input.
-// Called from CControls::SnapInput each tick while m_PfGoActive is true.
-// Aim (TargetX/Y) is only applied on the rising edge of m_Hook so Fake Aim
-// can coexist with PfGo.
-bool CBotNet::ApplyPfGoInput(CNetObj_PlayerInput *pInput)
+// kx_pf_paste: copy the found path into the TAS Playground as the current run.
+void CBotNet::PfPasteToTas()
 {
-	m_PfGoAimedThisTick = false;
-	if(!m_PfGoActive || !pInput)
-		return false;
-	if(m_PfGoIdx >= m_PfFullInputs.size())
+	if(!m_PfAPathReady)
 	{
-		m_PfGoActive = false;
-		dbg_msg("pathfinder", "kx_pf_play: playback finished (%d ticks)", (int)m_PfFullInputs.size());
-		return false;
+		dbg_msg("pathfinder", "kx_pf_paste: path not ready (run pathfinder first, or press Stop after it finds a path)");
+		return;
 	}
-	const CNetObj_PlayerInput &In = m_PfFullInputs[m_PfGoIdx];
-	pInput->m_Direction = In.m_Direction;
-	pInput->m_Jump = In.m_Jump;
-	pInput->m_Hook = In.m_Hook;
-	if(In.m_Hook != 0 && (m_PfGoPrevHook == 0 || m_PfGoIdx == 0))
+	if(m_PfFullInputs.empty())
 	{
-		pInput->m_TargetX = In.m_TargetX;
-		pInput->m_TargetY = In.m_TargetY;
-		m_PfGoAimOffset = vec2((float)In.m_TargetX, (float)In.m_TargetY);
-		m_PfGoAimedThisTick = true;
+		dbg_msg("pathfinder", "kx_pf_paste: m_PfFullInputs is empty");
+		return;
 	}
-	m_PfGoPrevHook = In.m_Hook;
-	m_PfGoIdx++;
-	return true;
+	std::vector<std::pair<vec2, vec2>> vSegs;
+	for(const PfHookSeg &Seg : m_PfVHookSegs)
+		vSegs.emplace_back(Seg.teePos, Seg.hookPos);
+	GameClient()->m_Tas.PasteRun(m_PfFullInputs, m_PfVPath, vSegs);
 }
 
 // =========================================================
@@ -1083,6 +1069,8 @@ void CBotNet::RenderPathfinderPath()
 	if(!pGame)
 		return;
 
+	const bool tasHasRun = GameClient()->m_Tas.HasRun(m_PfFullInputs);
+
 	// CBotNet renders before the map renderer sets up the world projection —
 	// set it explicitly so the trajectory lands in world space.
 	Graphics()->MapScreenToInterface(pGame->m_Camera.m_Center.x, pGame->m_Camera.m_Center.y, pGame->m_Camera.m_Zoom);
@@ -1232,7 +1220,7 @@ void CBotNet::RenderPathfinderPath()
 	}
 
 	// Hook segments (blue lines) captured per tick along the path.
-	if(g_Config.m_KxPfShowHooks && !vHookSegs.empty())
+	if(g_Config.m_KxPfShowHooks && !vHookSegs.empty() && !tasHasRun)
 	{
 		float HalfWidth = 0.5f + (float)(LineSize - 1) * 0.25f;
 		if(LineSize > 0)
@@ -1283,7 +1271,7 @@ void CBotNet::RenderPathfinderPath()
 		return color_cast<ColorRGBA>(ColorHSLA(hue / 360.0f, 1.0f, 0.5f, true));
 	};
 
-	if(LineSize > 0)
+	if(LineSize > 0 && !tasHasRun)
 	{
 		float HalfWidth = 0.5f + (float)(LineSize - 1) * 0.25f;
 		Graphics()->QuadsBegin();
@@ -1320,7 +1308,7 @@ void CBotNet::RenderPathfinderPath()
 		}
 		Graphics()->QuadsEnd();
 	}
-	else
+	else if(!tasHasRun)
 	{
 		Graphics()->LinesBegin();
 		for(size_t i = 1; i < vPath.size(); i++)

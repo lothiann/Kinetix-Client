@@ -435,7 +435,7 @@ static SRow g_PathfinderRows[] = {
         {ERowType::Toggle, "Freeze Support (Beta)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Expandable, "Visuals", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_VisualsChildren, 4},
         // v1.56.150: DoubleButton — Pathfinding (left) + Play (right, visible only when FINISHED).
-        {ERowType::DoubleButton, "Pathfinding", "Play", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::DoubleButton, "Pathfinding", "Paste", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::DoubleButton, "Editor Forbidden Tiles", "Clear Forbidden Tiles", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Tunnel size", nullptr, false, false, 0.0f, 10.0f, 1.0f, 2.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Button, "Generate tunnel", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
@@ -4183,9 +4183,9 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                         }
                         if(pTarget->type == ERowType::Button || pTarget->type == ERowType::DoubleButton)
                         {
-                                // v1.56.150: Pathfinding is now DoubleButton (Pathfinding + Play).
-                                // Left zone = Pathfinding toggle, right zone = Play/Stop (kx_pf_play).
-                                // Right zone active only when m_PfState == FINISHED.
+                                        // v1.56.150: Pathfinding is now DoubleButton (Pathfinding + Paste).
+                                        // Left zone = Pathfinding toggle, right zone = Paste (kx_pf_paste).
+                                        // Right zone active only when m_PfState == FINISHED.
                                 if(str_comp(pTarget->pName, "Pathfinding") == 0)
                                 {
                                         CBotNet &BN = GameClient()->m_BotNet;
@@ -4208,29 +4208,7 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
 
                                         if(playClicked)
                                         {
-                                                // Play/Stop toggle (kx_pf_play 1/0).
-                                                if(BN.m_PfGoActive)
-                                                {
-                                                        BN.m_PfGoActive = false;
-                                                        dbg_msg("pathfinder", "kx_pf_play 0: playback stopped at tick %d/%d", (int)BN.m_PfGoIdx, (int)BN.m_PfFullInputs.size());
-                                                }
-                                                else
-                                                {
-                                                        if(!BN.m_PfAPathReady)
-                                                        {
-                                                                dbg_msg("pathfinder", "kx_pf_play 1: path not ready");
-                                                        }
-                                                        else if(BN.m_PfFullInputs.empty())
-                                                        {
-                                                                dbg_msg("pathfinder", "kx_pf_play 1: m_PfFullInputs is empty");
-                                                        }
-                                                        else
-                                                        {
-                                                                BN.m_PfGoActive = true;
-                                                                BN.m_PfGoIdx = 0;
-                                                                dbg_msg("pathfinder", "kx_pf_play 1: playback started (%d ticks)", (int)BN.m_PfFullInputs.size());
-                                                        }
-                                                }
+                                                BN.PfPasteToTas();
                                         }
                                         else if(specClicked)
                                         {
@@ -4258,7 +4236,7 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                         BN.m_PfState = PF_STATE_FINISHED;
                                                                                 BN.PfThreadStop();
                                                         // Stop pressed: if A* hasn't reached goal yet, try to
-                                                        // reconstruct best partial path so kx_pf_play works.
+                                                        // reconstruct best partial path so kx_pf_paste works.
                                                         if(!BN.m_PfAPathReady && !BN.m_PfAOpen.empty())
                                                         {
                                                                 // Find best open node (lowest H = closest to goal)
@@ -6214,6 +6192,20 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                         pLabel = "Execute";
                                 }
                         }
+                        if(row.pName == g_TasDyn_Action)
+                        {
+                                if(GameClient()->m_Tas.IsPlaying() || GameClient()->m_Tas.IsRealPlaying() || GameClient()->m_Tas.IsRecording())
+                                        btnCol = ColorRGBA(0xffc43d3d, true).WithAlpha(alpha); // red
+                                else
+                                        btnCol = ColorRGBA(0xff3da35a, true).WithAlpha(alpha); // green
+                        }
+                        else if(row.pName == g_TasDyn_Join)
+                        {
+                                if(GameClient()->m_Tas.IsJoined())
+                                        btnCol = ColorRGBA(0xffc43d3d, true).WithAlpha(alpha); // red (Leave)
+                                else
+                                        btnCol = ColorRGBA(0xff3da35a, true).WithAlpha(alpha); // green (Join)
+                        }
                         // Button background (full row width, centered).
                         DrawRoundedRect(rx + 2.0f, ry + 2.0f, rw - 4.0f, rh - 4.0f, 4.0f,
                                 IGraphics::CORNER_ALL, btnCol);
@@ -6225,10 +6217,9 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                 }
                 case ERowType::DoubleButton:
                 {
-                        // v1.56.150: Pathfinder DoubleButton — Pathfinding (left) + Play (right).
-                        // Play visible only when m_PfState == FINISHED (path ready).
-                        // When Play hidden: Pathfinding takes full row width.
-                        // When m_PfGoActive: Play label = "Stop" (red), else "Play" (green).
+                        // v1.56.150: Pathfinder DoubleButton — Pathfinding (left) + Paste (right).
+                        // Paste visible only when m_PfState == FINISHED (path ready).
+                        // When Paste hidden: Pathfinding takes full row width.
                         if(str_comp(row.pName, "Pathfinding") == 0)
                         {
                                 CBotNet &BN = GameClient()->m_BotNet;
@@ -6292,11 +6283,9 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                         const float lw = TextRender()->TextWidth(14.0f, pLeftLabel);
                                         DrawText(rx + 2.0f + (btnW - lw) * 0.5f, ry + 8.0f, 14.0f, pLeftLabel,
                                                 ColorRGBA(0xffffffff, true).WithAlpha(alpha));
-                                        // Right button (Play/Stop).
-                                        ColorRGBA rightCol = BN.m_PfGoActive
-                                                ? ColorRGBA(0xffc43d3d, true).WithAlpha(alpha) // red (Stop)
-                                                : ColorRGBA(0xff3da35a, true).WithAlpha(alpha); // green (Play)
-                                        const char *pRightLabel = BN.m_PfGoActive ? "Stop" : "Play";
+                                        // Right button (Paste).
+                                        const char *pRightLabel = "Paste";
+                                        ColorRGBA rightCol = ColorRGBA(0xff3da35a, true).WithAlpha(alpha); // green
                                         const float rx2 = rx + 2.0f + btnW + 2.0f;
                                         DrawRoundedRect(rx2, ry + 2.0f, btnW, rh - 4.0f, 4.0f,
                                                 IGraphics::CORNER_ALL, rightCol);

@@ -373,19 +373,6 @@ public:
         std::vector<CNetObj_PlayerInput> m_PfFullInputs;
         size_t m_PfFullInputsIdx;
 
-        // kx_pf_play: playback m_PfFullInputs on real player.
-        // m_PfGoActive = true → ApplyPfGoInput() called from SnapInput each tick.
-        // m_PfGoIdx advances per tick; stops when reaches end of m_PfFullInputs.
-        bool m_PfGoActive = false;
-        size_t m_PfGoIdx = 0;
-        // v1.56.204: PfGo aim tracking for Fake Aim coexistence.
-        // m_PfGoAimedThisTick: set true when ApplyPfGoInput applied aim this tick.
-        // m_PfGoAimOffset: the aim position PfGo applied (for Robot Aim to remember).
-        // m_PfGoPrevHook: previous tick's hook state, for rising-edge detection.
-        bool m_PfGoAimedThisTick = false;
-        vec2 m_PfGoAimOffset = vec2(0, 0);
-        int m_PfGoPrevHook = 0;
-
         // v1.57: Threaded pathfinder — A* search runs in a background thread.
         // m_PfBaseWorld = pristine snapshot of PredictedWorld (taken in PfResetRun
         //   on the main thread). Worker reads from this; never touches GameClient().
@@ -485,9 +472,7 @@ public:
         void RenderPathfinderPath();        // called from OnRender; draws m_PfVPath like RenderPackage
         void PfResetRun();                  // clear vPath + sim state (start fresh from active player)
         void PfClearSearchState();          // BUG4 v1.56.165: release A*/RHEA buffers (safe from any state)
-        // kx_pf_play: apply next m_PfFullInputs tick to real player input.
-        // Called from CControls::SnapInput before mem_copy. Returns true if applied.
-        bool ApplyPfGoInput(CNetObj_PlayerInput *pInput);
+        void PfPasteToTas();                // kx_pf_paste: paste the found path into TAS Playground
         void UpdateLaserUnfreeze();         // called from OnUpdate; predictive laser self-unfreeze
         void RenderLaserUnfreezePath();     // called from OnRender; draws successful laser path with fade
         void UpdateFakeAim();               // called from OnUpdate; fake aim for fun
@@ -614,7 +599,7 @@ public:
 
         // Pathfinder tab (Kinetix→Pathfinder) console commands
         static void ConPfLive(IConsole::IResult *pResult, void *pUserData);     // kx_pf_live 0|1|2  (0=idle, 1=running, 2=finished)
-        static void ConPfGo(IConsole::IResult *pResult, void *pUserData);       // kx_pf_play 0|1  (1=play path on real player, 0=stop)
+        static void ConPfPaste(IConsole::IResult *pResult, void *pUserData);       // kx_pf_paste
 
 	// Placeholder processing for kx_send and UI Send Command
 	static std::string ReplacePlaceholders(const std::string &Cmd, int DummyIndex, CGameClient *pGame);

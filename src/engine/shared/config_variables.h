@@ -1003,7 +1003,7 @@ MACRO_CONFIG_INT(ClVideoRecorderFPS, cl_video_recorder_fps, 60, 1, 1000, CFGFLAG
 // (pixel precision) — readers cast to float.
 //
 // Commands kept as console commands (temporal/complex, per user instruction):
-//   kx_exec, kx_exec_stop, kx_irc_send, kx_pf_play, kx_send, kx_atk_set,
+//   kx_exec, kx_exec_stop, kx_irc_send, kx_pf_paste, kx_send, kx_atk_set,
 //   kx_macro_save, kx_macro_load, kx_pathfinder_go, kx_targets, kx_bots,
 //   kx_rescue_ids, kx_atk_dists, kx_pf_live, kx_macro_play, kx_macro_record,
 //   kx_macro_capture (these have per-dummy side effects or complex state).

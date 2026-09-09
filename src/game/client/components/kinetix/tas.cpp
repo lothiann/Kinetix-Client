@@ -596,8 +596,8 @@ void CTas::TogglePlay()
 {
 	// Inside the playground: play the take back in the sandbox (at the
 	// current TPS, works with Pause/Forward/Rewind) so the user can watch
-	// it. Outside: execute the take on the REAL player (kx_pf_play style)
-	// — see ApplyTasRealInput.
+		// it. Outside: execute the take on the REAL player — see
+		// ApplyTasRealInput.
 	if(m_Joined)
 	{
 		if(m_Playing)
@@ -655,6 +655,57 @@ void CTas::TogglePlay()
 	dbg_msg("tas", "real replay started (%d ticks)", (int)m_vSaved.size());
 }
 
+void CTas::PasteRun(const std::vector<CNetObj_PlayerInput> &vInputs, const std::vector<vec2> &vPath, const std::vector<std::pair<vec2, vec2>> &vHookSegs)
+{
+	if(vInputs.empty())
+		return;
+	if(m_Playing)
+	{
+		m_Playing = false;
+		RebaseCounters();
+	}
+	if(m_Recording)
+		m_Recording = false;
+	m_SavedStart = CTasState{};
+	m_vSaved.clear();
+	for(size_t i = 0; i < vInputs.size(); i++)
+	{
+		CTasTick Tick;
+		Tick.Tick = (int)i + 1;
+		Tick.Input = vInputs[i];
+		if(i + 1 < vPath.size())
+			Tick.Core.m_Pos = vPath[i + 1];
+		m_vSaved.push_back(std::move(Tick));
+	}
+	size_t Cursor = 0;
+	for(const auto &Seg : vHookSegs)
+	{
+		while(Cursor < m_vSaved.size() && m_vSaved[Cursor].Core.m_Pos != Seg.first)
+			Cursor++;
+		if(Cursor >= m_vSaved.size())
+			break;
+		m_vSaved[Cursor].Core.m_HookState = HOOK_GRABBED;
+		m_vSaved[Cursor].Core.m_HookPos = Seg.second;
+		Cursor++;
+	}
+	m_TakeFromFile = true;
+	m_PlayIdx = 0;
+	m_Desynced = false;
+	dbg_msg("tas", "pathfinder run pasted (%d ticks)", (int)m_vSaved.size());
+}
+
+bool CTas::HasRun(const std::vector<CNetObj_PlayerInput> &vInputs) const
+{
+	if(vInputs.empty() || vInputs.size() != m_vSaved.size())
+		return false;
+	for(size_t i = 0; i < vInputs.size(); i++)
+	{
+		if(mem_comp(&vInputs[i], &m_vSaved[i].Input, sizeof(CNetObj_PlayerInput)) != 0)
+			return false;
+	}
+	return true;
+}
+
 void CTas::ToggleRecord()
 {
 	// Record outside the playground: re-enter it first.
@@ -696,7 +747,7 @@ void CTas::StepForward()
 		}
 		const CTasTick &T = m_vSaved[m_PlayIdx];
 		DoStep(T.Input);
-		if(!m_Desynced && !m_vPlaygroundHistory.empty() &&
+		if(T.Core.m_Pos != vec2(0, 0) && !m_Desynced && !m_vPlaygroundHistory.empty() &&
 			distance(m_vPlaygroundHistory.back().Core.m_Pos, T.Core.m_Pos) > 8.0f)
 			m_Desynced = true;
 		m_PlayIdx++;
@@ -973,8 +1024,8 @@ void CTas::RefreshAutoTileFlags()
 }
 
 // Real-world execution: apply the next saved input to the real player.
-// Called from CControls::SnapInput each tick while m_RealPlaying is true,
-// kx_pf_play style. Movement/jump/hook/aim/weapon are copied verbatim from
+// Called from CControls::SnapInput each tick while m_RealPlaying is true.
+// Movement/jump/hook/aim/weapon are copied verbatim from
 // the recording (aim offsets are relative to the tee, so the take must be
 // started from the recorded start position). Fire is replayed through a
 // counter rebased onto the live one: the deltas between the recorded ticks
@@ -1389,7 +1440,7 @@ void CTas::AdvanceOne()
 		}
 		const CTasTick &T = m_vSaved[m_PlayIdx];
 		DoStep(T.Input);
-		if(!m_Desynced && !m_vPlaygroundHistory.empty() &&
+		if(T.Core.m_Pos != vec2(0, 0) && !m_Desynced && !m_vPlaygroundHistory.empty() &&
 			distance(m_vPlaygroundHistory.back().Core.m_Pos, T.Core.m_Pos) > 8.0f)
 			m_Desynced = true;
 		m_PlayIdx++;

@@ -185,7 +185,7 @@ void CBotNet::OnConsoleInit()
 
         // Pathfinder tab (Kinetix→Pathfinder) — chunk-based mini TAS maker
         Console()->Register("kx_pf_live", "i[state]", CFGFLAG_CLIENT, ConPfLive, this, "Pathfinder tab: 0=idle, 1=running, 2=finished");
-	Console()->Register("kx_pf_play", "i[on]", CFGFLAG_CLIENT, ConPfGo, this, "Pathfinder: 1=replay path on real player (needs FINISHED state), 0=stop");
+	Console()->Register("kx_pf_paste", "", CFGFLAG_CLIENT, ConPfPaste, this, "Pathfinder: paste the found path into TAS Playground as the current run");
 	Console()->Register("kx_dummy_switch", "", CFGFLAG_CLIENT, ConDummySwitch, this, "Switch to next dummy (smart dummy switch)");
 }
 
@@ -227,7 +227,7 @@ void CBotNet::OnReset()
 // MaybeReloadMapGrid() / PfResetRun() call will lazy-reload via the
 // existing `if(!m_MapGridLoaded) LoadMapGrid();` guards. We also stop
 // any in-flight search (its nodes reference old tile coords) and clear
-// playback so kx_pf_play can't replay a stale path.
+// playback so kx_pf_paste can't replay a stale path.
 void CBotNet::OnMapLoad()
 {
         // Force lazy grid reload on next access. LoadMapGrid() frees the old

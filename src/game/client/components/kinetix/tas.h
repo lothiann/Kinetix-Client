@@ -42,6 +42,7 @@
 #include <game/client/projectile_data.h>
 
 #include <algorithm>
+#include <utility>
 #include <vector>
 
 struct CPickupState
@@ -170,8 +171,7 @@ public:
 	bool PlaygroundHudState(CCharacterCore *pCore, CNetObj_Character *pPlayer);
 
 	// Real-world execution (Play outside the playground): the saved inputs
-	// are fed to the real player through CControls::SnapInput, kx_pf_play
-	// style.
+	// are fed to the real player through CControls::SnapInput.
 	bool IsRealPlaying() const { return m_RealPlaying; }
 	int RealPlayIdx() const { return m_RealIdx; }
 	bool ApplyTasRealInput(CNetObj_PlayerInput *pInput);
@@ -182,6 +182,8 @@ public:
 	void ToggleRecord();
 	void StepForward();
 	void StepRewind();
+	void PasteRun(const std::vector<CNetObj_PlayerInput> &vInputs, const std::vector<vec2> &vPath, const std::vector<std::pair<vec2, vec2>> &vHookSegs);
+	bool HasRun(const std::vector<CNetObj_PlayerInput> &vInputs) const;
 
 	bool FilePicked() const { return m_FilePicked; }
 	const char *PickedPath() const { return m_aPickedPath; }

@@ -631,11 +631,6 @@ int CControls::SnapInput(int *pData)
                 m_LaserUnfreezeAimActive = false;
         }
 
-        // kx_pf_play: replay pathfinder path on real player input.
-        // Runs after BAF (BAF has priority for freeze avoidance) but before
-        // fake aim + mem_copy so the path input reaches the server.
-        GameClient()->m_BotNet.ApplyPfGoInput(&m_aInputData[g_Config.m_ClDummy]);
-
         // v1.56.151: Fly Ride — pilot input override.
         // Blocks normal WASD (direction/jump) and forces hook state from UpdateFlyRide.
         // Silent aim is already set via m_LaserUnfreezeAimActive (consumed above at line ~543).
@@ -760,17 +755,13 @@ int CControls::SnapInput(int *pData)
                 {
                         if(laserAimActive)
                                 s_RobotAim = m_LaserUnfreezeAimOffset;
-                        else if(GameClient()->m_BotNet.m_PfGoAimedThisTick)
-                                s_RobotAim = GameClient()->m_BotNet.m_PfGoAimOffset;
                         else
                                 s_RobotAim = realAim;
                 }
         }
 
         // Fake aim generation — skipped when laser unfreeze active (laser has priority)
-        // v1.56.204: skipped when PfGo applied aim this tick (hook rising edge),
-        // but otherwise Fake Aim can coexist with PfGo playback.
-        if(g_Config.m_KxFakeAim && !laserAimActive && !GameClient()->m_BotNet.m_PfGoAimedThisTick && !GameClient()->m_Tas.FakeAimActive())
+        if(g_Config.m_KxFakeAim && !laserAimActive && !GameClient()->m_Tas.FakeAimActive())
         {
                 // Decide: real or fake
                 if(willFire || hookPress)
@@ -886,7 +877,7 @@ int CControls::SnapInput(int *pData)
         if(g_Config.m_KxFakeAim && s_HaveLastFake && !GameClient()->m_Tas.FakeAimActive())
         {
                 // Figure out whether this tick is a release tick.
-                bool aimOwnedByComponent = laserAimActive || GameClient()->m_BotNet.m_PfGoAimedThisTick;
+                bool aimOwnedByComponent = laserAimActive;
                 bool aimOwnedByPlayerFire = fakeActive && (willFire || hookPress);
                 bool isReleaseTick = aimOwnedByComponent || aimOwnedByPlayerFire;
 
@@ -902,8 +893,7 @@ int CControls::SnapInput(int *pData)
         // Only update from genuine fake ticks — not from release ticks where
         // fakeOffset happens to be realAim (willFire/hookPress) — otherwise
         // we'd poison the mask with the real aim and the fix would be useless.
-        if(fakeActive && !laserAimActive && !GameClient()->m_BotNet.m_PfGoAimedThisTick &&
-           !willFire && !hookPress)
+        if(fakeActive && !laserAimActive && !willFire && !hookPress)
         {
                 s_LastFakeRenderOffset = fakeOffset;
                 s_HaveLastFake = true;

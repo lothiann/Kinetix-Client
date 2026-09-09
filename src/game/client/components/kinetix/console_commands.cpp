@@ -163,34 +163,9 @@ void CBotNet::ConPfLive(IConsole::IResult *pResult, void *pUserData)
 			}
 }
 
-void CBotNet::ConPfGo(IConsole::IResult *pResult, void *pUserData)
+void CBotNet::ConPfPaste(IConsole::IResult *pResult, void *pUserData)
 {
-        CBotNet *p = (CBotNet *)pUserData;
-        int s = pResult->GetInteger(0);
-        if(s == 1)
-        {
-                // Start playback when path is ready (m_PfAPathReady=true).
-                // This covers both: pathfinder finished on its own (reached goal)
-                // AND user pressed Stop (clickgui.cpp reconstructs best partial path).
-                if(!p->m_PfAPathReady)
-                {
-                        dbg_msg("pathfinder", "kx_pf_play 1: path not ready (run pathfinder first, or press Stop after it finds a path)");
-                        return;
-                }
-                if(p->m_PfFullInputs.empty())
-                {
-                        dbg_msg("pathfinder", "kx_pf_play 1: m_PfFullInputs is empty (path found but no inputs?)");
-                        return;
-                }
-                p->m_PfGoActive = true;
-                p->m_PfGoIdx = 0;
-                dbg_msg("pathfinder", "kx_pf_play 1: playback started (%d ticks)", (int)p->m_PfFullInputs.size());
-        }
-        else
-        {
-                p->m_PfGoActive = false;
-                dbg_msg("pathfinder", "kx_pf_play 0: playback stopped at tick %d/%d", (int)p->m_PfGoIdx, (int)p->m_PfFullInputs.size());
-        }
+        ((CBotNet *)pUserData)->PfPasteToTas();
 }
 
 // Reset run: anchor to active player's predicted core, build flow field.
