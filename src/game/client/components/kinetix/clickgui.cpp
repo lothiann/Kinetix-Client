@@ -144,8 +144,8 @@ static const char *const g_ABTriggerModeOpts[] = {"One tick", "Hold", "Every tic
 static const char *const g_ABAimModeOpts[] = {"Silent", "Trigger", "Always"};
 static const char *const g_ABRulesOpts[] = {"None", "Insert line", "Raycast"};
 static const char *const g_ABTeamOpts[] = {"Both", "War", "My"};
-static const char *const g_ABFriendOpts[] = {"Both", "Ignore"};
-static const char *const g_ABDummyOpts[] = {"Both", "Ignore"};
+static const char *const g_ABFriendOpts[] = {"Both", "Ignore", "Only"};
+static const char *const g_ABDummyOpts[] = {"Both", "Ignore", "Only"};
 static const char *const g_ABFreezeOpts[] = {"Both", "Freeze", "No freeze"};
 static const char *const g_ABPriorityOpts[] = {"Nearest FOV", "Nearest Aim", "Nearest to me"};
 // v1.56.83: AimBot expandable — 15 children.
@@ -169,10 +169,11 @@ static SRow g_AimBotChildren[] = {
         {ERowType::Toggle, "Predict", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Dropdown, "AB Aim Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABAimModeOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "AB Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTeamOpts, 3, 0, nullptr, 0},
-        {ERowType::Dropdown, "AB Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 2, 0, nullptr, 0},
-        {ERowType::Dropdown, "AB Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 2, 0, nullptr, 0},
+        {ERowType::Dropdown, "AB Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "AB Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "AB Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "AB Priority", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABPriorityOpts, 3, 0, nullptr, 0},
+        {ERowType::Input, "Targets Filter", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0},
 };
 // v1.56.86: TriggerBot expandable — 17 children (no Hook, has Trigger + Trigger mode + Latency).
 static SRow g_TriggerBotChildren[] = {
@@ -194,10 +195,11 @@ static SRow g_TriggerBotChildren[] = {
         {ERowType::Input, "TB Success color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ff0000", "hex...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "TB Latency", nullptr, false, false, 0.0f, 10.0f, 1.0f, 0.0f, " ticks", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Dropdown, "TB Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTeamOpts, 3, 0, nullptr, 0},
-        {ERowType::Dropdown, "TB Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 2, 0, nullptr, 0},
-        {ERowType::Dropdown, "TB Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 2, 0, nullptr, 0},
+        {ERowType::Dropdown, "TB Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "TB Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "TB Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "TB Priority", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABPriorityOpts, 3, 0, nullptr, 0},
+        {ERowType::Input, "Targets Filter", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0},
 };
 // v1.56.90: Dummies expandable — dummy connect/disconnect/switch buttons.
 // MAX_DUMMIES=8 (D1..D7, index 0 = main). Layout: Connect/Disconnect button +
@@ -259,8 +261,8 @@ static SRow g_FunctionsRows[] = {
         {ERowType::Expandable, "Block", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BlockChildren, 37},
         {ERowType::Toggle, "Random Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         // v1.56.83: AimBot + TriggerBot expandables
-        {ERowType::Expandable, "AimBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AimBotChildren, 22},
-        {ERowType::Expandable, "TriggerBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TriggerBotChildren, 22},
+        {ERowType::Expandable, "AimBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AimBotChildren, 23},
+        {ERowType::Expandable, "TriggerBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TriggerBotChildren, 23},
         // Fly sub-section
         {ERowType::Toggle, "Preserve input", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Expandable, "Custom latency", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CustomLatencyChildren, 1},
@@ -322,12 +324,13 @@ static SRow g_EspChildren[] = {
         {ERowType::Dropdown, "ESP Style", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_EspStyleOpts, 4, 0, nullptr, 0},
         {ERowType::Slider, "Speed", nullptr, false, false, 0.0f, 100.0f, 1.0f, 30.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Dropdown, "ESP Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTeamOpts, 3, 0, nullptr, 0},
-        {ERowType::Dropdown, "ESP Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 2, 0, nullptr, 0},
-        {ERowType::Dropdown, "ESP Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 2, 0, nullptr, 0},
+        {ERowType::Dropdown, "ESP Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "ESP Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "ESP Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "ESP Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_EspModeOpts, 2, 0, nullptr, 0},
         {ERowType::Slider, "ESP X", nullptr, false, false, 0.0f, 7680.0f, 1.0f, 0.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "ESP Y", nullptr, false, false, 0.0f, 4320.0f, 1.0f, 0.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Targets Filter", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0},
 };
 // v1.56.121: "Basic Avoid Freeze" expandable.
 static SRow g_BasicAvoidFreezeChildren[] = {
@@ -348,7 +351,7 @@ static SRow g_AdvancedRows[] = {
         {ERowType::Expandable, "Trajectory", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TrajectoryChildren, 7},
         {ERowType::Expandable, "Laser unfreeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LaserUnfreezeChildren, 7},
         {ERowType::Expandable, "Fake Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_FakeAimChildren, 3},
-        {ERowType::Expandable, "ESP", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_EspChildren, 9},
+        {ERowType::Expandable, "ESP", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_EspChildren, 10},
         {ERowType::Expandable, "Basic Avoid Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BasicAvoidFreezeChildren, 12},
 };
 
@@ -2288,6 +2291,14 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                 child.valueIdx = g_Config.m_KxEspFriendFilter;
                                         else if(str_comp(child.pName, "ESP Dummy") == 0)
                                                 child.valueIdx = g_Config.m_KxEspDummyFilter;
+                                        else if(str_comp(child.pName, "Targets Filter") == 0 && str_comp(row.pName, "ESP") == 0)
+                                        {
+                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                {
+                                                        str_copy(child.m_aInputBuf, g_Config.m_KxEspTargetsFilter, sizeof(child.m_aInputBuf));
+                                                        child.m_InputInitialized = true;
+                                                }
+                                        }
                                         else if(str_comp(child.pName, "ESP Freeze") == 0)
                                                 child.valueIdx = g_Config.m_KxEspFreezeFilter;
                                         else if(str_comp(child.pName, "ESP Mode") == 0)
@@ -2430,6 +2441,14 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                         ch.valueIdx = s.m_FreezeFilter;
                                                 else if(str_comp(ch.pName, "AB Priority") == 0)
                                                         ch.valueIdx = s.m_Priority;
+                                                else if(str_comp(ch.pName, "Targets Filter") == 0)
+                                                {
+                                                        if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                        {
+                                                                str_copy(ch.m_aInputBuf, s.m_aTargetsFilter, sizeof(ch.m_aInputBuf));
+                                                                ch.m_InputInitialized = true;
+                                                        }
+                                                }
                                         }
                                 }
                                 else if(str_comp(row.pName, "TriggerBot") == 0)
@@ -2485,6 +2504,14 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                         ch.valueIdx = s.m_FreezeFilter;
                                                 else if(str_comp(ch.pName, "TB Priority") == 0)
                                                         ch.valueIdx = s.m_Priority;
+                                                else if(str_comp(ch.pName, "Targets Filter") == 0)
+                                                {
+                                                        if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                        {
+                                                                str_copy(ch.m_aInputBuf, s.m_aTargetsFilter, sizeof(ch.m_aInputBuf));
+                                                                ch.m_InputInitialized = true;
+                                                        }
+                                                }
                                                 else if(str_comp(ch.pName, "TB Show success") == 0)
                                                         ch.on = s.m_ShowSuccess;
                                                 else if(str_comp(ch.pName, "TB Success color") == 0)
@@ -5487,6 +5514,25 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
                                         ab.m_TriggerBotWeapons[w].m_SuccessColor = 0xff000000u | (hex & 0xffffff);
                         }
                 }
+        }
+        else if(str_comp(pRow->pName, "Targets Filter") == 0 && m_InputPanel >= 0 && m_InputPanel < NUM_PANELS && m_InputRow >= 0 && m_InputRow < g_Panels[m_InputPanel].rowCount)
+        {
+                const char *pOwner = g_Panels[m_InputPanel].pRows[m_InputRow].pName;
+                CAimBot &ab = GameClient()->m_AimBot;
+                if(str_comp(pOwner, "AimBot") == 0)
+                {
+                        int w = ab.m_AimBotSelectedWeapon;
+                        if(w >= 0 && w < CAimBot::NUM_WEAPONS_AIM)
+                                str_copy(ab.m_AimBotWeapons[w].m_aTargetsFilter, pRow->m_aInputBuf, sizeof(ab.m_AimBotWeapons[w].m_aTargetsFilter));
+                }
+                else if(str_comp(pOwner, "TriggerBot") == 0)
+                {
+                        int w = ab.m_TriggerBotSelectedWeapon;
+                        if(w >= 0 && w < CAimBot::NUM_WEAPONS_TRIGGER)
+                                str_copy(ab.m_TriggerBotWeapons[w].m_aTargetsFilter, pRow->m_aInputBuf, sizeof(ab.m_TriggerBotWeapons[w].m_aTargetsFilter));
+                }
+                else if(str_comp(pOwner, "ESP") == 0)
+                        str_copy(g_Config.m_KxEspTargetsFilter, pRow->m_aInputBuf, sizeof(g_Config.m_KxEspTargetsFilter));
         }
         // Block children: string IDs.
         else if(str_comp(pRow->pName, "Main ID") == 0)

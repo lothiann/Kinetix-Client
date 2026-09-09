@@ -4,6 +4,7 @@
 
 #include <base/color.h>
 #include <base/math.h>
+#include <stdlib.h>
 #include <cmath>
 #include <engine/shared/config.h>
 #include <engine/graphics.h>
@@ -40,10 +41,12 @@ bool CEsp::PassesFilters(int ClientId, int LocalId) const
 		if(!pGame->m_Teams.SameTeam(LocalId, ClientId))
 			return false;
 	}
-	// Friend filter: 0=both 1=ignore
+	// Friend filter: 0=both 1=ignore 2=only
 	if(g_Config.m_KxEspFriendFilter == 1 && pGame->m_aClients[ClientId].m_Friend)
 		return false;
-	// Dummy filter: 0=both 1=ignore
+	if(g_Config.m_KxEspFriendFilter == 2 && !pGame->m_aClients[ClientId].m_Friend)
+		return false;
+	// Dummy filter: 0=both 1=ignore 2=only
 	bool isDummy = false;
 	for(int d = 0; d < MAX_DUMMIES; d++)
 	{
@@ -55,6 +58,35 @@ bool CEsp::PassesFilters(int ClientId, int LocalId) const
 	}
 	if(g_Config.m_KxEspDummyFilter == 1 && isDummy)
 		return false;
+	if(g_Config.m_KxEspDummyFilter == 2 && !isDummy)
+		return false;
+	if(g_Config.m_KxEspTargetsFilter[0] != '\0')
+	{
+		bool found = false;
+		bool anyValid = false;
+		const char *pIds = g_Config.m_KxEspTargetsFilter;
+		while(*pIds)
+		{
+			while(*pIds && (*pIds == ' ' || *pIds == ',' || *pIds == ';'))
+				pIds++;
+			if(!*pIds)
+				break;
+			if(*pIds >= '0' && *pIds <= '9')
+			{
+				const int id = atoi(pIds);
+				if(id >= 0 && id < 128 && pGame->m_aClients[id].m_Active)
+				{
+					anyValid = true;
+					if(id == ClientId)
+						found = true;
+				}
+			}
+			while(*pIds && *pIds != ' ' && *pIds != ',' && *pIds != ';')
+				pIds++;
+		}
+		if(anyValid && !found)
+			return false;
+	}
 	// Freeze filter: 0=both 1=freeze 2=no_freeze
 	bool isFrozen = pGame->m_aClients[ClientId].m_FreezeEnd != 0;
 	if(g_Config.m_KxEspFreezeFilter == 1 && !isFrozen)

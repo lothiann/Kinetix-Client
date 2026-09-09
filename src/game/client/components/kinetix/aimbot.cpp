@@ -3,6 +3,7 @@
 #include <base/color.h>
 #include <base/dbg.h>
 #include <base/math.h>
+#include <stdlib.h>
 #include <base/vmath.h>
 #include <engine/graphics.h>
 #include <engine/shared/config.h>
@@ -205,6 +206,8 @@ bool CAimBot::PassesFilters(int ClientId, int LocalId, const SWeaponSettings &Se
         // Friend filter
         if(Settings.m_FriendFilter == 1 && pGame->m_aClients[ClientId].m_Friend)
                 return false;
+        if(Settings.m_FriendFilter == 2 && !pGame->m_aClients[ClientId].m_Friend)
+                return false;
         // Dummy filter
         bool isDummy = false;
         for(int d = 0; d < MAX_DUMMIES; d++)
@@ -217,6 +220,35 @@ bool CAimBot::PassesFilters(int ClientId, int LocalId, const SWeaponSettings &Se
         }
         if(Settings.m_DummyFilter == 1 && isDummy)
                 return false;
+        if(Settings.m_DummyFilter == 2 && !isDummy)
+                return false;
+        if(Settings.m_aTargetsFilter[0] != '\0')
+        {
+                bool found = false;
+                bool anyValid = false;
+                const char *pIds = Settings.m_aTargetsFilter;
+                while(*pIds)
+                {
+                        while(*pIds && (*pIds == ' ' || *pIds == ',' || *pIds == ';'))
+                                pIds++;
+                        if(!*pIds)
+                                break;
+                        if(*pIds >= '0' && *pIds <= '9')
+                        {
+                                const int id = atoi(pIds);
+                                if(id >= 0 && id < 128 && pGame->m_aClients[id].m_Active)
+                                {
+                                        anyValid = true;
+                                        if(id == ClientId)
+                                                found = true;
+                                }
+                        }
+                        while(*pIds && *pIds != ' ' && *pIds != ',' && *pIds != ';')
+                                pIds++;
+                }
+                if(anyValid && !found)
+                        return false;
+        }
         // Freeze filter
         bool isFrozen = pGame->m_aClients[ClientId].m_FreezeEnd != 0;
         if(Settings.m_FreezeFilter == 1 && !isFrozen)

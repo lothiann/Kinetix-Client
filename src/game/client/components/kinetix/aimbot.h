@@ -39,11 +39,12 @@ public:
                 bool m_UseAngle = false; // AB: aim at raycast hit point instead of target center
                 bool m_ShowSuccess = false; // AB: show rays that hit player hitbox in success color
                 unsigned m_SuccessColor = 0xffff0000; // AB: success color (0xAARRGGBB, default red)
-                bool m_Predict = false; // AB: predict target position based on projectile time-of-flight (iterative)
+                bool m_Predict = true; // AB: predict target position based on projectile time-of-flight (iterative)
                 int m_AimMode = 0; // 0=silent 1=trigger 2=always (AimBot only)
                 int m_TeamFilter = 0; // 0=both 1=war 2=my
-                int m_FriendFilter = 0; // 0=both 1=ignore
-                int m_DummyFilter = 0; // 0=both 1=ignore
+                int m_FriendFilter = 0; // 0=both 1=ignore 2=only
+                int m_DummyFilter = 0; // 0=both 1=ignore 2=only
+                char m_aTargetsFilter[64] = "";
                 int m_FreezeFilter = 0; // 0=both 1=freeze 2=no_freeze
                 int m_Priority = 0; // 0=nearest_fov 1=nearest_aim 2=nearest_to_me
                 int m_RandomLatency = 0; // TriggerBot only (ticks)
