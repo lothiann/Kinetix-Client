@@ -116,73 +116,6 @@ void CAimBot::OnRender()
                         RenderRadius(m_TriggerBotWeapons[weapon], MyPos, AimDir, alpha * 0.7f);
         }
 
-        // TODO: Replace fixed-angle raycasting with shadowcasting or DDA for pixel-perfect gap detection between blocks.
-        // v1.56.98: Render raycast lines — Show angles (AB) and/or Show success.
-        auto renderRays = [&](const SWeaponSettings &s) {
-                bool showAll = s.m_ShowRaycastLinesAB;
-                bool showSuccess = s.m_ShowSuccess;
-                if(!showAll && !showSuccess)
-                        return;
-                int angles = std::max(1, std::min(64, s.m_RaycastAnglesAB));
-                float halfFov = (s.m_Fov * 0.5f) * (pi / 180.0f);
-                float myAng = atan2f(AimDir.y, AimDir.x);
-                constexpr float HB_HITBOX = CCharacterCore::PhysicalSize() + 2.0f;
-                ColorRGBA normalCol = ColorRGBA(KxLineColor(KX_LINE_AIMBOT), true);
-                ColorRGBA successCol = ColorRGBA(s.m_SuccessColor, true);
-                // v1.56.98: Cache rays for FindTarget to use (no re-computation in OnUpdate)
-                m_DebugRayHits.clear();
-                m_DebugShowRays = true;
-                Graphics()->TextureClear();
-                Graphics()->LinesBegin();
-                for(int i = 0; i <= angles; i++)
-                {
-                        float t = (float)i / (float)angles;
-                        float a = myAng - halfFov + t * (2.0f * halfFov);
-                        vec2 end = MyPos + vec2(cosf(a), sinf(a)) * s.m_Radius;
-                        vec2 hitPos;
-                        if(pGame->Collision()->IntersectLineTeleHook(MyPos, end, &hitPos, nullptr) > 0)
-                        {
-                                end = hitPos;
-                                m_DebugRayHits.push_back({end, length(end - MyPos)});
-                        }
-                        else
-                                m_DebugRayHits.push_back({end, s.m_Radius});
-                        // Check if this ray hits any player hitbox
-                        bool hitsPlayer = false;
-                        for(int c = 0; c < MAX_CLIENTS; c++)
-                        {
-                                if(c == LocalId || !pGame->m_aClients[c].m_Active || !pGame->m_Snap.m_aCharacters[c].m_Active)
-                                        continue;
-                                vec2 prevP = vec2((float)pGame->m_Snap.m_aCharacters[c].m_Prev.m_X, (float)pGame->m_Snap.m_aCharacters[c].m_Prev.m_Y);
-                                vec2 curP = vec2((float)pGame->m_Snap.m_aCharacters[c].m_Cur.m_X, (float)pGame->m_Snap.m_aCharacters[c].m_Cur.m_Y);
-                                vec2 pPos = mix(prevP, curP, pGame->Client()->IntraGameTick(g_Config.m_ClDummy));
-                                vec2 closestPt;
-                                if(closest_point_on_line(MyPos, end, pPos, closestPt))
-                                {
-                                        if(distance(pPos, closestPt) < HB_HITBOX)
-                                        {
-                                                hitsPlayer = true;
-                                                break;
-                                        }
-                                }
-                        }
-                        if(hitsPlayer && showSuccess)
-                                Graphics()->SetColor(successCol.r, successCol.g, successCol.b, successCol.a);
-                        else if(showAll)
-                                Graphics()->SetColor(normalCol.r, normalCol.g, normalCol.b, 0.3f);
-                        else
-                                continue; // showSuccess only — skip non-hit rays
-                        IGraphics::CLineItem Line(MyPos.x, MyPos.y, end.x, end.y);
-                        Graphics()->LinesDraw(&Line, 1);
-                }
-                Graphics()->LinesEnd();
-        };
-        if(g_Config.m_KxAimBot && weapon >= 0 && weapon < NUM_WEAPONS_AIM - 1 && m_AimBotWeapons[weapon].m_Enabled)
-                renderRays(m_AimBotWeapons[weapon]);
-        if(g_Config.m_KxAimBot && m_AimBotWeapons[6].m_Enabled && (hookHeld || m_AimBotWeapons[6].m_AimMode == 2))
-                renderRays(m_AimBotWeapons[6]);
-        if(g_Config.m_KxTriggerBot && weapon >= 0 && weapon < NUM_WEAPONS_TRIGGER && m_TriggerBotWeapons[weapon].m_Enabled)
-                renderRays(m_TriggerBotWeapons[weapon]);
 }
 
 bool CAimBot::PassesFilters(int ClientId, int LocalId, const SWeaponSettings &Settings)
@@ -264,7 +197,6 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int Weapon, int LocalId
         float myAngle = atan2f(AimDir.y, AimDir.x);
         float halfFovRad = (Settings.m_Fov * 0.5f) * (pi / 180.0f);
         constexpr float HB_HITBOX = CCharacterCore::PhysicalSize() + 2.0f;
-        constexpr float HB_HALF = HB_HITBOX * 0.5f;
 
         int bestTarget = -1;
         float bestScore = 1e18f;
@@ -462,17 +394,25 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int Weapon, int LocalId
                         }
                         targetCenter = predictedPos;
                 }
-                vec2 hbPoints[5] = {
-                        targetCenter,
-                        targetCenter + vec2(-HB_HALF, -HB_HALF),
-                        targetCenter + vec2(HB_HALF, -HB_HALF),
-                        targetCenter + vec2(-HB_HALF, HB_HALF),
-                        targetCenter + vec2(HB_HALF, HB_HALF),
-                };
+                const float hbR = HB_HITBOX - 1.0f;
+                const float hbDistToMe = distance(MyPos, targetCenter);
+                const float hbToMeAngle = atan2f(MyPos.y - targetCenter.y, MyPos.x - targetCenter.x);
+                float hbArc = pi;
+                if(hbDistToMe > hbR)
+                        hbArc = acosf(hbR / hbDistToMe);
+                const int hbSamples = std::max(1, (int)(hbR * 4.0f * hbArc));
+                constexpr int HB_MAX_SAMPLES = 384;
+                vec2 hbPoints[HB_MAX_SAMPLES];
+                for(int k = 0; k < hbSamples; k++)
+                {
+                        const float a = hbToMeAngle - hbArc + ((k + 0.5f) * 2.0f * hbArc) / (float)hbSamples;
+                        hbPoints[k] = targetCenter + vec2(cosf(a), sinf(a)) * hbR;
+                }
+                const bool hbCenterVisible = Settings.m_Rules != 1 || IsVisible(MyPos, targetCenter);
                 float bestSampleScore = 1e18f;
                 bool anyPass = false;
                 vec2 sampleAimPoint = targetCenter;
-                for(int s = 0; s < 5; s++)
+                for(int s = 0; s < hbSamples; s++)
                 {
                         vec2 sp = hbPoints[s];
                         vec2 toSample = sp - MyPos;
@@ -492,31 +432,12 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int Weapon, int LocalId
                         }
                         else if(Settings.m_Rules == 1)
                         {
-                                visible = IsVisible(MyPos, sp);
+                                visible = hbCenterVisible;
+                                rayHitPoint = targetCenter;
                         }
-                        else if(Settings.m_Rules == 2 && !m_DebugRayHits.empty())
+                        else if(Settings.m_Rules == 2)
                         {
-                                float bestRayDist = 1e18f;
-                                for(const auto &rh : m_DebugRayHits)
-                                {
-                                        vec2 rayDir = normalize(rh.end - MyPos);
-                                        float proj = dot(sp - MyPos, rayDir);
-                                        if(proj < 0.0f || proj > rh.dist)
-                                                continue;
-                                        vec2 closestPt;
-                                        if(closest_point_on_line(MyPos, rh.end, sp, closestPt) && distance(sp, closestPt) < HB_HITBOX)
-                                        {
-                                                visible = true;
-                                                float centerProj = dot(targetCenter - MyPos, rayDir);
-                                                vec2 centerPerp = (targetCenter - MyPos) - rayDir * centerProj;
-                                                float centerDist = length(centerPerp);
-                                                if(centerDist < bestRayDist)
-                                                {
-                                                        bestRayDist = centerDist;
-                                                        rayHitPoint = MyPos + rayDir * centerProj;
-                                                }
-                                        }
-                                }
+                                visible = IsVisible(MyPos, sp);
                         }
                         if(visible)
                         {
@@ -872,7 +793,7 @@ void CAimBot::RenderRadius(const SWeaponSettings &Settings, const vec2 &MyPos, c
         int LineSize = KxLineSize(KX_LINE_AIMBOT);
         float HalfWidth = 0.5f + (float)(LineSize > 0 ? LineSize - 1 : 0) * 0.25f;
         bool useRay = Settings.m_UseRaycastShow;
-        int segments = useRay ? std::max(1, std::min(64, Settings.m_RaycastAnglesShow)) : 48;
+        int segments = useRay ? 64 : 48;
 
         std::vector<vec2> points;
         for(int i = 0; i <= segments; i++)

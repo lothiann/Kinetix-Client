@@ -157,14 +157,8 @@ static SRow g_AimBotChildren[] = {
         {ERowType::Toggle, "Show FOV", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Show Radius", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Use raycast (Show)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Raycast angles (Show)", nullptr, false, false, 1.0f, 64.0f, 1.0f, 16.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Dropdown, "Rules", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABRulesOpts, 3, 0, nullptr, 0},
-        {ERowType::Toggle, "Use raycast (AB)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Show raycast lines (AB)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Raycast angles (AB)", nullptr, false, false, 1.0f, 64.0f, 1.0f, 16.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Use Angle", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Show success", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Success color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ff0000", "hex...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Use raycast angle (AB)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         // v1.56.192: AimBot Predict — iterative time-of-flight prediction (NOT in TriggerBot).
         {ERowType::Toggle, "Predict", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Dropdown, "AB Aim Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABAimModeOpts, 3, 0, nullptr, 0},
@@ -186,13 +180,7 @@ static SRow g_TriggerBotChildren[] = {
         {ERowType::Toggle, "TB Show FOV", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "TB Show Radius", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "TB Use raycast (Show)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "TB Raycast angles (Show)", nullptr, false, false, 1.0f, 64.0f, 1.0f, 16.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Dropdown, "TB Rules", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABRulesOpts, 3, 0, nullptr, 0},
-        {ERowType::Toggle, "TB Use raycast (TB)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "TB Show raycast lines (TB)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "TB Raycast angles (TB)", nullptr, false, false, 1.0f, 64.0f, 1.0f, 16.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "TB Show success", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "TB Success color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ff0000", "hex...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "TB Latency", nullptr, false, false, 0.0f, 10.0f, 1.0f, 0.0f, " ticks", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Dropdown, "TB Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTeamOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "TB Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
@@ -261,8 +249,8 @@ static SRow g_FunctionsRows[] = {
         {ERowType::Expandable, "Block", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BlockChildren, 37},
         {ERowType::Toggle, "Random Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         // v1.56.83: AimBot + TriggerBot expandables
-        {ERowType::Expandable, "AimBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AimBotChildren, 23},
-        {ERowType::Expandable, "TriggerBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TriggerBotChildren, 23},
+        {ERowType::Expandable, "AimBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AimBotChildren, 17},
+        {ERowType::Expandable, "TriggerBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TriggerBotChildren, 17},
         // Fly sub-section
         {ERowType::Toggle, "Preserve input", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Expandable, "Custom latency", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CustomLatencyChildren, 1},
@@ -801,9 +789,7 @@ static bool AimBotChildVisible(const SRow *pChildren, int childCount, int idx)
         }
         const bool isRaycastMode = (rulesIdx == 2);
         // Raycast AB fields hidden when Rules != 2
-        if(str_comp(row.pName, "Use raycast (AB)") == 0 ||
-           str_comp(row.pName, "Raycast angles (AB)") == 0 ||
-           str_comp(row.pName, "Use Angle") == 0)
+        if(str_comp(row.pName, "Use raycast angle (AB)") == 0)
                 return isRaycastMode;
         return true;
 }
@@ -813,20 +799,7 @@ static bool TriggerBotChildVisible(const SRow *pChildren, int childCount, int id
 {
         if(idx < 0 || idx >= childCount)
                 return false;
-        const SRow &row = pChildren[idx];
-        int rulesIdx = 1;
-        for(int i = 0; i < childCount; ++i)
-        {
-                if(str_comp(pChildren[i].pName, "TB Rules") == 0)
-                {
-                        rulesIdx = pChildren[i].valueIdx;
-                        break;
-                }
-        }
-        const bool isRaycastMode = (rulesIdx == 2);
-        if(str_comp(row.pName, "TB Use raycast (TB)") == 0 ||
-           str_comp(row.pName, "TB Raycast angles (TB)") == 0)
-                return isRaycastMode;
+        (void)pChildren;
         return true;
 }
 
@@ -2404,17 +2377,9 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                         ch.on = aimbot.m_AimBotShowRadius;
                                                 else if(str_comp(ch.pName, "Use raycast (Show)") == 0)
                                                         ch.on = s.m_UseRaycastShow;
-                                                else if(str_comp(ch.pName, "Use raycast (AB)") == 0)
-                                                        ch.on = s.m_UseRaycastAB;
-                                                else if(str_comp(ch.pName, "Raycast angles (Show)") == 0)
-                                                        ch.value = (float)s.m_RaycastAnglesShow;
                                                 else if(str_comp(ch.pName, "Rules") == 0)
                                                         ch.valueIdx = s.m_Rules;
-                                                else if(str_comp(ch.pName, "Show raycast lines (AB)") == 0)
-                                                        ch.on = s.m_ShowRaycastLinesAB;
-                                                else if(str_comp(ch.pName, "Raycast angles (AB)") == 0)
-                                                        ch.value = (float)s.m_RaycastAnglesAB;
-                                                else if(str_comp(ch.pName, "Use Angle") == 0)
+                                                else if(str_comp(ch.pName, "Use raycast angle (AB)") == 0)
                                                         ch.on = s.m_UseAngle;
                                                 else if(str_comp(ch.pName, "AB Aim Mode") == 0)
                                                         ch.valueIdx = s.m_AimMode;
@@ -2422,17 +2387,6 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                         ch.valueIdx = s.m_TeamFilter;
                                                 else if(str_comp(ch.pName, "AB Friend") == 0)
                                                         ch.valueIdx = s.m_FriendFilter;
-                                                else if(str_comp(ch.pName, "Show success") == 0)
-                                                        ch.on = s.m_ShowSuccess;
-                                                else if(str_comp(ch.pName, "Success color") == 0)
-                                                {
-                                                        if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
-                                                        {
-                                                                char hex[8]; str_format(hex, sizeof(hex), "%06x", s.m_SuccessColor & 0xffffff);
-                                                                str_copy(ch.m_aInputBuf, hex, sizeof(ch.m_aInputBuf));
-                                                                ch.m_InputInitialized = true;
-                                                        }
-                                                }
                                                 else if(str_comp(ch.pName, "Predict") == 0)
                                                         ch.on = s.m_Predict;
                                                 else if(str_comp(ch.pName, "AB Dummy") == 0)
@@ -2482,16 +2436,8 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                         ch.on = aimbot.m_TriggerBotShowRadius;
                                                 else if(str_comp(ch.pName, "TB Use raycast (Show)") == 0)
                                                         ch.on = s.m_UseRaycastShow;
-                                                else if(str_comp(ch.pName, "TB Use raycast (TB)") == 0)
-                                                        ch.on = s.m_UseRaycastAB;
-                                                else if(str_comp(ch.pName, "TB Raycast angles (Show)") == 0)
-                                                        ch.value = (float)s.m_RaycastAnglesShow;
                                                 else if(str_comp(ch.pName, "TB Rules") == 0)
                                                         ch.valueIdx = s.m_Rules;
-                                                else if(str_comp(ch.pName, "TB Show raycast lines (TB)") == 0)
-                                                        ch.on = s.m_ShowRaycastLinesAB;
-                                                else if(str_comp(ch.pName, "TB Raycast angles (TB)") == 0)
-                                                        ch.value = (float)s.m_RaycastAnglesAB;
                                                 else if(str_comp(ch.pName, "TB Latency") == 0)
                                                         ch.value = (float)s.m_RandomLatency;
                                                 else if(str_comp(ch.pName, "TB Team") == 0)
@@ -2509,17 +2455,6 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                         if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
                                                         {
                                                                 str_copy(ch.m_aInputBuf, s.m_aTargetsFilter, sizeof(ch.m_aInputBuf));
-                                                                ch.m_InputInitialized = true;
-                                                        }
-                                                }
-                                                else if(str_comp(ch.pName, "TB Show success") == 0)
-                                                        ch.on = s.m_ShowSuccess;
-                                                else if(str_comp(ch.pName, "TB Success color") == 0)
-                                                {
-                                                        if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
-                                                        {
-                                                                char hex[8]; str_format(hex, sizeof(hex), "%06x", s.m_SuccessColor & 0xffffff);
-                                                                str_copy(ch.m_aInputBuf, hex, sizeof(ch.m_aInputBuf));
                                                                 ch.m_InputInitialized = true;
                                                         }
                                                 }
@@ -3439,10 +3374,6 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                         s.m_Fov = pTarget->value;
                                                     else if(str_comp(pTarget->pName, "AB Radius") == 0)
                                                         s.m_Radius = pTarget->value;
-                                                    else if(str_comp(pTarget->pName, "Raycast angles (Show)") == 0)
-                                                        s.m_RaycastAnglesShow = (int)pTarget->value;
-                                                                        else if(str_comp(pTarget->pName, "Raycast angles (AB)") == 0)
-                                                                                s.m_RaycastAnglesAB = (int)pTarget->value;
                                                 }
                                         }
                                         else if(str_comp(parentRow.pName, "TriggerBot") == 0)
@@ -3455,10 +3386,6 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                         s.m_Fov = pTarget->value;
                                                     else if(str_comp(pTarget->pName, "TB Radius") == 0)
                                                         s.m_Radius = pTarget->value;
-                                                    else if(str_comp(pTarget->pName, "TB Raycast angles (Show)") == 0)
-                                                        s.m_RaycastAnglesShow = (int)pTarget->value;
-                                                                        else if(str_comp(pTarget->pName, "Raycast angles (AB)") == 0)
-                                                                                s.m_RaycastAnglesAB = (int)pTarget->value;
                                                     else if(str_comp(pTarget->pName, "TB Latency") == 0)
                                                         s.m_RandomLatency = (int)pTarget->value;
                                                 }
@@ -3994,14 +3921,8 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                             ab.m_AimBotShowRadius = pTarget->on;
                                                         else if(str_comp(pTarget->pName, "Use raycast (Show)") == 0)
                                                             s.m_UseRaycastShow = pTarget->on;
-                                                        else if(str_comp(pTarget->pName, "Use raycast (AB)") == 0)
-                                                            s.m_UseRaycastAB = pTarget->on;
-                                                        else if(str_comp(pTarget->pName, "Show raycast lines (AB)") == 0)
-                                                            s.m_ShowRaycastLinesAB = pTarget->on;
-                                                        else if(str_comp(pTarget->pName, "Use Angle") == 0)
+                                                        else if(str_comp(pTarget->pName, "Use raycast angle (AB)") == 0)
                                                             s.m_UseAngle = pTarget->on;
-                                                        else if(str_comp(pTarget->pName, "Show success") == 0)
-                                                            s.m_ShowSuccess = pTarget->on;
                                                         else if(str_comp(pTarget->pName, "Predict") == 0)
                                                             s.m_Predict = pTarget->on;
                                                 }
@@ -4022,12 +3943,6 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                             tb.m_TriggerBotShowRadius = pTarget->on;
                                                         else if(str_comp(pTarget->pName, "TB Use raycast (Show)") == 0)
                                                             s.m_UseRaycastShow = pTarget->on;
-                                                        else if(str_comp(pTarget->pName, "TB Use raycast (TB)") == 0)
-                                                            s.m_UseRaycastAB = pTarget->on;
-                                                        else if(str_comp(pTarget->pName, "TB Show raycast lines (TB)") == 0)
-                                                            s.m_ShowRaycastLinesAB = pTarget->on;
-                                                        else if(str_comp(pTarget->pName, "TB Show success") == 0)
-                                                            s.m_ShowSuccess = pTarget->on;
                                                 }
                                         }
                                         // v1.56.178: Trajectory per-type child toggles (parent = "Trajectory")
@@ -5494,27 +5409,6 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
                 str_copy(g_Config.m_KxSpoofClientVersion, pRow->m_aInputBuf, sizeof(g_Config.m_KxSpoofClientVersion));
         else if(str_comp(pRow->pName, "Git hash value") == 0)
                 str_copy(g_Config.m_KxSpoofGitHash, pRow->m_aInputBuf, sizeof(g_Config.m_KxSpoofGitHash));
-        // AimBot / TriggerBot success color (hex).
-        else if(str_comp(pRow->pName, "Success color") == 0 || str_comp(pRow->pName, "TB Success color") == 0)
-        {
-                unsigned hex = 0;
-                if(sscanf(pRow->m_aInputBuf, "%6x", &hex) == 1)
-                {
-                        CAimBot &ab = GameClient()->m_AimBot;
-                        if(str_comp(pRow->pName, "Success color") == 0)
-                        {
-                                int w = ab.m_AimBotSelectedWeapon;
-                                if(w >= 0 && w < CAimBot::NUM_WEAPONS_AIM)
-                                        ab.m_AimBotWeapons[w].m_SuccessColor = 0xff000000u | (hex & 0xffffff);
-                        }
-                        else
-                        {
-                                int w = ab.m_TriggerBotSelectedWeapon;
-                                if(w >= 0 && w < CAimBot::NUM_WEAPONS_TRIGGER)
-                                        ab.m_TriggerBotWeapons[w].m_SuccessColor = 0xff000000u | (hex & 0xffffff);
-                        }
-                }
-        }
         else if(str_comp(pRow->pName, "Targets Filter") == 0 && m_InputPanel >= 0 && m_InputPanel < NUM_PANELS && m_InputRow >= 0 && m_InputRow < g_Panels[m_InputPanel].rowCount)
         {
                 const char *pOwner = g_Panels[m_InputPanel].pRows[m_InputRow].pName;

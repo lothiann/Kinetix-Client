@@ -31,14 +31,8 @@ public:
                 float m_Fov = 90.0f;
                 float m_Radius = 300.0f;
                 bool m_UseRaycastShow = false; // show: render FOV cone with wall collision
-                int m_RaycastAnglesShow = 16; // show: number of raycast angles
                 int m_Rules = 1; // 0=none 1=insert_line 2=insert_line+raycast
-                bool m_UseRaycastAB = false; // AB: use raycast for target detection
-                bool m_ShowRaycastLinesAB = false; // AB: debug render raycast lines
-                int m_RaycastAnglesAB = 16; // AB: number of raycast angles
                 bool m_UseAngle = false; // AB: aim at raycast hit point instead of target center
-                bool m_ShowSuccess = false; // AB: show rays that hit player hitbox in success color
-                unsigned m_SuccessColor = 0xffff0000; // AB: success color (0xAARRGGBB, default red)
                 bool m_Predict = true; // AB: predict target position based on projectile time-of-flight (iterative)
                 int m_AimMode = 0; // 0=silent 1=trigger 2=always (AimBot only)
                 int m_TeamFilter = 0; // 0=both 1=war 2=my
@@ -73,11 +67,6 @@ private:
         bool m_PrevHook = false;
         bool m_TriggerBotWasActive = false; // edge detection for TriggerBot one_tick mode
         int m_TriggerBotReleaseTick = -1; // one_tick: tick on which to release trigger (-1 = none)
-
-        // v1.56.92: Cached raycast rays for debug rendering (filled in FindTarget, drawn in OnRender)
-        struct SRayHit { vec2 end; float dist; };
-        std::vector<SRayHit> m_DebugRayHits;
-        bool m_DebugShowRays = false;
 
         void Update();
         void UpdateAimBot();
