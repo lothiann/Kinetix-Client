@@ -22,17 +22,20 @@ void CBotNet::PfClearSearchState()
 		delete m_PfBaseWorld;
 		m_PfBaseWorld = nullptr;
 	}
+	if(m_PfSimWorld)
+	{
+		delete m_PfSimWorld;
+		m_PfSimWorld = nullptr;
+	}
 	m_PfLocalID = -1;
 	m_PfThreadResult.store(-1);
-	m_PfANodes.clear();
-	m_PfAOpen.clear();
-	m_PfABestG.clear();
+	std::vector<AStarNode>().swap(m_PfANodes);
+	std::vector<int>().swap(m_PfAOpen);
+	std::unordered_map<uint64_t, float>().swap(m_PfABestG);
 	m_PfAGoalIdx = -1;
 	m_PfAStarted = false;
 	m_PfAPathReady = false;
 	m_PfAExpandCount = 0;
-	m_PfRHAInitialized = false;
-	m_PfRHAPopulation.clear();
 	m_PfFullInputs.clear();
 	m_PfFullInputsIdx = 0;
 	m_PfGoActive = false;
@@ -443,80 +446,6 @@ void CBotNet::PfComputeFlowField(const vec2 &StartPos)
 		PfBfsFill(m_PfScoreField, m_PfScoreFieldW, m_PfScoreFieldH, vSrcSub, fnSubWalk, fnSubFreeze, true);
 }
 
-// Chunk candidate score. Weights are unchanged from the legacy tuner —
-// the score only RANKS candidates inside RHEA/beam/sweep, it never enters
-// the A* node cost G.
-float CBotNet::PfScoreChunk(const vec2 &startPos, const vec2 &endPos, bool reachedFinish, bool died,
-	int freezeTicks, bool applyFreezePenalty) const
-{
-	float score = 0.0f;
-	const float INF = 1e17f;
-
-	// Flow-field alignment: cosine between the movement vector and the
-	// distance gradient (+1 = toward finish, -1 = away).
-	if(PfEffortScoreFlow() && m_PfFlowField && m_MapWidth > 0 && m_MapHeight > 0)
-	{
-		vec2 move = endPos - startPos;
-		float moveLen = sqrtf(move.x * move.x + move.y * move.y);
-		if(moveLen > 0.001f)
-		{
-			int sx = pf_clamp((int)(startPos.x / 32.0f), 0, m_MapWidth - 1);
-			int sy = pf_clamp((int)(startPos.y / 32.0f), 0, m_MapHeight - 1);
-			float fd = m_PfFlowField[sy * m_MapWidth + sx];
-			if(fd < INF)
-			{
-				float fdx_m = (sx > 0) ? m_PfFlowField[sy * m_MapWidth + (sx - 1)] : fd;
-				float fdx_p = (sx < m_MapWidth - 1) ? m_PfFlowField[sy * m_MapWidth + (sx + 1)] : fd;
-				float fdy_m = (sy > 0) ? m_PfFlowField[(sy - 1) * m_MapWidth + sx] : fd;
-				float fdy_p = (sy < m_MapHeight - 1) ? m_PfFlowField[(sy + 1) * m_MapWidth + sx] : fd;
-				if(fdx_m >= INF) fdx_m = fd;
-				if(fdx_p >= INF) fdx_p = fd;
-				if(fdy_m >= INF) fdy_m = fd;
-				if(fdy_p >= INF) fdy_p = fd;
-				float gx = fdx_m - fdx_p;
-				float gy = fdy_m - fdy_p;
-				float gLen = sqrtf(gx * gx + gy * gy);
-				if(gLen > 0.001f)
-				{
-					float cosA = (move.x * gx + move.y * gy) / (moveLen * gLen);
-					score += cosA * 10.0f;
-				}
-			}
-		}
-	}
-
-	// Distance reduction on the 4x-resolution score field (sub-tile precision).
-	if(PfEffortScoreDist() && m_PfScoreField && m_PfScoreFieldW > 0 && m_PfScoreFieldH > 0)
-	{
-		int sx = pf_clamp((int)(startPos.x / 8.0f), 0, m_PfScoreFieldW - 1);
-		int sy = pf_clamp((int)(startPos.y / 8.0f), 0, m_PfScoreFieldH - 1);
-		int ex = pf_clamp((int)(endPos.x / 8.0f), 0, m_PfScoreFieldW - 1);
-		int ey = pf_clamp((int)(endPos.y / 8.0f), 0, m_PfScoreFieldH - 1);
-		float dStart = m_PfScoreField[sy * m_PfScoreFieldW + sx];
-		float dEnd = m_PfScoreField[ey * m_PfScoreFieldW + ex];
-		if(dStart < INF && dEnd < INF)
-			score += (dStart - dEnd) * 10.0f;
-		else if(dEnd < INF && dStart >= INF)
-			score += 50.0f; // escaped an unreachable cell
-		else if(dEnd >= INF && dStart < INF)
-			score -= 50.0f; // moved INTO an unreachable cell
-	}
-
-	if(reachedFinish)
-		score += 1000000.0f;
-
-	if(died && PfEffortFineDeath())
-		score -= 10000.0f;
-
-	if(applyFreezePenalty)
-		score -= freezeTicks * (10.0f + m_PfTotalFreezeTicks / 8.0f);
-
-	if(distance(endPos, startPos) < 2.0f)
-		score -= 500.0f;
-
-	return score;
-}
-
 #include <chrono>
 
 static double PfNowSec()
@@ -563,8 +492,7 @@ void CBotNet::UpdatePathfinder()
 			m_PfState = PF_STATE_FINISHED;
 			return;
 		}
-		int ChunkSize = PfEffortChunkTicks();
-		size_t endIdx = m_PfFullInputsIdx + (size_t)ChunkSize;
+		size_t endIdx = m_PfFullInputsIdx + 10;
 		if(endIdx > m_PfFullInputs.size())
 			endIdx = m_PfFullInputs.size();
 		m_PfFullInputsIdx = endIdx;
@@ -842,298 +770,6 @@ bool CBotNet::PfBacktrack()
 	}
 
 	return false;
-}
-
-// Legacy greedy single-chunk generator (API compatibility — the tab runs
-// the threaded physics A* now). Sweeps direction x jumpTick x hook and
-// keeps the top-N candidates by PfScoreChunk.
-bool CBotNet::PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::vector<vec2> &outTraj,
-	bool &outReachedFinish, bool &outDied, int &outFreezeTicks)
-{
-	CGameClient *pGame = GameClient();
-	if(!pGame)
-		return false;
-
-	int LocalID = pGame->m_Snap.m_LocalClientId;
-	if(LocalID < 0)
-		return false;
-
-	if(!pGame->m_PredictedWorld.GetCharacterById(LocalID))
-		return false;
-
-	int ChunkSize = PfEffortChunkTicks();
-	int HookAngles = PfEffortHookAngles();
-
-	CGameWorld FutureWorld;
-	FutureWorld.CopyWorld(&pGame->m_PredictedWorld);
-	for(int Type = 0; Type < CGameWorld::NUM_ENTTYPES; Type++)
-	{
-		if(Type == CGameWorld::ENTTYPE_CHARACTER)
-			continue;
-		std::vector<CEntity *> vRemove;
-		for(CEntity *pEnt = FutureWorld.FindLast(Type); pEnt; pEnt = pEnt->TypePrev())
-			vRemove.push_back(pEnt);
-		for(CEntity *pEnt : vRemove)
-			FutureWorld.RemoveEntity(pEnt);
-	}
-	for(int i = 0; i < MAX_CLIENTS; i++)
-	{
-		if(i == LocalID)
-			continue;
-		if(CCharacter *pChar = FutureWorld.GetCharacterById(i))
-			FutureWorld.RemoveEntity(pChar);
-	}
-
-	CCharacter *pBot = PfSpawnSimBot(&FutureWorld, LocalID, m_PfCurPos, m_PfCurVel,
-		m_PfCurHookState, m_PfCurHookPos, m_PfCurHookDir,
-		m_PfCurHookTick, m_PfCurFreezeTime, m_PfCurJumped);
-	if(!pBot)
-		return false;
-
-	int StartTick = FutureWorld.GameTick();
-	CCollision *pColl = FutureWorld.Collision();
-	if(!pColl)
-		return false;
-
-	// Freeze fast-forward: one chunk of empty input through all freeze ticks.
-	if(pBot->m_FreezeTime > 0)
-	{
-		int freezeTicks = pBot->m_FreezeTime;
-		std::vector<CNetObj_PlayerInput> emptyInputs;
-		emptyInputs.reserve(freezeTicks);
-		for(int t = 0; t < freezeTicks; t++)
-		{
-			CNetObj_PlayerInput inp;
-			mem_zero(&inp, sizeof(inp));
-			inp.m_TargetY = -1;
-			emptyInputs.push_back(inp);
-		}
-		PfChunkResult res;
-		PfSimulateChunk(&FutureWorld, LocalID, pBot, emptyInputs, StartTick, res, m_pForbiddenGrid, PfCustomFinishSimGrid());
-		if(res.died && !res.reachedFinish)
-			return false;
-		outInputs = res.inputs;
-		outTraj = res.traj;
-		outReachedFinish = res.reachedFinish;
-		outDied = res.died;
-		outFreezeTicks = res.freezeTicks;
-		m_PfCurPos = res.endPos;
-		m_PfCurVel = res.endVel;
-		m_PfCurHookPos = res.endHookPos;
-		m_PfCurHookDir = res.endHookDir;
-		m_PfCurHookState = res.endHookState;
-		m_PfCurHookTick = res.endHookTick;
-		m_PfCurJumped = res.endJumped;
-		m_PfCurFreezeTime = res.endFreezeTime;
-		return true;
-	}
-
-	float hookLength = pBot->GetCore().m_Tuning.m_HookLength;
-	if(!(hookLength > 1.0f) || !(hookLength < 10000.0f))
-		hookLength = 900.0f;
-
-	struct HookRayResult
-	{
-		float angle;
-		bool hasTarget;
-	};
-	HookRayResult aHookRays[32];
-	bool hookIdle = (pBot->GetCore().m_HookState == HOOK_IDLE);
-	bool hookActive = (pBot->GetCore().m_HookState == HOOK_FLYING || pBot->GetCore().m_HookState == HOOK_GRABBED);
-	if(hookIdle)
-	{
-		for(int i = 0; i < HookAngles; i++)
-		{
-			float t = (float)i / (float)(HookAngles - 1 < 1 ? 1 : HookAngles - 1);
-			float angle = (-5.0f / 6.0f) * pi + t * (10.0f / 6.0f) * pi;
-			aHookRays[i].angle = angle;
-			vec2 endPos = pBot->m_Pos + vec2(cosf(angle), sinf(angle)) * hookLength;
-			vec2 hitPos;
-			int hit = pColl->IntersectLineTeleHook(pBot->m_Pos, endPos, &hitPos, nullptr);
-			aHookRays[i].hasTarget = (hit == TILE_SOLID || hit == TILE_TELEINHOOK || (hit > 0 && hit != TILE_NOHOOK && hit != TILE_DEATH));
-		}
-	}
-
-	static const int aDirs[] = {-1, 0, 1};
-
-	struct CandidateResult
-	{
-		std::vector<CNetObj_PlayerInput> inputs;
-		std::vector<vec2> traj;
-		float score;
-		bool reachedFinish;
-		bool died;
-		int freezeTicks;
-		int endFreezeTime;
-		vec2 endPos, endVel, endHookPos, endHookDir;
-		int endHookState, endHookTick, endJumped;
-	};
-	const int dynMax = 3 * (ChunkSize + 1) * (1 + HookAngles);
-	const int N = pf_clamp(g_Config.m_KxPfBacktrackCandidates, CConfig::PF_CANDIDATES_MIN, dynMax);
-	std::vector<CandidateResult> topCandidates(N);
-	for(int i = 0; i < N; i++)
-	{
-		topCandidates[i].score = -1e18f;
-		topCandidates[i].freezeTicks = 0;
-	}
-
-	auto fnSimulateCandidate = [&](const std::vector<CNetObj_PlayerInput> &inSeq) {
-		CCharacterCore savedCore = pBot->GetCore();
-		vec2 savedPos = pBot->m_Pos;
-		int savedFreeze = pBot->m_FreezeTime;
-
-		PfChunkResult res;
-		PfSimulateChunk(&FutureWorld, LocalID, pBot, inSeq, StartTick, res, m_pForbiddenGrid, PfCustomFinishSimGrid());
-
-		pBot->SetCore(savedCore);
-		pBot->m_Pos = savedPos;
-		pBot->m_FreezeTime = savedFreeze;
-
-		if(res.died && !res.reachedFinish)
-			return;
-
-		float score = PfScoreChunk(m_PfCurPos, res.endPos, res.reachedFinish, res.died, res.freezeTicks);
-
-		for(int k = 0; k < N; k++)
-		{
-			if(score > topCandidates[k].score)
-			{
-				for(int m = N - 1; m > k; m--)
-					topCandidates[m] = topCandidates[m - 1];
-				topCandidates[k].inputs = res.inputs;
-				topCandidates[k].traj = res.traj;
-				topCandidates[k].score = score;
-				topCandidates[k].reachedFinish = res.reachedFinish;
-				topCandidates[k].died = res.died;
-				topCandidates[k].freezeTicks = res.freezeTicks;
-				topCandidates[k].endPos = res.endPos;
-				topCandidates[k].endVel = res.endVel;
-				topCandidates[k].endHookPos = res.endHookPos;
-				topCandidates[k].endHookDir = res.endHookDir;
-				topCandidates[k].endHookState = res.endHookState;
-				topCandidates[k].endHookTick = res.endHookTick;
-				topCandidates[k].endJumped = res.endJumped;
-				topCandidates[k].endFreezeTime = res.endFreezeTime;
-				break;
-			}
-		}
-	};
-
-	auto fnBuildSeq = [&](int dir, int jumpTick, int hookOn, int angleIdx) {
-		std::vector<CNetObj_PlayerInput> inSeq;
-		inSeq.reserve(ChunkSize);
-		vec2 aimRel = vec2(0.0f, -256.0f);
-		if(hookOn == 1 && angleIdx >= 0)
-			aimRel = vec2(cosf(aHookRays[angleIdx].angle), sinf(aHookRays[angleIdx].angle)) * 256.0f;
-		for(int t = 0; t < ChunkSize; t++)
-		{
-			CNetObj_PlayerInput inp;
-			mem_zero(&inp, sizeof(inp));
-			inp.m_Direction = dir;
-			inp.m_Jump = (t == jumpTick) ? 1 : 0;
-			inp.m_Hook = (hookOn == 1) ? 1 : 0;
-			if(hookOn == 1 && angleIdx < 0)
-			{
-				vec2 aim = pBot->GetCore().m_HookPos - pBot->m_Pos;
-				inp.m_TargetX = (int)aim.x;
-				inp.m_TargetY = (int)aim.y;
-			}
-			else if(hookOn == 1)
-			{
-				inp.m_TargetX = (int)aimRel.x;
-				inp.m_TargetY = (int)aimRel.y;
-			}
-			else
-			{
-				inp.m_TargetX = dir * 256;
-				inp.m_TargetY = -256;
-			}
-			inSeq.push_back(inp);
-		}
-		return inSeq;
-	};
-
-	for(int dirIdx = 0; dirIdx < 3; dirIdx++)
-	{
-		int dir = aDirs[dirIdx];
-		for(int jumpTick = -1; jumpTick < ChunkSize; jumpTick++)
-		{
-			fnSimulateCandidate(fnBuildSeq(dir, jumpTick, 0, -1));
-			if(hookActive)
-				fnSimulateCandidate(fnBuildSeq(dir, jumpTick, 1, -1));
-			if(hookIdle)
-			{
-				for(int angleIdx = 0; angleIdx < HookAngles; angleIdx++)
-				{
-					if(!aHookRays[angleIdx].hasTarget)
-						continue;
-					fnSimulateCandidate(fnBuildSeq(dir, jumpTick, 1, angleIdx));
-				}
-			}
-		}
-	}
-
-	if(topCandidates[0].score <= -1e17f)
-		return false; // no valid candidates
-
-	if(m_PfBacktrackIdx < PF_BACKTRACK_DEPTH)
-	{
-		PfBacktrackEntry &entry = m_PfBacktrack[m_PfBacktrackIdx];
-		entry.pos = m_PfCurPos;
-		entry.vel = m_PfCurVel;
-		entry.hookPos = m_PfCurHookPos;
-		entry.hookDir = m_PfCurHookDir;
-		entry.hookState = m_PfCurHookState;
-		entry.hookTick = m_PfCurHookTick;
-		entry.jumped = m_PfCurJumped;
-		entry.freezeTime = m_PfCurFreezeTime;
-		entry.totalFreezeTicks = m_PfTotalFreezeTicks;
-		entry.vPathSize = (int)m_PfVPath.size();
-		entry.chunkCount = m_PfChunkCount;
-		entry.numCandidates = 0;
-		entry.usedCandidateIdx = 0;
-		entry.candidates.clear();
-		entry.candidates.reserve(N);
-		for(int k = 0; k < N; k++)
-		{
-			if(topCandidates[k].score <= -1e17f)
-				break;
-			PfBacktrackEntry::Candidate c;
-			c.inputs = topCandidates[k].inputs;
-			c.traj = topCandidates[k].traj;
-			c.score = topCandidates[k].score;
-			c.endPos = topCandidates[k].endPos;
-			c.endVel = topCandidates[k].endVel;
-			c.endHookPos = topCandidates[k].endHookPos;
-			c.endHookDir = topCandidates[k].endHookDir;
-			c.endHookState = topCandidates[k].endHookState;
-			c.endHookTick = topCandidates[k].endHookTick;
-			c.endJumped = topCandidates[k].endJumped;
-			c.endFreezeTime = topCandidates[k].endFreezeTime;
-			c.freezeTicks = topCandidates[k].freezeTicks;
-			entry.candidates.push_back(std::move(c));
-			entry.numCandidates++;
-		}
-		m_PfBacktrackIdx++;
-	}
-
-	CandidateResult &best = topCandidates[0];
-	outInputs = best.inputs;
-	outTraj = best.traj;
-	outReachedFinish = best.reachedFinish;
-	outDied = best.died;
-	outFreezeTicks = best.freezeTicks;
-
-	m_PfCurPos = best.endPos;
-	m_PfCurVel = best.endVel;
-	m_PfCurHookPos = best.endHookPos;
-	m_PfCurHookDir = best.endHookDir;
-	m_PfCurHookState = best.endHookState;
-	m_PfCurHookTick = best.endHookTick;
-	m_PfCurJumped = best.endJumped;
-	m_PfCurFreezeTime = best.endFreezeTime;
-
-	return true;
 }
 
 // =========================================================
@@ -1544,10 +1180,16 @@ void CBotNet::RenderPathfinderPath()
 				for(size_t i = 1; i < m_PfANodes.size(); i++)
 				{
 					AStarNode &node = m_PfANodes[i];
-					if(node.ParentIdx < 0 || node.Traj.size() < 2)
+					if(node.ParentIdx < 0)
 						continue;
-					for(size_t k = 1; k < node.Traj.size(); k++)
-						m_PfVBranchSegsRender.emplace_back(node.Traj[k - 1], node.Traj[k]);
+					const AStarNode &parent = m_PfANodes[node.ParentIdx];
+					if(node.PrimIdx == 0)
+					{
+						for(size_t k = 1; k < node.Traj.size(); k++)
+							m_PfVBranchSegsRender.emplace_back(node.Traj[k - 1], node.Traj[k]);
+					}
+					else
+						m_PfVBranchSegsRender.emplace_back(parent.Core.Pos, node.Core.Pos);
 				}
 			}
 		}

@@ -193,44 +193,4 @@ void CBotNet::ConPfGo(IConsole::IResult *pResult, void *pUserData)
         }
 }
 
-void CBotNet::ConPfAlgorithm(IConsole::IResult *pResult, void *pUserData)
-{
-        CBotNet *p = (CBotNet *)pUserData;
-        int v = pResult->GetInteger(0);
-        if(v >= 0 && v < PF_TAB_ALGORITHM_COUNT)
-                g_Config.m_KxPfAlgorithm = v;
-}
-
-void CBotNet::ConPfChunkSize(IConsole::IResult *pResult, void *pUserData)
-{
-        CBotNet *p = (CBotNet *)pUserData;
-        int v = pResult->GetInteger(0);
-        if(v >= CConfig::PF_CHUNK_SIZE_MIN && v <= PF_TAB_MAX_CHUNK_TICKS)
-                g_Config.m_KxPfChunkSize = v;
-}
-
-void CBotNet::ConPfCandidates(IConsole::IResult *pResult, void *pUserData)
-{
-        CBotNet *p = (CBotNet *)pUserData;
-        int v = pResult->GetInteger(0);
-        if(v >= 50 && v <= 2000)
-                g_Config.m_KxPfCandidates = v;
-}
-
-void CBotNet::ConPfHookAngles(IConsole::IResult *pResult, void *pUserData)
-{
-        CBotNet *p = (CBotNet *)pUserData;
-        int v = pResult->GetInteger(0);
-        if(v >= 4 && v <= 32)
-                g_Config.m_KxPfHookAngles = v;
-}
-
-void CBotNet::ConPfHorizon(IConsole::IResult *pResult, void *pUserData)
-{
-        CBotNet *p = (CBotNet *)pUserData;
-        int v = pResult->GetInteger(0);
-        if(v >= 1 && v <= PF_TAB_MAX_CHUNK_TICKS)
-                g_Config.m_KxPfHorizon = v;
-}
-
 // Reset run: anchor to active player's predicted core, build flow field.

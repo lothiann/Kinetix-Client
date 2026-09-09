@@ -438,49 +438,20 @@ MACRO_CONFIG_INT(KxEspScreenY, kx_esp_screen_y, 0, 0, 4320, CFGFLAG_CLIENT | CFG
 MACRO_CONFIG_INT(KxEspStyle, kx_esp_style, 0, 0, 3, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ESP line style: 0=Line 1=Arrow 2=Dotted line 3=Dotted Arrow")
 MACRO_CONFIG_INT(KxEspSpeed, kx_esp_speed, 30, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ESP dotted animation speed (0-100, only for dotted styles)")
 
-// Pathfinder parameter bounds — single source of truth for config limits + dynamic formulas.
-// Keep PF_CHUNK_SIZE_MAX / PF_HOOK_ANGLES_MAX in sync with the literals in the
-// KxPfHookAngles (4-32) macro below.
-static constexpr int PF_CHUNK_SIZE_MIN = 1;
-static constexpr int PF_CHUNK_SIZE_MAX = 50;
-static constexpr int PF_HOOK_ANGLES_MIN = 4;
-static constexpr int PF_HOOK_ANGLES_MAX = 32;
-// Max backtrack candidates per chunk = 3 * (ChunkSize+1) * (1+HookAngles).
-// Parameter sweep: 3 directions × (ChunkSize+1) jumpTicks × (1 no-hook + HookAngles hook-fire).
-// At max params: 3 * 51 * 33 = 5049.
-static constexpr int PF_CANDIDATES_MIN = 1;
-static constexpr int PF_CANDIDATES_MAX = 3 * (PF_CHUNK_SIZE_MAX + 1) * (1 + PF_HOOK_ANGLES_MAX);
-
 // Pathfinder tab (Kinetix→Pathfinder) — chunk-based mini TAS maker.
 // State machine: pathfinding (idle) -> stop (running) -> finish (done, path shown until user clicks).
-MACRO_CONFIG_INT(KxPfAlgorithm, kx_pf_algorithm, 0, 0, 14, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder algorithm: 0=KinoA* 1=GridA* 2=Dijkstra 3=Greedy 4=BFS 5=DFS 6=RRT 7=RRT* 8=PRM 9=MCTS 10=GA 11=CMA-ES 12=SA 13=HillClimb 14=RandomWalk")
-MACRO_CONFIG_INT(KxPfChunkSize, kx_pf_chunk_size, 20, PF_CHUNK_SIZE_MIN, PF_CHUNK_SIZE_MAX, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: ticks per input chunk (1-50)")
-MACRO_CONFIG_INT(KxPfCandidates, kx_pf_candidates, 200, 50, 2000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: max search nodes per chunk")
+MACRO_CONFIG_INT(KxPfAlgorithm, kx_pf_algorithm, 0, 0, 3, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder algorithm: 0=BFS (per-tick A*) 1=Beam 2=RHEA 3=BMCTS")
+MACRO_CONFIG_INT(KxPfBeamWidth, kx_pf_beam_width, 128, 8, 4096, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder Beam: max children kept per expansion (Custom effort uses this value)")
 MACRO_CONFIG_INT(KxPfHookAngles, kx_pf_hook_angles, 9, 4, 32, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: hook fan-raycast rays (4-32)")
-MACRO_CONFIG_INT(KxPfHorizon, kx_pf_horizon, 6, 1, 50, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: ticks to apply per chunk before re-planning (1-chunk_size)")
-MACRO_CONFIG_INT(KxPfBacktrackCandidates, kx_pf_backtrack_candidates, 100, PF_CANDIDATES_MIN, PF_CANDIDATES_MAX, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: top-N candidates kept per chunk for backtracking")
-MACRO_CONFIG_INT(KxPfAStarWeight, kx_pf_astar_weight, 3, 1, 20, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: A* heuristic weight (1=optimal, higher=faster but suboptimal)")
+MACRO_CONFIG_INT(KxPfAStarWeight, kx_pf_astar_weight, 120, 100, 2000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: A* heuristic weight x100 (100 = 1.00 optimal, higher = faster but suboptimal)")
 MACRO_CONFIG_INT(KxPfAStarNodeBudget, kx_pf_astar_node_budget, 10000000, 1000, 100000000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: A* max nodes before giving up (1000-100000000)")
 MACRO_CONFIG_INT(KxPfPerf, kx_pf_perf, 100, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: performance budget per tick in % (1-100; lower = slower but smoother, spreads chunk generation across many ticks)")
-MACRO_CONFIG_INT(KxPfAdvancedSearch, kx_pf_advanced_search, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: RHEA (Rolling Horizon Evolutionary Algorithm) — evolves a population of input sequences per chunk. When off, uses default fixed-input candidates.")
 MACRO_CONFIG_INT(KxPfRheaGenerations, kx_pf_rhea_generations, 10, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder RHEA: number of evolution generations per chunk (more = better candidates but slower)")
-MACRO_CONFIG_INT(KxPfSearchBudget, kx_pf_search_budget, 6000, 256, 200000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder exhaustive BFS: full input-combination enumeration per chunk with state-key dedup and budget-adaptive width. Higher = better quality, linearly slower. Used when KxPfAdvancedSearch is off.")
-MACRO_CONFIG_INT(KxPfEffort, kx_pf_effort, 2, 0, 5, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder effort: 0=Low 1=Medium 2=High(default) 3=Ultra 4=Max 5=Custom. Presets override chunk size / hook angles / candidates / search budget and score/penalty toggles at READ time; Custom uses the stored values.")
+MACRO_CONFIG_INT(KxPfEffort, kx_pf_effort, 2, 0, 6, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder effort: 0=Very Low 1=Low 2=Medium(default) 3=High 4=Ultra 5=Max 6=Custom. Presets override chunk size / hook angles / candidates / search budget and score/penalty toggles at READ time; Custom uses the stored values.")
 MACRO_CONFIG_INT(KxPfFreezeSupport, kx_pf_freeze_support, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder freeze support (beta): ON allows phase-2 route analysis through freeze tiles and shows the Freeze penalty toggle. OFF rejects ANY candidate that touches freeze for even 1 tick.")
 MACRO_CONFIG_INT(KxPfTunnelSize, kx_pf_tunnel_size, 2, 0, 10, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder tunnel size 0-10, free corridor half-width around the FMM path")
 MACRO_CONFIG_INT(KxPfFreedom, kx_pf_freedom, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Freedom Path: FMM flow field prefers tiles far from walls/freeze/teleports (master toggle, see kx_pf_freedom_ratio)")
 MACRO_CONFIG_INT(KxPfFreedomRatio, kx_pf_freedom_ratio, 10, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Freedom Path: how aggressively the FMM flow field prefers tiles far from walls/freeze/teleports (ratio x10: 10 = 1.0x default)")
-// Score method — combine any of these (checkboxes; final score = weighted sum of enabled)
-MACRO_CONFIG_INT(KxPfScoreDist, kx_pf_score_dist, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Score: distance reduction (how much closer the chunk moved us to goal)")
-MACRO_CONFIG_INT(KxPfScoreFlow, kx_pf_score_flow, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Score: flow-field alignment (how well the trajectory follows the BFS flow field)")
-// Fine method — penalty weights (checkboxes; each enabled penalty is added to the score)
-MACRO_CONFIG_INT(KxPfFineFreeze, kx_pf_fine_freeze, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Fine: freeze penalty (per freeze tile touched)")
-MACRO_CONFIG_INT(KxPfFineRetract, kx_pf_fine_retract, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Fine: hook retract penalty (wasted hook that retracted)")
-MACRO_CONFIG_INT(KxPfFineDeath, kx_pf_fine_death, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Fine: death penalty (chunk that kills the tee)")
-MACRO_CONFIG_INT(KxPfFineWall, kx_pf_fine_wall, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Fine: wall-hit penalty (per collision during chunk)")
-MACRO_CONFIG_INT(KxPfFineAir, kx_pf_fine_air, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Fine: air-time penalty (per tick airborne)")
-MACRO_CONFIG_INT(KxPfFineHook, kx_pf_fine_hook, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Fine: hook-fire penalty (per hook fire — discourage hook spam)")
-MACRO_CONFIG_INT(KxPfFineStuck, kx_pf_fine_stuck, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Fine: stuck penalty — large cost added to A* node G when a chunk's end position is within 2 pixels of its start (bot didn't move). Discourages stall branches.")
 
 // Visuals (Pathfinder tab)
 MACRO_CONFIG_INT(KxPfShowField, kx_pf_show_field, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: show flow field")

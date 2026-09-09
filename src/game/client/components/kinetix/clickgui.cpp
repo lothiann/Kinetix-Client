@@ -405,21 +405,6 @@ static SRow g_SettingsRows[] = {
 };
 
 // ---------- Pathfinder panel (7) ----------
-// "Score method" visual expandable (cannot toggle off, only expand).
-static SRow g_ScoreMethodChildren[] = {
-        {ERowType::Toggle, "Distance reduction", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Flow-field alignment", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-};
-// "Penalties" visual expandable.
-static SRow g_PenaltiesChildren[] = {
-        {ERowType::Toggle, "Freeze penalty", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Hook retract penalty", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Death penalty", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Wall-hit penalty", nullptr, false, false, 0, 0, 0,0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Air-time penalty", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Hook-fire penalty", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Stuck penalty", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-};
 // "Visuals" visual expandable.
 static SRow g_VisualsChildren[] = {
         {ERowType::Toggle, "Show field", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
@@ -427,26 +412,8 @@ static SRow g_VisualsChildren[] = {
         {ERowType::Toggle, "Show branches", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Show speed", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
-static const char *const g_PfEffortOpts[] = {"Low", "Medium", "High", "Ultra", "Max", "Custom"};
-static const char *const g_PfAlgorithmOpts[] = {"BFS", "RHEA"};
-static const char *const g_PfAStarWeightOpts[] = {"Low", "Medium", "High", "XHigh", "XXHigh", "Ultra", "XUltra", "Max"};
-static const int g_PfAStarWeightValues[] = {20, 17, 15, 13, 10, 7, 5, 1};
-
-static int PfAStarWeightIdx(int weight)
-{
-        int best = 0;
-        int bestDist = 1 << 30;
-        for(int i = 0; i < (int)(sizeof(g_PfAStarWeightValues) / sizeof(g_PfAStarWeightValues[0])); ++i)
-        {
-                int d = weight > g_PfAStarWeightValues[i] ? weight - g_PfAStarWeightValues[i] : g_PfAStarWeightValues[i] - weight;
-                if(d < bestDist)
-                {
-                        bestDist = d;
-                        best = i;
-                }
-        }
-        return best;
-}
+static const char *const g_PfEffortOpts[] = {"Very Low", "Low", "Medium", "High", "Ultra", "Max", "Custom"};
+static const char *const g_PfAlgorithmOpts[] = {"BFS", "Beam", "RHEA", "BMCTS"};
 static SRow g_PfFreedomPathChildren[] = {
         {ERowType::Slider, "Ratio", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "x", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
@@ -457,20 +424,15 @@ static bool g_PfShowRunLabels = false;
 static bool g_PfShowStatLabels = false;
 
 static SRow g_PathfinderRows[] = {
-        {ERowType::Dropdown, "Effort", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_PfEffortOpts, 6, 0, nullptr, 0},
-        {ERowType::Dropdown, "A* Weight", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_PfAStarWeightOpts, 8, 0, nullptr, 0},
-        {ERowType::Dropdown, "Algorithm", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_PfAlgorithmOpts, 2, 0, nullptr, 0},
+        {ERowType::Dropdown, "Effort", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_PfEffortOpts, 7, 0, nullptr, 0},
+        {ERowType::Dropdown, "Algorithm", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_PfAlgorithmOpts, 4, 0, nullptr, 0},
         {ERowType::Expandable, "Freedom Path", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_PfFreedomPathChildren, 1},
-        {ERowType::Slider, "Chunk size", nullptr, false, false, 1.0f, 50.0f, 1.0f, 20.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Hook angles", nullptr, false, false, 4.0f, 32.0f, 1.0f, 9.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Candidates", nullptr, false, false, 50.0f, 2000.0f, 10.0f, 200.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "A* Weight", nullptr, false, false, 1.0f, 20.0f, 1.0f, 3.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "A* Weight", nullptr, false, false, 1.0f, 20.0f, 0.01f, 3.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Evolutions", nullptr, false, false, 1.0f, 100.0f, 1.0f, 10.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Search budget", nullptr, false, false, 256.0f, 200000.0f, 1000.0f, 6000.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Beam width", nullptr, false, false, 8.0f, 4096.0f, 1.0f, 128.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Performance", nullptr, false, false, 1.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Freeze Support (Beta)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Expandable, "Score method", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ScoreMethodChildren, 2},
-        {ERowType::Expandable, "Penalties", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_PenaltiesChildren, 7},
         {ERowType::Expandable, "Visuals", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_VisualsChildren, 4},
         // v1.56.150: DoubleButton — Pathfinding (left) + Play (right, visible only when FINISHED).
         {ERowType::DoubleButton, "Pathfinding", "Play", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
@@ -671,16 +633,13 @@ static bool PfRowVisible(const SRow *pRows, int rowCount, int idx)
         if(idx < 0 || idx >= rowCount)
                 return false;
         const SRow &row = pRows[idx];
-        if(str_comp(row.pName, "Search budget") == 0)
-                return g_Config.m_KxPfEffort == 5 && g_Config.m_KxPfAdvancedSearch == 0;
-        if(str_comp(row.pName, "A* Weight") == 0)
-                return row.type == ERowType::Dropdown ? g_Config.m_KxPfEffort != 5 : g_Config.m_KxPfEffort == 5;
+        if(str_comp(row.pName, "A* Weight") == 0 || str_comp(row.pName, "Hook angles") == 0 ||
+           str_comp(row.pName, "Freeze Support (Beta)") == 0)
+                return g_Config.m_KxPfEffort == 6;
+        if(str_comp(row.pName, "Beam width") == 0)
+                return g_Config.m_KxPfEffort == 6 && g_Config.m_KxPfAlgorithm == 1;
         if(str_comp(row.pName, "Evolutions") == 0)
-                return g_Config.m_KxPfEffort == 5 && g_Config.m_KxPfAdvancedSearch != 0;
-        if(str_comp(row.pName, "Chunk size") == 0 || str_comp(row.pName, "Hook angles") == 0 ||
-           str_comp(row.pName, "Candidates") == 0 || str_comp(row.pName, "Freeze Support (Beta)") == 0 ||
-           str_comp(row.pName, "Score method") == 0 || str_comp(row.pName, "Penalties") == 0)
-                return g_Config.m_KxPfEffort == 5;
+                return g_Config.m_KxPfEffort == 6 && g_Config.m_KxPfAlgorithm == 2;
         if(row.pName == g_PfDyn_Progress || row.pName == g_PfDyn_Eta)
                 return g_PfShowRunLabels;
         if(row.pName == g_PfDyn_Time)
@@ -954,13 +913,6 @@ static bool SpooferChildVisible(const SRow *pChildren, int childCount, int idx)
 // v1.56.210: "Gradient" toggle visible only with Rainbow ON (gradient has no
 // effect without rainbow rotation). "Step" slider visible only when BOTH
 // Rainbow AND Gradient are ON — it controls the per-segment hue increment.
-static bool PenaltiesChildVisible(const SRow *pChildren, int childCount, int idx)
-{
-        if(idx < 0 || idx >= childCount)
-                return false;
-        return str_comp(pChildren[idx].pName, "Freeze penalty") != 0 || (g_Config.m_KxPfEffort == 5 && g_Config.m_KxPfFreezeSupport != 0);
-}
-
 static bool LineRenderingChildVisible(const SRow *pChildren, int childCount, int idx)
 {
         if(idx < 0 || idx >= childCount)
@@ -2165,19 +2117,12 @@ void CClickGui::OnRender()
                                 else if(str_comp(row.pName, "Copy Moves Latency") == 0)
                                         row.on = g_Config.m_KxCopyMovesLatencyEnabled != 0;
                                 // Pathfinder top-level sliders/toggles
-                                else if(str_comp(row.pName, "Chunk size") == 0)
-                                        row.value = (float)g_Config.m_KxPfChunkSize;
                                 else if(str_comp(row.pName, "Hook angles") == 0)
                                         row.value = (float)g_Config.m_KxPfHookAngles;
-                                else if(str_comp(row.pName, "Candidates") == 0)
-                                        row.value = (float)g_Config.m_KxPfCandidates;
                                 else if(str_comp(row.pName, "A* Weight") == 0)
-                                {
-                                        if(row.type == ERowType::Slider)
-                                                row.value = (float)g_Config.m_KxPfAStarWeight;
-                                        else
-                                                row.valueIdx = PfAStarWeightIdx(g_Config.m_KxPfAStarWeight);
-                                }
+                                        row.value = g_Config.m_KxPfAStarWeight / 100.0f;
+                                else if(str_comp(row.pName, "Beam width") == 0)
+                                        row.value = (float)g_Config.m_KxPfBeamWidth;
                                 else if(str_comp(row.pName, "Evolutions") == 0)
                                         row.value = (float)g_Config.m_KxPfRheaGenerations;
                                 else if(str_comp(row.pName, "Performance") == 0)
@@ -2185,9 +2130,7 @@ void CClickGui::OnRender()
                                 else if(str_comp(row.pName, "Effort") == 0)
                                         row.valueIdx = g_Config.m_KxPfEffort;
                                 else if(str_comp(row.pName, "Algorithm") == 0)
-                                        row.valueIdx = g_Config.m_KxPfAdvancedSearch != 0 ? 1 : 0;
-                                else if(str_comp(row.pName, "Search budget") == 0)
-                                        row.value = (float)g_Config.m_KxPfSearchBudget;
+                                        row.valueIdx = g_Config.m_KxPfAlgorithm;
                                 else if(str_comp(row.pName, "Freeze Support (Beta)") == 0)
                                         row.on = g_Config.m_KxPfFreezeSupport != 0;
                                 else if(str_comp(row.pName, "Freedom Path") == 0)
@@ -2204,8 +2147,6 @@ void CClickGui::OnRender()
                                 for(int c = 0; c < row.childCount; ++c)
                                 {
                                         SRow &child = row.pChildren[c];
-                                if(str_comp(row.pName, "Penalties") == 0 && !PenaltiesChildVisible(row.pChildren, row.childCount, c))
-                                        continue;
                                 if(str_comp(row.pName, "Visuals") == 0 && !TasVisualsChildVisible(row.pChildren, row.childCount, c))
                                         continue;
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
@@ -2399,26 +2340,6 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                         // v1.56.174: BestClient "Extra NETMSGs" checkbox sync.
                                         else if(str_comp(child.pName, "Extra NETMSGs") == 0)
                                                 child.on = (g_Config.m_KxSpoofClientPreset == 1 ? g_Config.m_KxSpoofTClientExtraNetmsgs : g_Config.m_KxSpoofBestClientExtraNetmsgs) != 0;
-                                        // Pathfinder → Score method children
-                                        else if(str_comp(child.pName, "Distance reduction") == 0)
-                                                child.on = g_Config.m_KxPfScoreDist != 0;
-                                        else if(str_comp(child.pName, "Flow-field alignment") == 0)
-                                                child.on = g_Config.m_KxPfScoreFlow != 0;
-                                        // Pathfinder → Penalties children
-                                        else if(str_comp(child.pName, "Freeze penalty") == 0)
-                                                child.on = g_Config.m_KxPfFineFreeze != 0;
-                                        else if(str_comp(child.pName, "Hook retract penalty") == 0)
-                                                child.on = g_Config.m_KxPfFineRetract != 0;
-                                        else if(str_comp(child.pName, "Death penalty") == 0)
-                                                child.on = g_Config.m_KxPfFineDeath != 0;
-                                        else if(str_comp(child.pName, "Wall-hit penalty") == 0)
-                                                child.on = g_Config.m_KxPfFineWall != 0;
-                                        else if(str_comp(child.pName, "Air-time penalty") == 0)
-                                                child.on = g_Config.m_KxPfFineAir != 0;
-                                        else if(str_comp(child.pName, "Hook-fire penalty") == 0)
-                                                child.on = g_Config.m_KxPfFineHook != 0;
-                                        else if(str_comp(child.pName, "Stuck penalty") == 0)
-                                                child.on = g_Config.m_KxPfFineStuck != 0;
                                         // Pathfinder → Visuals children
                                         else if(str_comp(child.pName, "Show field") == 0)
                                                 child.on = g_Config.m_KxPfShowField != 0;
@@ -3461,20 +3382,16 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                 else
                                         g_Config.m_KxFakeAimSpeed = (int)pTarget->value;
                         }
-                        else if(str_comp(pTarget->pName, "Chunk size") == 0)
-                                g_Config.m_KxPfChunkSize = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Hook angles") == 0)
                                 g_Config.m_KxPfHookAngles = (int)pTarget->value;
-                        else if(str_comp(pTarget->pName, "Candidates") == 0)
-                                g_Config.m_KxPfCandidates = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "A* Weight") == 0)
-                                g_Config.m_KxPfAStarWeight = (int)pTarget->value;
+                                g_Config.m_KxPfAStarWeight = (int)(pTarget->value * 100.0f + 0.5f);
+                        else if(str_comp(pTarget->pName, "Beam width") == 0)
+                                g_Config.m_KxPfBeamWidth = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Evolutions") == 0)
                                 g_Config.m_KxPfRheaGenerations = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Performance") == 0)
                                 g_Config.m_KxPfPerf = (int)pTarget->value;
-                        else if(str_comp(pTarget->pName, "Search budget") == 0)
-                                g_Config.m_KxPfSearchBudget = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Tunnel size") == 0)
                                 g_Config.m_KxPfTunnelSize = (int)pTarget->value;
                         // v1.56.83: AimBot/TriggerBot per-weapon sliders (disambiguate by parent expandable)
@@ -3971,12 +3888,10 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                         // Sub-region hits within the row.
                         if(pTarget->type == ERowType::Toggle || pTarget->type == ERowType::ToggleDropdown || pTarget->type == ERowType::Expandable)
                         {
-                                // Visual expandables (Score method, Penalties, Visuals) cannot be
+                                // Visual expandables (Visuals) cannot be
                                 // toggled off — only expand/collapse. Click on name = expand toggle.
                                 const bool isVisualExpandable = (pTarget->type == ERowType::Expandable) &&
-                                        (str_comp(pTarget->pName, "Score method") == 0 ||
-                                         str_comp(pTarget->pName, "Penalties") == 0 ||
-                                         str_comp(pTarget->pName, "Visuals") == 0 ||
+                                        (str_comp(pTarget->pName, "Visuals") == 0 ||
                                          str_comp(pTarget->pName, "Line rendering") == 0 ||
                                          str_comp(pTarget->pName, "TAS") == 0);
                                 // Click on check area or name area → toggle on/off (or expand for visual).
@@ -4188,26 +4103,6 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 g_Config.m_KxBafSilent = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Show for me") == 0)
                                                 g_Config.m_KxFakeAimShowForMe = pTarget->on ? 1 : 0;
-                                        // Pathfinder → Score method children
-                                        else if(str_comp(pTarget->pName, "Distance reduction") == 0)
-                                                g_Config.m_KxPfScoreDist = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Flow-field alignment") == 0)
-                                                g_Config.m_KxPfScoreFlow = pTarget->on ? 1 : 0;
-                                        // Pathfinder → Penalties children
-                                        else if(str_comp(pTarget->pName, "Freeze penalty") == 0)
-                                                g_Config.m_KxPfFineFreeze = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Hook retract penalty") == 0)
-                                                g_Config.m_KxPfFineRetract = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Death penalty") == 0)
-                                                g_Config.m_KxPfFineDeath = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Wall-hit penalty") == 0)
-                                                g_Config.m_KxPfFineWall = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Air-time penalty") == 0)
-                                                g_Config.m_KxPfFineAir = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Hook-fire penalty") == 0)
-                                                g_Config.m_KxPfFineHook = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Stuck penalty") == 0)
-                                                g_Config.m_KxPfFineStuck = pTarget->on ? 1 : 0;
                                         // Pathfinder → Visuals children
                                         else if(str_comp(pTarget->pName, "Show field") == 0)
                                                 g_Config.m_KxPfShowField = pTarget->on ? 1 : 0;
@@ -4395,8 +4290,8 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
 															std::lock_guard<std::mutex> lock(BN.m_PfDataMutex);
 															BN.m_PfVPath.clear();
 														}
-                                                        // BUG4 v1.56.165: release heavy A*/RHEA search buffers
-                                                        // (m_PfANodes, m_PfRHAPopulation, m_PfFullInputs, ...)
+                                                        // BUG4 v1.56.165: release heavy A* search buffers
+                                                        // (m_PfANodes, m_PfFullInputs, ...)
                                                         // before going idle. They were left alive across the
                                                         // idle period before, and any heap corruption from the
                                                         // long Advanced Search sim landed inside their vector
@@ -4704,20 +4599,16 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         if(sel >= 0 && sel < CTrajectory::NUM_TRAJ_TYPES)
                                                 traj.m_aTypes[sel].m_PredictionTicks = (int)pTarget->value;
                                 }
-                                else if(str_comp(pTarget->pName, "Chunk size") == 0)
-                                        g_Config.m_KxPfChunkSize = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Hook angles") == 0)
                                         g_Config.m_KxPfHookAngles = (int)pTarget->value;
-                                else if(str_comp(pTarget->pName, "Candidates") == 0)
-                                        g_Config.m_KxPfCandidates = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "A* Weight") == 0)
-                                        g_Config.m_KxPfAStarWeight = (int)pTarget->value;
+                                        g_Config.m_KxPfAStarWeight = (int)(pTarget->value * 100.0f + 0.5f);
+                                else if(str_comp(pTarget->pName, "Beam width") == 0)
+                                        g_Config.m_KxPfBeamWidth = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Evolutions") == 0)
                                         g_Config.m_KxPfRheaGenerations = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Performance") == 0)
                                         g_Config.m_KxPfPerf = (int)pTarget->value;
-                                else if(str_comp(pTarget->pName, "Search budget") == 0)
-                                        g_Config.m_KxPfSearchBudget = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Tunnel size") == 0)
                                         g_Config.m_KxPfTunnelSize = (int)pTarget->value;
                                 return;
@@ -4969,12 +4860,10 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                                                 g_Config.m_KxEspMode = o;
                                         else if(str_comp(target.pName, "ESP Style") == 0)
                                                 g_Config.m_KxEspStyle = o;
+                                        else if(str_comp(target.pName, "Algorithm") == 0)
+                                                g_Config.m_KxPfAlgorithm = o;
                                         else if(str_comp(target.pName, "Effort") == 0)
                                                 g_Config.m_KxPfEffort = o;
-                                        else if(str_comp(target.pName, "A* Weight") == 0 && o >= 0 && o < (int)(sizeof(g_PfAStarWeightValues) / sizeof(g_PfAStarWeightValues[0])))
-                                                g_Config.m_KxPfAStarWeight = g_PfAStarWeightValues[o];
-                                        else if(str_comp(target.pName, "Algorithm") == 0)
-                                                g_Config.m_KxPfAdvancedSearch = (o == 1) ? 1 : 0;
                                         m_DropdownOpen = false;
                                         return true;
                                 }
@@ -4987,8 +4876,6 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                         for(int c = 0; c < row.childCount; ++c)
                         {
                                 SRow &child = row.pChildren[c];
-                                if(str_comp(row.pName, "Penalties") == 0 && !PenaltiesChildVisible(row.pChildren, row.childCount, c))
-                                        continue;
                                 if(str_comp(row.pName, "Visuals") == 0 && !TasVisualsChildVisible(row.pChildren, row.childCount, c))
                                         continue;
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
@@ -5181,9 +5068,9 @@ void CClickGui::RenderDropdownPopup(float alpha)
                 const float popupH = target.optionCount * itemStep + 4.0f;
                 const float popY = ddY + DROPDOWN_H + 2.0f;
                 const float bgH = popupH * openT;
-                DrawRoundedRect(ddX - 4.0f, popY + 2.0f, DROPDOWN_W + 8.0f, bgH + 2.0f, 6.0f,
+                DrawRoundedRect(ddX + 4.0f, popY + 4.0f, DROPDOWN_W, bgH, 4.0f,
                         IGraphics::CORNER_ALL,
-                        ColorRGBA(0xff000000, true).WithAlpha(alpha * 0.3f * openT));
+                        ColorRGBA(0xff000000, true).WithAlpha(alpha * 0.15f * openT));
                 DrawRoundedRect(ddX - 1.0f, popY - 1.0f, DROPDOWN_W + 2.0f, bgH + 2.0f, 4.0f,
                         IGraphics::CORNER_ALL,
                         ColorRGBA(COL_INPUT_BORDER, true).WithAlpha(alpha * openT));
@@ -5246,8 +5133,6 @@ void CClickGui::RenderDropdownPopup(float alpha)
                         for(int c = 0; c < row.childCount; ++c)
                         {
                                 SRow &child = row.pChildren[c];
-                                if(str_comp(row.pName, "Penalties") == 0 && !PenaltiesChildVisible(row.pChildren, row.childCount, c))
-                                        continue;
                                 if(str_comp(row.pName, "Visuals") == 0 && !TasVisualsChildVisible(row.pChildren, row.childCount, c))
                                         continue;
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
@@ -5502,8 +5387,6 @@ bool CClickGui::HitTestRow(vec2 mousePos, int panelIdx, int &outRow, int &outChi
                         for(int c = 0; c < row.childCount; ++c)
                         {
                                 SRow &child = row.pChildren[c];
-                                if(str_comp(row.pName, "Penalties") == 0 && !PenaltiesChildVisible(row.pChildren, row.childCount, c))
-                                        continue;
                                 if(str_comp(row.pName, "Visuals") == 0 && !TasVisualsChildVisible(row.pChildren, row.childCount, c))
                                         continue;
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
@@ -5755,8 +5638,6 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                 {
                         for(int c = 0; c < row.childCount; ++c)
                         {
-                                if(str_comp(row.pName, "Penalties") == 0 && !PenaltiesChildVisible(row.pChildren, row.childCount, c))
-                                        continue;
                                 if(str_comp(row.pName, "Visuals") == 0 && !TasVisualsChildVisible(row.pChildren, row.childCount, c))
                                         continue;
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
@@ -5840,8 +5721,6 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                 {
                                         for(int c = 0; c < row.childCount; ++c)
                                         {
-                                                if(str_comp(row.pName, "Penalties") == 0 && !PenaltiesChildVisible(row.pChildren, row.childCount, c))
-                                                        continue;
                                                 if(str_comp(row.pName, "Visuals") == 0 && !TasVisualsChildVisible(row.pChildren, row.childCount, c))
                                                         continue;
                                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
@@ -5925,8 +5804,6 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                         int visibleCount = 0;
                         for(int c = 0; c < row.childCount; ++c)
                         {
-                                if(str_comp(row.pName, "Penalties") == 0 && !PenaltiesChildVisible(row.pChildren, row.childCount, c))
-                                        continue;
                                 if(str_comp(row.pName, "Visuals") == 0 && !TasVisualsChildVisible(row.pChildren, row.childCount, c))
                                         continue;
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
@@ -6014,6 +5891,10 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
         const float py = pos.y;
 
         Graphics()->BlendNormal();
+
+        DrawRoundedRect(px + 4.0f, py + 4.0f, PANEL_WIDTH, panelH,
+                5.0f, IGraphics::CORNER_ALL,
+                ColorRGBA(0xff000000, true).WithAlpha(alpha * 0.15f));
 
         // Panel border (1px-ish outline via slightly larger dark rect behind).
         DrawRoundedRect(px - 1.0f, py - 1.0f, PANEL_WIDTH + 2.0f, panelH + 2.0f,
@@ -6554,8 +6435,6 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                 // subsequent rows read the correct Yoga nodes.
                                 for(int c = 0; c < row.childCount; ++c)
                                 {
-                                        if(str_comp(row.pName, "Penalties") == 0 && !PenaltiesChildVisible(row.pChildren, row.childCount, c))
-                                                continue;
                                         if(str_comp(row.pName, "Visuals") == 0 && !TasVisualsChildVisible(row.pChildren, row.childCount, c))
                                                 continue;
                                         if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
@@ -6603,7 +6482,6 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                         int preIdx = rowIdx;
                         for(int c = 0; c < row.childCount; ++c)
                         {
-                                if(str_comp(row.pName, "Penalties") == 0 && !PenaltiesChildVisible(row.pChildren, row.childCount, c)) continue;
                                 if(str_comp(row.pName, "Visuals") == 0 && !TasVisualsChildVisible(row.pChildren, row.childCount, c))
                                         continue;
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c)) continue;
@@ -6644,8 +6522,6 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                         for(int c = 0; c < row.childCount; ++c)
                         {
                                 SRow &child = row.pChildren[c];
-                                if(str_comp(row.pName, "Penalties") == 0 && !PenaltiesChildVisible(row.pChildren, row.childCount, c))
-                                        continue;
                                 if(str_comp(row.pName, "Visuals") == 0 && !TasVisualsChildVisible(row.pChildren, row.childCount, c))
                                         continue;
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))

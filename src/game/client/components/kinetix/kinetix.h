@@ -45,7 +45,7 @@ static const float LATTICE_H_SCALE = 2.0f; // heuristic multiplier (admissible: 
 // =========================================================
 // State machine:  IDLE (green pathfinding btn) -> RUNNING (red stop btn) -> FINISHED (orange finish btn) -> IDLE
 // While RUNNING, UpdatePathfinder() runs one chunk per OnUpdate: generates
-// `KxPfCandidates` input-sequences of `KxPfChunkSize` ticks, scores each by the
+// candidate input-sequences, scores each by the
 // enabled Score+Fine methods, picks the best, appends its trajectory to
 // m_PfVPath, and checks for finish.  On finish (or max-chunks), -> FINISHED.
 // The trajectory is rendered every frame via RenderPathfinderPath(), reusing
@@ -56,26 +56,18 @@ enum EPfState
         PF_STATE_RUNNING = 1,
         PF_STATE_FINISHED = 2,
 };
-static const int PF_TAB_MAX_CHUNK_TICKS = 50; // matches KxPfChunkSize upper bound
-static const int PF_TAB_ALGORITHM_COUNT = 15;
 static const int PF_BACKTRACK_DEPTH = 5;
-// PF_BACKTRACK_CANDIDATES removed — now dynamic via KxPfBacktrackCandidates (100-1400)
 
-int PfEffortChunkTicks();
 int PfEffortHookAngles();
-int PfEffortSearchBudget();
-int PfEffortCandidates();
-int PfEffortGenerations();
+int PfEffortAStarWeight();
+int PfEffortBeamWidth();
+int PfEffortRheaPop();
+int PfEffortRheaGens();
+int PfEffortMctsIters();
 bool PfEffortScoreDist();
 bool PfEffortScoreFlow();
 bool PfEffortFreezeSupport();
-bool PfEffortFineFreeze();
-bool PfEffortFineRetract();
 bool PfEffortFineDeath();
-bool PfEffortFineWall();
-bool PfEffortFineAir();
-bool PfEffortFineHookFire();
-bool PfEffortFineStuck();
 
 // Per-tick hook segment: tee position + hook attach/fly position at one tick.
 // Used by PfSimulateChunk (PfChunkResult) and AStarNode to capture ALL hook
@@ -113,7 +105,7 @@ struct PfBacktrackEntry
                 int endFreezeTime; // bot's m_FreezeTime at end of chunk (0 = not frozen)
                 int freezeTicks;
         };
-        std::vector<Candidate> candidates; // top-N candidates (size = KxPfBacktrackCandidates, dynamic)
+        std::vector<Candidate> candidates; // top-N candidates (dynamic size)
         int numCandidates;
         int usedCandidateIdx;
 
@@ -270,6 +262,8 @@ class CGameWorld;
 // =========================================================
 // CBotNet — botnet component (all inactive dummies)
 // =========================================================
+struct PfChunkResult;
+
 class CBotNet : public CComponent
 {
 public:
@@ -336,27 +330,37 @@ public:
         int m_PfBacktrackIdx;           // stack index (next write position, capped at PF_BACKTRACK_DEPTH)
 
         // ── State-Lattice A* (v1.56) ──
+        struct PfAState
+        {
+                vec2 Pos;
+                vec2 Vel;
+                vec2 HookPos;
+                vec2 HookDir;
+                int HookState;
+                int HookTick;
+                int Jumped;
+                int JumpedTotal;
+        };
         struct AStarNode
         {
-                CCharacterCore Core;
-                vec2 Pos;
+                PfAState Core;
                 int FreezeTime;
                 bool Grounded;
                 float G, H, F;
                 int ParentIdx;   // -1 = root
-                int PrimIdx;     // -1 = root, 0..15 = primitives, 99 = FREEZE_SKIP
+                int PrimIdx;     // -1 = root, 0 = frozen fast-forward, >=1 = 1+packed single-tick input
                 int PrimTicks;
                 int TickOffset;
                 int FreezeChainTicks = 0;
                 int ForbiddenChainTicks = 0;
-                std::vector<vec2> Traj; // cached per-tick trajectory from parent.Pos to this.Pos
-                std::vector<CNetObj_PlayerInput> Inputs; // cached inputs for this primitive
-                // Per-tick hook segments inside this primitive's chunk (tee pos → hook pos).
-                // Captures all hook fire/hold cycles, not just final state.
+                std::vector<vec2> Traj; // frozen fast-forward only; single-tick nodes derive parent.Pos → Pos
+                std::vector<CNetObj_PlayerInput> Inputs; // frozen fast-forward only; single-tick decodes from PrimIdx
+                // Hook segments, frozen fast-forward only (single-tick derives the grab seg from states).
                 std::vector<PfHookSeg> HookSegs;
         };
         std::vector<AStarNode> m_PfANodes;
         std::vector<int> m_PfAOpen;
+        std::vector<int> m_PfABeamReserve;
         std::unordered_map<uint64_t, float> m_PfABestG;
         int m_PfAGoalIdx;
         bool m_PfAStarted;
@@ -368,42 +372,6 @@ public:
 	int m_PfUiBestTotal = 0;
         std::vector<CNetObj_PlayerInput> m_PfFullInputs;
         size_t m_PfFullInputsIdx;
-
-        // RHEA (Rolling Horizon Evolutionary Algorithm) — replaces Advanced Search.
-        // Population of input sequences, evolved over generations.
-        struct RheaIndividual
-        {
-                std::vector<CNetObj_PlayerInput> inputs;
-                float fitness = -1e18f;
-                vec2 endPos = vec2(0, 0);
-                vec2 endVel = vec2(0, 0);
-                int endHookState = 0;
-                vec2 endHookPos = vec2(0, 0);
-                vec2 endHookDir = vec2(0, 0);
-                int endHookTick = 0;
-                int endJumped = 0;
-                int endJumpedTotal = 0;
-                int endFreezeTime = 0;
-                bool reachedFinish = false;
-                bool died = false;
-                int freezeTicks = 0;
-                int forbiddenTicks = 0;
-                // v1.56.161 (BUG2 root cause): cache traj + hookSegs from fnEvaluate
-                // so fnPushToAStar does NOT need to re-simulate. Re-simulation was
-                // racy — FutureWorld state (switchers, tune) drifts between fnEvaluate
-                // and fnPushToAStar, so the two simulations could diverge:
-                //   child.Pos = ind.endPos      (from fnEvaluate)
-                //   child.Traj[end] = res.endPos (from re-simulate in fnPushToAStar)
-                // If they differ → discontinuity in m_PfVPath at this chunk boundary
-                // → "sharp line at chunk boundary" + "stale chunk hanging" (only
-                // visible at low FPS because the broken chunk flashes 1 frame at
-                // high FPS). Caching traj eliminates the second simulation entirely,
-                // so child.Pos and child.Traj[end] always come from the SAME run.
-                std::vector<vec2> traj;
-                std::vector<PfHookSeg> hookSegs;
-        };
-        std::vector<RheaIndividual> m_PfRHAPopulation;
-        bool m_PfRHAInitialized = false; // shift buffer: population carried from prev chunk
 
         // kx_pf_play: playback m_PfFullInputs on real player.
         // m_PfGoActive = true → ApplyPfGoInput() called from SnapInput each tick.
@@ -425,6 +393,8 @@ public:
         // m_PfThreadResult: 0=running, 1=goal found, -1=failed/cancelled.
         // m_PfDataMutex: protects m_PfVPath (written by worker, read by renderer).
         CGameWorld *m_PfBaseWorld = nullptr;
+        CGameWorld *m_PfSimWorld = nullptr;
+        int m_PfSimStartTick = 0;
         int m_PfLocalID = -1;
         std::thread m_PfThread;
         std::atomic<bool> m_PfThreadRunning{false};
@@ -543,10 +513,6 @@ public:
         void PfGetUiStats(bool &outRunning, bool &outFinished, float &outPercent, int &outDoneTiles,
                 int &outTotalTiles, double &outElapsedSec, double &outEtaSec,
                 double &outPathTimeSec, double &outGenTimeSec);
-        float PfScoreChunk(const vec2 &startPos, const vec2 &endPos, bool reachedFinish, bool died,
-                           int freezeTicks, bool applyFreezePenalty = true) const;
-        bool PfGenerateChunk(std::vector<CNetObj_PlayerInput> &outInputs, std::vector<vec2> &outTraj,
-                             bool &outReachedFinish, bool &outDied, int &outFreezeTicks);
         bool PfBacktrack();              // try alternative candidates from backtrack buffer
 
         void UpdatePfTileEditor();
@@ -578,6 +544,16 @@ public:
         void PfAStarResimulatePath(int targetIdx);  // re-simulate path root→target, fill m_PfVPath
         float PfAStarHeuristic(const vec2 &pos, const vec2 &endPos);
         void PfThreadWorker();
+        void PfRheaWorker();
+        void PfBmctsWorker();
+        bool PfEvalSequence(const PfAState &cur, int curFreeze, int tickOffset,
+                const std::vector<CNetObj_PlayerInput> &inSeq, PfChunkResult &out);
+        float PfSeqScore(const std::vector<vec2> &vFinishes, const PfChunkResult &res, bool freezeSupport);
+        void PfSeqApplyEnd(PfAState &st, const PfChunkResult &res);
+        void PfSeqAppend(std::vector<vec2> &fullTraj, std::vector<PfHookSeg> &fullSegs,
+                std::vector<CNetObj_PlayerInput> &fullInputs, const PfChunkResult &res, const std::vector<CNetObj_PlayerInput> &inSeq);
+        void PfSeqFinalize(PfAState cur, int curFreeze, int tickOffset, std::vector<vec2> &fullTraj,
+                std::vector<PfHookSeg> &fullSegs, std::vector<CNetObj_PlayerInput> &fullInputs);
 	void PfThreadStart();
 	void PfThreadStop();
 	void PfSpectateStart();
@@ -638,11 +614,6 @@ public:
 
         // Pathfinder tab (Kinetix→Pathfinder) console commands
         static void ConPfLive(IConsole::IResult *pResult, void *pUserData);     // kx_pf_live 0|1|2  (0=idle, 1=running, 2=finished)
-        static void ConPfAlgorithm(IConsole::IResult *pResult, void *pUserData);
-        static void ConPfChunkSize(IConsole::IResult *pResult, void *pUserData);
-        static void ConPfCandidates(IConsole::IResult *pResult, void *pUserData);
-        static void ConPfHookAngles(IConsole::IResult *pResult, void *pUserData);
-        static void ConPfHorizon(IConsole::IResult *pResult, void *pUserData);
         static void ConPfGo(IConsole::IResult *pResult, void *pUserData);       // kx_pf_play 0|1  (1=play path on real player, 0=stop)
 
 	// Placeholder processing for kx_send and UI Send Command

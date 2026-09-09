@@ -1,59 +1,51 @@
 #include <game/client/components/kinetix/kinetix.h>
 #include <game/client/components/kinetix/kinetix_internal.h>
 #include <algorithm>
-#include <unordered_set>
 
 // =========================================================
-// PHYSICS A* — state-lattice search over simulated input chunks.
+// PHYSICS A* — v1.56.245: time-optimal per-tick search.
 //
-// Runs on the worker thread (PfThreadWorker). Each expansion pops
-// the best open node, generates candidate input chunks (RHEA or
-// exhaustive BFS combination search), simulates them through the real CCharacter physics
-// (PfSimulateChunk) and pushes surviving end states as children.
-//
-// Cost model (v1.58 rewrite):
-//   G = accumulated ticks (+ optional stuck penalty). G is PURE cost —
-//   candidate scores only RANK candidates, they never leak into G.
-//   The old code subtracted the chunk score from G, which could make
-//   G negative, corrupt the BestG dedup and burn the node budget on
-//   garbage branches (the "pathfinder gives up with forbidden zones"
-//   bug).
-//   TickOffset = true simulated ticks from the run start.
+// Uniform-cost A* over simulated character states. Each expansion
+// simulates EVERY valid single-tick input (direction x jump, hook
+// steering while attached, ray-validated hook-fire angles) through
+// the real CCharacter physics (PfSimulateChunk) and pushes each
+// surviving end state as a child. The previous candidate generators
+// (RHEA evolution, chunk beam search) and the score/penalty ranking
+// are gone: G is pure simulated ticks, pruning is done only by the
+// BestG state dedup and the flow-field heuristic, so the first
+// finish found is the fastest path the quantized state space can
+// express instead of the best-scoring sample of one.
 // =========================================================
 
-// Deterministic PRNG for RHEA. Reset at the start of every run so the
-// same map + start state always produces the same candidate sequences.
-static uint32_t PfRheaState = 12345;
-static inline void PfRheaReset() { PfRheaState = 12345; }
-static inline uint32_t PfRheaNext()
+// State dedup key: quantized position (2px), velocity (3px), hook state,
+// hook tick, grounded, frozen time, jump flags, hook offset.
+static uint64_t PfAStarKey(const CBotNet::PfAState &core, int freezeTime, bool grounded)
 {
-	PfRheaState ^= PfRheaState << 13;
-	PfRheaState ^= PfRheaState >> 17;
-	PfRheaState ^= PfRheaState << 5;
-	return PfRheaState;
+	uint64_t h = 1469598103934665603ull;
+	auto mix = [&h](uint64_t v) {
+		h ^= v * 1099511628211ull;
+		h ^= h >> 27;
+	};
+	mix((uint64_t)(uint16_t)(int16_t)(int)roundf(core.Pos.x / 2.0f));
+	mix((uint64_t)(uint16_t)(int16_t)(int)roundf(core.Pos.y / 2.0f));
+	mix((uint64_t)(uint16_t)(int16_t)(int)roundf(core.Vel.x / 3.0f));
+	mix((uint64_t)(uint16_t)(int16_t)(int)roundf(core.Vel.y / 3.0f));
+	mix((uint64_t)(core.HookState + 8));
+	mix((uint64_t)(uint16_t)pf_max(0, core.HookTick));
+	mix((uint64_t)(grounded ? 1u : 0u));
+	mix((uint64_t)(uint16_t)pf_max(0, freezeTime / 2));
+	mix((uint64_t)(uint8_t)(core.Jumped & 0xF));
+	mix((uint64_t)(uint8_t)(core.JumpedTotal & 0xFF));
+	mix((uint64_t)(uint16_t)(int16_t)(int)roundf((core.HookPos.x - core.Pos.x) / 4.0f));
+	mix((uint64_t)(uint16_t)(int16_t)(int)roundf((core.HookPos.y - core.Pos.y) / 4.0f));
+	return h;
 }
-static inline int PfRheaRand(int max) { return max <= 0 ? 0 : (int)(PfRheaNext() % (uint32_t)max); }
-static inline float PfRheaChance() { return (float)PfRheaNext() / 4294967295.0f; }
 
-// State dedup key: quantized position (4px), velocity (7 buckets/axis),
-// grounded, hook state, frozen flag, jump flags.
-static uint64_t PfAStarKey(const CCharacterCore &core, int freezeTime, bool grounded)
+static inline bool PfAHeapLess(const CBotNet::AStarNode &a, const CBotNet::AStarNode &b)
 {
-	int tx = (int)(core.m_Pos.x / 4.0f);
-	int ty = (int)(core.m_Pos.y / 4.0f);
-	int vbx = pf_clamp((int)(core.m_Vel.x / 5.0f) + 3, 0, 6);
-	int vby = pf_clamp((int)(core.m_Vel.y / 5.0f) + 3, 0, 6);
-	int frozen = (freezeTime > 0) ? 1 : 0;
-	uint64_t k = 0;
-	k |= (uint64_t)(uint16_t)(int16_t)tx;
-	k |= (uint64_t)(uint16_t)(int16_t)ty << 16;
-	k |= (uint64_t)(uint8_t)vbx << 32;
-	k |= (uint64_t)(uint8_t)vby << 35;
-	k |= (uint64_t)(grounded ? 1 : 0) << 38;
-	k |= (uint64_t)(uint8_t)(core.m_HookState + 8) << 39;
-	k |= (uint64_t)(frozen & 1) << 43;
-	k |= (uint64_t)(uint8_t)(core.m_Jumped & 0xF) << 44;
-	return k;
+	if(a.F != b.F)
+		return a.F < b.F;
+	return a.H < b.H;
 }
 
 static void PfAStarHeapPush(std::vector<int> &heap, const std::vector<CBotNet::AStarNode> &nodes, int idx)
@@ -63,7 +55,7 @@ static void PfAStarHeapPush(std::vector<int> &heap, const std::vector<CBotNet::A
 	while(i > 0)
 	{
 		int parent = (i - 1) / 2;
-		if(nodes[heap[parent]].F <= nodes[heap[i]].F)
+		if(!PfAHeapLess(nodes[heap[i]], nodes[heap[parent]]))
 			break;
 		std::swap(heap[parent], heap[i]);
 		i = parent;
@@ -80,9 +72,9 @@ static int PfAStarHeapPop(std::vector<int> &heap, const std::vector<CBotNet::ASt
 	while(true)
 	{
 		int l = 2 * i + 1, r = 2 * i + 2, s = i;
-		if(l < n && nodes[heap[l]].F < nodes[heap[s]].F)
+		if(l < n && PfAHeapLess(nodes[heap[l]], nodes[heap[s]]))
 			s = l;
-		if(r < n && nodes[heap[r]].F < nodes[heap[s]].F)
+		if(r < n && PfAHeapLess(nodes[heap[r]], nodes[heap[s]]))
 			s = r;
 		if(s == i)
 			break;
@@ -92,79 +84,70 @@ static int PfAStarHeapPop(std::vector<int> &heap, const std::vector<CBotNet::ASt
 	return top;
 }
 
-// Stall cost (gated by KxPfFineStuck): a chunk that ends within 2px of its
-// start made no progress — make that branch expensive in the open set.
-int PfEffortChunkTicks()
-{
-	if(g_Config.m_KxPfEffort == 5)
-	{
-		int v = g_Config.m_KxPfChunkSize;
-		return v < 1 ? 1 : (v > 50 ? 50 : v);
-	}
-	return (g_Config.m_KxPfEffort >= 3) ? 10 : 5;
-}
-
 int PfEffortHookAngles()
 {
-	if(g_Config.m_KxPfEffort == 5)
+	if(g_Config.m_KxPfEffort == 6)
 	{
 		int v = g_Config.m_KxPfHookAngles;
 		return v < 4 ? 4 : (v > 32 ? 32 : v);
 	}
-	return (g_Config.m_KxPfEffort >= 3) ? 32 : 24;
+	return (g_Config.m_KxPfEffort >= 2) ? 32 : 24;
 }
 
-int PfEffortSearchBudget()
+static int PfEffortIndex()
 {
-	if(g_Config.m_KxPfEffort == 5)
+	return g_Config.m_KxPfEffort < 0 ? 0 : (g_Config.m_KxPfEffort > 5 ? 5 : g_Config.m_KxPfEffort);
+}
+
+int PfEffortBeamWidth()
+{
+	if(g_Config.m_KxPfEffort == 6)
 	{
-		int v = g_Config.m_KxPfSearchBudget;
-		return v < 256 ? 256 : (v > 200000 ? 200000 : v);
+		int v = g_Config.m_KxPfBeamWidth;
+		return v < 8 ? 8 : (v > 4096 ? 4096 : v);
 	}
-	static const int s_aBudgets[5] = {10000, 50000, 100000, 150000, 200000};
-	return s_aBudgets[g_Config.m_KxPfEffort];
+	static const int s_aBeamWidths[] = {2048, 2048, 4096, 4096, 4096, 4096};
+	return s_aBeamWidths[PfEffortIndex()];
 }
 
-int PfEffortCandidates()
+int PfEffortAStarWeight()
 {
-	if(g_Config.m_KxPfEffort == 5)
+	if(g_Config.m_KxPfEffort == 6)
 	{
-		int v = g_Config.m_KxPfCandidates;
-		return v < 50 ? 50 : (v > 2000 ? 2000 : v);
+		int v = g_Config.m_KxPfAStarWeight;
+		return v < 100 ? 100 : (v > 2000 ? 2000 : v);
 	}
-	return 2000;
+	static const int s_aWeights[] = {200, 150, 130, 120, 110, 100};
+	return s_aWeights[PfEffortIndex()];
 }
 
-int PfEffortGenerations()
+int PfEffortRheaPop()
 {
-	if(g_Config.m_KxPfEffort == 5)
+	static const int s_aPops[] = {12, 12, 24, 48, 96, 128};
+	return s_aPops[PfEffortIndex()];
+}
+
+int PfEffortRheaGens()
+{
+	if(g_Config.m_KxPfEffort == 6)
 	{
 		int v = g_Config.m_KxPfRheaGenerations;
 		return v < 1 ? 1 : (v > 100 ? 100 : v);
 	}
-	static const int s_aGenerations[5] = {5, 10, 10, 10, 15};
-	return s_aGenerations[g_Config.m_KxPfEffort];
+	static const int s_aGens[] = {5, 5, 10, 10, 10, 15};
+	return s_aGens[PfEffortIndex()];
 }
 
-bool PfEffortScoreDist() { return g_Config.m_KxPfEffort == 5 ? g_Config.m_KxPfScoreDist != 0 : true; }
-bool PfEffortScoreFlow() { return g_Config.m_KxPfEffort == 5 ? g_Config.m_KxPfScoreFlow != 0 : true; }
-bool PfEffortFineFreeze() { return g_Config.m_KxPfEffort == 5 ? g_Config.m_KxPfFineFreeze != 0 : false; }
-bool PfEffortFreezeSupport() { return g_Config.m_KxPfEffort == 5 ? g_Config.m_KxPfFreezeSupport != 0 : false; }
-bool PfEffortFineRetract() { return g_Config.m_KxPfEffort == 5 ? g_Config.m_KxPfFineRetract != 0 : false; }
-bool PfEffortFineDeath() { return g_Config.m_KxPfEffort == 5 ? g_Config.m_KxPfFineDeath != 0 : true; }
-bool PfEffortFineWall() { return g_Config.m_KxPfEffort == 5 ? g_Config.m_KxPfFineWall != 0 : false; }
-bool PfEffortFineAir() { return g_Config.m_KxPfEffort == 5 ? g_Config.m_KxPfFineAir != 0 : false; }
-bool PfEffortFineHookFire() { return g_Config.m_KxPfEffort == 5 ? g_Config.m_KxPfFineHook != 0 : false; }
-bool PfEffortFineStuck() { return g_Config.m_KxPfEffort == 5 ? g_Config.m_KxPfFineStuck != 0 : true; }
-
-static float PfAStarStuckPenalty(const vec2 &startPos, const vec2 &endPos)
+int PfEffortMctsIters()
 {
-	if(!PfEffortFineStuck())
-		return 0.0f;
-	if(distance(endPos, startPos) < 2.0f)
-		return 500.0f;
-	return 0.0f;
+	static const int s_aIters[] = {300, 300, 600, 1200, 2400, 4800};
+	return s_aIters[PfEffortIndex()];
 }
+
+bool PfEffortScoreDist() { return true; }
+bool PfEffortScoreFlow() { return true; }
+bool PfEffortFreezeSupport() { return g_Config.m_KxPfEffort == 6 ? g_Config.m_KxPfFreezeSupport != 0 : false; }
+bool PfEffortFineDeath() { return true; }
 
 static vec2 PfNearestFinishPos(const std::vector<vec2> &vFinishes, const vec2 &pos)
 {
@@ -238,6 +221,78 @@ static void PfAStarSetupWorld(CGameWorld *pWorld, CGameWorld *pSrc, int LocalID)
 	}
 }
 
+static CCharacter *PfSimWorldBot(CGameWorld *pSimWorld, CGameWorld *pBaseWorld, int LocalID)
+{
+	if(CCharacter *pBot = pSimWorld->GetCharacterById(LocalID))
+		return pBot;
+	CCharacter *pBase = pBaseWorld->GetCharacterById(LocalID);
+	if(!pBase)
+		return nullptr;
+	if(CCharacter *pDead = (CCharacter *)pSimWorld->FindFirst(CGameWorld::ENTTYPE_CHARACTER))
+		delete pDead;
+	CCharacter *pCopy = new CCharacter(*pBase);
+	pCopy->m_pParent = pBase;
+	pBase->m_pChild = pCopy;
+	pSimWorld->InsertEntity(pCopy);
+	return pCopy;
+}
+
+static int PfBuildTickCandidates(const CBotNet::PfAState &core, CCollision *pColl, float hookLength, int HookAngles,
+	CNetObj_PlayerInput aOut[128], int aCodes[128])
+{
+	int n = 0;
+	static const int aDirs[] = {-1, 0, 1};
+	auto add = [&](int dir, int jump, int hook, int angleIdx, int tx, int ty) {
+		if(n >= 128)
+			return;
+		if(aCodes)
+			aCodes[n] = (2 + dir) | (jump << 2) | (hook << 3) | (angleIdx << 5) | ((HookAngles - 1) << 10);
+		CNetObj_PlayerInput &in = aOut[n];
+		mem_zero(&in, sizeof(in));
+		in.m_Direction = dir;
+		in.m_Jump = jump;
+		in.m_Hook = hook;
+		in.m_TargetX = tx;
+		in.m_TargetY = ty;
+		n++;
+	};
+	for(int d = 0; d < 3; d++)
+	{
+		for(int j = 0; j < 2; j++)
+			add(aDirs[d], j, 0, 0, aDirs[d] * 256, -256);
+	}
+	const bool hookIdle = (core.HookState == HOOK_IDLE);
+	const bool hookActive = (core.HookState == HOOK_FLYING || core.HookState == HOOK_GRABBED);
+	if(hookActive)
+	{
+		int tx = (int)(core.HookPos.x - core.Pos.x);
+		int ty = (int)(core.HookPos.y - core.Pos.y);
+		for(int d = 0; d < 3; d++)
+		{
+			for(int j = 0; j < 2; j++)
+				add(aDirs[d], j, 1, 0, tx, ty);
+		}
+	}
+	if(hookIdle)
+	{
+		for(int a = 0; a < HookAngles; a++)
+		{
+			float t = (float)a / (float)(HookAngles - 1 < 1 ? 1 : HookAngles - 1);
+			float angle = (-5.0f / 6.0f) * pi + t * (10.0f / 6.0f) * pi;
+			vec2 rayEnd = core.Pos + vec2(cosf(angle), sinf(angle)) * hookLength;
+			vec2 hitPos;
+			int hit = pColl->IntersectLineTeleHook(core.Pos, rayEnd, &hitPos, nullptr);
+			if(!(hit == TILE_SOLID || hit == TILE_TELEINHOOK || (hit > 0 && hit != TILE_NOHOOK && hit != TILE_DEATH)))
+				continue;
+			int tx = (int)(cosf(angle) * 256.0f);
+			int ty = (int)(sinf(angle) * 256.0f);
+			for(int d = 0; d < 3; d++)
+				add(aDirs[d], 0, 2, a, tx, ty);
+		}
+	}
+	return n;
+}
+
 bool CBotNet::PfAStarInit()
 {
 	if(!m_PfBaseWorld)
@@ -252,31 +307,47 @@ bool CBotNet::PfAStarInit()
 	if(vFinishes.empty())
 		return false;
 
-	PfRheaReset();
+	delete m_PfSimWorld;
+	m_PfSimWorld = new CGameWorld();
+	PfAStarSetupWorld(m_PfSimWorld, m_PfBaseWorld, LocalID);
+	if(!m_PfSimWorld->Collision())
+	{
+		delete m_PfSimWorld;
+		m_PfSimWorld = nullptr;
+		return false;
+	}
+	m_PfSimStartTick = m_PfSimWorld->GameTick();
 
 	m_PfANodes.clear();
+	m_PfANodes.reserve(4096);
 	m_PfAOpen.clear();
+	m_PfAOpen.reserve(4096);
+	m_PfABeamReserve.clear();
 	m_PfABestG.clear();
+	m_PfABestG.reserve(1 << 14);
 	m_PfAGoalIdx = -1;
 	m_PfAExpandCount = 0;
 
-	int W = pf_clamp(g_Config.m_KxPfAStarWeight, 1, 20);
+	float W = PfEffortAStarWeight() / 100.0f;
+if(W < 1.0f)
+	W = 1.0f;
+if(W > 20.0f)
+	W = 20.0f;
 
 	AStarNode root;
-	root.Core = pChar->GetCore();
-	root.Core.m_Pos = m_PfCurPos;
-	root.Core.m_Vel = m_PfCurVel;
-	root.Core.m_HookState = m_PfCurHookState;
-	root.Core.m_HookPos = m_PfCurHookPos;
-	root.Core.m_HookDir = m_PfCurHookDir;
-	root.Core.m_HookTick = m_PfCurHookTick;
-	root.Core.m_Jumped = m_PfCurJumped;
-	root.Pos = m_PfCurPos;
+	root.Core.Pos = m_PfCurPos;
+	root.Core.Vel = m_PfCurVel;
+	root.Core.HookState = m_PfCurHookState;
+	root.Core.HookPos = m_PfCurHookPos;
+	root.Core.HookDir = m_PfCurHookDir;
+	root.Core.HookTick = m_PfCurHookTick;
+	root.Core.Jumped = m_PfCurJumped;
+	root.Core.JumpedTotal = pChar->GetCore().m_JumpedTotal;
 	root.FreezeTime = m_PfCurFreezeTime;
 	CCollision *pColl = m_PfBaseWorld->Collision();
-	root.Grounded = pColl ? pColl->IsOnGround(root.Pos, CCharacterCore::PhysicalSize()) : false;
+	root.Grounded = pColl ? pColl->IsOnGround(root.Core.Pos, CCharacterCore::PhysicalSize()) : false;
 	root.G = 0.0f;
-	root.H = PfAStarHeuristic(root.Pos, PfNearestFinishPos(vFinishes, root.Pos));
+	root.H = PfAStarHeuristic(root.Core.Pos, PfNearestFinishPos(vFinishes, root.Core.Pos));
 	m_PfAHRoot = root.H;
 	m_PfABestH.store(root.H, std::memory_order_relaxed);
 	root.F = root.G + (float)W * root.H;
@@ -291,11 +362,11 @@ bool CBotNet::PfAStarInit()
 		m_PfAOpen.push_back(0);
 	}
 
-	if(PfIsAtFinishPos(vFinishes, root.Pos))
+	if(PfIsAtFinishPos(vFinishes, root.Core.Pos))
 		m_PfAGoalIdx = 0;
 
 	dbg_msg("pathfinder", "A* start: pos=(%.0f,%.0f) finishes=%d h=%.1f",
-		root.Pos.x, root.Pos.y, (int)vFinishes.size(), root.H);
+		root.Core.Pos.x, root.Core.Pos.y, (int)vFinishes.size(), root.H);
 	return true;
 }
 
@@ -303,12 +374,28 @@ int CBotNet::PfAStarStep()
 {
 	if(m_PfAOpen.empty())
 	{
+		if(g_Config.m_KxPfAlgorithm == 1 && !m_PfABeamReserve.empty())
+		{
+			int cap = PfEffortBeamWidth() * 4;
+			std::sort(m_PfABeamReserve.begin(), m_PfABeamReserve.end(), [&](int x, int y) { return PfAHeapLess(m_PfANodes[x], m_PfANodes[y]); });
+			int take = (cap < (int)m_PfABeamReserve.size()) ? cap : (int)m_PfABeamReserve.size();
+			std::lock_guard<std::mutex> lock(m_PfDataMutex);
+			for(int i = 0; i < take; i++)
+				PfAStarHeapPush(m_PfAOpen, m_PfANodes, m_PfABeamReserve[i]);
+			m_PfABeamReserve.erase(m_PfABeamReserve.begin(), m_PfABeamReserve.begin() + take);
+			dbg_msg("pathfinder", "beam: open set empty — restored %d pruned variants (%d left in reserve)", take, (int)m_PfABeamReserve.size());
+			return 0;
+		}
 		dbg_msg("pathfinder", "A* exhausted: open set empty (no route to a finish tile — blocked by walls/forbidden zones?)");
 		return -1;
 	}
 
 	int maxNodes = pf_clamp(g_Config.m_KxPfAStarNodeBudget, 1000, 100000000);
-	int W = pf_clamp(g_Config.m_KxPfAStarWeight, 1, 20);
+	float W = PfEffortAStarWeight() / 100.0f;
+if(W < 1.0f)
+	W = 1.0f;
+if(W > 20.0f)
+	W = 20.0f;
 
 	if((int)m_PfANodes.size() > maxNodes)
 	{
@@ -333,7 +420,7 @@ int CBotNet::PfAStarStep()
 	if(itCur == m_PfABestG.end() || itCur->second < cur.G - 0.001f)
 		return 0; // stale — a cheaper path to this state exists
 
-	if(PfIsAtFinishPos(vFinishes, cur.Pos))
+	if(PfIsAtFinishPos(vFinishes, cur.Core.Pos))
 	{
 		if(!PfEffortFreezeSupport() && cur.FreezeChainTicks > 0)
 			return 0;
@@ -345,35 +432,39 @@ int CBotNet::PfAStarStep()
 
 	int LocalID = m_PfLocalID;
 
-	CGameWorld FutureWorld;
-	PfAStarSetupWorld(&FutureWorld, m_PfBaseWorld, LocalID);
-	CCollision *pColl = FutureWorld.Collision();
+	if(!m_PfSimWorld)
+		return 0;
+	m_PfSimWorld->m_Teams = m_PfBaseWorld->m_Teams;
+	m_PfSimWorld->m_Core.m_vSwitchers = m_PfBaseWorld->m_Core.m_vSwitchers;
+	m_PfSimWorld->m_PredictedEvents.clear();
+	CCollision *pColl = m_PfSimWorld->Collision();
 	if(!pColl)
 		return 0;
 
-	int RootStartTick = FutureWorld.GameTick();
+	int RootStartTick = m_PfSimStartTick;
 
-	// Shared child push. G is pure cost; extraCost carries the stuck
-	// penalty. Dedup via BestG with a monotonic G makes this sound.
-	auto fnPushChild = [&](const CCharacterCore &endCore, int endFreezeTime,
+	// Shared child push. G is pure simulated ticks — nothing else leaks
+	// into the cost. Dedup via BestG with a monotonic G keeps the search
+	// loop-free; the open set does all the pruning.
+	std::vector<AStarNode> vPending;
+	auto fnPushChild = [&](const PfAState &endCore, int endFreezeTime,
 		const std::vector<CNetObj_PlayerInput> &inputs, const std::vector<vec2> &traj,
-		const std::vector<PfHookSeg> &hookSegs, int ticks, float extraCost, int chunkFreezeTicks, int chunkForbiddenTicks, int primIdx) -> bool
+		const std::vector<PfHookSeg> &hookSegs, int ticks, int chunkFreezeTicks, int chunkForbiddenTicks, int primIdx) -> bool
 	{
 		if(!PfEffortFreezeSupport() && cur.FreezeChainTicks + chunkFreezeTicks > 0)
 			return false;
 		if(cur.ForbiddenChainTicks + chunkForbiddenTicks > 0)
 			return false;
-		vec2 childPos = endCore.m_Pos;
+		vec2 childPos = endCore.Pos;
 		bool endGrounded = pColl->IsOnGround(childPos, CCharacterCore::PhysicalSize());
 		uint64_t key = PfAStarKey(endCore, endFreezeTime, endGrounded);
-		float newG = cur.G + (float)ticks + extraCost;
+		float newG = cur.G + (float)ticks;
 		auto it = m_PfABestG.find(key);
 		if(it != m_PfABestG.end() && it->second <= newG)
 			return false;
 		m_PfABestG[key] = newG;
 		AStarNode child;
 		child.Core = endCore;
-		child.Pos = childPos;
 		child.FreezeTime = endFreezeTime;
 		child.Grounded = endGrounded;
 		child.G = newG;
@@ -390,28 +481,37 @@ int CBotNet::PfAStarStep()
 		child.Traj = traj;
 		child.HookSegs = hookSegs;
 		child.Inputs = inputs;
-		// m_PfANodes is appended by the worker and read by the renderer —
-		// guard the mutation so a concurrent render snapshot never sees a
-		// reallocation mid-read.
-		std::lock_guard<std::mutex> lock(m_PfDataMutex);
-		m_PfANodes.push_back(std::move(child));
-		PfAStarHeapPush(m_PfAOpen, m_PfANodes, (int)m_PfANodes.size() - 1);
+		vPending.push_back(std::move(child));
 		return true;
+	};
+	// m_PfANodes is appended by the worker and read by the renderer —
+	// guard the mutation so a concurrent render snapshot never sees a
+	// reallocation mid-read.
+	auto fnFlushPending = [&]() {
+		if(vPending.empty())
+			return;
+		std::lock_guard<std::mutex> lock(m_PfDataMutex);
+		for(AStarNode &pending : vPending)
+		{
+			m_PfANodes.push_back(std::move(pending));
+			PfAStarHeapPush(m_PfAOpen, m_PfANodes, (int)m_PfANodes.size() - 1);
+		}
+		vPending.clear();
 	};
 
 	// Spawn (or re-spawn after a death) the sim bot at the given state.
-	auto fnSpawnBot = [&](const CCharacterCore &core, const vec2 &pos, int freezeTime, int tickOffset) -> CCharacter *
+	auto fnSpawnBot = [&](const PfAState &core, const vec2 &pos, int freezeTime, int tickOffset) -> CCharacter *
 	{
-		if(!FutureWorld.GetCharacterById(LocalID))
-			PfAStarSetupWorld(&FutureWorld, m_PfBaseWorld, LocalID);
-		FutureWorld.m_GameTick = RootStartTick + tickOffset;
-		CCharacter *pBot = PfSpawnSimBot(&FutureWorld, LocalID, pos, core.m_Vel,
-			core.m_HookState, core.m_HookPos, core.m_HookDir, core.m_HookTick,
-			freezeTime, core.m_Jumped);
+		if(!PfSimWorldBot(m_PfSimWorld, m_PfBaseWorld, LocalID))
+			return nullptr;
+		m_PfSimWorld->m_GameTick = RootStartTick + tickOffset;
+		CCharacter *pBot = PfSpawnSimBot(m_PfSimWorld, LocalID, pos, core.Vel,
+			core.HookState, core.HookPos, core.HookDir, core.HookTick,
+			freezeTime, core.Jumped);
 		if(pBot)
 		{
 			CCharacterCore c = pBot->GetCore();
-			c.m_JumpedTotal = core.m_JumpedTotal;
+			c.m_JumpedTotal = core.JumpedTotal;
 			pBot->SetCore(c);
 		}
 		return pBot;
@@ -420,7 +520,7 @@ int CBotNet::PfAStarStep()
 	// ── Frozen node: fast-forward through all freeze ticks as one chunk ──
 	if(cur.FreezeTime > 0)
 	{
-		CCharacter *pBot = fnSpawnBot(cur.Core, cur.Pos, cur.FreezeTime, cur.TickOffset);
+		CCharacter *pBot = fnSpawnBot(cur.Core, cur.Core.Pos, cur.FreezeTime, cur.TickOffset);
 		if(!pBot)
 			return 0;
 		int ft = pBot->m_FreezeTime;
@@ -434,26 +534,23 @@ int CBotNet::PfAStarStep()
 			emptyInputs[t].m_TargetY = -1; // aim up, avoid (0,0) target
 		}
 		PfChunkResult res;
-		PfSimulateChunk(&FutureWorld, LocalID, pBot, emptyInputs, RootStartTick + cur.TickOffset, res,
+		PfSimulateChunk(m_PfSimWorld, LocalID, pBot, emptyInputs, RootStartTick + cur.TickOffset, res,
 			m_pForbiddenGrid, PfCustomFinishSimGrid());
 		if(res.died && !res.reachedFinish)
 			return 0;
-		CCharacterCore endCore = cur.Core;
-		endCore.m_Pos = res.endPos;
-		endCore.m_Vel = res.endVel;
-		endCore.m_HookState = res.endHookState;
-		endCore.m_HookPos = res.endHookPos;
-		endCore.m_HookDir = res.endHookDir;
-		endCore.m_HookTick = res.endHookTick;
-		endCore.m_Jumped = res.endJumped;
-		endCore.m_JumpedTotal = res.endJumpedTotal;
-		fnPushChild(endCore, res.endFreezeTime, res.inputs, res.traj, res.hookSegs, ft, 0.0f, ft, res.forbiddenTicks, 99);
-		return 0;
+		PfAState endCore = cur.Core;
+		endCore.Pos = res.endPos;
+		endCore.Vel = res.endVel;
+		endCore.HookState = res.endHookState;
+		endCore.HookPos = res.endHookPos;
+		endCore.HookDir = res.endHookDir;
+		endCore.HookTick = res.endHookTick;
+		endCore.Jumped = res.endJumped;
+		endCore.JumpedTotal = res.endJumpedTotal;
+			fnPushChild(endCore, res.endFreezeTime, res.inputs, res.traj, res.hookSegs, ft, ft, res.forbiddenTicks, 0);
+			fnFlushPending();
+			return 0;
 	}
-
-	int ChunkSize = PfEffortChunkTicks();
-	int HookAngles = PfEffortHookAngles();
-	static const int aDirs[] = {-1, 0, 1};
 
 	float hookLength = 380.0f;
 	if(CCharacter *pBaseChar = m_PfBaseWorld->GetCharacterById(LocalID))
@@ -472,7 +569,8 @@ int CBotNet::PfAStarStep()
 	};
 	HookRayResult aHookRays[32];
 	bool hookRaysReady = false;
-	if(cur.Core.m_HookState == HOOK_IDLE)
+	int HookAngles = PfEffortHookAngles();
+	if(cur.Core.HookState == HOOK_IDLE)
 	{
 		hookRaysReady = true;
 		for(int i = 0; i < HookAngles; i++)
@@ -480,9 +578,9 @@ int CBotNet::PfAStarStep()
 			float t = (float)i / (float)(HookAngles - 1 < 1 ? 1 : HookAngles - 1);
 			float angle = (-5.0f / 6.0f) * pi + t * (10.0f / 6.0f) * pi;
 			aHookRays[i].angle = angle;
-			vec2 rayEnd = cur.Pos + vec2(cosf(angle), sinf(angle)) * hookLength;
+			vec2 rayEnd = cur.Core.Pos + vec2(cosf(angle), sinf(angle)) * hookLength;
 			vec2 hitPos;
-			int hit = pColl->IntersectLineTeleHook(cur.Pos, rayEnd, &hitPos, nullptr);
+			int hit = pColl->IntersectLineTeleHook(cur.Core.Pos, rayEnd, &hitPos, nullptr);
 			if(hit == TILE_SOLID || hit == TILE_TELEINHOOK || (hit > 0 && hit != TILE_NOHOOK && hit != TILE_DEATH))
 				aHookRays[i].hasTarget = true;
 			else
@@ -490,498 +588,113 @@ int CBotNet::PfAStarStep()
 		}
 	}
 
-	bool hookIdle = (cur.Core.m_HookState == HOOK_IDLE);
-	bool hookActive = (cur.Core.m_HookState == HOOK_FLYING || cur.Core.m_HookState == HOOK_GRABBED);
+	bool hookIdle = (cur.Core.HookState == HOOK_IDLE);
+	bool hookActive = (cur.Core.HookState == HOOK_FLYING || cur.Core.HookState == HOOK_GRABBED);
 
-	// =====================================================
-	// RHEA — Rolling Horizon Evolutionary Algorithm.
-	// Fresh population PER NODE (the old shift buffer carried inputs
-	// evolved for a different character state — erratic results).
-	// (mu+lambda) evolution, deterministic RNG.
-	// =====================================================
-	if(g_Config.m_KxPfAdvancedSearch)
+	// Per-tick systematic expansion: build EVERY valid single-tick input for
+	// this state, simulate each one tick and push each surviving end state.
+	// No candidate scoring, no beam width — the A* open set + BestG dedup
+	// decide which branches survive, so G stays pure time and the first
+	// finish reached is the fastest path the search can express.
+	static const int aDirs[] = {-1, 0, 1};
+	CNetObj_PlayerInput aCands[128];
+	int aCandCodes[128];
+	int nCands = 0;
+	auto fnAddCand = [&](int dirIdx, int jump, int mode, int angleIdx, vec2 aim) {
+		if(nCands >= 128)
+			return;
+		mem_zero(&aCands[nCands], sizeof(CNetObj_PlayerInput));
+		aCands[nCands].m_Direction = aDirs[dirIdx];
+		aCands[nCands].m_Jump = jump;
+		aCands[nCands].m_Hook = (mode != 0) ? 1 : 0;
+		aCands[nCands].m_TargetX = (int)aim.x;
+		aCands[nCands].m_TargetY = (int)aim.y;
+		aCandCodes[nCands] = (1 + dirIdx) | (jump << 2) | (mode << 3) | (angleIdx << 5) | ((HookAngles - 1) << 10);
+		nCands++;
+	};
+	for(int d = 0; d < 3; d++)
 	{
-		int popSize = PfEffortCandidates();
-		int numGenerations = PfEffortGenerations();
-		int pushCount = pf_clamp(g_Config.m_KxPfBacktrackCandidates, 1, popSize);
-
-		auto fnAimFor = [&](int angleIdx) -> vec2 {
-			float a = aHookRays[angleIdx].angle;
-			return vec2(cosf(a), sinf(a)) * 256.0f;
-		};
-		auto fnAimHooked = [&]() -> vec2 { return cur.Core.m_HookPos - cur.Pos; };
-
-		auto fnRandomInput = [&]() -> CNetObj_PlayerInput {
-			CNetObj_PlayerInput inp;
-			mem_zero(&inp, sizeof(inp));
-			inp.m_Direction = aDirs[PfRheaRand(3)];
-			inp.m_Jump = PfRheaRand(2);
-			int hookVal = PfRheaRand(2);
-			if(hookVal == 1 && !hookIdle && !hookActive)
-				hookVal = 0;
-			int angleIdx = PfRheaRand(HookAngles);
-			if(hookVal == 1 && hookIdle && !aHookRays[angleIdx].hasTarget)
-				hookVal = 0;
-			inp.m_Hook = hookVal;
-			vec2 aim;
-			if(hookVal == 1 && hookActive)
-				aim = fnAimHooked();
-			else if(hookVal == 1 && hookIdle)
-				aim = fnAimFor(angleIdx);
-			else
-				aim = vec2((float)inp.m_Direction * 256.0f, -256.0f);
-			inp.m_TargetX = (int)aim.x;
-			inp.m_TargetY = (int)aim.y;
-			return inp;
-		};
-
-		m_PfRHAPopulation.clear();
-		m_PfRHAPopulation.resize(popSize);
-		m_PfRHAInitialized = false;
-
-		// Seed with constant, sensible sequences so evolution starts from
-		// directed movement instead of pure noise.
+		for(int j = 0; j < 2; j++)
+			fnAddCand(d, j, 0, 0, vec2((float)aDirs[d] * 256.0f, -256.0f));
+	}
+	if(hookActive)
+	{
+		vec2 aimRel = cur.Core.HookPos - cur.Core.Pos;
+		for(int d = 0; d < 3; d++)
 		{
-			auto fnConstantSeq = [&](int dir, int jumpTick) {
-				std::vector<CNetObj_PlayerInput> seq(ChunkSize);
-				for(int t = 0; t < ChunkSize; t++)
-				{
-					mem_zero(&seq[t], sizeof(CNetObj_PlayerInput));
-					seq[t].m_Direction = dir;
-					seq[t].m_Jump = (t == jumpTick) ? 1 : 0;
-					seq[t].m_TargetX = dir * 256;
-					seq[t].m_TargetY = -256;
-				}
-				return seq;
-			};
-			auto fnHookSeq = [&](int dir, int angleIdx) {
-				std::vector<CNetObj_PlayerInput> seq(ChunkSize);
-				vec2 aim = (angleIdx >= 0) ? fnAimFor(angleIdx) : fnAimHooked();
-				for(int t = 0; t < ChunkSize; t++)
-				{
-					mem_zero(&seq[t], sizeof(CNetObj_PlayerInput));
-					seq[t].m_Direction = dir;
-					seq[t].m_Hook = 1;
-					seq[t].m_TargetX = (int)aim.x;
-					seq[t].m_TargetY = (int)aim.y;
-				}
-				return seq;
-			};
-
-			std::vector<std::vector<CNetObj_PlayerInput>> vSeeds;
-			vSeeds.push_back(fnConstantSeq(-1, -1));
-			vSeeds.push_back(fnConstantSeq(1, -1));
-			vSeeds.push_back(fnConstantSeq(0, -1));
-			vSeeds.push_back(fnConstantSeq(-1, 0));
-			vSeeds.push_back(fnConstantSeq(1, 0));
-			vSeeds.push_back(fnConstantSeq(0, 0));
-			if(hookActive)
-			{
-				vSeeds.push_back(fnHookSeq(-1, -1));
-				vSeeds.push_back(fnHookSeq(1, -1));
-			}
-			else if(hookIdle && hookRaysReady)
-			{
-				std::vector<int> vTargets;
-				for(int i = 0; i < HookAngles; i++)
-					if(aHookRays[i].hasTarget)
-						vTargets.push_back(i);
-				if(!vTargets.empty())
-				{
-					int pick[3] = {vTargets.front(), vTargets[vTargets.size() / 2], vTargets.back()};
-					for(int pIdx : pick)
-						vSeeds.push_back(fnHookSeq(1, pIdx));
-				}
-			}
-
-			int numSeeds = pf_min((int)vSeeds.size(), pf_max(1, popSize / 4));
-			for(int i = 0; i < numSeeds; i++)
-				m_PfRHAPopulation[i].inputs = vSeeds[i];
+			for(int j = 0; j < 2; j++)
+				fnAddCand(d, j, 1, 0, aimRel);
 		}
-
-		for(auto &ind : m_PfRHAPopulation)
+	}
+	if(hookIdle && hookRaysReady)
+	{
+		for(int a = 0; a < HookAngles; a++)
 		{
-			if((int)ind.inputs.size() != ChunkSize)
-			{
-				ind.inputs.resize(ChunkSize);
-				for(int t = 0; t < ChunkSize; t++)
-					ind.inputs[t] = fnRandomInput();
-			}
-			ind.fitness = -1e18f;
-		}
-
-		auto fnEvaluate = [&](RheaIndividual &ind) {
-			CCharacter *pBot = fnSpawnBot(cur.Core, cur.Pos, cur.FreezeTime, cur.TickOffset);
-			if(!pBot)
-			{
-				ind.fitness = -1e18f;
-				ind.died = true;
-				ind.reachedFinish = false;
-				return;
-			}
-			PfChunkResult res;
-			PfSimulateChunk(&FutureWorld, LocalID, pBot, ind.inputs, RootStartTick + cur.TickOffset, res,
-				m_pForbiddenGrid, PfCustomFinishSimGrid());
-			ind.endPos = res.endPos;
-			ind.endVel = res.endVel;
-			ind.endHookState = res.endHookState;
-			ind.endHookPos = res.endHookPos;
-			ind.endHookDir = res.endHookDir;
-			ind.endHookTick = res.endHookTick;
-			ind.endJumped = res.endJumped;
-			ind.endJumpedTotal = res.endJumpedTotal;
-			ind.endFreezeTime = res.endFreezeTime;
-			ind.reachedFinish = res.reachedFinish;
-			ind.died = res.died && !res.reachedFinish;
-			ind.freezeTicks = res.freezeTicks;
-			ind.forbiddenTicks = res.forbiddenTicks;
-			ind.fitness = PfScoreChunk(cur.Pos, res.endPos, res.reachedFinish, ind.died, res.freezeTicks);
-			// Cache traj + hookSegs from THIS simulation — pushing must never
-			// re-simulate (the world drifts between sims, v1.56.161 BUG2).
-			ind.traj = res.traj;
-			ind.hookSegs = res.hookSegs;
-		};
-
-		for(auto &ind : m_PfRHAPopulation)
-			fnEvaluate(ind);
-
-		std::vector<RheaIndividual> vOffspring;
-		for(int gen = 0; gen < numGenerations; gen++)
-		{
-			std::sort(m_PfRHAPopulation.begin(), m_PfRHAPopulation.end(),
-				[](const RheaIndividual &a, const RheaIndividual &b) { return a.fitness > b.fitness; });
-			auto fnTournament = [&]() -> int {
-				int a = PfRheaRand(popSize / 2 + 1);
-				int b = PfRheaRand(popSize / 2 + 1);
-				return (m_PfRHAPopulation[a].fitness > m_PfRHAPopulation[b].fitness) ? a : b;
-			};
-			vOffspring.clear();
-			int offspringCount = popSize / 2;
-			for(int i = 0; i < offspringCount; i++)
-			{
-				int p1 = fnTournament();
-				int p2 = fnTournament();
-				RheaIndividual child;
-				child.inputs.resize(ChunkSize);
-				int xpoint = PfRheaRand(ChunkSize);
-				for(int t = 0; t < xpoint; t++)
-					child.inputs[t] = m_PfRHAPopulation[p1].inputs[t];
-				for(int t = xpoint; t < ChunkSize; t++)
-					child.inputs[t] = m_PfRHAPopulation[p2].inputs[t];
-				if(PfRheaChance() < 0.3f)
-				{
-					int mpoint = 1 + PfRheaRand(pf_max(1, ChunkSize - 1));
-					for(int t = mpoint; t < ChunkSize; t++)
-						child.inputs[t] = fnRandomInput();
-				}
-				fnEvaluate(child);
-				vOffspring.push_back(std::move(child));
-			}
-			for(auto &ind : vOffspring)
-				m_PfRHAPopulation.push_back(std::move(ind));
-			std::sort(m_PfRHAPopulation.begin(), m_PfRHAPopulation.end(),
-				[](const RheaIndividual &a, const RheaIndividual &b) { return a.fitness > b.fitness; });
-			m_PfRHAPopulation.resize(popSize);
-		}
-
-		// Push the best unique survivors as A* children. Dead individuals
-		// (forbidden zones / death tiles) are simply never pushed — the open
-		// set keeps other branches alive, the search routes around them.
-		std::sort(m_PfRHAPopulation.begin(), m_PfRHAPopulation.end(),
-			[](const RheaIndividual &a, const RheaIndividual &b) { return a.fitness > b.fitness; });
-		int pushed = 0;
-		for(const auto &ind : m_PfRHAPopulation)
-		{
-			if(pushed >= pushCount)
-				break;
-			if(ind.died && !ind.reachedFinish)
+			if(!aHookRays[a].hasTarget)
 				continue;
-			if(ind.inputs.empty())
-				continue;
-			CCharacterCore endCore = cur.Core;
-			endCore.m_Pos = ind.endPos;
-			endCore.m_Vel = ind.endVel;
-			endCore.m_HookState = ind.endHookState;
-			endCore.m_HookPos = ind.endHookPos;
-			endCore.m_HookDir = ind.endHookDir;
-			endCore.m_HookTick = ind.endHookTick;
-			endCore.m_Jumped = ind.endJumped;
-			endCore.m_JumpedTotal = ind.endJumpedTotal;
-			if(fnPushChild(endCore, ind.endFreezeTime, ind.inputs, ind.traj, ind.hookSegs,
-				ChunkSize, PfAStarStuckPenalty(cur.Pos, ind.endPos), ind.freezeTicks, ind.forbiddenTicks, 0))
-				pushed++;
+			vec2 aim = vec2(cosf(aHookRays[a].angle), sinf(aHookRays[a].angle)) * 256.0f;
+			for(int d = 0; d < 3; d++)
+				fnAddCand(d, 0, 2, a, aim);
 		}
-		return 0;
 	}
 
+	for(int ci = 0; ci < nCands; ci++)
 	{
-		struct ExNode
-		{
-			CCharacterCore core;
-			vec2 pos;
-			int freezeTime = 0;
-			int tick = 0;
-			float score = 0.0f;
-			int freezeTicks = 0;
-			int forbiddenTicks = 0;
-			int parentIdx = -1;
-			CNetObj_PlayerInput action;
-			std::vector<PfHookSeg> edgeSegs;
-			bool reachedFinish = false;
-			bool blocked = false;
-		};
-
-		int simBudget = PfEffortSearchBudget();
-		int pushCount = pf_clamp(g_Config.m_KxPfBacktrackCandidates, 1, 4096);
-		int simsUsed = 0;
-
-		std::vector<ExNode> pool;
-		pool.push_back(ExNode());
-		pool[0].core = cur.Core;
-		pool[0].pos = cur.Pos;
-		pool[0].freezeTime = cur.FreezeTime;
-
-		auto fnGrounded = [&](const vec2 &pos) -> bool {
-			return pColl->IsOnGround(pos, CCharacterCore::PhysicalSize());
-		};
-
-		auto fnBuildCandidates = [&](const ExNode &node, CNetObj_PlayerInput *cands) -> int {
-			int n = 0;
-			bool nodeHookIdle = (node.core.m_HookState == HOOK_IDLE);
-			bool nodeHookActive = (node.core.m_HookState == HOOK_FLYING || node.core.m_HookState == HOOK_GRABBED);
-			for(int d = 0; d < 3 && n < 128; d++)
-			{
-				for(int j = 0; j < 2 && n < 128; j++)
-				{
-					CNetObj_PlayerInput inp;
-					mem_zero(&inp, sizeof(inp));
-					inp.m_Direction = aDirs[d];
-					inp.m_Jump = j;
-					inp.m_Hook = 0;
-					inp.m_TargetX = aDirs[d] * 256;
-					inp.m_TargetY = -256;
-					cands[n++] = inp;
-				}
-			}
-			if(nodeHookActive)
-			{
-				for(int d = 0; d < 3 && n < 128; d++)
-				{
-					for(int j = 0; j < 2 && n < 128; j++)
-					{
-						CNetObj_PlayerInput inp;
-						mem_zero(&inp, sizeof(inp));
-						inp.m_Direction = aDirs[d];
-						inp.m_Jump = j;
-						inp.m_Hook = 1;
-						vec2 aimRel = node.core.m_HookPos - node.pos;
-						inp.m_TargetX = (int)aimRel.x;
-						inp.m_TargetY = (int)aimRel.y;
-						cands[n++] = inp;
-					}
-				}
-			}
-			if(nodeHookIdle && hookRaysReady)
-			{
-				for(int a = 0; a < HookAngles && n < 128; a++)
-				{
-					if(!aHookRays[a].hasTarget)
-						continue;
-					for(int d = 0; d < 3 && n < 128; d++)
-					{
-						CNetObj_PlayerInput inp;
-						mem_zero(&inp, sizeof(inp));
-						inp.m_Direction = aDirs[d];
-						inp.m_Jump = 0;
-						inp.m_Hook = 1;
-						vec2 aimRel = vec2(cosf(aHookRays[a].angle), sinf(aHookRays[a].angle)) * 256.0f;
-						inp.m_TargetX = (int)aimRel.x;
-						inp.m_TargetY = (int)aimRel.y;
-						cands[n++] = inp;
-					}
-				}
-			}
-			return n;
-		};
-
-		auto fnStateKey = [&](int idx) -> uint64_t {
-			const ExNode &n = pool[idx];
-			uint64_t h = 1469598103934665603ull;
-			auto mix = [&h](uint64_t v) {
-				h ^= v * 1099511628211ull;
-				h ^= h >> 27;
-			};
-			mix((uint64_t)(uint16_t)(int16_t)(int)roundf(n.pos.x / 2.0f));
-			mix((uint64_t)(uint16_t)(int16_t)(int)roundf(n.pos.y / 2.0f));
-			mix((uint64_t)(uint16_t)(int16_t)(int)roundf(n.core.m_Vel.x));
-			mix((uint64_t)(uint16_t)(int16_t)(int)roundf(n.core.m_Vel.y));
-			mix((uint64_t)n.core.m_HookState);
-			mix((uint64_t)(uint16_t)pf_max(0, n.core.m_HookTick));
-			mix((uint64_t)(fnGrounded(n.pos) ? 1u : 0u));
-			mix((uint64_t)(uint16_t)pf_max(0, n.freezeTime));
-			mix((uint64_t)(uint8_t)(n.core.m_Jumped & 0xF));
-			mix((uint64_t)(uint8_t)(n.core.m_JumpedTotal & 0xFF));
-			mix((uint64_t)(uint16_t)(int16_t)(int)roundf((n.core.m_HookPos.x - n.pos.x) / 2.0f));
-			mix((uint64_t)(uint16_t)(int16_t)(int)roundf((n.core.m_HookPos.y - n.pos.y) / 2.0f));
-			return h;
-		};
-
-		auto fnSimulate = [&](int parentIdx, const CNetObj_PlayerInput &inp) -> int {
-			ExNode par = pool[parentIdx];
-			CCharacter *pBot = fnSpawnBot(par.core, par.pos, par.freezeTime, cur.TickOffset + par.tick);
-			if(!pBot)
-				return -1;
-			PfChunkResult res;
-			std::vector<CNetObj_PlayerInput> oneInput(1, inp);
-			PfSimulateChunk(&FutureWorld, LocalID, pBot, oneInput,
-				RootStartTick + cur.TickOffset + par.tick, res,
-				m_pForbiddenGrid, PfCustomFinishSimGrid());
-			simsUsed++;
-			if(res.died && !res.reachedFinish)
-				return -1;
-			const bool parentBlocked = pool[parentIdx].blocked;
-			const bool thisBlocked = res.freezeTicks > 0;
-			ExNode ch;
-			ch.core = par.core;
-			ch.core.m_Pos = res.endPos;
-			ch.core.m_Vel = res.endVel;
-			ch.core.m_HookState = res.endHookState;
-			ch.core.m_HookPos = res.endHookPos;
-			ch.core.m_HookDir = res.endHookDir;
-			ch.core.m_HookTick = res.endHookTick;
-			ch.core.m_Jumped = res.endJumped;
-			ch.core.m_JumpedTotal = res.endJumpedTotal;
-			ch.pos = res.endPos;
-			ch.freezeTime = res.endFreezeTime;
-			ch.tick = par.tick + 1;
-			ch.score = par.score + PfScoreChunk(par.pos, res.endPos,
-				res.reachedFinish, res.died && !res.reachedFinish, par.freezeTicks + res.freezeTicks);
-			ch.freezeTicks = par.freezeTicks + res.freezeTicks;
-			ch.forbiddenTicks = par.forbiddenTicks + res.forbiddenTicks;
-			ch.blocked = parentBlocked || thisBlocked;
-			ch.parentIdx = parentIdx;
-			ch.action = inp;
-			ch.edgeSegs = res.hookSegs;
-			ch.reachedFinish = res.reachedFinish;
-			pool.push_back(std::move(ch));
-			return (int)pool.size() - 1;
-		};
-
-		std::vector<int> frontier;
-		frontier.push_back(0);
-		std::vector<int> vFinished;
-		std::vector<int> vDeadEnds;
-		bool bFinishFound = false;
-
-		for(int level = 0; level < ChunkSize && !frontier.empty(); level++)
-		{
-			std::vector<int> kids;
-			kids.reserve(frontier.size() * 12);
-			int candSum = 0;
-			int expandedParents = 0;
-			for(size_t pi = 0; pi < frontier.size(); pi++)
-			{
-				if(simsUsed >= simBudget)
-					break;
-				ExNode snap = pool[frontier[pi]];
-				CNetObj_PlayerInput cands[128];
-				int nCands = fnBuildCandidates(snap, cands);
-				if(nCands <= 0)
-				{
-					vDeadEnds.push_back(frontier[pi]);
-					continue;
-				}
-				expandedParents++;
-				candSum += nCands;
-				for(int ci = 0; ci < nCands; ci++)
-				{
-					if(simsUsed >= simBudget)
-						break;
-					int chIdx = fnSimulate(frontier[pi], cands[ci]);
-					if(chIdx < 0)
-						continue;
-					if(pool[chIdx].reachedFinish)
-					{
-						vFinished.push_back(chIdx);
-						bFinishFound = true;
-					}
-					else
-						kids.push_back(chIdx);
-				}
-			}
-			frontier.clear();
-			if(bFinishFound || kids.empty())
-				break;
-			std::sort(kids.begin(), kids.end(),
-				[&](int a, int b) { return pool[a].score > pool[b].score; });
-			std::unordered_set<uint64_t> seenKeys;
-			seenKeys.reserve(kids.size() * 2);
-			int width = 4096;
-			int levelsLeft = ChunkSize - level - 1;
-			if(levelsLeft > 0 && simsUsed < simBudget)
-			{
-				int avgBranch = pf_max(1, candSum / pf_max(1, expandedParents));
-				width = pf_clamp((simBudget - simsUsed) / (levelsLeft * avgBranch), 8, 4096);
-			}
-			for(size_t ki = 0; ki < kids.size() && (int)frontier.size() < width; ki++)
-			{
-				uint64_t key = fnStateKey(kids[ki]);
-				if(seenKeys.emplace(key).second)
-					frontier.push_back(kids[ki]);
-			}
-		}
-
-		auto fnReconstruct = [&](int idx, std::vector<CNetObj_PlayerInput> &inputsOut,
-			std::vector<vec2> &trajOut, std::vector<PfHookSeg> &segsOut) {
-			inputsOut.clear();
-			trajOut.clear();
-			segsOut.clear();
-			std::vector<int> rev;
-			for(int i = idx; i != -1; i = pool[i].parentIdx)
-				rev.push_back(i);
-			std::reverse(rev.begin(), rev.end());
-			trajOut.push_back(pool[rev[0]].pos);
-			for(size_t k = 1; k < rev.size(); k++)
-			{
-				inputsOut.push_back(pool[rev[k]].action);
-				trajOut.push_back(pool[rev[k]].pos);
-				for(const auto &hs : pool[rev[k]].edgeSegs)
-					segsOut.push_back(hs);
-			}
-		};
-
-		std::vector<int> vResults;
-		vResults.insert(vResults.end(), vFinished.begin(), vFinished.end());
-		vResults.insert(vResults.end(), vDeadEnds.begin(), vDeadEnds.end());
-		vResults.insert(vResults.end(), frontier.begin(), frontier.end());
-		const bool penOn = PfEffortFineFreeze();
-		std::sort(vResults.begin(), vResults.end(), [&](int a, int b) {
-			if(penOn && pool[a].blocked != pool[b].blocked)
-				return pool[b].blocked;
-			return pool[a].score > pool[b].score;
-		});
-
-	int pushed = 0;
-	for(size_t ri = 0; ri < vResults.size() && pushed < pushCount; ri++)
-	{
-		int idx = vResults[ri];
-		std::vector<CNetObj_PlayerInput> inputs;
-		std::vector<vec2> traj;
-		std::vector<PfHookSeg> segs;
-		fnReconstruct(idx, inputs, traj, segs);
-		if(inputs.empty())
+		CCharacter *pBot = fnSpawnBot(cur.Core, cur.Core.Pos, cur.FreezeTime, cur.TickOffset);
+		if(!pBot)
 			continue;
-		if(fnPushChild(pool[idx].core, pool[idx].freezeTime, inputs, traj, segs,
-			pf_max(1, (int)inputs.size()), PfAStarStuckPenalty(cur.Pos, pool[idx].pos), pool[idx].freezeTicks, pool[idx].forbiddenTicks, 0))
-			pushed++;
+		PfChunkResult res;
+		std::vector<CNetObj_PlayerInput> oneInput(1, aCands[ci]);
+		PfSimulateChunk(m_PfSimWorld, LocalID, pBot, oneInput,
+			RootStartTick + cur.TickOffset, res,
+			m_pForbiddenGrid, PfCustomFinishSimGrid());
+		if(res.died && !res.reachedFinish)
+			continue;
+		PfAState endCore = cur.Core;
+		endCore.Pos = res.endPos;
+		endCore.Vel = res.endVel;
+		endCore.HookState = res.endHookState;
+		endCore.HookPos = res.endHookPos;
+		endCore.HookDir = res.endHookDir;
+		endCore.HookTick = res.endHookTick;
+		endCore.Jumped = res.endJumped;
+		endCore.JumpedTotal = res.endJumpedTotal;
+		const std::vector<CNetObj_PlayerInput> emptyInputs;
+		const std::vector<vec2> emptyTraj;
+		const std::vector<PfHookSeg> emptySegs;
+		fnPushChild(endCore, res.endFreezeTime, emptyInputs, emptyTraj, emptySegs, 1, res.freezeTicks, res.forbiddenTicks, aCandCodes[ci]);
 	}
+	if(g_Config.m_KxPfAlgorithm == 1)
+	{
+		int beamK = PfEffortBeamWidth();
+		if((int)vPending.size() > beamK)
+		{
+			std::sort(vPending.begin(), vPending.end(), [](const AStarNode &a, const AStarNode &b) { return a.F < b.F; });
+			std::lock_guard<std::mutex> lock(m_PfDataMutex);
+			for(int i = beamK; i < (int)vPending.size(); i++)
+			{
+				m_PfANodes.push_back(std::move(vPending[i]));
+				m_PfABeamReserve.push_back((int)m_PfANodes.size() - 1);
+			}
+			vPending.resize(beamK);
+		}
+	}
+	fnFlushPending();
+	if(g_Config.m_KxPfAlgorithm == 1 && (int)m_PfAOpen.size() > PfEffortBeamWidth() * 4)
+	{
+		int cap = PfEffortBeamWidth() * 4;
+		std::lock_guard<std::mutex> lock(m_PfDataMutex);
+		std::sort(m_PfAOpen.begin(), m_PfAOpen.end(), [&](int x, int y) { return PfAHeapLess(m_PfANodes[x], m_PfANodes[y]); });
+		m_PfABeamReserve.insert(m_PfABeamReserve.end(), m_PfAOpen.begin() + cap, m_PfAOpen.end());
+		m_PfAOpen.resize(cap);
 	}
 
 	return 0;
 }
 
-// Build the visual path + hook segments from the cached per-node
-// trajectories along the parent chain (no re-simulation).
+// Build the visual path + hook segments along the parent chain (no
+// re-simulation): frozen nodes replay their cached per-tick trajectory,
+// single-tick nodes derive the parent.Pos → Pos segment and the grab seg.
 void CBotNet::PfAStarResimulatePath(int targetIdx)
 {
 	if(targetIdx < 0 || targetIdx >= (int)m_PfANodes.size())
@@ -994,14 +707,22 @@ void CBotNet::PfAStarResimulatePath(int targetIdx)
 
 	std::vector<vec2> newPath;
 	std::vector<PfHookSeg> newHookSegs;
-	newPath.push_back(m_PfANodes[vPathIdx[0]].Pos);
+	newPath.push_back(m_PfANodes[vPathIdx[0]].Core.Pos);
 	for(size_t i = 1; i < vPathIdx.size(); i++)
 	{
 		AStarNode &node = m_PfANodes[vPathIdx[i]];
-		for(size_t k = 1; k < node.Traj.size(); k++)
-			newPath.push_back(node.Traj[k]);
-		for(const auto &seg : node.HookSegs)
-			newHookSegs.push_back(seg);
+		if(node.PrimIdx == 0)
+		{
+			for(size_t k = 1; k < node.Traj.size(); k++)
+				newPath.push_back(node.Traj[k]);
+			for(const auto &seg : node.HookSegs)
+				newHookSegs.push_back(seg);
+			continue;
+		}
+		newPath.push_back(node.Core.Pos);
+		const AStarNode &parent = m_PfANodes[vPathIdx[i - 1]];
+		if(node.Core.HookState == HOOK_GRABBED && parent.Core.HookState != HOOK_GRABBED)
+			newHookSegs.push_back({node.Core.Pos, node.Core.HookPos});
 	}
 
 	std::lock_guard<std::mutex> lock(m_PfDataMutex);
@@ -1065,9 +786,43 @@ void CBotNet::PfAStarReconstruct()
 	m_PfFullInputs.clear();
 	for(size_t i = 1; i < vPathIdx.size(); i++)
 	{
-		AStarNode &node = m_PfANodes[vPathIdx[i]];
-		for(size_t k = 0; k < node.Inputs.size(); k++)
-			m_PfFullInputs.push_back(node.Inputs[k]);
+		const AStarNode &node = m_PfANodes[vPathIdx[i]];
+		if(node.PrimIdx == 0)
+		{
+			for(size_t k = 0; k < node.Inputs.size(); k++)
+				m_PfFullInputs.push_back(node.Inputs[k]);
+			continue;
+		}
+		const int bits = node.PrimIdx - 1;
+		const int dirIdx = bits & 3;
+		const int jump = (bits >> 2) & 1;
+		const int mode = (bits >> 3) & 3;
+		const int angleIdx = (bits >> 5) & 31;
+		const int angles = ((bits >> 10) & 63) + 1;
+		CNetObj_PlayerInput in;
+		mem_zero(&in, sizeof(in));
+		in.m_Direction = dirIdx - 1;
+		in.m_Jump = jump;
+		in.m_Hook = (mode != 0) ? 1 : 0;
+		if(mode == 0)
+		{
+			in.m_TargetX = (dirIdx - 1) * 256;
+			in.m_TargetY = -256;
+		}
+		else if(mode == 1)
+		{
+			const AStarNode &parent = m_PfANodes[vPathIdx[i - 1]];
+			in.m_TargetX = (int)(parent.Core.HookPos.x - parent.Core.Pos.x);
+			in.m_TargetY = (int)(parent.Core.HookPos.y - parent.Core.Pos.y);
+		}
+		else
+		{
+			float t = (angles <= 1) ? 0.0f : (float)angleIdx / (float)(angles - 1);
+			float angle = (-5.0f / 6.0f) * pi + t * (10.0f / 6.0f) * pi;
+			in.m_TargetX = (int)(cosf(angle) * 256.0f);
+			in.m_TargetY = (int)(sinf(angle) * 256.0f);
+		}
+		m_PfFullInputs.push_back(in);
 	}
 
 	m_PfFullInputsIdx = 0;
@@ -1075,13 +830,13 @@ void CBotNet::PfAStarReconstruct()
 	if(!vPathIdx.empty())
 	{
 		AStarNode &last = m_PfANodes[vPathIdx.back()];
-		m_PfCurPos = last.Pos;
-		m_PfCurVel = last.Core.m_Vel;
-		m_PfCurHookState = last.Core.m_HookState;
-		m_PfCurHookPos = last.Core.m_HookPos;
-		m_PfCurHookDir = last.Core.m_HookDir;
-		m_PfCurHookTick = last.Core.m_HookTick;
-		m_PfCurJumped = last.Core.m_Jumped;
+		m_PfCurPos = last.Core.Pos;
+		m_PfCurVel = last.Core.Vel;
+		m_PfCurHookState = last.Core.HookState;
+		m_PfCurHookPos = last.Core.HookPos;
+		m_PfCurHookDir = last.Core.HookDir;
+		m_PfCurHookTick = last.Core.HookTick;
+		m_PfCurJumped = last.Core.Jumped;
 		m_PfCurFreezeTime = last.FreezeTime;
 	}
 }
@@ -1107,13 +862,25 @@ void CBotNet::PfThreadWorker()
 		return;
 	}
 
+	int algo = pf_clamp(g_Config.m_KxPfAlgorithm, 0, 3);
+	if(algo == 2)
+	{
+		PfRheaWorker();
+		return;
+	}
+	if(algo == 3)
+	{
+		PfBmctsWorker();
+		return;
+	}
+
 	while(!m_PfThreadCancel.load(std::memory_order_relaxed))
 	{
 		int result = PfAStarStep();
 
 		// Live preview: often early (so the first chunk shows up fast),
 		// then throttled — the full path copy under the mutex is not free.
-		if(m_PfAExpandCount <= 8 || m_PfAExpandCount % 64 == 0)
+		if(m_PfAExpandCount <= 8 || m_PfAExpandCount % 256 == 0)
 			PfAStarUpdatePreview();
 
 		if(result == 1)
@@ -1132,6 +899,572 @@ void CBotNet::PfThreadWorker()
 		}
 	}
 
+	m_PfThreadResult.store(-1);
+	m_PfThreadRunning.store(false);
+}
+
+bool CBotNet::PfEvalSequence(const PfAState &cur, int curFreeze, int tickOffset,
+	const std::vector<CNetObj_PlayerInput> &inSeq, PfChunkResult &out)
+{
+	int LocalID = m_PfLocalID;
+	CCharacter *pBot = PfSimWorldBot(m_PfSimWorld, m_PfBaseWorld, LocalID);
+	if(!pBot)
+		return false;
+	pBot = PfSpawnSimBot(m_PfSimWorld, LocalID, cur.Pos, cur.Vel,
+		cur.HookState, cur.HookPos, cur.HookDir, cur.HookTick, curFreeze, cur.Jumped);
+	if(!pBot)
+		return false;
+	CCharacterCore c = pBot->GetCore();
+	c.m_JumpedTotal = cur.JumpedTotal;
+	pBot->SetCore(c);
+	CCharacterCore savedCore = pBot->GetCore();
+	vec2 savedPos = pBot->m_Pos;
+	int savedFreeze = pBot->m_FreezeTime;
+	PfSimulateChunk(m_PfSimWorld, LocalID, pBot, inSeq, m_PfSimStartTick + tickOffset, out,
+		m_pForbiddenGrid, PfCustomFinishSimGrid());
+	if((pBot = m_PfSimWorld->GetCharacterById(LocalID)))
+	{
+		pBot->SetCore(savedCore);
+		pBot->m_Pos = savedPos;
+		pBot->m_FreezeTime = savedFreeze;
+	}
+	return true;
+}
+
+float CBotNet::PfSeqScore(const std::vector<vec2> &vFinishes, const PfChunkResult &res, bool freezeSupport)
+{
+	if(res.died && !res.reachedFinish)
+		return -1e18f;
+	if(res.forbiddenTicks > 0)
+		return -1e18f;
+	if(!freezeSupport && res.freezeTicks > 0)
+		return -1e18f;
+	if(res.reachedFinish)
+		return 1e9f - (float)res.traj.size();
+	return -PfAStarHeuristic(res.endPos, PfNearestFinishPos(vFinishes, res.endPos));
+}
+
+void CBotNet::PfSeqApplyEnd(PfAState &st, const PfChunkResult &res)
+{
+	st.Pos = res.endPos;
+	st.Vel = res.endVel;
+	st.HookState = res.endHookState;
+	st.HookPos = res.endHookPos;
+	st.HookDir = res.endHookDir;
+	st.HookTick = res.endHookTick;
+	st.Jumped = res.endJumped;
+	st.JumpedTotal = res.endJumpedTotal;
+}
+
+void CBotNet::PfSeqAppend(std::vector<vec2> &fullTraj, std::vector<PfHookSeg> &fullSegs,
+	std::vector<CNetObj_PlayerInput> &fullInputs, const PfChunkResult &res, const std::vector<CNetObj_PlayerInput> &inSeq)
+{
+	int used = (int)res.traj.size() - 1;
+	for(int t = 0; t < used && t < (int)inSeq.size(); t++)
+		fullInputs.push_back(inSeq[t]);
+	for(size_t k = 1; k < res.traj.size(); k++)
+		fullTraj.push_back(res.traj[k]);
+	for(const PfHookSeg &s : res.hookSegs)
+		fullSegs.push_back(s);
+}
+
+void CBotNet::PfSeqFinalize(PfAState cur, int curFreeze, int tickOffset, std::vector<vec2> &fullTraj,
+	std::vector<PfHookSeg> &fullSegs, std::vector<CNetObj_PlayerInput> &fullInputs)
+{
+	std::lock_guard<std::mutex> lock(m_PfDataMutex);
+	AStarNode node;
+	node.Core = cur;
+	node.FreezeTime = curFreeze;
+	node.Grounded = false;
+	node.G = (float)tickOffset;
+	node.H = 0.0f;
+	node.F = node.G;
+	node.ParentIdx = 0;
+	node.PrimIdx = 0;
+	node.PrimTicks = 0;
+	node.TickOffset = tickOffset;
+	node.FreezeChainTicks = 0;
+	node.ForbiddenChainTicks = 0;
+	node.Traj = std::move(fullTraj);
+	node.Inputs = std::move(fullInputs);
+	node.HookSegs = std::move(fullSegs);
+	m_PfANodes.push_back(std::move(node));
+	m_PfAGoalIdx = (int)m_PfANodes.size() - 1;
+}
+
+void CBotNet::PfRheaWorker()
+{
+	const std::vector<vec2> &vFinishes = PfActiveFinishTiles();
+	int LocalID = m_PfLocalID;
+	int Pop = PfEffortRheaPop();
+	int Gens = PfEffortRheaGens();
+	int HookAngles = PfEffortHookAngles();
+	float W = PfEffortAStarWeight() / 100.0f;
+	if(W < 1.0f)
+		W = 1.0f;
+	if(W > 20.0f)
+		W = 20.0f;
+	CCollision *pColl = m_PfSimWorld->Collision();
+	float hookLength = 380.0f;
+	if(CCharacter *pBaseChar = m_PfBaseWorld->GetCharacterById(LocalID))
+	{
+		float hl = pBaseChar->GetCore().m_Tuning.m_HookLength;
+		if(hl > 1.0f && hl < 10000.0f)
+			hookLength = hl;
+	}
+	bool freezeSupport = PfEffortFreezeSupport();
+	int64_t simBudget = pf_clamp(g_Config.m_KxPfAStarNodeBudget, 1000, 100000000);
+
+	uint64_t rngState = 0x9E3779B97F4A7C15ull ^ (uint64_t)(uint32_t)m_PfSimStartTick;
+	auto rnd = [&]() -> uint64_t {
+		rngState ^= rngState << 13;
+		rngState ^= rngState >> 7;
+		rngState ^= rngState << 17;
+		return rngState;
+	};
+	auto rndInt = [&](int n) -> int { return (int)(rnd() % (uint64_t)(n > 0 ? n : 1)); };
+
+	std::vector<int> pop;
+	pop.push_back(0);
+
+	int64_t sims = 0;
+	int gens = 0;
+	bool done = false;
+	while(!done && !m_PfThreadCancel.load(std::memory_order_relaxed) && (int)m_PfANodes.size() < simBudget)
+	{
+		for(int g = 0; g < Gens && !done; g++)
+		{
+			if(pop.empty())
+				break;
+			int parentIdx = pop[0];
+			if(pop.size() > 1)
+			{
+				int a = pop[rndInt((int)pop.size())];
+				int b = pop[rndInt((int)pop.size())];
+				parentIdx = (m_PfANodes[a].F <= m_PfANodes[b].F) ? a : b;
+			}
+			AStarNode parent = m_PfANodes[parentIdx];
+			for(size_t pi = 0; pi < pop.size(); pi++)
+			{
+				if(pop[pi] == parentIdx)
+				{
+					pop.erase(pop.begin() + pi);
+					break;
+				}
+			}
+			gens++;
+			if(parent.FreezeTime > 0)
+			{
+				int ft = parent.FreezeTime;
+				std::vector<CNetObj_PlayerInput> ff(ft);
+				for(int t = 0; t < ft; t++)
+				{
+					mem_zero(&ff[t], sizeof(ff[t]));
+					ff[t].m_TargetY = -1;
+				}
+				PfChunkResult res;
+				sims++;
+				if(!PfEvalSequence(parent.Core, parent.FreezeTime, parent.TickOffset, ff, res)
+					|| (res.died && !res.reachedFinish) || res.forbiddenTicks > 0)
+					continue;
+				AStarNode child;
+				child.Core = parent.Core;
+				PfSeqApplyEnd(child.Core, res);
+				child.FreezeTime = res.endFreezeTime;
+				child.Grounded = pColl->IsOnGround(child.Core.Pos, CCharacterCore::PhysicalSize());
+				child.G = parent.G + (float)ft;
+				child.H = PfAStarHeuristic(child.Core.Pos, PfNearestFinishPos(vFinishes, child.Core.Pos));
+				child.F = child.G + W * child.H;
+				child.ParentIdx = parentIdx;
+				child.PrimIdx = 0;
+				child.PrimTicks = ft;
+				child.TickOffset = parent.TickOffset + ft;
+				child.FreezeChainTicks = parent.FreezeChainTicks + ft;
+				child.ForbiddenChainTicks = parent.ForbiddenChainTicks + res.forbiddenTicks;
+				child.Traj = std::move(res.traj);
+				child.Inputs = std::move(ff);
+				child.HookSegs = std::move(res.hookSegs);
+				{
+					std::lock_guard<std::mutex> lock(m_PfDataMutex);
+					m_PfANodes.push_back(std::move(child));
+				}
+				int childIdx = (int)m_PfANodes.size() - 1;
+				if(res.reachedFinish && (freezeSupport || child.FreezeChainTicks == 0) && child.ForbiddenChainTicks == 0)
+				{
+					m_PfAGoalIdx = childIdx;
+					done = true;
+					break;
+				}
+				pop.push_back(childIdx);
+				continue;
+			}
+			CNetObj_PlayerInput aC[128];
+			int aCodes[128];
+			int nC = PfBuildTickCandidates(parent.Core, pColl, hookLength, HookAngles, aC, aCodes);
+			for(int ci = 0; ci < nC && !done; ci++)
+			{
+				std::vector<CNetObj_PlayerInput> one(1, aC[ci]);
+				PfChunkResult res;
+				sims++;
+				if(!PfEvalSequence(parent.Core, parent.FreezeTime, parent.TickOffset, one, res))
+					continue;
+				if(res.died && !res.reachedFinish)
+					continue;
+				if(res.forbiddenTicks > 0)
+					continue;
+				if(!freezeSupport && res.freezeTicks > 0)
+					continue;
+				PfAState endCore = parent.Core;
+				PfSeqApplyEnd(endCore, res);
+				bool endGrounded = pColl->IsOnGround(endCore.Pos, CCharacterCore::PhysicalSize());
+				float newG = parent.G + 1.0f;
+				uint64_t key = PfAStarKey(endCore, res.endFreezeTime, endGrounded);
+				auto it = m_PfABestG.find(key);
+				if(it != m_PfABestG.end() && it->second <= newG)
+					continue;
+				m_PfABestG[key] = newG;
+				AStarNode child;
+				child.Core = endCore;
+				child.FreezeTime = res.endFreezeTime;
+				child.Grounded = endGrounded;
+				child.G = newG;
+				child.H = PfAStarHeuristic(endCore.Pos, PfNearestFinishPos(vFinishes, endCore.Pos));
+				child.F = child.G + W * child.H;
+				child.ParentIdx = parentIdx;
+				child.PrimIdx = aCodes[ci];
+				child.PrimTicks = 1;
+				child.TickOffset = parent.TickOffset + 1;
+				child.FreezeChainTicks = parent.FreezeChainTicks + res.freezeTicks;
+				child.ForbiddenChainTicks = parent.ForbiddenChainTicks + res.forbiddenTicks;
+				if(child.H < m_PfABestH.load(std::memory_order_relaxed))
+					m_PfABestH.store(child.H, std::memory_order_relaxed);
+				{
+					std::lock_guard<std::mutex> lock(m_PfDataMutex);
+					m_PfANodes.push_back(std::move(child));
+				}
+				int childIdx = (int)m_PfANodes.size() - 1;
+				if(res.reachedFinish && (freezeSupport || child.FreezeChainTicks == 0) && child.ForbiddenChainTicks == 0)
+				{
+					m_PfAGoalIdx = childIdx;
+					done = true;
+					break;
+				}
+				pop.push_back(childIdx);
+			}
+		}
+		m_PfAExpandCount = gens;
+		if(!done)
+		{
+			std::sort(pop.begin(), pop.end(), [&](int a, int b) { return m_PfANodes[a].F < m_PfANodes[b].F; });
+			if((int)pop.size() > Pop)
+				pop.resize(Pop);
+			if(pop.empty())
+				break;
+		}
+		if(!done && !pop.empty() && gens % 256 == 0)
+			PfAStarResimulatePath(pop[0]);
+		if(!done && gens % 4096 == 0 && gens > 0)
+			dbg_msg("pathfinder", "RHEA progress: %d generations, %lld sims, %zu nodes", gens, (long long)sims, m_PfANodes.size());
+	}
+	if(done)
+	{
+		dbg_msg("pathfinder", "RHEA done: %d ticks (%lld sims, %zu nodes)", m_PfANodes[m_PfAGoalIdx].TickOffset, (long long)sims, m_PfANodes.size());
+		m_PfThreadResult.store(1);
+		m_PfThreadRunning.store(false);
+		return;
+	}
+	dbg_msg("pathfinder", "RHEA stopped: %lld sims, %zu nodes", (long long)sims, m_PfANodes.size());
+	m_PfThreadResult.store(-1);
+	m_PfThreadRunning.store(false);
+}
+
+void CBotNet::PfBmctsWorker()
+{
+	const std::vector<vec2> &vFinishes = PfActiveFinishTiles();
+	int LocalID = m_PfLocalID;
+	int Iters = PfEffortMctsIters();
+	int HookAngles = PfEffortHookAngles();
+	CCollision *pColl = m_PfSimWorld->Collision();
+	float hookLength = 380.0f;
+	if(CCharacter *pBaseChar = m_PfBaseWorld->GetCharacterById(LocalID))
+	{
+		float hl = pBaseChar->GetCore().m_Tuning.m_HookLength;
+		if(hl > 1.0f && hl < 10000.0f)
+			hookLength = hl;
+	}
+	bool freezeSupport = PfEffortFreezeSupport();
+	int64_t simBudget = pf_clamp(g_Config.m_KxPfAStarNodeBudget, 1000, 100000000);
+
+	uint64_t rngState = 0xC0FFEE123456789ull ^ (uint64_t)(uint32_t)m_PfSimStartTick;
+	auto rnd = [&]() -> uint64_t {
+		rngState ^= rngState << 13;
+		rngState ^= rngState >> 7;
+		rngState ^= rngState << 17;
+		return rngState;
+	};
+	auto rndInt = [&](int n) -> int { return (int)(rnd() % (uint64_t)(n > 0 ? n : 1)); };
+
+	struct BNode
+	{
+		int parent;
+		int depth;
+		std::vector<CNetObj_PlayerInput> in;
+		PfAState st;
+		int freeze;
+		int nCand;
+		int chainFreeze;
+		int chainForbidden;
+		double sum;
+		int visits;
+		std::vector<int> children;
+	};
+	std::vector<BNode> nodes;
+	BNode rootNode;
+	rootNode.parent = -1;
+	rootNode.depth = 0;
+	rootNode.st = m_PfANodes[0].Core;
+	rootNode.freeze = m_PfANodes[0].FreezeTime;
+	rootNode.nCand = -1;
+	rootNode.chainFreeze = 0;
+	rootNode.chainForbidden = 0;
+	rootNode.sum = 0.0;
+	rootNode.visits = 0;
+	nodes.push_back(rootNode);
+
+	int64_t sims = 0;
+	int iters = 0;
+	bool done = false;
+	std::vector<CNetObj_PlayerInput> winPath;
+	int bestLeaf = -1;
+	double bestLeafScore = -1e300;
+	auto buildPreview = [&](int leafIdx) {
+		std::vector<int> chain;
+		for(int b = leafIdx; b >= 0; b = nodes[b].parent)
+			chain.push_back(b);
+		std::reverse(chain.begin(), chain.end());
+		std::vector<vec2> path;
+		std::vector<PfHookSeg> segs;
+		path.push_back(nodes[0].st.Pos);
+		for(size_t i = 1; i < chain.size(); i++)
+		{
+			const BNode &c = nodes[chain[i]];
+			const BNode &p = nodes[chain[i - 1]];
+			path.push_back(c.st.Pos);
+			if(c.st.HookState == HOOK_GRABBED && p.st.HookState != HOOK_GRABBED)
+				segs.push_back({c.st.Pos, c.st.HookPos});
+		}
+		std::lock_guard<std::mutex> lock(m_PfDataMutex);
+		m_PfVPath = std::move(path);
+		m_PfVHookSegs = std::move(segs);
+	};
+
+	while(!done && !m_PfThreadCancel.load(std::memory_order_relaxed) && (int)nodes.size() < simBudget)
+	{
+		for(int it = 0; it < Iters && !done; it++)
+		{
+			if(m_PfThreadCancel.load(std::memory_order_relaxed) || (int)nodes.size() >= simBudget)
+				break;
+			int node = 0;
+			while(true)
+			{
+				int curFreeze = nodes[node].freeze;
+				int curDepth = nodes[node].depth;
+				PfAState curSt = nodes[node].st;
+				if(curFreeze > 0)
+				{
+					if(!nodes[node].children.empty())
+					{
+						node = nodes[node].children[0];
+						continue;
+					}
+					std::vector<CNetObj_PlayerInput> edge(curFreeze);
+					for(int t = 0; t < curFreeze; t++)
+					{
+						mem_zero(&edge[t], sizeof(edge[t]));
+						edge[t].m_TargetY = -1;
+					}
+					PfChunkResult r1;
+					sims++;
+					if(!PfEvalSequence(curSt, curFreeze, curDepth, edge, r1))
+						break;
+					BNode ch;
+					ch.parent = node;
+					ch.depth = curDepth + (int)edge.size();
+					ch.in = std::move(edge);
+					ch.st = curSt;
+					PfSeqApplyEnd(ch.st, r1);
+					ch.freeze = r1.endFreezeTime;
+					ch.nCand = -1;
+					ch.chainFreeze = nodes[node].chainFreeze + curFreeze;
+					ch.chainForbidden = nodes[node].chainForbidden + r1.forbiddenTicks;
+					ch.sum = 0.0;
+					ch.visits = 0;
+					nodes.push_back(std::move(ch));
+					int childIdx = (int)nodes.size() - 1;
+					nodes[node].children.push_back(childIdx);
+					if(r1.reachedFinish && (freezeSupport || nodes[childIdx].chainFreeze == 0) && nodes[childIdx].chainForbidden == 0)
+					{
+						for(int b = childIdx; b >= 0; b = nodes[b].parent)
+						{
+							nodes[b].sum += 1e6;
+							nodes[b].visits++;
+						}
+						winPath.clear();
+						for(int b = childIdx; b > 0; b = nodes[b].parent)
+							winPath.insert(winPath.begin(), nodes[b].in.begin(), nodes[b].in.end());
+						done = true;
+					}
+					else if((r1.died && !r1.reachedFinish) || r1.forbiddenTicks > 0 || nodes[childIdx].chainForbidden > 0 || (!freezeSupport && nodes[childIdx].chainFreeze > 0))
+					{
+						for(int b = childIdx; b >= 0; b = nodes[b].parent)
+						{
+							nodes[b].sum += -1e5;
+							nodes[b].visits++;
+						}
+					}
+					else
+					{
+						double sc = (double)PfSeqScore(vFinishes, r1, freezeSupport);
+						for(int b = childIdx; b >= 0; b = nodes[b].parent)
+						{
+							nodes[b].sum += sc;
+							nodes[b].visits++;
+						}
+						if(sc > bestLeafScore)
+						{
+							bestLeafScore = sc;
+							bestLeaf = childIdx;
+						}
+					}
+					break;
+				}
+				int nCand = nodes[node].nCand;
+				if(nCand < 0)
+				{
+					CNetObj_PlayerInput aTmp[128];
+					nCand = PfBuildTickCandidates(curSt, pColl, hookLength, HookAngles, aTmp, nullptr);
+					nodes[node].nCand = nCand;
+				}
+				if(nCand == 0)
+				{
+					for(int b = node; b >= 0; b = nodes[b].parent)
+					{
+						nodes[b].sum += -1e5;
+						nodes[b].visits++;
+					}
+					break;
+				}
+				if((int)nodes[node].children.size() < nCand)
+				{
+					CNetObj_PlayerInput aC[128];
+					PfBuildTickCandidates(curSt, pColl, hookLength, HookAngles, aC, nullptr);
+					int tried = (int)nodes[node].children.size();
+					int pick = tried + rndInt(nCand - tried);
+					std::swap(aC[tried], aC[pick]);
+					std::vector<CNetObj_PlayerInput> edge(1, aC[tried]);
+					PfChunkResult r1;
+					sims++;
+					if(!PfEvalSequence(curSt, curFreeze, curDepth, edge, r1))
+						break;
+					BNode ch;
+					ch.parent = node;
+					ch.depth = curDepth + 1;
+					ch.in = std::move(edge);
+					ch.st = curSt;
+					PfSeqApplyEnd(ch.st, r1);
+					ch.freeze = r1.endFreezeTime;
+					ch.nCand = -1;
+					ch.chainFreeze = nodes[node].chainFreeze + r1.freezeTicks;
+					ch.chainForbidden = nodes[node].chainForbidden + r1.forbiddenTicks;
+					ch.sum = 0.0;
+					ch.visits = 0;
+					nodes.push_back(std::move(ch));
+					int childIdx = (int)nodes.size() - 1;
+					nodes[node].children.push_back(childIdx);
+					if(r1.reachedFinish && (freezeSupport || nodes[childIdx].chainFreeze == 0) && nodes[childIdx].chainForbidden == 0)
+					{
+						for(int b = childIdx; b >= 0; b = nodes[b].parent)
+						{
+							nodes[b].sum += 1e6;
+							nodes[b].visits++;
+						}
+						winPath.clear();
+						for(int b = childIdx; b > 0; b = nodes[b].parent)
+							winPath.insert(winPath.begin(), nodes[b].in.begin(), nodes[b].in.end());
+						done = true;
+					}
+					else if((r1.died && !r1.reachedFinish) || r1.forbiddenTicks > 0 || nodes[childIdx].chainForbidden > 0 || (!freezeSupport && nodes[childIdx].chainFreeze > 0))
+					{
+						for(int b = childIdx; b >= 0; b = nodes[b].parent)
+						{
+							nodes[b].sum += -1e5;
+							nodes[b].visits++;
+						}
+					}
+					else
+					{
+						double sc = (double)PfSeqScore(vFinishes, r1, freezeSupport);
+						for(int b = childIdx; b >= 0; b = nodes[b].parent)
+						{
+							nodes[b].sum += sc;
+							nodes[b].visits++;
+						}
+						if(sc > bestLeafScore)
+						{
+							bestLeafScore = sc;
+							bestLeaf = childIdx;
+						}
+					}
+					break;
+				}
+				float logN = logf((float)nodes[node].visits + 1.0f);
+				double bestU = -1e300;
+				int bestChild = -1;
+				for(int cIdx : nodes[node].children)
+				{
+					const BNode &c = nodes[cIdx];
+					double exploit = (c.visits > 0) ? c.sum / (double)c.visits : 1e18;
+					double explore = 1.4 * sqrtf(logN / (float)(c.visits > 0 ? c.visits : 1));
+					double u = exploit + explore;
+					if(u > bestU)
+					{
+						bestU = u;
+						bestChild = cIdx;
+					}
+				}
+				if(bestChild < 0)
+					break;
+				node = bestChild;
+			}
+			iters++;
+		}
+		m_PfAExpandCount = iters;
+		if(!done && bestLeaf >= 0)
+			buildPreview(bestLeaf);
+	}
+	if(done)
+	{
+		PfChunkResult res;
+		if(PfEvalSequence(m_PfANodes[0].Core, m_PfANodes[0].FreezeTime, 0, winPath, res) && res.reachedFinish)
+		{
+			std::vector<vec2> fullTraj;
+			fullTraj.push_back(m_PfANodes[0].Core.Pos);
+			std::vector<PfHookSeg> fullSegs;
+			std::vector<CNetObj_PlayerInput> fullInputs;
+			PfSeqAppend(fullTraj, fullSegs, fullInputs, res, winPath);
+			int totalTicks = (int)res.traj.size() - 1;
+			PfAState endSt = m_PfANodes[0].Core;
+			PfSeqApplyEnd(endSt, res);
+			PfSeqFinalize(endSt, res.endFreezeTime, totalTicks, fullTraj, fullSegs, fullInputs);
+			dbg_msg("pathfinder", "BMCTS done: %d ticks (%lld sims)", totalTicks, (long long)sims);
+			m_PfThreadResult.store(1);
+			m_PfThreadRunning.store(false);
+			return;
+		}
+	}
+	if(bestLeaf >= 0)
+		buildPreview(bestLeaf);
+	dbg_msg("pathfinder", "BMCTS stopped: %lld sims, %d tree nodes", (long long)sims, (int)nodes.size());
 	m_PfThreadResult.store(-1);
 	m_PfThreadRunning.store(false);
 }
