@@ -146,6 +146,7 @@ static const char *const g_ABRulesOpts[] = {"None", "Insert line", "Raycast"};
 static const char *const g_ABTeamOpts[] = {"Both", "War", "My"};
 static const char *const g_ABFriendOpts[] = {"Both", "Ignore", "Only"};
 static const char *const g_ABDummyOpts[] = {"Both", "Ignore", "Only"};
+static const char *const g_ABTargetsFilterOpts[] = {"Both", "Only", "Ignore"};
 static const char *const g_ABFreezeOpts[] = {"Both", "Freeze", "No freeze"};
 static const char *const g_ABPriorityOpts[] = {"Nearest FOV", "Nearest Aim", "Nearest to me"};
 // v1.56.83: AimBot expandable — 15 children.
@@ -165,9 +166,11 @@ static SRow g_AimBotChildren[] = {
         {ERowType::Dropdown, "AB Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTeamOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "AB Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "AB Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "Clanmate filter", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "AB Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "AB Priority", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABPriorityOpts, 3, 0, nullptr, 0},
-        {ERowType::Input, "Targets Filter", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "Targets filter", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0},
+        {ERowType::Input, "Targets IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0},
 };
 // v1.56.86: TriggerBot expandable — 17 children (no Hook, has Trigger + Trigger mode + Latency).
 static SRow g_TriggerBotChildren[] = {
@@ -185,9 +188,11 @@ static SRow g_TriggerBotChildren[] = {
         {ERowType::Dropdown, "TB Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTeamOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "TB Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "TB Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "Clanmate filter", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "TB Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "TB Priority", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABPriorityOpts, 3, 0, nullptr, 0},
-        {ERowType::Input, "Targets Filter", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "Targets filter", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0},
+        {ERowType::Input, "Targets IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0},
 };
 // v1.56.90: Dummies expandable — dummy connect/disconnect/switch buttons.
 // MAX_DUMMIES=8 (D1..D7, index 0 = main). Layout: Connect/Disconnect button +
@@ -249,8 +254,8 @@ static SRow g_FunctionsRows[] = {
         {ERowType::Expandable, "Block", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BlockChildren, 37},
         {ERowType::Toggle, "Random Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         // v1.56.83: AimBot + TriggerBot expandables
-        {ERowType::Expandable, "AimBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AimBotChildren, 17},
-        {ERowType::Expandable, "TriggerBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TriggerBotChildren, 17},
+        {ERowType::Expandable, "AimBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AimBotChildren, 19},
+        {ERowType::Expandable, "TriggerBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TriggerBotChildren, 19},
         // Fly sub-section
         {ERowType::Toggle, "Preserve input", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Expandable, "Custom latency", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CustomLatencyChildren, 1},
@@ -314,11 +319,13 @@ static SRow g_EspChildren[] = {
         {ERowType::Dropdown, "ESP Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTeamOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "ESP Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "ESP Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "ESP Clanmate", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "ESP Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "ESP Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_EspModeOpts, 2, 0, nullptr, 0},
         {ERowType::Slider, "ESP X", nullptr, false, false, 0.0f, 7680.0f, 1.0f, 0.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "ESP Y", nullptr, false, false, 0.0f, 4320.0f, 1.0f, 0.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Targets Filter", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "ESP Targets filter", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0},
+        {ERowType::Input, "Targets IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0},
 };
 // v1.56.121: "Basic Avoid Freeze" expandable.
 static SRow g_BasicAvoidFreezeChildren[] = {
@@ -339,7 +346,7 @@ static SRow g_AdvancedRows[] = {
         {ERowType::Expandable, "Trajectory", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TrajectoryChildren, 7},
         {ERowType::Expandable, "Laser unfreeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LaserUnfreezeChildren, 7},
         {ERowType::Expandable, "Fake Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_FakeAimChildren, 3},
-        {ERowType::Expandable, "ESP", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_EspChildren, 10},
+        {ERowType::Expandable, "ESP", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_EspChildren, 12},
         {ERowType::Expandable, "Basic Avoid Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BasicAvoidFreezeChildren, 12},
 };
 
@@ -788,9 +795,20 @@ static bool AimBotChildVisible(const SRow *pChildren, int childCount, int idx)
                 }
         }
         const bool isRaycastMode = (rulesIdx == 2);
+        int targetsIdx = 0;
+        for(int i = 0; i < childCount; ++i)
+        {
+                if(str_comp(pChildren[i].pName, "Targets filter") == 0)
+                {
+                        targetsIdx = pChildren[i].valueIdx;
+                        break;
+                }
+        }
         // Raycast AB fields hidden when Rules != 2
         if(str_comp(row.pName, "Use raycast angle (AB)") == 0)
                 return isRaycastMode;
+        if(str_comp(row.pName, "Targets IDs") == 0 || str_comp(row.pName, "Untargets IDs") == 0)
+                return targetsIdx != 0;
         return true;
 }
 
@@ -799,7 +817,18 @@ static bool TriggerBotChildVisible(const SRow *pChildren, int childCount, int id
 {
         if(idx < 0 || idx >= childCount)
                 return false;
-        (void)pChildren;
+        const SRow &row = pChildren[idx];
+        int targetsIdx = 0;
+        for(int i = 0; i < childCount; ++i)
+        {
+                if(str_comp(pChildren[i].pName, "Targets filter") == 0)
+                {
+                        targetsIdx = pChildren[i].valueIdx;
+                        break;
+                }
+        }
+        if(str_comp(row.pName, "Targets IDs") == 0 || str_comp(row.pName, "Untargets IDs") == 0)
+                return targetsIdx != 0;
         return true;
 }
 
@@ -833,6 +862,17 @@ static bool EspChildVisible(const SRow *pChildren, int childCount, int idx)
                 return modeIdx == 1; // Screen coordinates
         if(str_comp(row.pName, "Speed") == 0)
                 return styleIdx == 2 || styleIdx == 3; // Dotted line / Dotted Arrow
+        int targetsIdx = 0;
+        for(int i = 0; i < childCount; ++i)
+        {
+                if(str_comp(pChildren[i].pName, "ESP Targets filter") == 0)
+                {
+                        targetsIdx = pChildren[i].valueIdx;
+                        break;
+                }
+        }
+        if(str_comp(row.pName, "Targets IDs") == 0 || str_comp(row.pName, "Untargets IDs") == 0)
+                return targetsIdx != 0;
         return true;
 }
 // v1.56.107: Spoofer — "Custom client name" visible only when preset=Custom (3).
@@ -2264,8 +2304,13 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                 child.valueIdx = g_Config.m_KxEspFriendFilter;
                                         else if(str_comp(child.pName, "ESP Dummy") == 0)
                                                 child.valueIdx = g_Config.m_KxEspDummyFilter;
-                                        else if(str_comp(child.pName, "Targets Filter") == 0 && str_comp(row.pName, "ESP") == 0)
+                                        else if(str_comp(child.pName, "ESP Clanmate") == 0)
+                                                child.valueIdx = g_Config.m_KxEspClanmateFilter;
+                                        else if(str_comp(child.pName, "ESP Targets filter") == 0)
+                                                child.valueIdx = g_Config.m_KxEspTargetsFilterMode;
+                                        else if((str_comp(child.pName, "Targets IDs") == 0 || str_comp(child.pName, "Untargets IDs") == 0) && str_comp(row.pName, "ESP") == 0)
                                         {
+                                                child.pName = (g_Config.m_KxEspTargetsFilterMode == 2) ? "Untargets IDs" : "Targets IDs";
                                                 if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
                                                 {
                                                         str_copy(child.m_aInputBuf, g_Config.m_KxEspTargetsFilter, sizeof(child.m_aInputBuf));
@@ -2391,12 +2436,17 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                         ch.on = s.m_Predict;
                                                 else if(str_comp(ch.pName, "AB Dummy") == 0)
                                                         ch.valueIdx = s.m_DummyFilter;
+                                                else if(str_comp(ch.pName, "Clanmate filter") == 0)
+                                                        ch.valueIdx = s.m_ClanmateFilter;
                                                 else if(str_comp(ch.pName, "AB Freeze") == 0)
                                                         ch.valueIdx = s.m_FreezeFilter;
                                                 else if(str_comp(ch.pName, "AB Priority") == 0)
                                                         ch.valueIdx = s.m_Priority;
-                                                else if(str_comp(ch.pName, "Targets Filter") == 0)
+                                                else if(str_comp(ch.pName, "Targets filter") == 0)
+                                                        ch.valueIdx = s.m_TargetsFilter;
+                                                else if(str_comp(ch.pName, "Targets IDs") == 0 || str_comp(ch.pName, "Untargets IDs") == 0)
                                                 {
+                                                        ch.pName = (s.m_TargetsFilter == 2) ? "Untargets IDs" : "Targets IDs";
                                                         if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
                                                         {
                                                                 str_copy(ch.m_aInputBuf, s.m_aTargetsFilter, sizeof(ch.m_aInputBuf));
@@ -2446,12 +2496,17 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                         ch.valueIdx = s.m_FriendFilter;
                                                 else if(str_comp(ch.pName, "TB Dummy") == 0)
                                                         ch.valueIdx = s.m_DummyFilter;
+                                                else if(str_comp(ch.pName, "Clanmate filter") == 0)
+                                                        ch.valueIdx = s.m_ClanmateFilter;
                                                 else if(str_comp(ch.pName, "TB Freeze") == 0)
                                                         ch.valueIdx = s.m_FreezeFilter;
                                                 else if(str_comp(ch.pName, "TB Priority") == 0)
                                                         ch.valueIdx = s.m_Priority;
-                                                else if(str_comp(ch.pName, "Targets Filter") == 0)
+                                                else if(str_comp(ch.pName, "Targets filter") == 0)
+                                                        ch.valueIdx = s.m_TargetsFilter;
+                                                else if(str_comp(ch.pName, "Targets IDs") == 0 || str_comp(ch.pName, "Untargets IDs") == 0)
                                                 {
+                                                        ch.pName = (s.m_TargetsFilter == 2) ? "Untargets IDs" : "Targets IDs";
                                                         if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
                                                         {
                                                                 str_copy(ch.m_aInputBuf, s.m_aTargetsFilter, sizeof(ch.m_aInputBuf));
@@ -4774,8 +4829,12 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                                                 g_Config.m_KxEspFriendFilter = o;
                                         else if(str_comp(target.pName, "ESP Dummy") == 0)
                                                 g_Config.m_KxEspDummyFilter = o;
+                                        else if(str_comp(target.pName, "ESP Clanmate") == 0)
+                                                g_Config.m_KxEspClanmateFilter = o;
                                         else if(str_comp(target.pName, "ESP Freeze") == 0)
                                                 g_Config.m_KxEspFreezeFilter = o;
+                                        else if(str_comp(target.pName, "ESP Targets filter") == 0)
+                                                g_Config.m_KxEspTargetsFilterMode = o;
                                         else if(str_comp(target.pName, "ESP Mode") == 0)
                                                 g_Config.m_KxEspMode = o;
                                         else if(str_comp(target.pName, "ESP Style") == 0)
@@ -4888,8 +4947,12 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                                 g_Config.m_KxEspFriendFilter = o;
                                                         else if(str_comp(target.pName, "ESP Dummy") == 0)
                                                                 g_Config.m_KxEspDummyFilter = o;
+                                                        else if(str_comp(target.pName, "ESP Clanmate") == 0)
+                                                                g_Config.m_KxEspClanmateFilter = o;
                                                         else if(str_comp(target.pName, "ESP Freeze") == 0)
                                                                 g_Config.m_KxEspFreezeFilter = o;
+                                                        else if(str_comp(target.pName, "ESP Targets filter") == 0)
+                                                                g_Config.m_KxEspTargetsFilterMode = o;
                                                         else if(str_comp(target.pName, "ESP Mode") == 0)
                                                                 g_Config.m_KxEspMode = o;
                                                         else if(str_comp(target.pName, "ESP Style") == 0)
@@ -4916,10 +4979,14 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                                                         s.m_FriendFilter = o;
                                                                                 else if(str_comp(target.pName, "AB Dummy") == 0)
                                                                                         s.m_DummyFilter = o;
+                                                                                else if(str_comp(target.pName, "Clanmate filter") == 0)
+                                                                                        s.m_ClanmateFilter = o;
                                                                                 else if(str_comp(target.pName, "AB Freeze") == 0)
                                                                                         s.m_FreezeFilter = o;
                                                                                 else if(str_comp(target.pName, "AB Priority") == 0)
                                                                                         s.m_Priority = o;
+                                                                                else if(str_comp(target.pName, "Targets filter") == 0)
+                                                                                        s.m_TargetsFilter = o;
                                                                         }
                                                                 }
                                                         }
@@ -4947,10 +5014,14 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                                                         s.m_FriendFilter = o;
                                                                                 else if(str_comp(target.pName, "TB Dummy") == 0)
                                                                                         s.m_DummyFilter = o;
+                                                                                else if(str_comp(target.pName, "Clanmate filter") == 0)
+                                                                                        s.m_ClanmateFilter = o;
                                                                                 else if(str_comp(target.pName, "TB Freeze") == 0)
                                                                                         s.m_FreezeFilter = o;
                                                                                 else if(str_comp(target.pName, "TB Priority") == 0)
                                                                                         s.m_Priority = o;
+                                                                                else if(str_comp(target.pName, "Targets filter") == 0)
+                                                                                        s.m_TargetsFilter = o;
                                                                         }
                                                                 }
                                                         }
@@ -5409,7 +5480,7 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
                 str_copy(g_Config.m_KxSpoofClientVersion, pRow->m_aInputBuf, sizeof(g_Config.m_KxSpoofClientVersion));
         else if(str_comp(pRow->pName, "Git hash value") == 0)
                 str_copy(g_Config.m_KxSpoofGitHash, pRow->m_aInputBuf, sizeof(g_Config.m_KxSpoofGitHash));
-        else if(str_comp(pRow->pName, "Targets Filter") == 0 && m_InputPanel >= 0 && m_InputPanel < NUM_PANELS && m_InputRow >= 0 && m_InputRow < g_Panels[m_InputPanel].rowCount)
+        else if((str_comp(pRow->pName, "Targets IDs") == 0 || str_comp(pRow->pName, "Untargets IDs") == 0) && m_InputPanel >= 0 && m_InputPanel < NUM_PANELS && m_InputRow >= 0 && m_InputRow < g_Panels[m_InputPanel].rowCount)
         {
                 const char *pOwner = g_Panels[m_InputPanel].pRows[m_InputRow].pName;
                 CAimBot &ab = GameClient()->m_AimBot;

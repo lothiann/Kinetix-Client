@@ -60,7 +60,11 @@ bool CEsp::PassesFilters(int ClientId, int LocalId) const
 		return false;
 	if(g_Config.m_KxEspDummyFilter == 2 && !isDummy)
 		return false;
-	if(g_Config.m_KxEspTargetsFilter[0] != '\0')
+	if(g_Config.m_KxEspClanmateFilter == 1 && str_comp(pGame->m_aClients[ClientId].m_aClan, pGame->m_aClients[LocalId].m_aClan) == 0)
+		return false;
+	if(g_Config.m_KxEspClanmateFilter == 2 && str_comp(pGame->m_aClients[ClientId].m_aClan, pGame->m_aClients[LocalId].m_aClan) != 0)
+		return false;
+	if(g_Config.m_KxEspTargetsFilterMode != 0)
 	{
 		bool found = false;
 		bool anyValid = false;
@@ -84,7 +88,9 @@ bool CEsp::PassesFilters(int ClientId, int LocalId) const
 			while(*pIds && *pIds != ' ' && *pIds != ',' && *pIds != ';')
 				pIds++;
 		}
-		if(anyValid && !found)
+		if(g_Config.m_KxEspTargetsFilterMode == 1 && anyValid && !found)
+			return false;
+		if(g_Config.m_KxEspTargetsFilterMode == 2 && anyValid && found)
 			return false;
 	}
 	// Freeze filter: 0=both 1=freeze 2=no_freeze

@@ -38,6 +38,8 @@ public:
                 int m_TeamFilter = 0; // 0=both 1=war 2=my
                 int m_FriendFilter = 0; // 0=both 1=ignore 2=only
                 int m_DummyFilter = 0; // 0=both 1=ignore 2=only
+                int m_ClanmateFilter = 0; // 0=both 1=ignore 2=only
+                int m_TargetsFilter = 0; // 0=both 1=only 2=ignore
                 char m_aTargetsFilter[64] = "";
                 int m_FreezeFilter = 0; // 0=both 1=freeze 2=no_freeze
                 int m_Priority = 0; // 0=nearest_fov 1=nearest_aim 2=nearest_to_me

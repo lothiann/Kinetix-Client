@@ -155,7 +155,12 @@ bool CAimBot::PassesFilters(int ClientId, int LocalId, const SWeaponSettings &Se
                 return false;
         if(Settings.m_DummyFilter == 2 && !isDummy)
                 return false;
-        if(Settings.m_aTargetsFilter[0] != '\0')
+        bool isClanmate = str_comp(pGame->m_aClients[ClientId].m_aClan, pGame->m_aClients[LocalId].m_aClan) == 0;
+        if(Settings.m_ClanmateFilter == 1 && isClanmate)
+                return false;
+        if(Settings.m_ClanmateFilter == 2 && !isClanmate)
+                return false;
+        if(Settings.m_TargetsFilter != 0)
         {
                 bool found = false;
                 bool anyValid = false;
@@ -179,7 +184,9 @@ bool CAimBot::PassesFilters(int ClientId, int LocalId, const SWeaponSettings &Se
                         while(*pIds && *pIds != ' ' && *pIds != ',' && *pIds != ';')
                                 pIds++;
                 }
-                if(anyValid && !found)
+                if(Settings.m_TargetsFilter == 1 && anyValid && !found)
+                        return false;
+                if(Settings.m_TargetsFilter == 2 && anyValid && found)
                         return false;
         }
         // Freeze filter
