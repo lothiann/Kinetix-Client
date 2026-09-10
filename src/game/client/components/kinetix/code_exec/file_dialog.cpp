@@ -102,7 +102,7 @@ bool KxPickTasFile(char *pBuf, int BufSize)
 #elif defined(CONF_PLATFORM_ANDROID)
 
 #include <base/str.h>
-#include <base/system.h>
+#include <base/types.h>
 
 #include <SDL.h>
 #include <jni.h>
@@ -166,7 +166,9 @@ bool KxPickFilePump(int *pKind, char *pPath, int BufSize)
 	return true;
 }
 
-#else
+#endif
+
+#if !defined(CONF_FAMILY_WINDOWS)
 bool KxPickScriptFile(char *pBuf, int BufSize)
 {
 	(void)pBuf;
