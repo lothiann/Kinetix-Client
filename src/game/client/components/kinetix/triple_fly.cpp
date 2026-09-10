@@ -262,7 +262,7 @@ void CBotNet::UpdateTripleFly()
                 if(canHammerNow)
                 {
                         const int FireDelayTicks = pGame->m_aTuning[actingD].GetWeaponFireDelay(WEAPON_HAMMER) * Client()->GameTickSpeed();
-                        if(Client()->GameTick(actingD) - pGame->m_aDummyLastFireTick[actingD] < FireDelayTicks)
+                        if(Client()->GameTick(g_Config.m_ClDummy) - pGame->m_aDummyLastFireTick[actingD] < FireDelayTicks)
                                 canHammerNow = false;
                 }
                 if(canHammerNow)

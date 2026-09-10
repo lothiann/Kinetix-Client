@@ -737,7 +737,7 @@ int CGameClient::OnSnapInput(int *pData, int Conn, bool Force)
                 if(autoFly && canHammerNow)
                 {
                         const int FireDelayTicks = m_aTuning[Conn].GetWeaponFireDelay(WEAPON_HAMMER) * Client()->GameTickSpeed();
-                        if(Client()->GameTick(Conn) - m_aDummyLastFireTick[Conn] < FireDelayTicks)
+                        if(Client()->GameTick(g_Config.m_ClDummy) - m_aDummyLastFireTick[Conn] < FireDelayTicks)
                                 canHammerNow = false;
                 }
 
@@ -777,7 +777,7 @@ int CGameClient::OnSnapInput(int *pData, int Conn, bool Force)
                         // DDNet — aim is recomputed only when actually hammering, not
                         // every tick, so dummy doesn't jitter toward player between hits).
                         m_aDummyFire[Conn]++;
-                        m_aDummyLastFireTick[Conn] = Client()->GameTick(Conn);
+                        m_aDummyLastFireTick[Conn] = Client()->GameTick(g_Config.m_ClDummy);
                         m_aHammerInput[Conn].m_Fire = (m_aHammerInput[Conn].m_Fire + 1) | 1;
                         const vec2 Dir = m_LocalCharacterPos - m_aClients[m_aLocalIds[Conn]].m_Predicted.m_Pos;
                         m_aHammerInput[Conn].m_TargetX = (int)Dir.x;
