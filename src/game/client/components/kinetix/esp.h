@@ -43,6 +43,18 @@ private:
 
 	// Draw arrowhead at p1 (2 short lines forming a V pointing toward p1).
 	void DrawArrowhead(const vec2 &p0, const vec2 &p1, ColorRGBA col, float halfWidth) const;
+
+	// v1.56.254: square box outline around a target (Box Style:
+	// 0=Box solid 1=Dotted box, dashes animated with Box Speed).
+	void EmitBox(const vec2 &center, int playerIndex) const;
+
+	// v1.56.256: Hitboxes component — 28x28 tile-collision square and the round
+	// trigger hitbox (radius 28, lasers/shotgun/hook) on the active dummy; with
+	// Show for others, repeated for other players (optional ESP-like filters).
+	// Style: 0=Filled (always immediate) 1=Box 2=Dotted Box (animated outline).
+	void EmitHitboxes(int LocalId) const;
+	void EmitRectShape(const vec2 &center, float halfW, float halfH, int style, int speed, int playerIndex) const;
+	void EmitCircleShape(const vec2 &center, float radius, int style, int speed, int playerIndex) const;
 };
 
 #endif // GAME_CLIENT_COMPONENTS_KINETIX_ESP_H

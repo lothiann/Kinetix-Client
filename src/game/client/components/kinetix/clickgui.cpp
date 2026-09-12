@@ -321,21 +321,51 @@ static SRow g_TrajectoryChildren[] = {
 };
 // v1.56.104: "ESP" expandable — lines from point A to all players matching filters.
 // Filter option arrays reuse the AimBot ones (identical option strings).
+// v1.56.254: renamed "ESP Style"/"Speed" to "Pointer Style"/"Pointer Speed",
+// added "Box Style"/"Box Speed" (square outline around targets), stripped the
+// redundant "ESP" prefix from child names (sync/write branches are parent-gated
+// to "ESP" so the generic names cannot collide with other panels).
+// v1.56.256: "Pointer"/"Box" visibility toggles, "X/Y Box scale" sliders, and the
+// new "Hitboxes" expandable right after ESP.
 static const char *const g_EspModeOpts[] = {"Active player", "Screen coordinates"};
 static const char *const g_EspStyleOpts[] = {"Line", "Arrow", "Dotted line", "Dotted Arrow"};
+static const char *const g_EspBoxStyleOpts[] = {"Box", "Dotted box"};
 static SRow g_EspChildren[] = {
-        {ERowType::Dropdown, "ESP Style", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_EspStyleOpts, 4, 0, nullptr, 0},
-        {ERowType::Slider, "Speed", nullptr, false, false, 0.0f, 100.0f, 1.0f, 30.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Dropdown, "ESP Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTeamOpts, 3, 0, nullptr, 0},
-        {ERowType::Dropdown, "ESP Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
-        {ERowType::Dropdown, "ESP Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 3, 0, nullptr, 0},
-        {ERowType::Dropdown, "ESP Clanmate", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
-        {ERowType::Dropdown, "ESP Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0},
-        {ERowType::Dropdown, "ESP Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_EspModeOpts, 2, 0, nullptr, 0},
-        {ERowType::Slider, "ESP X", nullptr, false, false, 0.0f, 7680.0f, 1.0f, 0.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "ESP Y", nullptr, false, false, 0.0f, 4320.0f, 1.0f, 0.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Dropdown, "ESP Targets filter", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0},
+        // v1.56.256: "Pointer"/"Box" visibility toggles.
+        {ERowType::Toggle, "Pointer", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "Pointer Style", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_EspStyleOpts, 4, 0, nullptr, 0},
+        {ERowType::Slider, "Pointer Speed", nullptr, false, false, 0.0f, 100.0f, 1.0f, 30.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Box", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "Box Style", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_EspBoxStyleOpts, 2, 0, nullptr, 0},
+        {ERowType::Slider, "Box Speed", nullptr, false, false, 0.0f, 100.0f, 1.0f, 30.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        // v1.56.256: box size scale (X/Y — box dimensions, not line width).
+        {ERowType::Slider, "X Box scale", nullptr, false, false, 10.0f, 1000.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Y Box scale", nullptr, false, false, 10.0f, 1000.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTeamOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "Clanmate", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_EspModeOpts, 2, 0, nullptr, 0},
+        {ERowType::Slider, "X", nullptr, false, false, 0.0f, 7680.0f, 1.0f, 0.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Y", nullptr, false, false, 0.0f, 4320.0f, 1.0f, 0.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "Targets filter", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0},
         {ERowType::Input, "Targets IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0},
+};
+// v1.56.256: "Hitboxes" expandable — tee tile-collision square (28x28) and the
+// round trigger hitbox (radius 28, lasers/shotgun/hook) drawn on players.
+// The two "Hitbox Style" dropdowns / "Box Speed" sliders are intentional label
+// duplicates — sync/write code disambiguates them by child index.
+static const char *const g_HitboxStyleOpts[] = {"Filled", "Box", "Dotted Box"};
+static SRow g_HitboxesChildren[] = {
+        {ERowType::Toggle, "Tee tile", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "Hitbox Style", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_HitboxStyleOpts, 3, 0, nullptr, 0},
+        {ERowType::Slider, "Box Speed", nullptr, false, false, 0.0f, 100.0f, 1.0f, 30.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Tee trigger", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "Hitbox Style", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_HitboxStyleOpts, 3, 0, nullptr, 0},
+        {ERowType::Slider, "Box Speed", nullptr, false, false, 0.0f, 100.0f, 1.0f, 30.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Show for others", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Filters", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 // v1.56.121: "Basic Avoid Freeze" expandable.
 static SRow g_BasicAvoidFreezeChildren[] = {
@@ -356,7 +386,9 @@ static SRow g_AdvancedRows[] = {
         {ERowType::Expandable, "Trajectory", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TrajectoryChildren, 7},
         {ERowType::Expandable, "Laser unfreeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LaserUnfreezeChildren, 7},
         {ERowType::Expandable, "Fake Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_FakeAimChildren, 5},
-        {ERowType::Expandable, "ESP", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_EspChildren, 12},
+        {ERowType::Expandable, "ESP", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_EspChildren, 18},
+        // v1.56.256: "Hitboxes" expandable (visual only — expand/collapse, no master toggle).
+        {ERowType::Expandable, "Hitboxes", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_HitboxesChildren, 8},
         {ERowType::Expandable, "Basic Avoid Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BasicAvoidFreezeChildren, 12},
 };
 
@@ -389,9 +421,9 @@ static SRow g_RainbowChildren[] = {
 // v1.56.210: Added Gradient toggle + Step slider per-component. Both visible
 // only when Rainbow is ON (gradient has no effect without rainbow). Speed
 // slider min lowered from 0.1 to 0 (frozen rainbow is now possible).
-static const char *const g_LineComponentOpts[] = {"AimBot", "TriggerBot", "Trajectory", "Laser Unfreeze", "Pathfinder", "ESP", "TAS"};
+static const char *const g_LineComponentOpts[] = {"AimBot", "TriggerBot", "Trajectory", "Laser Unfreeze", "Pathfinder", "ESP", "TAS", "Hitboxes"};
 static SRow g_LineRenderingChildren[] = {
-        {ERowType::Dropdown, "Component", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_LineComponentOpts, 7, 0, nullptr, 0},
+        {ERowType::Dropdown, "Component", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_LineComponentOpts, 8, 0, nullptr, 0},
         {ERowType::Input, "Line color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ffbf00", "hex...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Line size", nullptr, false, false, 0.0f, 20.0f, 1.0f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Line opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 80.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
@@ -855,30 +887,62 @@ static bool DummiesChildVisible(const SRow *pChildren, int childCount, int idx)
                 return g_Config.m_ClDummy != 0; // visible only when on a dummy
         return true;
 }
-// v1.56.104: ESP — "ESP X"/"ESP Y" visible only when ESP Mode = 1 (Screen coordinates).
-// v1.56.113: "Speed" visible only when ESP Style = 2 or 3 (Dotted line / Dotted Arrow).
+// v1.56.256: Hitboxes — "Hitbox Style"/"Box Speed" visible only when their group
+// toggle is on ("Tee tile" idx 0, "Tee trigger" idx 3); "Box Speed" also requires
+// style 2 (Dotted Box); "Show for others"/"Filters" belong to "Tee trigger".
+static bool HitboxesChildVisible(const SRow *pChildren, int childCount, int idx)
+{
+        if(idx < 0 || idx >= childCount)
+                return false;
+        const SRow &row = pChildren[idx];
+        const bool tile = pChildren[0].on;
+        const bool trigger = pChildren[3].on;
+        if(str_comp(row.pName, "Hitbox Style") == 0)
+                return idx == 1 ? tile : trigger;
+        if(str_comp(row.pName, "Box Speed") == 0)
+        {
+                if(idx == 2)
+                        return tile && pChildren[1].valueIdx == 2; // tile Dotted Box
+                return trigger && pChildren[4].valueIdx == 2; // trigger Dotted Box
+        }
+        if(str_comp(row.pName, "Show for others") == 0 || str_comp(row.pName, "Filters") == 0)
+                return trigger;
+        return true;
+}
+// v1.56.104: ESP — "X"/"Y" visible only when Mode = 1 (Screen coordinates).
+// v1.56.113: "Pointer Speed" visible only when Pointer Style = 2 or 3 (Dotted line / Dotted Arrow).
+// v1.56.254: renamed rows; "Box Speed" visible only when Box Style = 1 (Dotted box).
 static bool EspChildVisible(const SRow *pChildren, int childCount, int idx)
 {
         if(idx < 0 || idx >= childCount)
                 return false;
         const SRow &row = pChildren[idx];
+        // v1.56.256: shared dispatcher — the Hitboxes expandable reuses this gate
+        // at every call site (checked via the static children array identity).
+        if(pChildren == g_HitboxesChildren)
+                return HitboxesChildVisible(pChildren, childCount, idx);
         int modeIdx = 0;
         int styleIdx = 0;
+        int boxStyleIdx = 0;
         for(int i = 0; i < childCount; ++i)
         {
-                if(str_comp(pChildren[i].pName, "ESP Mode") == 0)
+                if(str_comp(pChildren[i].pName, "Mode") == 0)
                         modeIdx = pChildren[i].valueIdx;
-                else if(str_comp(pChildren[i].pName, "ESP Style") == 0)
+                else if(str_comp(pChildren[i].pName, "Pointer Style") == 0)
                         styleIdx = pChildren[i].valueIdx;
+                else if(str_comp(pChildren[i].pName, "Box Style") == 0)
+                        boxStyleIdx = pChildren[i].valueIdx;
         }
-        if(str_comp(row.pName, "ESP X") == 0 || str_comp(row.pName, "ESP Y") == 0)
+        if(str_comp(row.pName, "X") == 0 || str_comp(row.pName, "Y") == 0)
                 return modeIdx == 1; // Screen coordinates
-        if(str_comp(row.pName, "Speed") == 0)
+        if(str_comp(row.pName, "Pointer Speed") == 0)
                 return styleIdx == 2 || styleIdx == 3; // Dotted line / Dotted Arrow
+        if(str_comp(row.pName, "Box Speed") == 0)
+                return boxStyleIdx == 1; // Dotted box
         int targetsIdx = 0;
         for(int i = 0; i < childCount; ++i)
         {
-                if(str_comp(pChildren[i].pName, "ESP Targets filter") == 0)
+                if(str_comp(pChildren[i].pName, "Targets filter") == 0)
                 {
                         targetsIdx = pChildren[i].valueIdx;
                         break;
@@ -2025,7 +2089,38 @@ void CClickGui::OnReset()
 
 void CClickGui::OnRender()
 {
-        const bool isOpen = g_Config.m_ClClickGui != 0;
+	const bool isOpen = g_Config.m_ClClickGui != 0;
+
+	// v1.56.255: UI persistence — accent/panel colors + rainbow + blackout.
+	// Pull once after settings.cfg is loaded, push every frame so changes
+	// are written back and saved on exit.
+	{
+		static bool s_Init = false;
+		if(!s_Init)
+		{
+			s_Init = true;
+			unsigned hex = 0;
+			if(sscanf(g_Config.m_KxUiAccentColor, "%6x", &hex) == 1)
+			{
+				m_AccentColorRGBA = 0xff000000u | (hex & 0xffffff);
+				m_SavedAccentColorRGBA = m_AccentColorRGBA;
+			}
+			hex = 0;
+			if(sscanf(g_Config.m_KxUiPanelColor, "%6x", &hex) == 1)
+				m_PanelBgRGBA = 0xff000000u | (hex & 0xffffff);
+			m_RainbowEnabled = g_Config.m_KxUiRainbow != 0;
+			m_RainbowSpeed = g_Config.m_KxUiRainbowSpeed / 10.0f;
+			m_BgBlackout = g_Config.m_KxUiBlackout;
+		}
+		else
+		{
+			str_format(g_Config.m_KxUiAccentColor, sizeof(g_Config.m_KxUiAccentColor), "%06x", m_SavedAccentColorRGBA & 0xffffff);
+			str_format(g_Config.m_KxUiPanelColor, sizeof(g_Config.m_KxUiPanelColor), "%06x", m_PanelBgRGBA & 0xffffff);
+			g_Config.m_KxUiRainbow = m_RainbowEnabled ? 1 : 0;
+			g_Config.m_KxUiRainbowSpeed = (int)(m_RainbowSpeed * 10.0f + 0.5f);
+			g_Config.m_KxUiBlackout = m_BgBlackout;
+		}
+	}
 
         // v1.56.212: DPI-independent UI scale. m_UiScale = screenH / 1080 maps
         // physical pixels into the virtual 1920x1080 space used by all ClickGUI
@@ -2188,7 +2283,7 @@ void CClickGui::OnRender()
                                                                 continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childCount, c))
+if((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c))
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
         continue;
@@ -2314,16 +2409,18 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                 child.value = (float)g_Config.m_KxFakeAimDistCenter;
                                         else if(str_comp(child.pName, "Show for me") == 0)
                                                 child.on = g_Config.m_KxFakeAimShowForMe != 0;
-                                        // ESP children
-                                        else if(str_comp(child.pName, "ESP Team") == 0)
+                                        // v1.56.254: ESP children — renamed (Pointer Style/Speed, unprefixed
+                                        // filters, new Box Style/Box Speed). Renamed branches are parent-gated
+                                        // to "ESP" since the generic names now collide with other panels.
+                                        else if(str_comp(child.pName, "Team") == 0 && str_comp(row.pName, "ESP") == 0)
                                                 child.valueIdx = g_Config.m_KxEspTeamFilter;
-                                        else if(str_comp(child.pName, "ESP Friend") == 0)
+                                        else if(str_comp(child.pName, "Friend") == 0 && str_comp(row.pName, "ESP") == 0)
                                                 child.valueIdx = g_Config.m_KxEspFriendFilter;
-                                        else if(str_comp(child.pName, "ESP Dummy") == 0)
+                                        else if(str_comp(child.pName, "Dummy") == 0 && str_comp(row.pName, "ESP") == 0)
                                                 child.valueIdx = g_Config.m_KxEspDummyFilter;
-                                        else if(str_comp(child.pName, "ESP Clanmate") == 0)
+                                        else if(str_comp(child.pName, "Clanmate") == 0 && str_comp(row.pName, "ESP") == 0)
                                                 child.valueIdx = g_Config.m_KxEspClanmateFilter;
-                                        else if(str_comp(child.pName, "ESP Targets filter") == 0)
+                                        else if(str_comp(child.pName, "Targets filter") == 0 && str_comp(row.pName, "ESP") == 0)
                                                 child.valueIdx = g_Config.m_KxEspTargetsFilterMode;
                                         else if((str_comp(child.pName, "Targets IDs") == 0 || str_comp(child.pName, "Untargets IDs") == 0) && str_comp(row.pName, "ESP") == 0)
                                         {
@@ -2334,20 +2431,49 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                         child.m_InputInitialized = true;
                                                 }
                                         }
-                                        else if(str_comp(child.pName, "ESP Freeze") == 0)
+                                        else if(str_comp(child.pName, "Freeze") == 0 && str_comp(row.pName, "ESP") == 0)
                                                 child.valueIdx = g_Config.m_KxEspFreezeFilter;
-                                        else if(str_comp(child.pName, "ESP Mode") == 0)
+                                        else if(str_comp(child.pName, "Mode") == 0 && str_comp(row.pName, "ESP") == 0)
                                                 child.valueIdx = g_Config.m_KxEspMode;
-                                        else if(str_comp(child.pName, "ESP Style") == 0)
+                                        else if(str_comp(child.pName, "Pointer Style") == 0 && str_comp(row.pName, "ESP") == 0)
                                                 child.valueIdx = g_Config.m_KxEspStyle;
-                                        else if(str_comp(child.pName, "Speed") == 0 && str_comp(row.pName, "ESP") == 0)
+                                        else if(str_comp(child.pName, "Pointer Speed") == 0 && str_comp(row.pName, "ESP") == 0)
                                                 child.value = (float)g_Config.m_KxEspSpeed;
-                                        else if(str_comp(child.pName, "ESP X") == 0)
+                                        else if(str_comp(child.pName, "Box Style") == 0 && str_comp(row.pName, "ESP") == 0)
+                                                child.valueIdx = g_Config.m_KxEspBoxStyle;
+                                        else if(str_comp(child.pName, "Box Speed") == 0 && str_comp(row.pName, "ESP") == 0)
+                                                child.value = (float)g_Config.m_KxEspBoxSpeed;
+                                        // v1.56.256: ESP pointer/box toggles + box scale sliders.
+                                        else if(str_comp(child.pName, "Pointer") == 0 && str_comp(row.pName, "ESP") == 0)
+                                                child.on = g_Config.m_KxEspPointer != 0;
+                                        else if(str_comp(child.pName, "Box") == 0 && str_comp(row.pName, "ESP") == 0)
+                                                child.on = g_Config.m_KxEspBox != 0;
+                                        else if(str_comp(child.pName, "X Box scale") == 0 && str_comp(row.pName, "ESP") == 0)
+                                                child.value = (float)g_Config.m_KxEspBoxScaleX;
+                                        else if(str_comp(child.pName, "Y Box scale") == 0 && str_comp(row.pName, "ESP") == 0)
+                                                child.value = (float)g_Config.m_KxEspBoxScaleY;
+                                        // v1.56.256: Hitboxes children — the duplicated "Hitbox Style"/
+                                        // "Box Speed" rows are disambiguated by child index.
+                                        else if(str_comp(row.pName, "Hitboxes") == 0)
+                                        {
+                                                switch(c)
+                                                {
+                                                case 0: child.on = g_Config.m_KxHitboxesTeeTile != 0; break;
+                                                case 1: child.valueIdx = g_Config.m_KxHitboxesTileStyle; break;
+                                                case 2: child.value = (float)g_Config.m_KxHitboxesTileSpeed; break;
+                                                case 3: child.on = g_Config.m_KxHitboxesTeeTrigger != 0; break;
+                                                case 4: child.valueIdx = g_Config.m_KxHitboxesTriggerStyle; break;
+                                                case 5: child.value = (float)g_Config.m_KxHitboxesTriggerSpeed; break;
+                                                case 6: child.on = g_Config.m_KxHitboxesShowOthers != 0; break;
+                                                case 7: child.on = g_Config.m_KxHitboxesFilters != 0; break;
+                                                }
+                                        }
+                                        else if(str_comp(child.pName, "X") == 0 && str_comp(row.pName, "ESP") == 0)
                                                                                 {
                                                                                         child.value = (float)g_Config.m_KxEspScreenX;
                                                                                         child.max = (float)Graphics()->ScreenWidth();
                                                                                 }
-                                        else if(str_comp(child.pName, "ESP Y") == 0)
+                                        else if(str_comp(child.pName, "Y") == 0 && str_comp(row.pName, "ESP") == 0)
                                                                                 {
                                                                                         child.value = (float)g_Config.m_KxEspScreenY;
                                                                                         child.max = (float)Graphics()->ScreenHeight();
@@ -3083,6 +3209,7 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                 case KX_LINE_PATHFINDER: child.on = g_Config.m_KxLinePathfinderRainbow != 0; break;
                                                 case KX_LINE_ESP: child.on = g_Config.m_KxLineEspRainbow != 0; break;
                                                 case KX_LINE_TAS: child.on = g_Config.m_KxLineTasRainbow != 0; break;
+                                                case KX_LINE_HITBOXES: child.on = g_Config.m_KxLineHitboxesRainbow != 0; break;
                                                 }
                                         }
                                         else if(str_comp(child.pName, "Speed") == 0)
@@ -3096,6 +3223,7 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                 case KX_LINE_PATHFINDER: child.value = (float)g_Config.m_KxLinePathfinderRainbowSpeed / 10.0f; break;
                                                 case KX_LINE_ESP: child.value = (float)g_Config.m_KxLineEspRainbowSpeed / 10.0f; break;
                                                 case KX_LINE_TAS: child.value = (float)g_Config.m_KxLineTasRainbowSpeed / 10.0f; break;
+                                                case KX_LINE_HITBOXES: child.value = (float)g_Config.m_KxLineHitboxesRainbowSpeed / 10.0f; break;
                                                 }
                                         }
                                         // v1.56.210: Gradient toggle per-component
@@ -3110,6 +3238,7 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                 case KX_LINE_PATHFINDER: child.on = g_Config.m_KxLinePathfinderGradient != 0; break;
                                                 case KX_LINE_ESP: child.on = g_Config.m_KxLineEspGradient != 0; break;
                                                 case KX_LINE_TAS: child.on = g_Config.m_KxLineTasGradient != 0; break;
+                                                case KX_LINE_HITBOXES: child.on = g_Config.m_KxLineHitboxesGradient != 0; break;
                                                 }
                                         }
                                         // v1.56.210: Step slider per-component (hue increment per segment)
@@ -3124,6 +3253,7 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                 case KX_LINE_PATHFINDER: child.value = (float)g_Config.m_KxLinePathfinderGradientStep; break;
                                                 case KX_LINE_ESP: child.value = (float)g_Config.m_KxLineEspGradientStep; break;
                                                 case KX_LINE_TAS: child.value = (float)g_Config.m_KxLineTasGradientStep; break;
+                                                case KX_LINE_HITBOXES: child.value = (float)g_Config.m_KxLineHitboxesGradientStep; break;
                                                 }
                                         }
                                         else if(str_comp(child.pName, "Layer") == 0)
@@ -3298,6 +3428,7 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                 case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderRainbowSpeed = rawVal; break;
                                 case KX_LINE_ESP: g_Config.m_KxLineEspRainbowSpeed = rawVal; break;
                                 case KX_LINE_TAS: g_Config.m_KxLineTasRainbowSpeed = rawVal; break;
+                                 case KX_LINE_HITBOXES: g_Config.m_KxLineHitboxesRainbowSpeed = rawVal; break;
                                 }
                         }
                         // v1.56.210: Line rendering per-component Step slider (hue increment per segment)
@@ -3315,6 +3446,7 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                 case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderGradientStep = rawVal; break;
                                 case KX_LINE_ESP: g_Config.m_KxLineEspGradientStep = rawVal; break;
                                 case KX_LINE_TAS: g_Config.m_KxLineTasGradientStep = rawVal; break;
+                                 case KX_LINE_HITBOXES: g_Config.m_KxLineHitboxesGradientStep = rawVal; break;
                                 }
                         }
                         else if(str_comp(pTarget->pName, "Latency (ms)") == 0 && str_comp(row.pName, "Copy Moves Latency") == 0)
@@ -3366,6 +3498,7 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                         case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderSize = (int)pTarget->value; break;
                                         case KX_LINE_ESP: g_Config.m_KxLineEspSize = (int)pTarget->value; break;
                                         case KX_LINE_TAS: g_Config.m_KxLineTasSize = (int)pTarget->value; break;
+                                         case KX_LINE_HITBOXES: g_Config.m_KxLineHitboxesSize = (int)pTarget->value; break;
                                         }
                                         }
                                 else // Line opacity
@@ -3379,17 +3512,33 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                         case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderAlpha = (int)pTarget->value; break;
                                         case KX_LINE_ESP: g_Config.m_KxLineEspAlpha = (int)pTarget->value; break;
                                         case KX_LINE_TAS: g_Config.m_KxLineTasAlpha = (int)pTarget->value; break;
+                                         case KX_LINE_HITBOXES: g_Config.m_KxLineHitboxesAlpha = (int)pTarget->value; break;
                                         }
                                         }
                         }
                         else if(str_comp(pTarget->pName, "Layer") == 0)
                                 g_Config.m_KxLineRenderingLayer = (int)pTarget->value;
-                        else if(str_comp(pTarget->pName, "ESP X") == 0)
+                        else if(str_comp(pTarget->pName, "X") == 0 && str_comp(row.pName, "ESP") == 0)
                                 g_Config.m_KxEspScreenX = (int)pTarget->value;
-                        else if(str_comp(pTarget->pName, "ESP Y") == 0)
+                        else if(str_comp(pTarget->pName, "Y") == 0 && str_comp(row.pName, "ESP") == 0)
                                 g_Config.m_KxEspScreenY = (int)pTarget->value;
-                        else if(str_comp(pTarget->pName, "Speed") == 0 && str_comp(row.pName, "ESP") == 0)
+                        else if(str_comp(pTarget->pName, "Pointer Speed") == 0 && str_comp(row.pName, "ESP") == 0)
                                 g_Config.m_KxEspSpeed = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Box Speed") == 0 && str_comp(row.pName, "ESP") == 0)
+                                g_Config.m_KxEspBoxSpeed = (int)pTarget->value;
+                        // v1.56.256: ESP box scale sliders.
+                        else if(str_comp(pTarget->pName, "X Box scale") == 0 && str_comp(row.pName, "ESP") == 0)
+                                g_Config.m_KxEspBoxScaleX = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Y Box scale") == 0 && str_comp(row.pName, "ESP") == 0)
+                                g_Config.m_KxEspBoxScaleY = (int)pTarget->value;
+                        // v1.56.256: Hitboxes "Box Speed" sliders — same label, two rows (by index).
+                        else if(str_comp(pTarget->pName, "Box Speed") == 0 && str_comp(row.pName, "Hitboxes") == 0)
+                        {
+                                if(m_DragSliderChild == 2)
+                                        g_Config.m_KxHitboxesTileSpeed = (int)pTarget->value;
+                                else if(m_DragSliderChild == 5)
+                                        g_Config.m_KxHitboxesTriggerSpeed = (int)pTarget->value;
+                        }
                         // v1.56.178: Trajectory per-type slider — writes to CTrajectory.m_aTypes[sel].
                         else if(str_comp(pTarget->pName, "Prediction Ticks") == 0 && str_comp(row.pName, "Trajectory") == 0)
                         {
@@ -4126,6 +4275,20 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 g_Config.m_KxBafSilent = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Show for me") == 0)
                                                 g_Config.m_KxFakeAimShowForMe = pTarget->on ? 1 : 0;
+                                        // v1.56.256: ESP pointer/box visibility toggles.
+                                        else if(str_comp(pTarget->pName, "Pointer") == 0 && str_comp(row.pName, "ESP") == 0)
+                                                g_Config.m_KxEspPointer = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Box") == 0 && str_comp(row.pName, "ESP") == 0)
+                                                g_Config.m_KxEspBox = pTarget->on ? 1 : 0;
+                                        // v1.56.256: Hitboxes toggles.
+                                        else if(str_comp(pTarget->pName, "Tee tile") == 0 && str_comp(row.pName, "Hitboxes") == 0)
+                                                g_Config.m_KxHitboxesTeeTile = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Tee trigger") == 0 && str_comp(row.pName, "Hitboxes") == 0)
+                                                g_Config.m_KxHitboxesTeeTrigger = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Show for others") == 0 && str_comp(row.pName, "Hitboxes") == 0)
+                                                g_Config.m_KxHitboxesShowOthers = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Filters") == 0 && str_comp(row.pName, "Hitboxes") == 0)
+                                                g_Config.m_KxHitboxesFilters = pTarget->on ? 1 : 0;
                                         // Pathfinder → Visuals children
                                         else if(str_comp(pTarget->pName, "Show field") == 0)
                                                 g_Config.m_KxPfShowField = pTarget->on ? 1 : 0;
@@ -4183,6 +4346,7 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderRainbow = pTarget->on ? 1 : 0; break;
                                                 case KX_LINE_ESP: g_Config.m_KxLineEspRainbow = pTarget->on ? 1 : 0; break;
                                                 case KX_LINE_TAS: g_Config.m_KxLineTasRainbow = pTarget->on ? 1 : 0; break;
+                                                 case KX_LINE_HITBOXES: g_Config.m_KxLineHitboxesRainbow = pTarget->on ? 1 : 0; break;
                                                 }
                                         }
                                         // v1.56.210: Line rendering per-component Gradient toggle
@@ -4199,6 +4363,7 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderGradient = pTarget->on ? 1 : 0; break;
                                                 case KX_LINE_ESP: g_Config.m_KxLineEspGradient = pTarget->on ? 1 : 0; break;
                                                 case KX_LINE_TAS: g_Config.m_KxLineTasGradient = pTarget->on ? 1 : 0; break;
+                                                 case KX_LINE_HITBOXES: g_Config.m_KxLineHitboxesGradient = pTarget->on ? 1 : 0; break;
                                                 }
                                         }
                                         return;
@@ -4568,6 +4733,7 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderSize = (int)pTarget->value; break;
                                                 case KX_LINE_ESP: g_Config.m_KxLineEspSize = (int)pTarget->value; break;
                                                 case KX_LINE_TAS: g_Config.m_KxLineTasSize = (int)pTarget->value; break;
+                                         case KX_LINE_HITBOXES: g_Config.m_KxLineHitboxesSize = (int)pTarget->value; break;
                                                 }
                                                 }
                                         else // Line opacity
@@ -4581,17 +4747,33 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderAlpha = (int)pTarget->value; break;
                                                 case KX_LINE_ESP: g_Config.m_KxLineEspAlpha = (int)pTarget->value; break;
                                                 case KX_LINE_TAS: g_Config.m_KxLineTasAlpha = (int)pTarget->value; break;
+                                         case KX_LINE_HITBOXES: g_Config.m_KxLineHitboxesAlpha = (int)pTarget->value; break;
                                                 }
                                                 }
                                 }
                                 else if(str_comp(pTarget->pName, "Layer") == 0)
                                         g_Config.m_KxLineRenderingLayer = (int)pTarget->value;
-                                else if(str_comp(pTarget->pName, "ESP X") == 0)
-                                        g_Config.m_KxEspScreenX = (int)pTarget->value;
-                                else if(str_comp(pTarget->pName, "ESP Y") == 0)
-                                        g_Config.m_KxEspScreenY = (int)pTarget->value;
-                                else if(str_comp(pTarget->pName, "Speed") == 0 && str_comp(row.pName, "ESP") == 0)
-                                        g_Config.m_KxEspSpeed = (int)pTarget->value;
+                                 else if(str_comp(pTarget->pName, "X") == 0 && str_comp(row.pName, "ESP") == 0)
+                                         g_Config.m_KxEspScreenX = (int)pTarget->value;
+                                 else if(str_comp(pTarget->pName, "Y") == 0 && str_comp(row.pName, "ESP") == 0)
+                                         g_Config.m_KxEspScreenY = (int)pTarget->value;
+                                 else if(str_comp(pTarget->pName, "Pointer Speed") == 0 && str_comp(row.pName, "ESP") == 0)
+                                         g_Config.m_KxEspSpeed = (int)pTarget->value;
+                                 else if(str_comp(pTarget->pName, "Box Speed") == 0 && str_comp(row.pName, "ESP") == 0)
+                                         g_Config.m_KxEspBoxSpeed = (int)pTarget->value;
+                                 // v1.56.256: ESP box scale sliders.
+                                 else if(str_comp(pTarget->pName, "X Box scale") == 0 && str_comp(row.pName, "ESP") == 0)
+                                         g_Config.m_KxEspBoxScaleX = (int)pTarget->value;
+                                 else if(str_comp(pTarget->pName, "Y Box scale") == 0 && str_comp(row.pName, "ESP") == 0)
+                                         g_Config.m_KxEspBoxScaleY = (int)pTarget->value;
+                                 // v1.56.256: Hitboxes "Box Speed" sliders — same label, two rows (by index).
+                                 else if(str_comp(pTarget->pName, "Box Speed") == 0 && str_comp(row.pName, "Hitboxes") == 0)
+                                 {
+                                         if(outChild == 2)
+                                                 g_Config.m_KxHitboxesTileSpeed = (int)pTarget->value;
+                                         else if(outChild == 5)
+                                                 g_Config.m_KxHitboxesTriggerSpeed = (int)pTarget->value;
+                                 }
                                 // v1.56.178: Trajectory per-type slider (drag path) — writes to CTrajectory.m_aTypes[sel].
                                 else if(str_comp(pTarget->pName, "Prediction Ticks") == 0 && str_comp(row.pName, "Trajectory") == 0)
                                 {
@@ -4846,25 +5028,29 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                                                         }
                                                 }
                                         }
-					else if(str_comp(target.pName, "Mode") == 0 && str_comp(panel.pTitle, "Advanced") == 0)
+					else if(str_comp(target.pName, "Mode") == 0 && str_comp(row.pName, "Fake Aim") == 0 && str_comp(panel.pTitle, "Advanced") == 0)
 						g_Config.m_KxFakeAimMode = o;
-                                        // ESP dropdowns
-                                        else if(str_comp(target.pName, "ESP Team") == 0)
+                                        // v1.56.254: ESP dropdowns — renamed, parent-gated to "ESP";
+                                        // Fake Aim "Mode" above is now row-gated so the renamed ESP
+                                        // "Mode" cannot fall into it.
+                                        else if(str_comp(target.pName, "Team") == 0 && str_comp(row.pName, "ESP") == 0)
                                                 g_Config.m_KxEspTeamFilter = o;
-                                        else if(str_comp(target.pName, "ESP Friend") == 0)
+                                        else if(str_comp(target.pName, "Friend") == 0 && str_comp(row.pName, "ESP") == 0)
                                                 g_Config.m_KxEspFriendFilter = o;
-                                        else if(str_comp(target.pName, "ESP Dummy") == 0)
+                                        else if(str_comp(target.pName, "Dummy") == 0 && str_comp(row.pName, "ESP") == 0)
                                                 g_Config.m_KxEspDummyFilter = o;
-                                        else if(str_comp(target.pName, "ESP Clanmate") == 0)
+                                        else if(str_comp(target.pName, "Clanmate") == 0 && str_comp(row.pName, "ESP") == 0)
                                                 g_Config.m_KxEspClanmateFilter = o;
-                                        else if(str_comp(target.pName, "ESP Freeze") == 0)
+                                        else if(str_comp(target.pName, "Freeze") == 0 && str_comp(row.pName, "ESP") == 0)
                                                 g_Config.m_KxEspFreezeFilter = o;
-                                        else if(str_comp(target.pName, "ESP Targets filter") == 0)
+                                        else if(str_comp(target.pName, "Targets filter") == 0 && str_comp(row.pName, "ESP") == 0)
                                                 g_Config.m_KxEspTargetsFilterMode = o;
-                                        else if(str_comp(target.pName, "ESP Mode") == 0)
+                                        else if(str_comp(target.pName, "Mode") == 0 && str_comp(row.pName, "ESP") == 0)
                                                 g_Config.m_KxEspMode = o;
-                                        else if(str_comp(target.pName, "ESP Style") == 0)
+                                        else if(str_comp(target.pName, "Pointer Style") == 0 && str_comp(row.pName, "ESP") == 0)
                                                 g_Config.m_KxEspStyle = o;
+                                        else if(str_comp(target.pName, "Box Style") == 0 && str_comp(row.pName, "ESP") == 0)
+                                                g_Config.m_KxEspBoxStyle = o;
                                         else if(str_comp(target.pName, "Algorithm") == 0)
                                                 g_Config.m_KxPfAlgorithm = o;
                                         else if(str_comp(target.pName, "Effort") == 0)
@@ -4893,7 +5079,7 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                                                                 continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childCount, c))
+if((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c))
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
         continue;
@@ -4967,22 +5153,32 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
 							else if(str_comp(target.pName, "Mode") == 0 && str_comp(row.pName, "Fake Aim") == 0 && str_comp(panel.pTitle, "Advanced") == 0)
 								g_Config.m_KxFakeAimMode = o;
                                                         // ESP dropdowns
-                                                        else if(str_comp(target.pName, "ESP Team") == 0)
+                                                        else if(str_comp(target.pName, "Team") == 0 && str_comp(row.pName, "ESP") == 0)
                                                                 g_Config.m_KxEspTeamFilter = o;
-                                                        else if(str_comp(target.pName, "ESP Friend") == 0)
+                                                        else if(str_comp(target.pName, "Friend") == 0 && str_comp(row.pName, "ESP") == 0)
                                                                 g_Config.m_KxEspFriendFilter = o;
-                                                        else if(str_comp(target.pName, "ESP Dummy") == 0)
+                                                        else if(str_comp(target.pName, "Dummy") == 0 && str_comp(row.pName, "ESP") == 0)
                                                                 g_Config.m_KxEspDummyFilter = o;
-                                                        else if(str_comp(target.pName, "ESP Clanmate") == 0)
+                                                        else if(str_comp(target.pName, "Clanmate") == 0 && str_comp(row.pName, "ESP") == 0)
                                                                 g_Config.m_KxEspClanmateFilter = o;
-                                                        else if(str_comp(target.pName, "ESP Freeze") == 0)
+                                                        else if(str_comp(target.pName, "Freeze") == 0 && str_comp(row.pName, "ESP") == 0)
                                                                 g_Config.m_KxEspFreezeFilter = o;
-                                                        else if(str_comp(target.pName, "ESP Targets filter") == 0)
+                                                        else if(str_comp(target.pName, "Targets filter") == 0 && str_comp(row.pName, "ESP") == 0)
                                                                 g_Config.m_KxEspTargetsFilterMode = o;
-                                                        else if(str_comp(target.pName, "ESP Mode") == 0)
+                                                        else if(str_comp(target.pName, "Mode") == 0 && str_comp(row.pName, "ESP") == 0)
                                                                 g_Config.m_KxEspMode = o;
-                                                        else if(str_comp(target.pName, "ESP Style") == 0)
+                                                        else if(str_comp(target.pName, "Pointer Style") == 0 && str_comp(row.pName, "ESP") == 0)
                                                                 g_Config.m_KxEspStyle = o;
+                                                        else if(str_comp(target.pName, "Box Style") == 0 && str_comp(row.pName, "ESP") == 0)
+                                                                g_Config.m_KxEspBoxStyle = o;
+                                                        // v1.56.256: Hitboxes style dropdowns — same label, two rows (by index).
+                                                        else if(str_comp(target.pName, "Hitbox Style") == 0 && str_comp(row.pName, "Hitboxes") == 0)
+                                                        {
+                                                                if(c == 1)
+                                                                        g_Config.m_KxHitboxesTileStyle = o;
+                                                                else if(c == 4)
+                                                                        g_Config.m_KxHitboxesTriggerStyle = o;
+                                                        }
                                                         // v1.56.83: AimBot per-weapon dropdowns (parent = "AimBot")
                                                         else if(str_comp(row.pName, "AimBot") == 0)
                                                         {
@@ -5162,7 +5358,7 @@ void CClickGui::RenderDropdownPopup(float alpha)
                                                                 continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childCount, c))
+if((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c))
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
         continue;
@@ -5416,7 +5612,7 @@ bool CClickGui::HitTestRow(vec2 mousePos, int panelIdx, int &outRow, int &outChi
                                                                 continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childCount, c))
+if((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c))
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
         continue;
@@ -5496,6 +5692,7 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
                         case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderColor = 0xff000000u | (hex & 0xffffff); break;
                         case KX_LINE_ESP: g_Config.m_KxLineEspColor = 0xff000000u | (hex & 0xffffff); break;
                         case KX_LINE_TAS: g_Config.m_KxLineTasColor = 0xff000000u | (hex & 0xffffff); break;
+                        case KX_LINE_HITBOXES: g_Config.m_KxLineHitboxesColor = 0xff000000u | (hex & 0xffffff); break;
                         }
                 }
         }
@@ -5665,7 +5862,7 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                                                 continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childCount, c))
+if((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c))
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
         continue;
@@ -5748,7 +5945,7 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                                 continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childCount, c))
+if((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c))
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
         continue;
@@ -5831,7 +6028,7 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                                 continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childCount, c))
+if((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c))
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
         continue;
@@ -6473,7 +6670,7 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                                 continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childCount, c))
+if((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c))
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
         continue;
@@ -6516,7 +6713,7 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                 if(str_comp(row.pName, "AimBot") == 0 && !AimBotChildVisible(row.pChildren, row.childCount, c)) continue;
                                 if(str_comp(row.pName, "TriggerBot") == 0 && !TriggerBotChildVisible(row.pChildren, row.childCount, c)) continue;
                                 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c)) continue;
-                                if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childCount, c)) continue;
+                                if((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) continue;
                                 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c)) continue;
                                 if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c)) continue;
                                 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c)) continue;
@@ -6560,7 +6757,7 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                                 continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(str_comp(row.pName, "ESP") == 0 && !EspChildVisible(row.pChildren, row.childCount, c))
+if((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c))
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
         continue;

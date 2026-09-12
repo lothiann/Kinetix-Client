@@ -22,8 +22,248 @@
 
 void CAimBot::OnConsoleInit()
 {
-        // v1.56.171 BUG9: kx_aimbot and kx_triggerbot are now MACRO_CONFIG_INT cvars
-        // (KxAimBot, KxTriggerBot). `toggle kx_aimbot 1 0` works in binds.
+	// v1.56.171 BUG9: kx_aimbot and kx_triggerbot are now MACRO_CONFIG_INT cvars
+	// (KxAimBot, KxTriggerBot). `toggle kx_aimbot 1 0` works in binds.
+}
+
+// v1.56.255: per-weapon cvar tables — one entry per weapon, same order as
+// m_AimBotWeapons (hammer, pistol, shotgun, grenade, laser, ninja, hook) and
+// m_TriggerBotWeapons (same minus hook). Used by SyncSavedSettings().
+struct KxAbCvars
+{
+	int *pEnabled;
+	int *pFov;
+	int *pRadius;
+	int *pRaycastShow;
+	int *pRules;
+	int *pUseAngle;
+	int *pPredict;
+	int *pJitter;
+	int *pAimMode;
+	int *pTeam;
+	int *pFriend;
+	int *pDummy;
+	int *pClanmate;
+	int *pTargetsFilter;
+	char *pTargetsIds;
+	int *pFreeze;
+	int *pPriority;
+};
+
+static const KxAbCvars s_aAbCvars[] = {
+	{&g_Config.m_KxAbHammerEnabled, &g_Config.m_KxAbHammerFov, &g_Config.m_KxAbHammerRadius,
+		&g_Config.m_KxAbHammerRaycastShow, &g_Config.m_KxAbHammerRules, &g_Config.m_KxAbHammerUseAngle,
+		&g_Config.m_KxAbHammerPredict, &g_Config.m_KxAbHammerJitter, &g_Config.m_KxAbHammerAimMode,
+		&g_Config.m_KxAbHammerTeam, &g_Config.m_KxAbHammerFriend, &g_Config.m_KxAbHammerDummy,
+		&g_Config.m_KxAbHammerClanmate, &g_Config.m_KxAbHammerTargetsFilter, g_Config.m_KxAbHammerTargetsIds,
+		&g_Config.m_KxAbHammerFreeze, &g_Config.m_KxAbHammerPriority},
+	{&g_Config.m_KxAbPistolEnabled, &g_Config.m_KxAbPistolFov, &g_Config.m_KxAbPistolRadius,
+		&g_Config.m_KxAbPistolRaycastShow, &g_Config.m_KxAbPistolRules, &g_Config.m_KxAbPistolUseAngle,
+		&g_Config.m_KxAbPistolPredict, &g_Config.m_KxAbPistolJitter, &g_Config.m_KxAbPistolAimMode,
+		&g_Config.m_KxAbPistolTeam, &g_Config.m_KxAbPistolFriend, &g_Config.m_KxAbPistolDummy,
+		&g_Config.m_KxAbPistolClanmate, &g_Config.m_KxAbPistolTargetsFilter, g_Config.m_KxAbPistolTargetsIds,
+		&g_Config.m_KxAbPistolFreeze, &g_Config.m_KxAbPistolPriority},
+	{&g_Config.m_KxAbShotgunEnabled, &g_Config.m_KxAbShotgunFov, &g_Config.m_KxAbShotgunRadius,
+		&g_Config.m_KxAbShotgunRaycastShow, &g_Config.m_KxAbShotgunRules, &g_Config.m_KxAbShotgunUseAngle,
+		&g_Config.m_KxAbShotgunPredict, &g_Config.m_KxAbShotgunJitter, &g_Config.m_KxAbShotgunAimMode,
+		&g_Config.m_KxAbShotgunTeam, &g_Config.m_KxAbShotgunFriend, &g_Config.m_KxAbShotgunDummy,
+		&g_Config.m_KxAbShotgunClanmate, &g_Config.m_KxAbShotgunTargetsFilter, g_Config.m_KxAbShotgunTargetsIds,
+		&g_Config.m_KxAbShotgunFreeze, &g_Config.m_KxAbShotgunPriority},
+	{&g_Config.m_KxAbGrenadeEnabled, &g_Config.m_KxAbGrenadeFov, &g_Config.m_KxAbGrenadeRadius,
+		&g_Config.m_KxAbGrenadeRaycastShow, &g_Config.m_KxAbGrenadeRules, &g_Config.m_KxAbGrenadeUseAngle,
+		&g_Config.m_KxAbGrenadePredict, &g_Config.m_KxAbGrenadeJitter, &g_Config.m_KxAbGrenadeAimMode,
+		&g_Config.m_KxAbGrenadeTeam, &g_Config.m_KxAbGrenadeFriend, &g_Config.m_KxAbGrenadeDummy,
+		&g_Config.m_KxAbGrenadeClanmate, &g_Config.m_KxAbGrenadeTargetsFilter, g_Config.m_KxAbGrenadeTargetsIds,
+		&g_Config.m_KxAbGrenadeFreeze, &g_Config.m_KxAbGrenadePriority},
+	{&g_Config.m_KxAbLaserEnabled, &g_Config.m_KxAbLaserFov, &g_Config.m_KxAbLaserRadius,
+		&g_Config.m_KxAbLaserRaycastShow, &g_Config.m_KxAbLaserRules, &g_Config.m_KxAbLaserUseAngle,
+		&g_Config.m_KxAbLaserPredict, &g_Config.m_KxAbLaserJitter, &g_Config.m_KxAbLaserAimMode,
+		&g_Config.m_KxAbLaserTeam, &g_Config.m_KxAbLaserFriend, &g_Config.m_KxAbLaserDummy,
+		&g_Config.m_KxAbLaserClanmate, &g_Config.m_KxAbLaserTargetsFilter, g_Config.m_KxAbLaserTargetsIds,
+		&g_Config.m_KxAbLaserFreeze, &g_Config.m_KxAbLaserPriority},
+	{&g_Config.m_KxAbNinjaEnabled, &g_Config.m_KxAbNinjaFov, &g_Config.m_KxAbNinjaRadius,
+		&g_Config.m_KxAbNinjaRaycastShow, &g_Config.m_KxAbNinjaRules, &g_Config.m_KxAbNinjaUseAngle,
+		&g_Config.m_KxAbNinjaPredict, &g_Config.m_KxAbNinjaJitter, &g_Config.m_KxAbNinjaAimMode,
+		&g_Config.m_KxAbNinjaTeam, &g_Config.m_KxAbNinjaFriend, &g_Config.m_KxAbNinjaDummy,
+		&g_Config.m_KxAbNinjaClanmate, &g_Config.m_KxAbNinjaTargetsFilter, g_Config.m_KxAbNinjaTargetsIds,
+		&g_Config.m_KxAbNinjaFreeze, &g_Config.m_KxAbNinjaPriority},
+	{&g_Config.m_KxAbHookEnabled, &g_Config.m_KxAbHookFov, &g_Config.m_KxAbHookRadius,
+		&g_Config.m_KxAbHookRaycastShow, &g_Config.m_KxAbHookRules, &g_Config.m_KxAbHookUseAngle,
+		&g_Config.m_KxAbHookPredict, &g_Config.m_KxAbHookJitter, &g_Config.m_KxAbHookAimMode,
+		&g_Config.m_KxAbHookTeam, &g_Config.m_KxAbHookFriend, &g_Config.m_KxAbHookDummy,
+		&g_Config.m_KxAbHookClanmate, &g_Config.m_KxAbHookTargetsFilter, g_Config.m_KxAbHookTargetsIds,
+		&g_Config.m_KxAbHookFreeze, &g_Config.m_KxAbHookPriority},
+};
+
+struct KxTbCvars
+{
+	int *pEnabled;
+	int *pTrigger;
+	int *pTriggerMode;
+	int *pFov;
+	int *pRadius;
+	int *pRaycastShow;
+	int *pRules;
+	int *pTeam;
+	int *pFriend;
+	int *pDummy;
+	int *pClanmate;
+	int *pTargetsFilter;
+	char *pTargetsIds;
+	int *pFreeze;
+	int *pPriority;
+	int *pLatency;
+};
+
+static const KxTbCvars s_aTbCvars[] = {
+	{&g_Config.m_KxTbHammerEnabled, &g_Config.m_KxTbHammerTrigger, &g_Config.m_KxTbHammerTriggerMode,
+		&g_Config.m_KxTbHammerFov, &g_Config.m_KxTbHammerRadius,
+		&g_Config.m_KxTbHammerRaycastShow, &g_Config.m_KxTbHammerRules,
+		&g_Config.m_KxTbHammerTeam, &g_Config.m_KxTbHammerFriend, &g_Config.m_KxTbHammerDummy,
+		&g_Config.m_KxTbHammerClanmate, &g_Config.m_KxTbHammerTargetsFilter, g_Config.m_KxTbHammerTargetsIds,
+		&g_Config.m_KxTbHammerFreeze, &g_Config.m_KxTbHammerPriority, &g_Config.m_KxTbHammerLatency},
+	{&g_Config.m_KxTbPistolEnabled, &g_Config.m_KxTbPistolTrigger, &g_Config.m_KxTbPistolTriggerMode,
+		&g_Config.m_KxTbPistolFov, &g_Config.m_KxTbPistolRadius,
+		&g_Config.m_KxTbPistolRaycastShow, &g_Config.m_KxTbPistolRules,
+		&g_Config.m_KxTbPistolTeam, &g_Config.m_KxTbPistolFriend, &g_Config.m_KxTbPistolDummy,
+		&g_Config.m_KxTbPistolClanmate, &g_Config.m_KxTbPistolTargetsFilter, g_Config.m_KxTbPistolTargetsIds,
+		&g_Config.m_KxTbPistolFreeze, &g_Config.m_KxTbPistolPriority, &g_Config.m_KxTbPistolLatency},
+	{&g_Config.m_KxTbShotgunEnabled, &g_Config.m_KxTbShotgunTrigger, &g_Config.m_KxTbShotgunTriggerMode,
+		&g_Config.m_KxTbShotgunFov, &g_Config.m_KxTbShotgunRadius,
+		&g_Config.m_KxTbShotgunRaycastShow, &g_Config.m_KxTbShotgunRules,
+		&g_Config.m_KxTbShotgunTeam, &g_Config.m_KxTbShotgunFriend, &g_Config.m_KxTbShotgunDummy,
+		&g_Config.m_KxTbShotgunClanmate, &g_Config.m_KxTbShotgunTargetsFilter, g_Config.m_KxTbShotgunTargetsIds,
+		&g_Config.m_KxTbShotgunFreeze, &g_Config.m_KxTbShotgunPriority, &g_Config.m_KxTbShotgunLatency},
+	{&g_Config.m_KxTbGrenadeEnabled, &g_Config.m_KxTbGrenadeTrigger, &g_Config.m_KxTbGrenadeTriggerMode,
+		&g_Config.m_KxTbGrenadeFov, &g_Config.m_KxTbGrenadeRadius,
+		&g_Config.m_KxTbGrenadeRaycastShow, &g_Config.m_KxTbGrenadeRules,
+		&g_Config.m_KxTbGrenadeTeam, &g_Config.m_KxTbGrenadeFriend, &g_Config.m_KxTbGrenadeDummy,
+		&g_Config.m_KxTbGrenadeClanmate, &g_Config.m_KxTbGrenadeTargetsFilter, g_Config.m_KxTbGrenadeTargetsIds,
+		&g_Config.m_KxTbGrenadeFreeze, &g_Config.m_KxTbGrenadePriority, &g_Config.m_KxTbGrenadeLatency},
+	{&g_Config.m_KxTbLaserEnabled, &g_Config.m_KxTbLaserTrigger, &g_Config.m_KxTbLaserTriggerMode,
+		&g_Config.m_KxTbLaserFov, &g_Config.m_KxTbLaserRadius,
+		&g_Config.m_KxTbLaserRaycastShow, &g_Config.m_KxTbLaserRules,
+		&g_Config.m_KxTbLaserTeam, &g_Config.m_KxTbLaserFriend, &g_Config.m_KxTbLaserDummy,
+		&g_Config.m_KxTbLaserClanmate, &g_Config.m_KxTbLaserTargetsFilter, g_Config.m_KxTbLaserTargetsIds,
+		&g_Config.m_KxTbLaserFreeze, &g_Config.m_KxTbLaserPriority, &g_Config.m_KxTbLaserLatency},
+	{&g_Config.m_KxTbNinjaEnabled, &g_Config.m_KxTbNinjaTrigger, &g_Config.m_KxTbNinjaTriggerMode,
+		&g_Config.m_KxTbNinjaFov, &g_Config.m_KxTbNinjaRadius,
+		&g_Config.m_KxTbNinjaRaycastShow, &g_Config.m_KxTbNinjaRules,
+		&g_Config.m_KxTbNinjaTeam, &g_Config.m_KxTbNinjaFriend, &g_Config.m_KxTbNinjaDummy,
+		&g_Config.m_KxTbNinjaClanmate, &g_Config.m_KxTbNinjaTargetsFilter, g_Config.m_KxTbNinjaTargetsIds,
+		&g_Config.m_KxTbNinjaFreeze, &g_Config.m_KxTbNinjaPriority, &g_Config.m_KxTbNinjaLatency},
+};
+
+// v1.56.255: per-weapon settings persistence. Pulls the saved cvars into the
+// weapon structs once at startup (settings.cfg is loaded before the first
+// tick), then pushes the structs back to g_Config every tick afterwards, so
+// ClickGUI edits are saved to settings.cfg like any other cvar.
+void CAimBot::SyncSavedSettings()
+{
+	static bool s_Init = false;
+	if(!s_Init)
+	{
+		s_Init = true;
+		for(int w = 0; w < NUM_WEAPONS_AIM; w++)
+		{
+			SWeaponSettings &s = m_AimBotWeapons[w];
+			const KxAbCvars &c = s_aAbCvars[w];
+			s.m_Enabled = *c.pEnabled != 0;
+			s.m_Fov = (float)*c.pFov;
+			s.m_Radius = (float)*c.pRadius;
+			s.m_UseRaycastShow = *c.pRaycastShow != 0;
+			s.m_Rules = *c.pRules;
+			s.m_UseAngle = *c.pUseAngle != 0;
+			s.m_Predict = *c.pPredict != 0;
+			s.m_Jitter = (float)*c.pJitter;
+			s.m_AimMode = *c.pAimMode;
+			s.m_TeamFilter = *c.pTeam;
+			s.m_FriendFilter = *c.pFriend;
+			s.m_DummyFilter = *c.pDummy;
+			s.m_ClanmateFilter = *c.pClanmate;
+			s.m_TargetsFilter = *c.pTargetsFilter;
+			str_copy(s.m_aTargetsFilter, c.pTargetsIds, sizeof(s.m_aTargetsFilter));
+			s.m_FreezeFilter = *c.pFreeze;
+			s.m_Priority = *c.pPriority;
+		}
+		for(int w = 0; w < NUM_WEAPONS_TRIGGER; w++)
+		{
+			SWeaponSettings &s = m_TriggerBotWeapons[w];
+			const KxTbCvars &c = s_aTbCvars[w];
+			s.m_Enabled = *c.pEnabled != 0;
+			s.m_Trigger = *c.pTrigger;
+			s.m_TriggerMode = *c.pTriggerMode;
+			s.m_Fov = (float)*c.pFov;
+			s.m_Radius = (float)*c.pRadius;
+			s.m_UseRaycastShow = *c.pRaycastShow != 0;
+			s.m_Rules = *c.pRules;
+			s.m_TeamFilter = *c.pTeam;
+			s.m_FriendFilter = *c.pFriend;
+			s.m_DummyFilter = *c.pDummy;
+			s.m_ClanmateFilter = *c.pClanmate;
+			s.m_TargetsFilter = *c.pTargetsFilter;
+			str_copy(s.m_aTargetsFilter, c.pTargetsIds, sizeof(s.m_aTargetsFilter));
+			s.m_FreezeFilter = *c.pFreeze;
+			s.m_Priority = *c.pPriority;
+			s.m_RandomLatency = *c.pLatency;
+		}
+		m_AimBotShowFov = g_Config.m_KxAimBotShowFov != 0;
+		m_AimBotShowRadius = g_Config.m_KxAimBotShowRadius != 0;
+		m_AimBotUseRaycastShow = g_Config.m_KxAimBotRaycastShow != 0;
+		m_TriggerBotShowFov = g_Config.m_KxTriggerBotShowFov != 0;
+		m_TriggerBotShowRadius = g_Config.m_KxTriggerBotShowRadius != 0;
+		m_TriggerBotUseRaycastShow = g_Config.m_KxTriggerBotRaycastShow != 0;
+		return;
+	}
+	for(int w = 0; w < NUM_WEAPONS_AIM; w++)
+	{
+		const SWeaponSettings &s = m_AimBotWeapons[w];
+		const KxAbCvars &c = s_aAbCvars[w];
+		*c.pEnabled = s.m_Enabled ? 1 : 0;
+		*c.pFov = (int)(s.m_Fov + 0.5f);
+		*c.pRadius = (int)(s.m_Radius + 0.5f);
+		*c.pRaycastShow = s.m_UseRaycastShow ? 1 : 0;
+		*c.pRules = s.m_Rules;
+		*c.pUseAngle = s.m_UseAngle ? 1 : 0;
+		*c.pPredict = s.m_Predict ? 1 : 0;
+		*c.pJitter = (int)(s.m_Jitter + 0.5f);
+		*c.pAimMode = s.m_AimMode;
+		*c.pTeam = s.m_TeamFilter;
+		*c.pFriend = s.m_FriendFilter;
+		*c.pDummy = s.m_DummyFilter;
+		*c.pClanmate = s.m_ClanmateFilter;
+		*c.pTargetsFilter = s.m_TargetsFilter;
+		str_copy(c.pTargetsIds, s.m_aTargetsFilter, 64);
+		*c.pFreeze = s.m_FreezeFilter;
+		*c.pPriority = s.m_Priority;
+	}
+	for(int w = 0; w < NUM_WEAPONS_TRIGGER; w++)
+	{
+		const SWeaponSettings &s = m_TriggerBotWeapons[w];
+		const KxTbCvars &c = s_aTbCvars[w];
+		*c.pEnabled = s.m_Enabled ? 1 : 0;
+		*c.pTrigger = s.m_Trigger;
+		*c.pTriggerMode = s.m_TriggerMode;
+		*c.pFov = (int)(s.m_Fov + 0.5f);
+		*c.pRadius = (int)(s.m_Radius + 0.5f);
+		*c.pRaycastShow = s.m_UseRaycastShow ? 1 : 0;
+		*c.pRules = s.m_Rules;
+		*c.pTeam = s.m_TeamFilter;
+		*c.pFriend = s.m_FriendFilter;
+		*c.pDummy = s.m_DummyFilter;
+		*c.pClanmate = s.m_ClanmateFilter;
+		*c.pTargetsFilter = s.m_TargetsFilter;
+		str_copy(c.pTargetsIds, s.m_aTargetsFilter, 64);
+		*c.pFreeze = s.m_FreezeFilter;
+		*c.pPriority = s.m_Priority;
+		*c.pLatency = s.m_RandomLatency;
+	}
+	g_Config.m_KxAimBotShowFov = m_AimBotShowFov ? 1 : 0;
+	g_Config.m_KxAimBotShowRadius = m_AimBotShowRadius ? 1 : 0;
+	g_Config.m_KxAimBotRaycastShow = m_AimBotUseRaycastShow ? 1 : 0;
+	g_Config.m_KxTriggerBotShowFov = m_TriggerBotShowFov ? 1 : 0;
+	g_Config.m_KxTriggerBotShowRadius = m_TriggerBotShowRadius ? 1 : 0;
+	g_Config.m_KxTriggerBotRaycastShow = m_TriggerBotUseRaycastShow ? 1 : 0;
 }
 
 void CAimBot::OnReset()
@@ -56,9 +296,11 @@ float CAimBot::GetWeaponRadius(int Weapon) const
 
 void CAimBot::OnUpdate()
 {
-        // AimBot/TriggerBot logic runs in OnUpdate (BEFORE SnapInput) so silent aim
-        // via m_LaserUnfreezeAimActive is applied to m_TargetX/Y in SnapInput.
-        if(g_Config.m_KxAimBot)
+	// AimBot/TriggerBot logic runs in OnUpdate (BEFORE SnapInput) so silent aim
+	// via m_LaserUnfreezeAimActive is applied to m_TargetX/Y in SnapInput.
+	// v1.56.255: per-weapon settings persistence (pull once / push every tick).
+	SyncSavedSettings();
+	if(g_Config.m_KxAimBot)
                 UpdateAimBot();
         if(g_Config.m_KxTriggerBot)
                 UpdateTriggerBot();

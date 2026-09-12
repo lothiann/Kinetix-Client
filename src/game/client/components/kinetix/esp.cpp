@@ -14,6 +14,7 @@
 #include <game/client/components/kinetix/kinetix_lines.h>
 
 #include <generated/protocol.h>
+#include <game/gamecore.h> // v1.56.256: CCharacterCore::PhysicalSize() for hitbox sizes
 
 void CEsp::OnReset()
 {
@@ -295,14 +296,297 @@ void CEsp::EmitLine(const vec2 &p0, const vec2 &p1, int playerIndex) const
 	}
 }
 
-void CEsp::OnRender()
+// v1.56.254: square box outline around a target player (Box Style).
+// 0=Box — solid outline; 1=Dotted box — dashes move along the outline,
+// animated with Box Speed. Same line color/size/opacity pipeline as EmitLine
+// (per-component ESP line settings + rainbow gradient), same deferred
+// (Layer > 0) vs immediate rendering split.
+void CEsp::EmitBox(const vec2 &center, int playerIndex) const
 {
-	if(!g_Config.m_KxEsp)
+	auto boxCol = [&](int segIdx) -> ColorRGBA {
+		ColorRGBA c = ColorRGBA(KxLineColorAt(KX_LINE_ESP, segIdx), true);
+		c.a = KxLineAlpha(KX_LINE_ESP);
+		return c;
+	};
+	int lineSize = KxLineSize(KX_LINE_ESP);
+	float halfWidth = lineSize > 0 ? 0.5f + (float)(lineSize - 1) * 0.25f : 0.0f;
+
+	// v1.56.256: X/Y Box scale — per-axis size scaling (box dimensions, not line width).
+	const float halfX = 32.0f * (float)g_Config.m_KxEspBoxScaleX / 100.0f; // 100% = 64px wide
+	const float halfY = 32.0f * (float)g_Config.m_KxEspBoxScaleY / 100.0f; // 100% = 64px tall
+	const vec2 corners[4] = {
+		vec2(center.x - halfX, center.y - halfY),
+		vec2(center.x + halfX, center.y - halfY),
+		vec2(center.x + halfX, center.y + halfY),
+		vec2(center.x - halfX, center.y + halfY),
+	};
+
+	const bool dotted = g_Config.m_KxEspBoxStyle == 1;
+	const float dash = 8.0f, gap = 6.0f, pattern = dash + gap;
+	float animOffset = 0.0f;
+	if(dotted)
+	{
+		float speedFactor = (float)g_Config.m_KxEspBoxSpeed;
+		float t = (float)GameClient()->Client()->GameTick(g_Config.m_ClDummy) / 50.0f;
+		animOffset = fmodf(t * speedFactor, pattern);
+		if(animOffset < 0.0f)
+			animOffset += pattern;
+	}
+
+	for(int e = 0; e < 4; e++)
+	{
+		const vec2 &p0 = corners[e];
+		const vec2 &p1 = corners[(e + 1) % 4];
+		if(!dotted)
+		{
+			if(g_Config.m_KxLineRenderingLayer > 0)
+				KinetixEnqueueLine(p0, p1, boxCol(playerIndex + e), halfWidth);
+			else
+				DrawSegment(p0, p1, boxCol(playerIndex + e), halfWidth);
+			continue;
+		}
+		vec2 dir = p1 - p0;
+		const float len = length(dir);
+		if(len < 0.001f)
+			continue;
+		dir /= len;
+		float pos = animOffset; // dashes flow along the outline direction
+		int dashIdx = 0;
+		while(pos < len)
+		{
+			float dashStart = pos;
+			float dashEnd = pos + dash;
+			if(dashEnd > 0.0f && dashStart < len)
+			{
+				if(dashStart < 0.0f)
+					dashStart = 0.0f;
+				if(dashEnd > len)
+					dashEnd = len;
+				vec2 segStart = p0 + dir * dashStart;
+				vec2 segEnd = p0 + dir * dashEnd;
+				if(g_Config.m_KxLineRenderingLayer > 0)
+					KinetixEnqueueLine(segStart, segEnd, boxCol(playerIndex + e * 8 + dashIdx), halfWidth);
+				else
+					DrawSegment(segStart, segEnd, boxCol(playerIndex + e * 8 + dashIdx), halfWidth);
+				dashIdx++;
+			}
+			pos += pattern;
+		}
+	}
+}
+
+// v1.56.256: Hitboxes — 28x28 tile-collision square and the round trigger
+// hitbox (radius 28) drawn on the active dummy; with Show for others, also
+// on other players (optionally filtered like ESP).
+void CEsp::EmitHitboxes(int LocalId) const
+{
+	CGameClient *pGame = GameClient();
+	const bool tile = g_Config.m_KxHitboxesTeeTile != 0;
+	const bool trigger = g_Config.m_KxHitboxesTeeTrigger != 0;
+	if(!tile && !trigger)
 		return;
 
+	// Engine hitbox sizes (gamecore.h): tile collision is a 28x28 square, the
+	// projectile/hook trigger hitbox is a circle of radius PhysicalSize().
+	const float halfTile = CCharacterCore::PhysicalSize() * 0.5f;
+	const float triggerRadius = CCharacterCore::PhysicalSize();
+	auto draw = [&](int clientId) {
+		const vec2 &pos = pGame->m_aClients[clientId].m_RenderPos;
+		if(tile)
+			EmitRectShape(pos, halfTile, halfTile, g_Config.m_KxHitboxesTileStyle, g_Config.m_KxHitboxesTileSpeed, clientId);
+		if(trigger)
+			EmitCircleShape(pos, triggerRadius, g_Config.m_KxHitboxesTriggerStyle, g_Config.m_KxHitboxesTriggerSpeed, clientId);
+	};
+
+	// Active dummy.
+	if(pGame->m_Snap.m_aCharacters[LocalId].m_Active)
+		draw(LocalId);
+
+	// Other players (Show for others, optionally filtered like ESP).
+	if(!g_Config.m_KxHitboxesShowOthers)
+		return;
+	for(int i = 0; i < MAX_CLIENTS; i++)
+	{
+		if(i == LocalId || !pGame->m_aClients[i].m_Active || !pGame->m_Snap.m_aCharacters[i].m_Active)
+			continue;
+		if(g_Config.m_KxHitboxesFilters && !PassesFilters(i, LocalId))
+			continue;
+		draw(i);
+	}
+}
+
+// v1.56.256: Hitboxes shape emitters. Style: 0=Filled (always drawn immediately —
+// the deferred queue is lines-only), 1=Box (outline), 2=Dotted Box (dashes flow
+// along the outline, animated with `speed`). Outlines honor the line layer.
+void CEsp::EmitRectShape(const vec2 &center, float halfW, float halfH, int style, int speed, int playerIndex) const
+{
+	auto col = [&](int segIdx) -> ColorRGBA {
+		ColorRGBA c = ColorRGBA(KxLineColorAt(KX_LINE_HITBOXES, segIdx), true);
+		c.a = KxLineAlpha(KX_LINE_HITBOXES);
+		return c;
+	};
+	int lineSize = KxLineSize(KX_LINE_HITBOXES);
+	float halfWidth = lineSize > 0 ? 0.5f + (float)(lineSize - 1) * 0.25f : 0.0f;
+
+	if(style == 0)
+	{
+		Graphics()->TextureClear();
+		Graphics()->QuadsBegin();
+		const ColorRGBA fill = col(playerIndex);
+		Graphics()->SetColor(fill.r, fill.g, fill.b, fill.a);
+		IGraphics::CQuadItem q(center.x - halfW, center.y - halfH, halfW * 2.0f, halfH * 2.0f);
+		Graphics()->QuadsDraw(&q, 1);
+		Graphics()->QuadsEnd();
+		return;
+	}
+
+	const vec2 corners[4] = {
+		vec2(center.x - halfW, center.y - halfH),
+		vec2(center.x + halfW, center.y - halfH),
+		vec2(center.x + halfW, center.y + halfH),
+		vec2(center.x - halfW, center.y + halfH),
+	};
+	const bool dotted = style == 2;
+	const float dash = 8.0f, gap = 6.0f, pattern = dash + gap;
+	float animOffset = 0.0f;
+	if(dotted)
+	{
+		float t = (float)GameClient()->Client()->GameTick(g_Config.m_ClDummy) / 50.0f;
+		animOffset = fmodf(t * (float)speed, pattern);
+		if(animOffset < 0.0f)
+			animOffset += pattern;
+	}
+	for(int e = 0; e < 4; e++)
+	{
+		const vec2 &p0 = corners[e];
+		const vec2 p1 = corners[(e + 1) % 4];
+		vec2 dir = p1 - p0;
+		const float len = length(dir);
+		if(len < 0.001f)
+			continue;
+		dir /= len;
+		if(!dotted)
+		{
+			if(g_Config.m_KxLineRenderingLayer > 0)
+				KinetixEnqueueLine(p0, p1, col(playerIndex + e), halfWidth);
+			else
+				DrawSegment(p0, p1, col(playerIndex + e), halfWidth);
+			continue;
+		}
+		float pos = animOffset;
+		int dashIdx = 0;
+		while(pos < len)
+		{
+			float dashStart = pos;
+			float dashEnd = pos + dash;
+			if(dashEnd > 0.0f && dashStart < len)
+			{
+				if(dashStart < 0.0f)
+					dashStart = 0.0f;
+				if(dashEnd > len)
+					dashEnd = len;
+				vec2 segStart = p0 + dir * dashStart;
+				vec2 segEnd = p0 + dir * dashEnd;
+				if(g_Config.m_KxLineRenderingLayer > 0)
+					KinetixEnqueueLine(segStart, segEnd, col(playerIndex + e * 8 + dashIdx), halfWidth);
+				else
+					DrawSegment(segStart, segEnd, col(playerIndex + e * 8 + dashIdx), halfWidth);
+				dashIdx++;
+			}
+			pos += pattern;
+		}
+	}
+}
+
+void CEsp::EmitCircleShape(const vec2 &center, float radius, int style, int speed, int playerIndex) const
+{
+	auto col = [&](int segIdx) -> ColorRGBA {
+		ColorRGBA c = ColorRGBA(KxLineColorAt(KX_LINE_HITBOXES, segIdx), true);
+		c.a = KxLineAlpha(KX_LINE_HITBOXES);
+		return c;
+	};
+	int lineSize = KxLineSize(KX_LINE_HITBOXES);
+	float halfWidth = lineSize > 0 ? 0.5f + (float)(lineSize - 1) * 0.25f : 0.0f;
+
+	if(style == 0)
+	{
+		Graphics()->TextureClear();
+		Graphics()->QuadsBegin();
+		const ColorRGBA fill = col(playerIndex);
+		Graphics()->SetColor(fill.r, fill.g, fill.b, fill.a);
+		Graphics()->DrawCircle(center.x, center.y, radius, 32);
+		Graphics()->QuadsEnd();
+		return;
+	}
+
+	const bool dotted = style == 2;
+	const float dash = 8.0f, gap = 6.0f, pattern = dash + gap;
+	float animOffset = 0.0f;
+	if(dotted)
+	{
+		float t = (float)GameClient()->Client()->GameTick(g_Config.m_ClDummy) / 50.0f;
+		animOffset = fmodf(t * (float)speed, pattern);
+		if(animOffset < 0.0f)
+			animOffset += pattern;
+	}
+
+	const float arc = 2.0f * pi * radius;
+	if(!dotted)
+	{
+		// Solid outline: chords between sampled points (sagitta < 0.3 units at r=28).
+		const int segments = 24;
+		vec2 prev = center + vec2(radius, 0.0f);
+		for(int i = 1; i <= segments; i++)
+		{
+			const float a = (float)i / (float)segments * 2.0f * pi;
+			const vec2 cur = center + vec2(cosf(a), sinf(a)) * radius;
+			if(g_Config.m_KxLineRenderingLayer > 0)
+				KinetixEnqueueLine(prev, cur, col(playerIndex + i - 1), halfWidth);
+			else
+				DrawSegment(prev, cur, col(playerIndex + i - 1), halfWidth);
+			prev = cur;
+		}
+		return;
+	}
+
+	// Dotted: dashes flow along the outline (arc-length parameterized chords).
+	float pos = animOffset;
+	int dashIdx = 0;
+	while(pos < arc)
+	{
+		float s0 = pos;
+		float s1 = pos + dash;
+		if(s1 > 0.0f && s0 < arc)
+		{
+			if(s0 < 0.0f)
+				s0 = 0.0f;
+			if(s1 > arc)
+				s1 = arc;
+			const float a0 = s0 / arc * 2.0f * pi;
+			const float a1 = s1 / arc * 2.0f * pi;
+			const vec2 p0 = center + vec2(cosf(a0), sinf(a0)) * radius;
+			const vec2 p1 = center + vec2(cosf(a1), sinf(a1)) * radius;
+			if(g_Config.m_KxLineRenderingLayer > 0)
+				KinetixEnqueueLine(p0, p1, col(playerIndex + dashIdx), halfWidth);
+			else
+				DrawSegment(p0, p1, col(playerIndex + dashIdx), halfWidth);
+			dashIdx++;
+		}
+		pos += pattern;
+	}
+}
+
+void CEsp::OnRender()
+{
 	CGameClient *pGame = GameClient();
 	int LocalId = pGame->m_Snap.m_LocalClientId;
 	if(LocalId < 0)
+		return;
+
+	// v1.56.256: Hitboxes component — runs independently of the ESP master toggle.
+	EmitHitboxes(LocalId);
+
+	if(!g_Config.m_KxEsp)
 		return;
 
 	// Determine point A (origin of all ESP lines).
@@ -336,11 +620,16 @@ void CEsp::OnRender()
 	Graphics()->MapScreenToInterface(pGame->m_Camera.m_Center.x, pGame->m_Camera.m_Center.y, pGame->m_Camera.m_Zoom);
 
 	// Draw a line from pointA to every player passing the filters.
+	// v1.56.254: each target also gets a box outline (Box Style/Box Speed).
 	for(int i = 0; i < MAX_CLIENTS; i++)
 	{
 		if(!PassesFilters(i, LocalId))
 			continue;
 		vec2 target = pGame->m_aClients[i].m_RenderPos;
-		EmitLine(pointA, target, i);
+		// v1.56.256: Pointer/Box visibility toggles.
+		if(g_Config.m_KxEspPointer)
+			EmitLine(pointA, target, i);
+		if(g_Config.m_KxEspBox)
+			EmitBox(target, i);
 	}
 }

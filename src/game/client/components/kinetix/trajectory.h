@@ -99,7 +99,11 @@ private:
         // Sync legacy m_KxShowTrajectory / m_KxTrajectoryTicks <-> m_aTypes[TRAJ_TEE].
         // Called at the top of OnRender so binds like "toggle kx_show_trajectory 1 0"
         // still work and reflect into the Tee type settings.
-        void SyncLegacyConfig();
+		void SyncLegacyConfig();
+
+		// v1.56.255: per-type settings persistence (cvars <-> m_aTypes,
+		// pull once at startup / push every frame).
+		void SyncSavedSettings();
 };
 
 #endif // GAME_CLIENT_COMPONENTS_KINETIX_TRAJECTORY_H

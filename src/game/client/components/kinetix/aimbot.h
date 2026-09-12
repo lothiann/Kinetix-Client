@@ -85,7 +85,11 @@ private:
         void FireWeapon();
         void DoHook();
         void RenderFov(const SWeaponSettings &Settings, const vec2 &MyPos, const vec2 &AimDir, float Alpha);
-        void RenderRadius(const SWeaponSettings &Settings, const vec2 &MyPos, const vec2 &AimDir, float Alpha);
+	void RenderRadius(const SWeaponSettings &Settings, const vec2 &MyPos, const vec2 &AimDir, float Alpha);
+
+	// v1.56.255: per-weapon settings persistence (cvars <-> structs, pull once
+	// at startup / push every tick). See aimbot.cpp.
+	void SyncSavedSettings();
         // v1.56.196: Real Predict — uses full physics simulation (CopyWorld + Tick).
         // Pre-rolls MAX_PREDICT_TICKS ticks ahead ONCE per FindTarget call,
         // recording each client's position after each tick. Then walks the table

@@ -23,6 +23,60 @@
 // tune zone's tuning struct.
 #include <game/gamecore.h>
 
+// v1.56.255: per-type cvar tables — index matches m_aTypes order
+// (tee, pistol, shotgun, grenade, laser). Used by SyncSavedSettings().
+static int *const s_apTrajShow[] = {
+	&g_Config.m_KxTrajTeeShow, &g_Config.m_KxTrajPistolShow, &g_Config.m_KxTrajShotgunShow,
+	&g_Config.m_KxTrajGrenadeShow, &g_Config.m_KxTrajLaserShow};
+static int *const s_apTrajTicks[] = {
+	&g_Config.m_KxTrajTeeTicks, &g_Config.m_KxTrajPistolTicks, &g_Config.m_KxTrajShotgunTicks,
+	&g_Config.m_KxTrajGrenadeTicks, &g_Config.m_KxTrajLaserTicks};
+static int *const s_apTrajGradient[] = {
+	&g_Config.m_KxTrajTeeGradient, &g_Config.m_KxTrajPistolGradient, &g_Config.m_KxTrajShotgunGradient,
+	&g_Config.m_KxTrajGrenadeGradient, &g_Config.m_KxTrajLaserGradient};
+static int *const s_apTrajSimulate[] = {
+	&g_Config.m_KxTrajTeeSimulate, &g_Config.m_KxTrajPistolSimulate, &g_Config.m_KxTrajShotgunSimulate,
+	&g_Config.m_KxTrajGrenadeSimulate, &g_Config.m_KxTrajLaserSimulate};
+static int *const s_apTrajForOthers[] = {
+	&g_Config.m_KxTrajTeeForOthers, &g_Config.m_KxTrajPistolForOthers, &g_Config.m_KxTrajShotgunForOthers,
+	&g_Config.m_KxTrajGrenadeForOthers, &g_Config.m_KxTrajLaserForOthers};
+static int *const s_apTrajForCurrent[] = {
+	&g_Config.m_KxTrajTeeForCurrent, &g_Config.m_KxTrajPistolForCurrent, &g_Config.m_KxTrajShotgunForCurrent,
+	&g_Config.m_KxTrajGrenadeForCurrent, &g_Config.m_KxTrajLaserForCurrent};
+
+// v1.56.255: per-type settings persistence. Pulls the saved cvars into
+// m_aTypes once at startup, then pushes them back to g_Config every frame,
+// so ClickGUI edits are saved to settings.cfg like any other cvar.
+void CTrajectory::SyncSavedSettings()
+{
+	static bool s_Init = false;
+	if(!s_Init)
+	{
+		s_Init = true;
+		for(int t = 0; t < NUM_TRAJ_TYPES; t++)
+		{
+			STypeSettings &s = m_aTypes[t];
+			s.m_Show = *s_apTrajShow[t] != 0;
+			s.m_PredictionTicks = *s_apTrajTicks[t];
+			s.m_AlphaGradient = *s_apTrajGradient[t] != 0;
+			s.m_SimulatePlayers = *s_apTrajSimulate[t] != 0;
+			s.m_ShowForOtherPlayers = *s_apTrajForOthers[t] != 0;
+			s.m_ShowForCurrent = *s_apTrajForCurrent[t] != 0;
+		}
+		return;
+	}
+	for(int t = 0; t < NUM_TRAJ_TYPES; t++)
+	{
+		const STypeSettings &s = m_aTypes[t];
+		*s_apTrajShow[t] = s.m_Show ? 1 : 0;
+		*s_apTrajTicks[t] = s.m_PredictionTicks;
+		*s_apTrajGradient[t] = s.m_AlphaGradient ? 1 : 0;
+		*s_apTrajSimulate[t] = s.m_SimulatePlayers ? 1 : 0;
+		*s_apTrajForOthers[t] = s.m_ShowForOtherPlayers ? 1 : 0;
+		*s_apTrajForCurrent[t] = s.m_ShowForCurrent ? 1 : 0;
+	}
+}
+
 void CTrajectory::SyncLegacyConfig()
 {
         // v1.56.183: m_KxShowTrajectory is now the MASTER toggle (checked in OnRender),
@@ -37,17 +91,15 @@ void CTrajectory::SyncLegacyConfig()
 
         STypeSettings &tee = m_aTypes[TRAJ_TEE];
 
-        if(s_First)
-        {
-                tee.m_PredictionTicks = g_Config.m_KxTrajectoryTicks;
-                // v1.56.183: seed Tee's Show from the master toggle on first frame only.
-                // Provides backward compat for users who had kx_show_trajectory=1 saved
-                // in config — they'll still see the Tee trajectory without needing to
-                // manually enable Tee's per-type Show. After this first frame, the
-                // master and per-type Show are fully independent (like AimBot).
-                tee.m_Show = g_Config.m_KxShowTrajectory != 0;
-                s_First = false;
-        }
+	if(s_First)
+	{
+		tee.m_PredictionTicks = g_Config.m_KxTrajectoryTicks;
+		// v1.56.255: the old first-frame seed of Tee's Show from the master
+		// toggle is removed — per-type Show is now persisted via the
+		// KxTraj*Show cvars (SyncSavedSettings); seeding here would override
+		// the restored state on every startup.
+		s_First = false;
+	}
         else
         {
                 if(g_Config.m_KxTrajectoryTicks != s_LastTicks)
@@ -772,7 +824,9 @@ void CTrajectory::RenderCurrentLasers()
 
 void CTrajectory::OnRender()
 {
-        SyncLegacyConfig();
+	// v1.56.255: per-type persistence (pull once / push every frame).
+	SyncSavedSettings();
+	SyncLegacyConfig();
 
         // v1.56.183: master toggle — like g_Config.m_KxAimBot in aimbot.cpp:60,91.
         // When OFF, nothing renders (no tee, no weapon preview, no show-for-current).
