@@ -34,6 +34,11 @@ public:
                 int m_Rules = 1; // 0=none 1=insert_line 2=insert_line+raycast
                 bool m_UseAngle = false; // AB: aim at raycast hit point instead of target center
                 bool m_Predict = true; // AB: predict target position based on projectile time-of-flight (iterative)
+                // v1.56.248: AB Jitter — randomize the aim point within the player
+                // hitbox (radius 28). 0 = off; 1-100 = % of the hitbox radius used for
+                // the random offset (normal mode) / random distance along a random
+                // RAY THAT HIT the player (raycast-angle mode).
+                float m_Jitter = 0.0f;
                 int m_AimMode = 0; // 0=silent 1=trigger 2=always (AimBot only)
                 int m_TeamFilter = 0; // 0=both 1=war 2=my
                 int m_FriendFilter = 0; // 0=both 1=ignore 2=only

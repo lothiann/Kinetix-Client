@@ -634,6 +634,14 @@ public:
         void OnDummySwap() override;
         int OnSnapInput(int *pData, int Conn, bool Force) override;
 
+        // v1.56.246: Auto Fly Predict — full one-tick physics prediction of two
+        // tees' positions. Copies the prediction world, advances it exactly one
+        // tick with each character's last known input and reads back both
+        // positions (gravity, velocity ramp, friction, jump, hook, map and
+        // player collision all apply). Returns false if prediction isn't
+        // available — callers fall back to linear pos+vel extrapolation.
+        bool PredictedPosNextTick(int CidA, int CidB, vec2 &OutPosA, vec2 &OutPosB);
+
         // Apply copy-moves transformations (filter, mirror direction, mirror aim,
         // smart aim) to a non-active dummy's input. Called after m_aDummyInput[D]
         // is set from the player's input. Only active when cl_dummy_copy_moves is on.

@@ -110,7 +110,8 @@ static SRow g_CopyMovesLatencyChildren[] = {
 // v1.56.189: "Auto Fly" expandable — configurable auto-hammer for hammerfly.
 // Children: Max Distance slider (5-63, default 50, real hammer max reach = 63
 // = ProjStartPos offset 21 + FindEntities radius 14 + target ProximityRadius 28),
-// Predict toggle (next-tick position prediction).
+// v1.56.246: Predict toggle — full one-tick physics next-tick position
+// prediction (gravity, velramp, hook, collisions; see CGameClient::PredictedPosNextTick).
 static SRow g_AutoFlyChildren[] = {
         {ERowType::Slider, "Max Distance", nullptr, false, false, 5.0f, 63.0f, 1.0f, 50.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Predict", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
@@ -162,6 +163,9 @@ static SRow g_AimBotChildren[] = {
         {ERowType::Toggle, "Use raycast angle (AB)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         // v1.56.192: AimBot Predict — iterative time-of-flight prediction (NOT in TriggerBot).
         {ERowType::Toggle, "Predict", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        // v1.56.248: AB Jitter — randomize the aim point within the player hitbox
+        // (raycast-angle mode: random RAY THAT HIT the player + random distance).
+        {ERowType::Slider, "AB Jitter", nullptr, false, false, 0.0f, 100.0f, 1.0f, 0.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Dropdown, "AB Aim Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABAimModeOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "AB Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTeamOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "AB Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
@@ -254,7 +258,7 @@ static SRow g_FunctionsRows[] = {
         {ERowType::Expandable, "Block", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BlockChildren, 37},
         {ERowType::Toggle, "Random Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         // v1.56.83: AimBot + TriggerBot expandables
-        {ERowType::Expandable, "AimBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AimBotChildren, 19},
+        {ERowType::Expandable, "AimBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AimBotChildren, 20},
         {ERowType::Expandable, "TriggerBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TriggerBotChildren, 19},
         // Fly sub-section
         {ERowType::Toggle, "Preserve input", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
@@ -288,10 +292,16 @@ static SRow g_LaserUnfreezeChildren[] = {
         {ERowType::Toggle, "Show attempt", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 // "Fake Aim" expandable.
-static const char *const g_FakeAimModeOpts[] = {"Random", "Robot", "Spin", "Lag"};
+// v1.56.247: Chaos mode (jitters the real aim; Speed = re-roll cadence,
+// Jitter = max random offset in units) and Real mode (sends the real aim
+// unchanged — laser unfreeze / aimbot keep priority). "Distance from center"
+// applies to ALL modes plus the real aim and the laser unfreeze aim channel.
+static const char *const g_FakeAimModeOpts[] = {"Random", "Robot", "Spin", "Lag", "Chaos", "Real"};
 static SRow g_FakeAimChildren[] = {
-        {ERowType::Dropdown, "Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_FakeAimModeOpts, 4, 0, nullptr, 0},
+        {ERowType::Dropdown, "Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_FakeAimModeOpts, 6, 0, nullptr, 0},
         {ERowType::Slider, "Speed", nullptr, false, false, 1.0f, 100.0f, 1.0f, 10.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Jitter", nullptr, false, false, 1.0f, 100.0f, 1.0f, 20.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Distance from center", nullptr, false, false, 0.0f, 500.0f, 5.0f, 0.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Show for me", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 // v1.56.178: "Trajectory" expandable — per-type settings (Tee/Pistol/Shotgun/Grenade/Laser).
@@ -345,7 +355,7 @@ static SRow g_BasicAvoidFreezeChildren[] = {
 static SRow g_AdvancedRows[] = {
         {ERowType::Expandable, "Trajectory", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TrajectoryChildren, 7},
         {ERowType::Expandable, "Laser unfreeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LaserUnfreezeChildren, 7},
-        {ERowType::Expandable, "Fake Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_FakeAimChildren, 3},
+        {ERowType::Expandable, "Fake Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_FakeAimChildren, 5},
         {ERowType::Expandable, "ESP", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_EspChildren, 12},
         {ERowType::Expandable, "Basic Avoid Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BasicAvoidFreezeChildren, 12},
 };
@@ -758,7 +768,8 @@ static bool ExecParseHeaderLine(const char *pLine, int LineLen, const char *pKey
         return true;
 }
 
-// Fake Aim: Speed hidden when Robot mode (modeIdx == 1)
+// Fake Aim: Speed hidden for Robot (1) and Real (5); Jitter only for Chaos (4).
+// v1.56.247: added Chaos/Real modes, Jitter + Distance from center sliders.
 static bool FakeAimChildVisible(const SRow *pChildren, int childCount, int idx)
 {
         if(idx < 0 || idx >= childCount)
@@ -774,7 +785,9 @@ static bool FakeAimChildVisible(const SRow *pChildren, int childCount, int idx)
                 }
         }
         if(str_comp(row.pName, "Speed") == 0)
-                return modeIdx != 1;
+                return modeIdx != 1 && modeIdx != 5;
+        if(str_comp(row.pName, "Jitter") == 0)
+                return modeIdx == 4;
         return true;
 }
 
@@ -2295,6 +2308,10 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
 						child.valueIdx = g_Config.m_KxFakeAimMode;
                                         else if(str_comp(child.pName, "Speed") == 0 && str_comp(row.pName, "Fake Aim") == 0)
                                                 child.value = (float)g_Config.m_KxFakeAimSpeed;
+                                        else if(str_comp(child.pName, "Jitter") == 0 && str_comp(row.pName, "Fake Aim") == 0)
+                                                child.value = (float)g_Config.m_KxFakeAimJitter;
+                                        else if(str_comp(child.pName, "Distance from center") == 0 && str_comp(row.pName, "Fake Aim") == 0)
+                                                child.value = (float)g_Config.m_KxFakeAimDistCenter;
                                         else if(str_comp(child.pName, "Show for me") == 0)
                                                 child.on = g_Config.m_KxFakeAimShowForMe != 0;
                                         // ESP children
@@ -2434,6 +2451,8 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                         ch.valueIdx = s.m_FriendFilter;
                                                 else if(str_comp(ch.pName, "Predict") == 0)
                                                         ch.on = s.m_Predict;
+                                                else if(str_comp(ch.pName, "AB Jitter") == 0)
+                                                        ch.value = s.m_Jitter;
                                                 else if(str_comp(ch.pName, "AB Dummy") == 0)
                                                         ch.valueIdx = s.m_DummyFilter;
                                                 else if(str_comp(ch.pName, "Clanmate filter") == 0)
@@ -3399,6 +3418,11 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                 else
                                         g_Config.m_KxFakeAimSpeed = (int)pTarget->value;
                         }
+                        // v1.56.247: Fake Aim Chaos jitter strength + Distance from center.
+                        else if(str_comp(pTarget->pName, "Jitter") == 0)
+                                g_Config.m_KxFakeAimJitter = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Distance from center") == 0)
+                                g_Config.m_KxFakeAimDistCenter = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Hook angles") == 0)
                                 g_Config.m_KxPfHookAngles = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "A* Weight") == 0)
@@ -3429,6 +3453,8 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                         s.m_Fov = pTarget->value;
                                                     else if(str_comp(pTarget->pName, "AB Radius") == 0)
                                                         s.m_Radius = pTarget->value;
+                                                    else if(str_comp(pTarget->pName, "AB Jitter") == 0)
+                                                        s.m_Jitter = pTarget->value;
                                                 }
                                         }
                                         else if(str_comp(parentRow.pName, "TriggerBot") == 0)

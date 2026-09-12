@@ -247,13 +247,19 @@ void CBotNet::UpdateTripleFly()
                 bool canHammerNow = false;
                 if(autoId >= 0 && autoId < 128 && pGame->m_aClients[autoId].m_Active)
                 {
-                        vec2 activeTestPos = pGame->m_aClients[autoId].m_Predicted.m_Pos;
-                        vec2 dummyTestPos = actingPos;
-                        if(g_Config.m_KxDummyHammerAutoPredict)
-                        {
-                                activeTestPos += pGame->m_aClients[autoId].m_Predicted.m_Vel;
-                                dummyTestPos += pGame->m_aClients[actingCid].m_Predicted.m_Vel;
-                        }
+                                        vec2 activeTestPos = pGame->m_aClients[autoId].m_Predicted.m_Pos;
+                                        vec2 dummyTestPos = actingPos;
+                                        // v1.56.246: full one-tick physics prediction — same helper as
+                                        // OnSnapInput Auto Fly (gravity, velramp, hook, collisions);
+                                        // linear pos+vel as the fallback.
+                                        if(g_Config.m_KxDummyHammerAutoPredict)
+                                        {
+                                                if(!pGame->PredictedPosNextTick(autoId, actingCid, activeTestPos, dummyTestPos))
+                                                {
+                                                        activeTestPos += pGame->m_aClients[autoId].m_Predicted.m_Vel;
+                                                        dummyTestPos += pGame->m_aClients[actingCid].m_Predicted.m_Vel;
+                                                }
+                                        }
                         const vec2 delta = activeTestPos - dummyTestPos;
                         const float maxDist = (float)g_Config.m_KxDummyHammerAutoMaxDist;
                         if(length_squared(delta) <= maxDist * maxDist)

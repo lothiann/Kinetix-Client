@@ -619,6 +619,68 @@ void CGameClient::OnDummySwap()
         m_IsDummySwapping = 1;
 }
 
+// v1.56.246: Auto Fly Predict — full one-tick physics simulation instead of
+// linear pos+vel extrapolation. Copies the DDNet prediction world, advances it
+// exactly one tick with every character's last known input (preserves
+// direction/jump/hook state) and reads back both tees' positions. Gravity,
+// velocity ramp, ground/air control, hook physics, map collision,
+// player-vs-player collision and tiles all apply — the same proven pattern as
+// AimBot Real Predict (v1.56.196) and Triple Fly hook prediction. This matters
+// at hammerfly speeds, where velramp alone eats 10-15% of horizontal velocity
+// per tick — linear extrapolation overshoots badly there.
+// Returns false when prediction isn't possible (characters missing from the
+// prediction world — e.g. before the first snapshot); OutPosA/OutPosB are left
+// untouched and callers fall back to linear pos+vel.
+bool CGameClient::PredictedPosNextTick(int CidA, int CidB, vec2 &OutPosA, vec2 &OutPosB)
+{
+        if(CidA < 0 || CidA >= MAX_CLIENTS || CidB < 0 || CidB >= MAX_CLIENTS)
+                return false;
+
+        CGameWorld *pPredWorld = new CGameWorld;
+        pPredWorld->CopyWorld(&m_PredictedWorld);
+
+        if(!pPredWorld->GetCharacterById(CidA) || !pPredWorld->GetCharacterById(CidB))
+        {
+                delete pPredWorld;
+                return false;
+        }
+
+        // Per-tick ordering (matches AimBot Real Predict / laser_unfreeze):
+        //   1. OnDirectInput on all chars (still on the previous tick)
+        //   2. Advance m_GameTick to the new tick
+        //   3. OnPredictedInput on all chars (now on the new tick)
+        //   4. World Tick() — applies physics for the new tick
+        const int startTick = pPredWorld->GameTick();
+        for(int c = 0; c < MAX_CLIENTS; c++)
+        {
+                CCharacter *pChar = pPredWorld->GetCharacterById(c);
+                if(!pChar)
+                        continue;
+                CNetObj_PlayerInput inp = pChar->Core()->m_Input;
+                pChar->OnDirectInput(&inp);
+        }
+        pPredWorld->m_GameTick = startTick + 1;
+        for(int c = 0; c < MAX_CLIENTS; c++)
+        {
+                CCharacter *pChar = pPredWorld->GetCharacterById(c);
+                if(!pChar)
+                        continue;
+                CNetObj_PlayerInput inp = pChar->Core()->m_Input;
+                pChar->OnPredictedInput(&inp);
+        }
+        pPredWorld->Tick();
+
+        // Re-fetch instead of caching pointers: a character could in theory be
+        // destroyed during the tick (death/leave).
+        if(CCharacter *pCharA = pPredWorld->GetCharacterById(CidA))
+                OutPosA = pCharA->Core()->m_Pos;
+        if(CCharacter *pCharB = pPredWorld->GetCharacterById(CidB))
+                OutPosB = pCharB->Core()->m_Pos;
+
+        delete pPredWorld;
+        return true;
+}
+
 int CGameClient::OnSnapInput(int *pData, int Conn, bool Force)
 {
         if(Conn == g_Config.m_ClDummy)
@@ -694,18 +756,26 @@ int CGameClient::OnSnapInput(int *pData, int Conn, bool Force)
                                 // + target ProximityRadius (28) = 63. Slider max = 63 (v1.56.190).
                                 const float maxDist = (float)g_Config.m_KxDummyHammerAutoMaxDist;
 
-                                // v1.56.189 (fixed v1.56.191): Predict — simulate next tick.
-                                // m_Vel is in units/tick, so nextPos = curPos + m_Vel.
-                                // BOTH active and dummy positions are predicted (v1.56.189 only
-                                // predicted active, leaving dummy at current pos — wrong, since
-                                // both move every tick). Now we check the distance between the
-                                // two predicted positions, which is the actual next-tick distance.
+                                // v1.56.189 (fixed v1.56.191): Predict — BOTH active and dummy
+                                // positions are predicted (v1.56.189 only predicted active,
+                                // leaving dummy at current pos — wrong, since both move every
+                                // tick). We check the distance between the two predicted
+                                // positions, which is the actual next-tick distance.
+                                // v1.56.246: prediction is now a full one-tick physics simulation
+                                // (gravity, velocity ramp, friction, input, hook, map + player
+                                // collision) instead of linear pos+vel — at hammerfly speeds
+                                // velramp eats 10-15% of horizontal velocity per tick, so linear
+                                // extrapolation overshoots badly. Linear is the fallback when the
+                                // prediction world isn't ready (see PredictedPosNextTick).
                                 vec2 activeTestPos = activePos;
                                 vec2 dummyTestPos = dummyPos;
                                 if(g_Config.m_KxDummyHammerAutoPredict)
                                 {
-                                        activeTestPos = activePos + m_aClients[activeId].m_Predicted.m_Vel;
-                                        dummyTestPos = dummyPos + m_aClients[m_aLocalIds[Conn]].m_Predicted.m_Vel;
+                                        if(!PredictedPosNextTick(activeId, m_aLocalIds[Conn], activeTestPos, dummyTestPos))
+                                        {
+                                                activeTestPos = activePos + m_aClients[activeId].m_Predicted.m_Vel;
+                                                dummyTestPos = dummyPos + m_aClients[m_aLocalIds[Conn]].m_Predicted.m_Vel;
+                                        }
                                 }
 
                                 const vec2 delta = activeTestPos - dummyTestPos;

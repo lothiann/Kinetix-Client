@@ -805,11 +805,47 @@ int CControls::SnapInput(int *pData)
                                 }
                                 fakeOffset = s_RobotAim;
                         }
+                        else if(mode == 4) // Chaos — jitter the real aim (v1.56.247)
+                        {
+                                // v1.56.247: Chaos — jitters the CURRENT (real) aim with
+                                // randomness. Speed = ticks between jitter re-rolls (same
+                                // cadence semantics as Random), Jitter = max random offset
+                                // magnitude in world units. The jitter follows the live
+                                // mouse — it never locks to a fixed point.
+                                static int s_ChCounter = 0;
+                                static vec2 s_ChOffset(0, 0);
+                                s_ChCounter++;
+                                if(s_ChCounter >= speed)
+                                {
+                                        const float ChAngle = ((float)rand() / (float)RAND_MAX) * pi * 2.0f;
+                                        const float ChMag = ((float)rand() / (float)RAND_MAX) * (float)g_Config.m_KxFakeAimJitter;
+                                        s_ChOffset = vec2(cosf(ChAngle), sinf(ChAngle)) * ChMag;
+                                        s_ChCounter = 0;
+                                }
+                                fakeOffset = realAim + s_ChOffset;
+                        }
+                        else if(mode == 5) // Real — send the real aim unchanged (v1.56.247)
+                        {
+                                // v1.56.247: Real — the "fake" aim is simply the real aim.
+                                // No-op mode: laser unfreeze / aimbot keep full priority (the
+                                // laserAimActive guard above skips fake generation), while the
+                                // Distance-from-center slider and Show-for-me still apply.
+                                fakeOffset = realAim;
+                        }
                         else // Spin
                         {
                                 static float s_SpinAngle = 0.0f;
                                 s_SpinAngle += (speed / 100.0f) * 0.5f;
                                 fakeOffset = vec2(cosf(s_SpinAngle), sinf(s_SpinAngle)) * AIM_DIST;
+                        }
+
+                        // v1.56.247: Distance from center — rescale the fake aim to an
+                        // exact distance from (0,0), preserving direction (0 = off).
+                        if(g_Config.m_KxFakeAimDistCenter > 0)
+                        {
+                                float FakeLen = length(fakeOffset);
+                                if(FakeLen > 0.5f)
+                                        fakeOffset = fakeOffset * ((float)g_Config.m_KxFakeAimDistCenter / FakeLen);
                         }
 
                         fakeActive = true;
@@ -851,6 +887,24 @@ int CControls::SnapInput(int *pData)
         // Last among the overrides (right before mem_copy) so the recorded
         // movement/aim/fire win over every other input source.
         GameClient()->m_Tas.ApplyTasRealInput(&m_aInputData[g_Config.m_ClDummy]);
+
+        // v1.56.247: Distance from center — applies to EVERY aim sent to the
+        // server: the real player aim, the laser unfreeze silent-aim channel and
+        // Show-for-me fake aims (the pData-only fake path is rescaled where
+        // fakeOffset is generated). Rescales the aim to exactly
+        // kx_fake_aim_dist_center units from (0,0), preserving direction.
+        // 0 = off. Skipped during TAS real replay so takes replay as-is.
+        if(g_Config.m_KxFakeAimDistCenter > 0 && !GameClient()->m_Tas.IsRealPlaying())
+        {
+                vec2 SendTarget((float)m_aInputData[g_Config.m_ClDummy].m_TargetX, (float)m_aInputData[g_Config.m_ClDummy].m_TargetY);
+                float SendLen = length(SendTarget);
+                if(SendLen > 0.5f)
+                {
+                        vec2 Scaled = SendTarget * ((float)g_Config.m_KxFakeAimDistCenter / SendLen);
+                        m_aInputData[g_Config.m_ClDummy].m_TargetX = (int)Scaled.x;
+                        m_aInputData[g_Config.m_ClDummy].m_TargetY = (int)Scaled.y;
+                }
+        }
 
         m_LastSendTime = time_get();
         mem_copy(pData, &m_aInputData[g_Config.m_ClDummy], sizeof(m_aInputData[0]));

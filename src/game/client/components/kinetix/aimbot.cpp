@@ -84,7 +84,6 @@ void CAimBot::OnRender()
         // Active weapon from predicted world (snapshot doesn't expose it directly).
         CCharacter *pChar = pGame->m_PredictedWorld.GetCharacterById(LocalId);
         int weapon = pChar ? pChar->GetActiveWeapon() : -1;
-        bool hookHeld = pGame->m_Controls.m_aInputData[g_Config.m_ClDummy].m_Hook != 0;
         Graphics()->MapScreenToInterface(pGame->m_Camera.m_Center.x, pGame->m_Camera.m_Center.y, pGame->m_Camera.m_Zoom);
 
         float alpha = KxLineAlpha(KX_LINE_AIMBOT); // v1.56.108: per-component
@@ -99,8 +98,9 @@ void CAimBot::OnRender()
                         if(m_AimBotShowRadius)
                                 RenderRadius(m_AimBotWeapons[weapon], MyPos, AimDir, alpha);
                 }
-                // Hook (6) — only show if hook held or AimMode=always
-                if(m_AimBotWeapons[6].m_Enabled && (hookHeld || m_AimBotWeapons[6].m_AimMode == 2))
+                // Hook (6) — v1.56.248: show FOV/radius ALWAYS when the hook weapon is
+                // enabled (previously gated on hook held / AimMode=always).
+                if(m_AimBotWeapons[6].m_Enabled)
                 {
                         if(m_AimBotShowFov)
                                 RenderFov(m_AimBotWeapons[6], MyPos, AimDir, alpha);
@@ -419,6 +419,10 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int Weapon, int LocalId
                 float bestSampleScore = 1e18f;
                 bool anyPass = false;
                 vec2 sampleAimPoint = targetCenter;
+                // v1.56.248: Jitter (raycast-angle mode) — collect ray sample points
+                // whose rays HIT the player (visible); a random one is chosen later.
+                vec2 aJitHits[HB_MAX_SAMPLES];
+                int NumJitHits = 0;
                 for(int s = 0; s < hbSamples; s++)
                 {
                         vec2 sp = hbPoints[s];
@@ -448,6 +452,9 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int Weapon, int LocalId
                         }
                         if(visible)
                         {
+                                // v1.56.248: Jitter — remember this hitting ray (raycast-angle mode).
+                                if(Settings.m_Jitter > 0.0f && Settings.m_UseAngle && Settings.m_Rules == 2 && NumJitHits < HB_MAX_SAMPLES)
+                                        aJitHits[NumJitHits++] = sp;
                                 float score;
                                 if(Settings.m_Priority == 0)
                                         score = angleDiff;
@@ -468,6 +475,111 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int Weapon, int LocalId
                         bestScore = bestSampleScore;
                         bestTarget = i;
                         bestAimPoint = sampleAimPoint;
+                        // v1.56.248: Jitter — randomize the aim point inside the player
+                        // hitbox. Jitter scales how much of the hitbox radius is used.
+                        if(Settings.m_Jitter > 0.0f)
+                        {
+                                const float JitScale = Settings.m_Jitter / 100.0f;
+                                if(Settings.m_UseAngle && Settings.m_Rules == 2)
+                                {
+                                        // Raycast-angle mode: random angle among the rays that
+                                        // HIT the player, plus a random distance along that ray
+                                        // from its closest point to the target center — bounded
+                                        // by the hitbox chord so the aim always stays on the tee.
+                                        if(NumJitHits > 0)
+                                        {
+                                                const vec2 HitSp = aJitHits[rand() % NumJitHits];
+                                                vec2 RayDir = HitSp - MyPos;
+                                                const float HitDist = length(RayDir);
+                                                if(HitDist > 0.5f)
+                                                {
+                                                        RayDir = RayDir / HitDist;
+                                                        const vec2 ToCenter = targetCenter - MyPos;
+                                                        const float Proj = dot(ToCenter, RayDir);
+                                                        const float HalfChordSq = hbR * hbR - (length_squared(ToCenter) - Proj * Proj);
+                                                        const float HalfChord = HalfChordSq > 0.0f ? sqrtf(HalfChordSq) : 0.0f;
+                                                        const float Off = (((float)rand() / (float)RAND_MAX) * 2.0f - 1.0f) * HalfChord * JitScale;
+                                                        bestAimPoint = MyPos + RayDir * (Proj + Off);
+                                                }
+                                        }
+                                }
+                                else
+                                {
+                                        // v1.56.249: Normal mode — predict-aware jitter with visibility
+                                        // retries. The offset is rolled up to 4 times:
+                                        //   - with Predict on, the position table is RE-WALKED with the
+                                        //     offset applied (flight time computed to the JITTERED point).
+                                        //     Without this, an edge point up to hbR away from the center
+                                        //     shifts the projectile's arrival by up to ~2 ticks and the
+                                        //     shot misses a moving target;
+                                        //   - the candidate must be visible (Rules != 0), otherwise the
+                                        //     shot would fly into a wall.
+                                        // If no candidate passes, the exact (unjittered) aim is kept.
+                                        // The re-walk mirrors the v1.56.196 walk (same sub-tick interp),
+                                        // only with the offset added to every sampled position.
+                                        const vec2 BaseAim = bestAimPoint;
+                                        auto PredJitWalk = [&](const vec2 &JOff) -> vec2 {
+                                                vec2 Out = predPositions[i][MAX_PREDICT_TICKS];
+                                                bool Found = false;
+                                                float PrevFlight = -1.0f;
+                                                for(int t = 0; t <= MAX_PREDICT_TICKS; t++)
+                                                {
+                                                        const float d = length(predPositions[i][t] + JOff - MyPos);
+                                                        if(d < 1.0f)
+                                                        {
+                                                                Out = predPositions[i][t];
+                                                                Found = true;
+                                                                break;
+                                                        }
+                                                        float flightTime;
+                                                        if(projSpeedPerTick)
+                                                                flightTime = d / projSpeed;
+                                                        else
+                                                                flightTime = d * (float)SERVER_TICK_SPEED / projSpeed;
+                                                        if(flightTime <= (float)t)
+                                                        {
+                                                                if(t == 0 || PrevFlight < 0.0f)
+                                                                        Out = predPositions[i][t];
+                                                                else
+                                                                {
+                                                                        float numerator = PrevFlight - (float)(t - 1);
+                                                                        float denominator = 1.0f - (flightTime - PrevFlight);
+                                                                        float u;
+                                                                        if(denominator > 0.001f)
+                                                                                u = numerator / denominator;
+                                                                        else
+                                                                                u = 0.5f;
+                                                                        if(u < 0.0f) u = 0.0f;
+                                                                        if(u > 1.0f) u = 1.0f;
+                                                                        Out = mix(predPositions[i][t - 1], predPositions[i][t], u);
+                                                                }
+                                                                Found = true;
+                                                                break;
+                                                        }
+                                                        PrevFlight = flightTime;
+                                                }
+                                                if(!Found)
+                                                        Out = predPositions[i][MAX_PREDICT_TICKS];
+                                                return Out;
+                                        };
+                                        for(int Attempt = 0; Attempt < 4; Attempt++)
+                                        {
+                                                const float JAng = ((float)rand() / (float)RAND_MAX) * pi * 2.0f;
+                                                const float JMag = ((float)rand() / (float)RAND_MAX) * hbR * JitScale;
+                                                const vec2 JOff = vec2(cosf(JAng), sinf(JAng)) * JMag;
+                                                vec2 Cand = BaseAim + JOff;
+                                                if(predictActive && predValid[i])
+                                                        Cand = PredJitWalk(JOff) + JOff;
+                                                if(Settings.m_Rules == 0 || IsVisible(MyPos, Cand))
+                                                {
+                                                        bestAimPoint = Cand;
+                                                        break;
+                                                }
+                                                if(Attempt == 3)
+                                                        bestAimPoint = BaseAim;
+                                        }
+                                }
+                        }
                 }
         }
         // v1.56.194: Free the predicted world before returning. CopyWorld allocated
