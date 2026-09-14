@@ -347,8 +347,8 @@ int CControls::SnapInput(int *pData)
                 // force send when botnet is active
                 {
                         // v1.56.171 BUG9: m_AttackEnabled/m_CopyMoves/m_RandomAim/m_PathfinderEnabled
-                        // moved to cvars (g_Config.m_KxAttack/m_KxCopyMoves/m_KxRandomAim/m_KxAtkPathfinder)
-                        if(g_Config.m_KxAttack || g_Config.m_KxCopyMoves || g_Config.m_KxRandomAim || g_Config.m_KxAtkPathfinder)
+                        // moved to cvars (g_Config.m_KxHelpers/m_KxCopyMoves/m_KxRandomAim)
+                        if(g_Config.m_KxHelpers || g_Config.m_KxCopyMoves || g_Config.m_KxRandomAim)
                                 Send = true;
                 }
         }
@@ -591,8 +591,8 @@ int CControls::SnapInput(int *pData)
                 // force send when botnet is active
                 {
                         // v1.56.171 BUG9: m_AttackEnabled/m_CopyMoves/m_RandomAim/m_PathfinderEnabled
-                        // moved to cvars (g_Config.m_KxAttack/m_KxCopyMoves/m_KxRandomAim/m_KxAtkPathfinder)
-                        if(g_Config.m_KxAttack || g_Config.m_KxCopyMoves || g_Config.m_KxRandomAim || g_Config.m_KxAtkPathfinder)
+                        // moved to cvars (g_Config.m_KxHelpers/m_KxCopyMoves/m_KxRandomAim)
+                        if(g_Config.m_KxHelpers || g_Config.m_KxCopyMoves || g_Config.m_KxRandomAim)
                                 Send = true;
                 }
 

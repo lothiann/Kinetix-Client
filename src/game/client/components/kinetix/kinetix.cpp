@@ -20,6 +20,8 @@ CBotNet::CBotNet()
         m_aTargetIDsStr[0] = '\0';
         m_aBotsIDsStr[0] = '\0';
         m_aRescueIDsStr[0] = '\0';
+        // "Dummy IDs" default: every dummy slot is a helper.
+        str_copy(m_aHelpersDummyIDsStr, "0,1,2,3,4,5,6,7", sizeof(m_aHelpersDummyIDsStr));
 
         // Pathfinder tab (Kinetix→Pathfinder) — chunk-based mini TAS maker.
         m_PfState = PF_STATE_IDLE;
@@ -53,10 +55,9 @@ CBotNet::CBotNet()
         m_MapHeight = 0;
         m_pMapGrid = nullptr;
         m_pFrontGrid = nullptr;
-        m_PfPlayerPenalty = nullptr;
         m_MapGridLoaded = false;
         m_pfDist = nullptr;
-        m_pfVisited = nullptr;
+        m_pfFreezeDist = nullptr;
         m_aLastMapName[0] = '\0';
         m_PfEditorMode = 0;
         m_pForbiddenGrid = nullptr;
@@ -71,9 +72,8 @@ CBotNet::~CBotNet()
 	if(m_PfBaseWorld) { delete m_PfBaseWorld; m_PfBaseWorld = nullptr; }
 	if(m_pMapGrid) delete[] m_pMapGrid;
         if(m_pFrontGrid) delete[] m_pFrontGrid;
-        if(m_pfDist) delete[] m_pfDist;
-        if(m_pfVisited) delete[] m_pfVisited;
-        if(m_PfPlayerPenalty) delete[] m_PfPlayerPenalty;
+	if(m_pfDist) delete[] m_pfDist;
+	if(m_pfFreezeDist) delete[] m_pfFreezeDist;
 	if(m_PfFlowField) delete[] m_PfFlowField;
 	if(m_PfScoreField) delete[] m_PfScoreField;
 	if(m_pForbiddenGrid) delete[] m_pForbiddenGrid;
@@ -168,12 +168,11 @@ void CBotNet::OnConsoleInit()
 {
         // v1.56.171 BUG9: most kx_ commands converted to MACRO_CONFIG_INT cvars.
         // Only complex/temporal commands remain registered here. The cvar-converted
-        // commands (kx_attack, kx_aimbot, kx_autoaim, etc.) are now accessible via
-        // `toggle kx_attack 1 0` in binds and via direct `kx_attack 1` in console.
+        // commands (kx_helpers, kx_aimbot, kx_autoaim, etc.) are now accessible via
+        // `toggle kx_helpers 1 0` in binds and via direct `kx_helpers 1` in console.
         Console()->Register("kx_targets", "s[ids]", CFGFLAG_CLIENT, ConSetTargets, this, "Targets");
         Console()->Register("kx_bots", "s[ids]", CFGFLAG_CLIENT, ConSetBots, this, "Bots (allies)");
-        Console()->Register("kx_atk_set", "iiiiiiiiiiiiiiii", CFGFLAG_CLIENT, ConAttackSettings, this, "Settings (16 params: aim,fire,hook,move,stand,rescue,rescueAll,smartDetect,smartRescue,killFrz,atkMain,hammer,simPlayers,avoidFreeze,pfHook,kinodynamic)");
-        Console()->Register("kx_atk_dists", "fffffff", CFGFLAG_CLIENT, ConAttackDists, this, "Radii (fire, hook, rescue, target, main, stand, main stand)");
+        Console()->Register("kx_atk_dists", "fffffff", CFGFLAG_CLIENT, ConAttackDists, this, "Radii (fire, hook, rescue, target, main, stand, main stand)"); // v1.56.258: kx_atk_set removed
         Console()->Register("kx_rescue_ids", "s[ids]", CFGFLAG_CLIENT, ConRescueIds, this, "Rescue/Unrescue IDs");
         Console()->Register("kx_pathfinder_go", "i[on] ?i[x] ?i[y]", CFGFLAG_CLIENT, ConPathfinderGo, this, "Move to position: 0=disable, 1 x y=enable and set target");
         Console()->Register("kx_macro_load", "s[path]", CFGFLAG_CLIENT, ConMacroLoad, this, "Load macro from file");
@@ -198,10 +197,9 @@ void CBotNet::OnConsoleInit()
 // botnet modes and resets every dummy's state machine + input buffer.
 void CBotNet::OnReset()
 {
-        g_Config.m_KxAttack = false;
+        g_Config.m_KxHelpers = false;
         g_Config.m_KxCopyMoves = false;
-        g_Config.m_KxRandomAim = false;
-        g_Config.m_KxKinodynamic = false;
+        g_Config.m_KxRandomAim = false; // v1.56.258: KxKinodynamic reset removed
         for(int D = 0; D < MAX_DUMMIES; D++)
         {
                 m_aDummies[D].Reset();
@@ -270,7 +268,7 @@ void CBotNet::OnUpdate()
 
         // v1.56.171 BUG9: cvar change-detection. Since kx_ commands are now cvars,
         // there's no Con-handler to run side effects. We poll the cvar each tick
-        // and run the side effects (ResetDummyInputs, KinoCache.Reset, etc.) when
+        // and run the side effects (ResetDummyInputs, HelpersPlan.Reset, etc.) when
         // a value transitions. This replaces the old ConStand/ConAutoAim/... handlers.
         #define KX_CVAR_FALL(prev, cvar) do { \
                 int cur = g_Config.cvar; \
@@ -278,70 +276,12 @@ void CBotNet::OnUpdate()
                         if(prev && !cur) { for(int D = 0; D < MAX_DUMMIES; D++) ResetDummyInputs(D); } \
                         prev = cur; \
                 } } while(0)
-        KX_CVAR_FALL(m_PrevKxAttack, m_KxAttack);
-        KX_CVAR_FALL(m_PrevKxStand, m_KxStand);
-        KX_CVAR_FALL(m_PrevKxAutoAim, m_KxAutoAim);
-        KX_CVAR_FALL(m_PrevKxAutoFire, m_KxAutoFire);
-        KX_CVAR_FALL(m_PrevKxAutoHook, m_KxAutoHook);
-        KX_CVAR_FALL(m_PrevKxMove, m_KxMove);
+        KX_CVAR_FALL(m_PrevKxHelpers, m_KxHelpers);
         KX_CVAR_FALL(m_PrevKxRescue, m_KxRescue);
-        KX_CVAR_FALL(m_PrevKxKillFrz, m_KxKillFrz);
-        KX_CVAR_FALL(m_PrevKxAtkMain, m_KxAtkMain);
-        KX_CVAR_FALL(m_PrevKxHammer, m_KxHammer);
-        KX_CVAR_FALL(m_PrevKxSmartDetect, m_KxSmartDetect);
-        KX_CVAR_FALL(m_PrevKxSmartRescue, m_KxSmartRescue);
-        KX_CVAR_FALL(m_PrevKxAvoidFreeze, m_KxAvoidFreeze);
-        KX_CVAR_FALL(m_PrevKxPfHook, m_KxPfHook);
         KX_CVAR_FALL(m_PrevKxCopyMoves, m_KxCopyMoves);
-        // Kinodynamic: also reset KinoCache on transition.
-        if(m_PrevKxKinodynamic != g_Config.m_KxKinodynamic)
-        {
-                if(m_PrevKxKinodynamic && !g_Config.m_KxKinodynamic)
-                {
-                        for(int D = 0; D < MAX_DUMMIES; D++)
-                        {
-                                m_aDummies[D].m_KinoCache.Reset();
-                                ResetDummyInputs(D);
-                        }
-                }
-                m_PrevKxKinodynamic = g_Config.m_KxKinodynamic;
-        }
-        // Pathfinder (kx_atk_pathfinder): reset target cache on any change.
-        if(m_PrevKxAtkPathfinder != g_Config.m_KxAtkPathfinder)
-        {
-                for(int D = 0; D < MAX_DUMMIES; D++)
-                {
-                        m_aDummies[D].m_LastTargetTX = -1;
-                        m_aDummies[D].m_LastTargetTY = -1;
-                        m_aDummies[D].m_PathFound = false;
-                }
-                m_PrevKxAtkPathfinder = g_Config.m_KxAtkPathfinder;
-        }
-        // Simulate players: reset target cache on any change.
-        if(m_PrevKxPfSimulatePlayers != g_Config.m_KxPfSimulatePlayers)
-        {
-                for(int D = 0; D < MAX_DUMMIES; D++)
-                {
-                        m_aDummies[D].m_LastTargetTX = -1;
-                        m_aDummies[D].m_LastTargetTY = -1;
-                        m_aDummies[D].m_PathFound = false;
-                }
-                m_PrevKxPfSimulatePlayers = g_Config.m_KxPfSimulatePlayers;
-        }
-        // Hook delay: reset hook tick timer on any change.
-        if(m_PrevKxAtkHookDelay != g_Config.m_KxAtkHookDelay)
-        {
-                for(int D = 0; D < MAX_DUMMIES; D++)
-                        m_aDummies[D].m_HookTickTimer = 0;
-                m_PrevKxAtkHookDelay = g_Config.m_KxAtkHookDelay;
-        }
-        // PfHook: reset PfHookTile on any change.
-        if(m_PrevKxPfHook != g_Config.m_KxPfHook)
-        {
-                for(int D = 0; D < MAX_DUMMIES; D++)
-                        m_aDummies[D].m_PfHookTile = vec2(0, 0);
-                m_PrevKxPfHook = g_Config.m_KxPfHook;
-        }
+        // v1.56.258: legacy attack toggles (Stand/AutoAim/AutoFire/AutoHook/Move/
+        // KillFrz/AtkMain/Hammer/SmartDetect/SmartRescue/AvoidFreeze/PfHook/
+        // Kinodynamic/AtkPathfinder/PfSimulatePlayers/AtkHookDelay) removed.
         #undef KX_CVAR_FALL
 
         // Pathfinder tab: run one chunk per update if RUNNING.  Placed before the
@@ -366,7 +306,7 @@ void CBotNet::OnUpdate()
 
         // Auto-bots: automatically add all local dummies to bots list
         // so they don't attack each other and will rescue each other
-        if(g_Config.m_KxAttack)
+        if(g_Config.m_KxHelpers)
         {
                 for(int d = 0; d < MAX_DUMMIES; d++)
                 {
@@ -376,8 +316,15 @@ void CBotNet::OnUpdate()
                 }
         }
 
+        // v1.56.259: parse the UI ID strings into the bool lists.  SyncStrToIDs
+        // existed but was never called anywhere — 'Target IDs'/'Rescue IDs'
+        // never reached the selection loops, so explicit targets did nothing.
+        SyncStrToIDs(m_aTargetIDsStr, m_TargetList);
+        SyncStrToIDs(m_aRescueIDsStr, m_RescueList);
+        SyncStrToDummyIDs(m_aHelpersDummyIDsStr, m_HelpersDummyList);
+
         // Auto main: automatically set main ID to the currently active dummy
-        if(g_Config.m_KxAutoMain && g_Config.m_KxAttack)
+        if(g_Config.m_KxAutoMain && g_Config.m_KxHelpers)
         {
                 int ActiveID = pGame->m_aLocalIds[g_Config.m_ClDummy];
                 if(ActiveID >= 0 && g_Config.m_KxMain != ActiveID)
@@ -398,7 +345,7 @@ void CBotNet::OnUpdate()
         //
         // Solution: skip the entire ProcessDummy loop when no botnet features are
         // active. This makes the default dummy input pipeline byte-identical to DDNet.
-        bool anyBotnetFeature = g_Config.m_KxAttack || g_Config.m_KxCopyMoves || g_Config.m_KxRandomAim;
+        bool anyBotnetFeature = g_Config.m_KxHelpers || g_Config.m_KxCopyMoves || g_Config.m_KxRandomAim;
         if(!anyBotnetFeature)
         {
                 for(int D = 0; D < MAX_DUMMIES; D++)
@@ -447,8 +394,7 @@ void CBotNet::OnUpdate()
 void CBotNet::OnRender()
 {
         // Pathfinder tab: render the accumulated trajectory whenever the state
-        // machine has produced a path (RUNNING or FINISHED).  This is INDEPENDENT
-        // of g_Config.m_KxKinodynamic so the tab works even when kinodynamic A* is off.
+        // machine has produced a path (RUNNING or FINISHED).
         RenderPfTileEditor();
 
         if(m_PfState != PF_STATE_IDLE)
@@ -460,21 +406,6 @@ void CBotNet::OnRender()
         // v1.56.159: Fly Ride — render red tile at anchor (debug visual).
         RenderFlyRideAnchor();
 
-        if(!g_Config.m_KxKinodynamic)
-                return;
-
-        // Render kinodynamic package trajectory and vector field
-        if(g_Config.m_KxKinoShowField)
-                RenderVectorField();
-        if(g_Config.m_KxKinoShowPath)
-        {
-                for(int D = 0; D < MAX_DUMMIES; D++)
-                {
-                        if(!IsDummyActive(D))
-                                continue;
-                        RenderPackage(D);
-                }
-        }
 }
 
 // =========================================================

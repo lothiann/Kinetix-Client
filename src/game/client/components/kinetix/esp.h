@@ -31,9 +31,16 @@ public:
 	void OnRender() override;
 
 private:
-	// Same filter logic as CAimBot::PassesFilters (team/friend/dummy/freeze).
-	// Returns true if ClientId should be an ESP target.
+	// Same filter logic as CAimBot::PassesFilters (team/friend/dummy/clanmate/
+	// targets/freeze). Returns true if ClientId should be an ESP target.
 	bool PassesFilters(int ClientId, int LocalId) const;
+
+	// v1.56.257: Hitboxes reuse the same filter set with their own cvar values.
+	bool PassesHitboxesFilters(int ClientId, int LocalId) const;
+
+	// v1.56.257: shared filter body — ESP and Hitboxes pass their own config
+	// filter values so both use the exact same logic.
+	bool PassesFiltersImpl(int ClientId, int LocalId, int teamFilter, int friendFilter, int dummyFilter, int clanmateFilter, int targetsFilterMode, const char *pTargetsIds, int freezeFilter) const;
 
 	// v1.56.113: Style-aware line emission (Line/Arrow/Dotted/DottedArrow).
 	void EmitLine(const vec2 &p0, const vec2 &p1, int playerIndex) const;

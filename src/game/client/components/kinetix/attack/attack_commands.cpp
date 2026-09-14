@@ -1,13 +1,7 @@
 #include <game/client/components/kinetix/kinetix.h>
 #include <game/client/components/kinetix/kinetix_internal.h>
 
-void CBotNet::ConAttackHookDelay(IConsole::IResult *pResult, void *pUserData)
-{
-        CBotNet *p = (CBotNet *)pUserData;
-        g_Config.m_KxAtkHookDelay = pResult->GetInteger(0);
-        for(int D = 0; D < MAX_DUMMIES; D++)
-                p->m_aDummies[D].m_HookTickTimer = 0;
-}
+// v1.56.258: ConAttackHookDelay removed — hook pulse is fixed at 1s now.
 
 void CBotNet::ConAttackDists(IConsole::IResult *pResult, void *pUserData)
 {
@@ -98,63 +92,13 @@ void CBotNet::ConSetTargetAll(IConsole::IResult *pResult, void *pUserData)
         g_Config.m_KxTargetAll = pResult->GetInteger(0) != 0;
 }
 
-void CBotNet::ConAttackSettings(IConsole::IResult *pResult, void *pUserData)
-{
-        CBotNet *p = (CBotNet *)pUserData;
-        g_Config.m_KxAutoAim = pResult->GetInteger(0) != 0;
-        g_Config.m_KxAutoFire = pResult->GetInteger(1) != 0;
-        g_Config.m_KxAutoHook = pResult->GetInteger(2) != 0;
-        g_Config.m_KxMove = pResult->GetInteger(3) != 0;
-        g_Config.m_KxStand = pResult->GetInteger(4) != 0;
-        g_Config.m_KxRescue = pResult->GetInteger(5) != 0;
-        g_Config.m_KxRescueAll = pResult->GetInteger(6) != 0;
-        g_Config.m_KxSmartDetect = pResult->GetInteger(7) != 0;
-        g_Config.m_KxSmartRescue = pResult->GetInteger(8) != 0;
-        g_Config.m_KxKillFrz = pResult->GetInteger(9) != 0;
-        g_Config.m_KxAtkMain = pResult->GetInteger(10) != 0;
-        g_Config.m_KxHammer = pResult->GetInteger(11) != 0;
-        {
-                bool newSim = pResult->GetInteger(12) != 0;
-                if(newSim != g_Config.m_KxPfSimulatePlayers)
-                {
-                        g_Config.m_KxPfSimulatePlayers = newSim;
-                        for(int D = 0; D < MAX_DUMMIES; D++)
-                        {
-                                p->m_aDummies[D].m_LastTargetTX = -1;
-                                p->m_aDummies[D].m_LastTargetTY = -1;
-                                p->m_aDummies[D].m_PathFound = false;
-                        }
-                }
-        }
-        g_Config.m_KxAvoidFreeze = pResult->GetInteger(13) != 0;
-        {
-                bool newPfHook = pResult->GetInteger(14) != 0;
-                if(newPfHook != g_Config.m_KxPfHook)
-                {
-                        g_Config.m_KxPfHook = newPfHook;
-                        for(int D = 0; D < MAX_DUMMIES; D++)
-                                p->m_aDummies[D].m_PfHookTile = vec2(0, 0);
-                }
-        }
-        {
-                bool newKino = pResult->GetInteger(15) != 0;
-                if(newKino != g_Config.m_KxKinodynamic)
-                {
-                        g_Config.m_KxKinodynamic = newKino;
-                        for(int D = 0; D < MAX_DUMMIES; D++)
-                        {
-                                p->m_aDummies[D].m_KinoCache.Reset();
-                                p->ResetDummyInputs(D);
-                        }
-                }
-        }
-}
+// v1.56.258: ConAttackSettings (kx_atk_set, 16 params) removed — legacy cvars gone.
 
 void CBotNet::ConAttackEnable(IConsole::IResult *pResult, void *pUserData)
 {
         CBotNet *p = (CBotNet *)pUserData;
-        g_Config.m_KxAttack = pResult->GetInteger(0) != 0;
-        if(!g_Config.m_KxAttack)
+        g_Config.m_KxHelpers = pResult->GetInteger(0) != 0;
+        if(!g_Config.m_KxHelpers)
         {
                 for(int D = 0; D < MAX_DUMMIES; D++)
                         p->ResetDummyInputs(D);
@@ -189,46 +133,7 @@ void CBotNet::ConClientDelay(IConsole::IResult *pResult, void *pUserData)
         g_Config.m_KxClientDelay = pResult->GetInteger(0);
 }
 
-void CBotNet::ConStandOnX(IConsole::IResult *pResult, void *pUserData)
-{
-        g_Config.m_KxStandOnX = pResult->GetInteger(0) != 0;
-}
-
-void CBotNet::ConPathfinder(IConsole::IResult *pResult, void *pUserData)
-{
-        CBotNet *p = (CBotNet *)pUserData;
-        g_Config.m_KxAtkPathfinder = pResult->GetInteger(0) != 0;
-        for(int D = 0; D < MAX_DUMMIES; D++)
-        {
-                p->m_aDummies[D].m_LastTargetTX = -1;
-                p->m_aDummies[D].m_LastTargetTY = -1;
-                p->m_aDummies[D].m_PathFound = false;
-        }
-}
-
-void CBotNet::ConPathfinderRays(IConsole::IResult *pResult, void *pUserData)
-{
-        CBotNet *p = (CBotNet *)pUserData;
-        g_Config.m_KxAtkPathfinderRays = pf_clamp(pResult->GetInteger(0), 12, 90);
-}
-
-void CBotNet::ConPathfinderRaysDist(IConsole::IResult *pResult, void *pUserData)
-{
-        CBotNet *p = (CBotNet *)pUserData;
-        g_Config.m_KxAtkPathfinderRaysDist = pf_clamp(pResult->GetInteger(0), 1, 128);
-}
-
-void CBotNet::ConPathfinderSnap(IConsole::IResult *pResult, void *pUserData)
-{
-        CBotNet *p = (CBotNet *)pUserData;
-        g_Config.m_KxAtkPathfinderSnap = pResult->GetInteger(0) != 0;
-}
-
-void CBotNet::ConPathfinderSps(IConsole::IResult *pResult, void *pUserData)
-{
-        CBotNet *p = (CBotNet *)pUserData;
-        g_Config.m_KxAtkPathfinderSps = pResult->GetInteger(0);
-}
+// v1.56.258: ConStandOnX/ConPathfinder*/ConPathfinderRays/RaysDist/Snap/Sps removed.
 
 void CBotNet::ConPathfinderGo(IConsole::IResult *pResult, void *pUserData)
 {
@@ -266,60 +171,7 @@ void CBotNet::ConPathfinderGo(IConsole::IResult *pResult, void *pUserData)
 // INDIVIDUAL TOGGLE COMMANDS
 // =========================================================
 
-void CBotNet::ConStand(IConsole::IResult *pResult, void *pUserData)
-{
-        CBotNet *p = (CBotNet *)pUserData;
-        g_Config.m_KxStand = pResult->GetInteger(0) != 0;
-        if(!g_Config.m_KxStand)
-        {
-                for(int D = 0; D < MAX_DUMMIES; D++)
-                        p->ResetDummyInputs(D);
-        }
-}
-
-void CBotNet::ConAutoAim(IConsole::IResult *pResult, void *pUserData)
-{
-        CBotNet *p = (CBotNet *)pUserData;
-        g_Config.m_KxAutoAim = pResult->GetInteger(0) != 0;
-        if(!g_Config.m_KxAutoAim)
-        {
-                for(int D = 0; D < MAX_DUMMIES; D++)
-                        p->ResetDummyInputs(D);
-        }
-}
-
-void CBotNet::ConAutoFire(IConsole::IResult *pResult, void *pUserData)
-{
-        CBotNet *p = (CBotNet *)pUserData;
-        g_Config.m_KxAutoFire = pResult->GetInteger(0) != 0;
-        if(!g_Config.m_KxAutoFire)
-        {
-                for(int D = 0; D < MAX_DUMMIES; D++)
-                        p->ResetDummyInputs(D);
-        }
-}
-
-void CBotNet::ConAutoHook(IConsole::IResult *pResult, void *pUserData)
-{
-        CBotNet *p = (CBotNet *)pUserData;
-        g_Config.m_KxAutoHook = pResult->GetInteger(0) != 0;
-        if(!g_Config.m_KxAutoHook)
-        {
-                for(int D = 0; D < MAX_DUMMIES; D++)
-                        p->ResetDummyInputs(D);
-        }
-}
-
-void CBotNet::ConMove(IConsole::IResult *pResult, void *pUserData)
-{
-        CBotNet *p = (CBotNet *)pUserData;
-        g_Config.m_KxMove = pResult->GetInteger(0) != 0;
-        if(!g_Config.m_KxMove)
-        {
-                for(int D = 0; D < MAX_DUMMIES; D++)
-                        p->ResetDummyInputs(D);
-        }
-}
+// v1.56.258: ConStand/ConAutoAim/ConAutoFire/ConAutoHook/ConMove removed.
 
 void CBotNet::ConRescue(IConsole::IResult *pResult, void *pUserData)
 {
@@ -332,27 +184,7 @@ void CBotNet::ConRescue(IConsole::IResult *pResult, void *pUserData)
         }
 }
 
-void CBotNet::ConKillFrz(IConsole::IResult *pResult, void *pUserData)
-{
-        CBotNet *p = (CBotNet *)pUserData;
-        g_Config.m_KxKillFrz = pResult->GetInteger(0) != 0;
-        if(!g_Config.m_KxKillFrz)
-        {
-                for(int D = 0; D < MAX_DUMMIES; D++)
-                        p->ResetDummyInputs(D);
-        }
-}
-
-void CBotNet::ConAtkMain(IConsole::IResult *pResult, void *pUserData)
-{
-        CBotNet *p = (CBotNet *)pUserData;
-        g_Config.m_KxAtkMain = pResult->GetInteger(0) != 0;
-        if(!g_Config.m_KxAtkMain)
-        {
-                for(int D = 0; D < MAX_DUMMIES; D++)
-                        p->ResetDummyInputs(D);
-        }
-}
+// v1.56.258: ConKillFrz/ConAtkMain removed.
 
 void CBotNet::ConAutoMain(IConsole::IResult *pResult, void *pUserData)
 {
@@ -360,124 +192,9 @@ void CBotNet::ConAutoMain(IConsole::IResult *pResult, void *pUserData)
         g_Config.m_KxAutoMain = pResult->GetInteger(0) != 0;
 }
 
-void CBotNet::ConHammer(IConsole::IResult *pResult, void *pUserData)
-{
-        CBotNet *p = (CBotNet *)pUserData;
-        g_Config.m_KxHammer = pResult->GetInteger(0) != 0;
-        if(!g_Config.m_KxHammer)
-        {
-                for(int D = 0; D < MAX_DUMMIES; D++)
-                        p->ResetDummyInputs(D);
-        }
-}
-
-void CBotNet::ConSmartDetect(IConsole::IResult *pResult, void *pUserData)
-{
-        CBotNet *p = (CBotNet *)pUserData;
-        g_Config.m_KxSmartDetect = pResult->GetInteger(0) != 0;
-        if(!g_Config.m_KxSmartDetect)
-        {
-                for(int D = 0; D < MAX_DUMMIES; D++)
-                        p->ResetDummyInputs(D);
-        }
-}
-
-void CBotNet::ConSmartRescue(IConsole::IResult *pResult, void *pUserData)
-{
-        CBotNet *p = (CBotNet *)pUserData;
-        g_Config.m_KxSmartRescue = pResult->GetInteger(0) != 0;
-        if(!g_Config.m_KxSmartRescue)
-        {
-                for(int D = 0; D < MAX_DUMMIES; D++)
-                        p->ResetDummyInputs(D);
-        }
-}
-
-void CBotNet::ConAvoidFreeze(IConsole::IResult *pResult, void *pUserData)
-{
-        CBotNet *p = (CBotNet *)pUserData;
-        g_Config.m_KxAvoidFreeze = pResult->GetInteger(0) != 0;
-        if(!g_Config.m_KxAvoidFreeze)
-        {
-                for(int D = 0; D < MAX_DUMMIES; D++)
-                        p->ResetDummyInputs(D);
-        }
-}
-
-void CBotNet::ConPfHook(IConsole::IResult *pResult, void *pUserData)
-{
-        CBotNet *p = (CBotNet *)pUserData;
-        g_Config.m_KxPfHook = pResult->GetInteger(0) != 0;
-        if(!g_Config.m_KxPfHook)
-        {
-                for(int D = 0; D < MAX_DUMMIES; D++)
-                        p->ResetDummyInputs(D);
-        }
-}
-
-void CBotNet::ConKinodynamic(IConsole::IResult *pResult, void *pUserData)
-{
-        CBotNet *p = (CBotNet *)pUserData;
-        g_Config.m_KxKinodynamic = pResult->GetInteger(0) != 0;
-        if(!g_Config.m_KxKinodynamic)
-        {
-                for(int D = 0; D < MAX_DUMMIES; D++)
-                {
-                        p->m_aDummies[D].m_KinoCache.Reset();
-                        p->ResetDummyInputs(D);
-                }
-        }
-}
-
-void CBotNet::ConKinoCandidates(IConsole::IResult *pResult, void *pUserData)
-{
-        CBotNet *p = (CBotNet *)pUserData;
-        int v = pResult->GetInteger(0);
-        if(v >= 100 && v <= 2000)
-                g_Config.m_KxKinoCandidates = v;
-}
-
-void CBotNet::ConKinoTicks(IConsole::IResult *pResult, void *pUserData)
-{
-        CBotNet *p = (CBotNet *)pUserData;
-        int v = pResult->GetInteger(0);
-        if(v >= 3 && v <= 20)
-                g_Config.m_KxKinoTicks = v;
-}
-
-void CBotNet::ConKinoHookAngles(IConsole::IResult *pResult, void *pUserData)
-{
-        CBotNet *p = (CBotNet *)pUserData;
-        int v = pResult->GetInteger(0);
-        if(v >= 4 && v <= 32)
-                g_Config.m_KxKinoHookAngles = v;
-}
-
-void CBotNet::ConKinoCacheTicks(IConsole::IResult *pResult, void *pUserData)
-{
-        CBotNet *p = (CBotNet *)pUserData;
-        int v = pResult->GetInteger(0);
-        if(v >= 1 && v <= 128)
-                g_Config.m_KxKinoCacheTicks = v;
-}
-
-void CBotNet::ConKinoShowPath(IConsole::IResult *pResult, void *pUserData)
-{
-        CBotNet *p = (CBotNet *)pUserData;
-        g_Config.m_KxKinoShowPath = pResult->GetInteger(0) != 0;
-}
-
-void CBotNet::ConKinoShowField(IConsole::IResult *pResult, void *pUserData)
-{
-        CBotNet *p = (CBotNet *)pUserData;
-        g_Config.m_KxKinoShowField = pResult->GetInteger(0) != 0;
-}
-
-void CBotNet::ConKinoAggressive(IConsole::IResult *pResult, void *pUserData)
-{
-        CBotNet *p = (CBotNet *)pUserData;
-        g_Config.m_KxKinoAggressive = pResult->GetInteger(0) != 0;
-}
+// v1.56.258: ConHammer/ConSmartDetect/ConSmartRescue/ConAvoidFreeze/ConPfHook/
+// ConKinodynamic/ConKino* (Candidates/Ticks/HookAngles/CacheTicks/ShowPath/
+// ShowField/Aggressive) removed.
 
 // =========================================================
 // PATHFINDER TAB (Kinetix→Pathfinder) — chunk-based mini TAS maker

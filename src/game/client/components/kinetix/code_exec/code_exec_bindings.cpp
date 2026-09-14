@@ -874,7 +874,7 @@ void CCodeExec::RegisterRawAPI()
 
         // CBotNet
         // v1.56.171 BUG9: kx_ cvar bindings removed — they are now MACRO_CONFIG_INT
-        // globals (g_Config.m_KxAttack etc.), not CBotNet members. Lua scripts access
+        // globals (g_Config.m_KxHelpers etc.), not CBotNet members. Lua scripts access
         // them via the global g_Config usertype instead.
         lua.new_usertype<CBotNet>("CBotNet",
                 "m_MapWidth", &CBotNet::m_MapWidth,
@@ -1432,10 +1432,9 @@ void CCodeExec::RegisterRawAPI()
                 "m_ClDummyFire", &CConfig::m_ClDummyFire,
                 "m_ClDummyResetOnSwitch", &CConfig::m_ClDummyResetOnSwitch,
                 "m_ClDummyRestoreWeapon", &CConfig::m_ClDummyRestoreWeapon,
-                "m_KxAttack", &CConfig::m_KxAttack,
+                "m_KxHelpers", &CConfig::m_KxHelpers,
                 "m_KxCopyMoves", &CConfig::m_KxCopyMoves,
                 "m_KxRandomAim", &CConfig::m_KxRandomAim,
-                "m_KxAtkPathfinder", &CConfig::m_KxAtkPathfinder,
                 "m_KxFlyRide", &CConfig::m_KxFlyRide,
                 "m_KxDummyAim", &CConfig::m_KxDummyAim,
                 "m_KxDummyDirection", &CConfig::m_KxDummyDirection,

@@ -157,7 +157,7 @@ void CBotNet::UpdateTripleFly()
         const bool hammerLeavesHook = g_Config.m_ClDummyHammer == 0 ||
                                       g_Config.m_KxDummyHammerAuto != 0;
         if(!hammerLeavesHook || g_Config.m_KxFlyRide != 0 ||
-           g_Config.m_KxCopyMoves != 0 || g_Config.m_KxAttack != 0 ||
+           g_Config.m_KxCopyMoves != 0 || g_Config.m_KxHelpers != 0 ||
            (!copyMovesLeavesHookAim && g_Config.m_ClDummyCopyMoves != 0) ||
            g_Config.m_ClDummyControl != 0)
         {

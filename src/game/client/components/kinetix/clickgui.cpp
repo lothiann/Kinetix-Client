@@ -213,49 +213,32 @@ static SRow g_DummiesChildren[] = {
         {ERowType::DoubleButton, "D6 Connect", "D6 Switch", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::DoubleButton, "D7 Connect", "D7 Switch", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
-// v1.56.90: Block expandable — all attack settings (37 children).
-static SRow g_BlockChildren[] = {
-        {ERowType::Toggle, "Attack Main", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+// v1.56.258: Block expandable — compact config (was 37 rows). Movement, fire,
+// hook and rescue are driven by the Block pathfinder (physical beam search);
+// Auto Aim/Fire/Hook/Hammer/Move/Stand are always on now, the rest of the old
+// toggles is gone. "All Target"/"All Rescue" turn the ID fields into exclusion
+// lists (renamed to "Untarget IDs"/"Unrescue IDs" in sync). "Dists:" is a label.
+static SRow g_HelpersChildren[] = {
         {ERowType::Toggle, "Auto Main", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Input, "Main ID", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Target IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Rescue IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "All Target", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Auto Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Auto Fire", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Auto Hook", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Auto Hammer", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Move Enabled", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Stand Enabled", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Stand On X Only", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Smart Detect", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Smart Rescue", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Rescue Frozen", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Rescue All", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Kill On Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Avoid Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Avoid Freeze Radius", nullptr, false, false, 0, 0, 0, 0, nullptr, "3", "value...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Laser Rescue", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Fire Dist", nullptr, false, false, 0, 0, 0, 0, nullptr, "200", "value...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Hook Dist", nullptr, false, false, 0, 0, 0, 0, nullptr, "200", "value...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Rescue Radius", nullptr, false, false, 0, 0, 0, 0, nullptr, "300", "value...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Target Dist", nullptr, false, false, 0, 0, 0, 0, nullptr, "500", "value...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Main Dist", nullptr, false, false, 0, 0, 0, 0, nullptr, "500", "value...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Stand Dist", nullptr, false, false, 0, 0, 0, 0, nullptr, "100", "value...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Main Stand Dist", nullptr, false, false, 0, 0, 0, 0, nullptr, "100", "value...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Laser Rescue Dist", nullptr, false, false, 0, 0, 0, 0, nullptr, "500", "value...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Pathfinder Enabled", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Simulate Players", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "SPS (Push)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Simulate Score", nullptr, false, false, 0, 0, 0, 0, nullptr, "50", "value...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Rays", nullptr, false, false, 0, 0, 0, 0, nullptr, "24", "value...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Dist", nullptr, false, false, 0, 0, 0, 0, nullptr, "32", "value...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Fix Snap", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Hook Enabled", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Target IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Rescue", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "All Rescue", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Rescue IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Dummy IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "0,1,2,3,4,5,6,7", "0,1,2...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, "Dists:", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Fire Dist", nullptr, false, false, 32.0f, 64.0f, 1.0f, 50.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Hook Dist", nullptr, false, false, 64.0f, 400.0f, 1.0f, 400.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Main Dist", nullptr, false, false, 0, 0, 0, 0, nullptr, "100000", "value...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Target Dist", nullptr, false, false, 0, 0, 0, 0, nullptr, "300", "value...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Rescue Dist", nullptr, false, false, 0, 0, 0, 0, nullptr, "500", "value...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Stand Dist", nullptr, false, false, 0, 0, 0, 0, nullptr, "64", "value...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "MStand Dist", nullptr, false, false, 0, 0, 0, 0, nullptr, "128", "value...", nullptr, 0, 0, nullptr, 0},
 };
 static SRow g_FunctionsRows[] = {
         {ERowType::Expandable, "Dummies", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_DummiesChildren, 9},
-        {ERowType::Expandable, "Block", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BlockChildren, 37},
+        {ERowType::Expandable, "Helpers", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_HelpersChildren, 16},
         {ERowType::Toggle, "Random Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         // v1.56.83: AimBot + TriggerBot expandables
         {ERowType::Expandable, "AimBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AimBotChildren, 20},
@@ -365,7 +348,14 @@ static SRow g_HitboxesChildren[] = {
         {ERowType::Dropdown, "Hitbox Style", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_HitboxStyleOpts, 3, 0, nullptr, 0},
         {ERowType::Slider, "Box Speed", nullptr, false, false, 0.0f, 100.0f, 1.0f, 30.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Show for others", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Filters", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        // v1.56.257: full filter set (same as ESP/AimBot), visible when Show for others.
+        {ERowType::Dropdown, "Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTeamOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "Clanmate", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "Targets filter", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0},
+        {ERowType::Input, "Targets IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0},
 };
 // v1.56.121: "Basic Avoid Freeze" expandable.
 static SRow g_BasicAvoidFreezeChildren[] = {
@@ -387,8 +377,8 @@ static SRow g_AdvancedRows[] = {
         {ERowType::Expandable, "Laser unfreeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LaserUnfreezeChildren, 7},
         {ERowType::Expandable, "Fake Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_FakeAimChildren, 5},
         {ERowType::Expandable, "ESP", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_EspChildren, 18},
-        // v1.56.256: "Hitboxes" expandable (visual only — expand/collapse, no master toggle).
-        {ERowType::Expandable, "Hitboxes", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_HitboxesChildren, 8},
+        // v1.56.256/257: "Hitboxes" expandable — header body click = master toggle (like IRC/Spoofer).
+        {ERowType::Expandable, "Hitboxes", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_HitboxesChildren, 14},
         {ERowType::Expandable, "Basic Avoid Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BasicAvoidFreezeChildren, 12},
 };
 
@@ -525,7 +515,7 @@ static SRow g_BindsRows[] = {
         {ERowType::Input, "Trajectory", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Input, "ESP", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Input, "Basic Avoid Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Block", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Helpers", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Input, "Auto Triple Fly", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Expandable, "TAS", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BindsTasChildren, 4},
         {ERowType::Expandable, "Edge bind", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BindsEdgeChildren, 2},
@@ -889,7 +879,9 @@ static bool DummiesChildVisible(const SRow *pChildren, int childCount, int idx)
 }
 // v1.56.256: Hitboxes — "Hitbox Style"/"Box Speed" visible only when their group
 // toggle is on ("Tee tile" idx 0, "Tee trigger" idx 3); "Box Speed" also requires
-// style 2 (Dotted Box); "Show for others"/"Filters" belong to "Tee trigger".
+// style 2 (Dotted Box).
+// v1.56.257: "Show for others" is always visible; the ESP-like filter rows
+// (idx >= 7) require it.
 static bool HitboxesChildVisible(const SRow *pChildren, int childCount, int idx)
 {
         if(idx < 0 || idx >= childCount)
@@ -897,6 +889,7 @@ static bool HitboxesChildVisible(const SRow *pChildren, int childCount, int idx)
         const SRow &row = pChildren[idx];
         const bool tile = pChildren[0].on;
         const bool trigger = pChildren[3].on;
+        const bool showOthers = pChildren[6].on;
         if(str_comp(row.pName, "Hitbox Style") == 0)
                 return idx == 1 ? tile : trigger;
         if(str_comp(row.pName, "Box Speed") == 0)
@@ -905,8 +898,23 @@ static bool HitboxesChildVisible(const SRow *pChildren, int childCount, int idx)
                         return tile && pChildren[1].valueIdx == 2; // tile Dotted Box
                 return trigger && pChildren[4].valueIdx == 2; // trigger Dotted Box
         }
-        if(str_comp(row.pName, "Show for others") == 0 || str_comp(row.pName, "Filters") == 0)
-                return trigger;
+        if(str_comp(row.pName, "Targets IDs") == 0 || str_comp(row.pName, "Untargets IDs") == 0)
+                return showOthers && pChildren[12].valueIdx != 0;
+        if(idx >= 7)
+                return showOthers;
+        return true;
+}
+// v1.56.258: Block — "Main ID" visible only when Auto Main is off (idx 0);
+// "Rescue IDs"/"Unrescue IDs" visible only when Rescue is on (idx 4).
+static bool HelpersChildVisible(const SRow *pChildren, int childCount, int idx)
+{
+        if(idx < 0 || idx >= childCount)
+                return false;
+        const SRow &row = pChildren[idx];
+        if(str_comp(row.pName, "Main ID") == 0)
+                return !pChildren[0].on;
+        if(str_comp(row.pName, "Rescue IDs") == 0 || str_comp(row.pName, "Unrescue IDs") == 0)
+                return pChildren[4].on;
         return true;
 }
 // v1.56.104: ESP — "X"/"Y" visible only when Mode = 1 (Screen coordinates).
@@ -2190,15 +2198,15 @@ void CClickGui::OnRender()
                         }
                 }
                 // Sync reference toggles with real subsystem state on open.
-                // (So if kx_attack / kx_random_aim / kx_show_trajectory were enabled
+                // (So if kx_helpers / kx_random_aim / kx_show_trajectory were enabled
                 // via console before opening ClickGUI, the checkboxes reflect that.)
                 for(int p = 0; p < NUM_PANELS; ++p)
                 {
                         for(int r = 0; r < g_Panels[p].rowCount; ++r)
                         {
                                 SRow &row = g_Panels[p].pRows[r];
-                                if(str_comp(row.pName, "Block") == 0)
-                                        row.on = g_Config.m_KxAttack;
+                                if(str_comp(row.pName, "Helpers") == 0)
+                                        row.on = g_Config.m_KxHelpers;
                                 else if(str_comp(row.pName, "Random Aim") == 0)
                                         row.on = g_Config.m_KxRandomAim;
                                 else if(str_comp(row.pName, "Trajectory") == 0)
@@ -2266,6 +2274,9 @@ void CClickGui::OnRender()
                                         row.on = g_Config.m_KxIrcEnabled != 0;
                                 else if(str_comp(row.pName, "Spoofer") == 0)
                                         row.on = (g_Config.m_KxVersionSpoof != 0 || g_Config.m_KxSpoofClientStr != 0);
+                                // v1.56.257: Hitboxes expandable header = master toggle.
+                                else if(str_comp(row.pName, "Hitboxes") == 0)
+                                        row.on = g_Config.m_KxHitboxes != 0;
                                 // v1.56.199: Binds panel sync moved to every-frame loop (see below).
                                 // Sync children of expandable rows
                                 for(int c = 0; c < row.childCount; ++c)
@@ -2283,7 +2294,7 @@ void CClickGui::OnRender()
                                                                 continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c))
+if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c)))
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
         continue;
@@ -2465,7 +2476,20 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                 case 4: child.valueIdx = g_Config.m_KxHitboxesTriggerStyle; break;
                                                 case 5: child.value = (float)g_Config.m_KxHitboxesTriggerSpeed; break;
                                                 case 6: child.on = g_Config.m_KxHitboxesShowOthers != 0; break;
-                                                case 7: child.on = g_Config.m_KxHitboxesFilters != 0; break;
+                                                case 7: child.valueIdx = g_Config.m_KxHitboxesTeamFilter; break;
+                                                case 8: child.valueIdx = g_Config.m_KxHitboxesFriendFilter; break;
+                                                case 9: child.valueIdx = g_Config.m_KxHitboxesDummyFilter; break;
+                                                case 10: child.valueIdx = g_Config.m_KxHitboxesClanmateFilter; break;
+                                                case 11: child.valueIdx = g_Config.m_KxHitboxesFreezeFilter; break;
+                                                case 12: child.valueIdx = g_Config.m_KxHitboxesTargetsFilterMode; break;
+                                                case 13:
+                                                        child.pName = (g_Config.m_KxHitboxesTargetsFilterMode == 2) ? "Untargets IDs" : "Targets IDs";
+                                                        if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                        {
+                                                                str_copy(child.m_aInputBuf, g_Config.m_KxHitboxesTargetsFilter, sizeof(child.m_aInputBuf));
+                                                                child.m_InputInitialized = true;
+                                                        }
+                                                        break;
                                                 }
                                         }
                                         else if(str_comp(child.pName, "X") == 0 && str_comp(row.pName, "ESP") == 0)
@@ -2778,82 +2802,60 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                 SRow &row = g_Panels[p].pRows[r];
                                 if(row.type != ERowType::Expandable)
                                         continue;
-                                if(str_comp(row.pName, "Block") == 0)
+                                if(str_comp(row.pName, "Helpers") == 0)
                                 {
-                                        row.on = g_Config.m_KxAttack;
+                                        row.on = g_Config.m_KxHelpers;
                                         for(int c = 0; c < row.childCount; ++c)
                                         {
                                                 SRow &ch = row.pChildren[c];
-                                                if(str_comp(ch.pName, "Attack Main") == 0) ch.on = g_Config.m_KxAtkMain;
-                                                else if(str_comp(ch.pName, "Auto Main") == 0) ch.on = g_Config.m_KxAutoMain;
+                                                if(str_comp(ch.pName, "Auto Main") == 0) ch.on = g_Config.m_KxAutoMain;
                                                 else if(str_comp(ch.pName, "Main ID") == 0)
                                                 {
                                                         if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
                                                         {
-                                                                char b[16]; str_format(b, sizeof(b), "%d", g_Config.m_KxMain);
+                                                                char b[16];
+                                                                // v1.56.259: -1 = no main → empty field
+                                                                if(g_Config.m_KxMain >= 0)
+                                                                        str_format(b, sizeof(b), "%d", g_Config.m_KxMain);
+                                                                else
+                                                                        b[0] = '\0';
                                                                 str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
                                                                 ch.m_InputInitialized = true;
                                                         }
                                                 }
-                                                else if(str_comp(ch.pName, "Target IDs") == 0)
+                                                else if(str_comp(ch.pName, "All Target") == 0) ch.on = g_Config.m_KxTargetAll;
+                                                else if(str_comp(ch.pName, "Target IDs") == 0 || str_comp(ch.pName, "Untarget IDs") == 0)
                                                 {
+                                                        // v1.56.258: dynamic name — All Target turns the list into exclusions.
+                                                        ch.pName = (g_Config.m_KxTargetAll != 0) ? "Untarget IDs" : "Target IDs";
                                                         if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
                                                         {
                                                                 str_copy(ch.m_aInputBuf, bn.m_aTargetIDsStr, sizeof(ch.m_aInputBuf));
                                                                 ch.m_InputInitialized = true;
                                                         }
                                                 }
-                                                else if(str_comp(ch.pName, "Rescue IDs") == 0)
+                                                else if(str_comp(ch.pName, "Rescue") == 0) ch.on = g_Config.m_KxRescue;
+                                                else if(str_comp(ch.pName, "All Rescue") == 0) ch.on = g_Config.m_KxRescueAll;
+                                                else if(str_comp(ch.pName, "Rescue IDs") == 0 || str_comp(ch.pName, "Unrescue IDs") == 0)
                                                 {
+                                                        ch.pName = (g_Config.m_KxRescueAll != 0) ? "Unrescue IDs" : "Rescue IDs";
                                                         if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
                                                         {
                                                                 str_copy(ch.m_aInputBuf, bn.m_aRescueIDsStr, sizeof(ch.m_aInputBuf));
                                                                 ch.m_InputInitialized = true;
                                                         }
                                                 }
-                                                else if(str_comp(ch.pName, "All Target") == 0) ch.on = g_Config.m_KxTargetAll;
-                                                else if(str_comp(ch.pName, "Auto Aim") == 0) ch.on = g_Config.m_KxAutoAim;
-                                                else if(str_comp(ch.pName, "Auto Fire") == 0) ch.on = g_Config.m_KxAutoFire;
-                                                else if(str_comp(ch.pName, "Auto Hook") == 0) ch.on = g_Config.m_KxAutoHook;
-                                                else if(str_comp(ch.pName, "Auto Hammer") == 0) ch.on = g_Config.m_KxHammer;
-                                                else if(str_comp(ch.pName, "Move Enabled") == 0) ch.on = g_Config.m_KxMove;
-                                                else if(str_comp(ch.pName, "Stand Enabled") == 0) ch.on = g_Config.m_KxStand;
-                                                else if(str_comp(ch.pName, "Stand On X Only") == 0) ch.on = g_Config.m_KxStandOnX;
-                                                else if(str_comp(ch.pName, "Smart Detect") == 0) ch.on = g_Config.m_KxSmartDetect;
-                                                else if(str_comp(ch.pName, "Smart Rescue") == 0) ch.on = g_Config.m_KxSmartRescue;
-                                                else if(str_comp(ch.pName, "Rescue Frozen") == 0) ch.on = g_Config.m_KxRescue;
-                                                else if(str_comp(ch.pName, "Rescue All") == 0) ch.on = g_Config.m_KxRescueAll;
-                                                else if(str_comp(ch.pName, "Kill On Freeze") == 0) ch.on = g_Config.m_KxKillFrz;
-                                                else if(str_comp(ch.pName, "Avoid Freeze") == 0) ch.on = g_Config.m_KxAvoidFreeze;
-                                                else if(str_comp(ch.pName, "Avoid Freeze Radius") == 0)
-                                                                                        {
-                                                                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
-                                                                                                {
-                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", g_Config.m_KxAvoidFreezeRadius);
-                                                                                                        str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
-                                                                                                        ch.m_InputInitialized = true;
-                                                                                                }
-                                                                                        }
-                                                else if(str_comp(ch.pName, "Laser Rescue") == 0) ch.on = g_Config.m_KxLaserRescue;
-                                                else if(str_comp(ch.pName, "Fire Dist") == 0)
-                                                                                        {
-                                                                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
-                                                                                                {
-                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", (int)g_Config.m_KxFireDist);
-                                                                                                        str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
-                                                                                                        ch.m_InputInitialized = true;
-                                                                                                }
-                                                                                        }
-                                                else if(str_comp(ch.pName, "Hook Dist") == 0)
-                                                                                        {
-                                                                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
-                                                                                                {
-                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", (int)g_Config.m_KxHookDist);
-                                                                                                        str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
-                                                                                                        ch.m_InputInitialized = true;
-                                                                                                }
-                                                                                        }
-                                                else if(str_comp(ch.pName, "Rescue Radius") == 0)
+                                                else if(str_comp(ch.pName, "Dummy IDs") == 0)
+                                                {
+                                                        if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                        {
+                                                                str_copy(ch.m_aInputBuf, bn.m_aHelpersDummyIDsStr, sizeof(ch.m_aInputBuf));
+                                                                ch.m_InputInitialized = true;
+                                                        }
+                                                }
+                                                else if(str_comp(ch.pName, "Fire Dist") == 0) ch.value = (float)g_Config.m_KxFireDist;
+                                                else if(str_comp(ch.pName, "Hook Dist") == 0) ch.value = (float)g_Config.m_KxHookDist;
+                                                else if(str_comp(ch.pName, "Rescue Dist") == 0)
                                                                                         {
                                                                                                 if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
                                                                                                 {
@@ -2889,7 +2891,7 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                                                                         ch.m_InputInitialized = true;
                                                                                                 }
                                                                                         }
-                                                else if(str_comp(ch.pName, "Main Stand Dist") == 0)
+                                                else if(str_comp(ch.pName, "MStand Dist") == 0)
                                                                                         {
                                                                                                 if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
                                                                                                 {
@@ -2898,47 +2900,7 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                                                                         ch.m_InputInitialized = true;
                                                                                                 }
                                                                                         }
-                                                else if(str_comp(ch.pName, "Laser Rescue Dist") == 0)
-                                                                                        {
-                                                                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
-                                                                                                {
-                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", (int)g_Config.m_KxLaserRescueDist);
-                                                                                                        str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
-                                                                                                        ch.m_InputInitialized = true;
-                                                                                                }
-                                                                                        }
-                                                else if(str_comp(ch.pName, "Pathfinder Enabled") == 0) ch.on = g_Config.m_KxAtkPathfinder;
-                                                else if(str_comp(ch.pName, "Simulate Players") == 0) ch.on = g_Config.m_KxPfSimulatePlayers;
-                                                else if(str_comp(ch.pName, "SPS (Push)") == 0) ch.on = (g_Config.m_KxAtkPathfinderSps != 0);
-                                                else if(str_comp(ch.pName, "Simulate Score") == 0)
-                                                                                        {
-                                                                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
-                                                                                                {
-                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", (int)g_Config.m_KxPfSimulateScore);
-                                                                                                        str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
-                                                                                                        ch.m_InputInitialized = true;
-                                                                                                }
-                                                                                        }
-                                                else if(str_comp(ch.pName, "Rays") == 0)
-                                                                                        {
-                                                                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
-                                                                                                {
-                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", g_Config.m_KxAtkPathfinderRays);
-                                                                                                        str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
-                                                                                                        ch.m_InputInitialized = true;
-                                                                                                }
-                                                                                        }
-                                                else if(str_comp(ch.pName, "Dist") == 0)
-                                                                                        {
-                                                                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
-                                                                                                {
-                                                                                                        char b[16]; str_format(b, sizeof(b), "%d", g_Config.m_KxAtkPathfinderRaysDist);
-                                                                                                        str_copy(ch.m_aInputBuf, b, sizeof(ch.m_aInputBuf));
-                                                                                                        ch.m_InputInitialized = true;
-                                                                                                }
-                                                                                        }
-                                                else if(str_comp(ch.pName, "Fix Snap") == 0) ch.on = g_Config.m_KxAtkPathfinderSnap;
-                                                else if(str_comp(ch.pName, "Hook Enabled") == 0) ch.on = g_Config.m_KxPfHook;
+                                                // v1.56.258: legacy attack toggles removed — movement is handled by the Block pathfinder.
                                         }
                                 }
                                 else if(str_comp(row.pName, "Auto Triple Fly") == 0)
@@ -3072,7 +3034,7 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                         else if(str_comp(row.pName, "Trajectory") == 0) pCmd = "toggle kx_show_trajectory 1 0";
                                         else if(str_comp(row.pName, "ESP") == 0) pCmd = "toggle kx_esp 1 0";
                                         else if(str_comp(row.pName, "Basic Avoid Freeze") == 0) pCmd = "toggle kx_basic_avoid_freeze 1 0";
-                                        else if(str_comp(row.pName, "Block") == 0) pCmd = "toggle kx_attack 1 0";
+                                        else if(str_comp(row.pName, "Helpers") == 0) pCmd = "toggle kx_helpers 1 0";
                                         else if(str_comp(row.pName, "Auto Triple Fly") == 0) pCmd = "toggle kx_triple_fly 1 0";
                                         if(pCmd)
                                         {
@@ -4091,8 +4053,8 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         }
                                         pTarget->on = !pTarget->on;
                                         // Wire reference toggles to real subsystems.
-                                        if(str_comp(pTarget->pName, "Block") == 0)
-                                                g_Config.m_KxAttack = pTarget->on;
+                                        if(str_comp(pTarget->pName, "Helpers") == 0)
+                                                g_Config.m_KxHelpers = pTarget->on;
                                         else if(str_comp(pTarget->pName, "Random Aim") == 0)
                                                 g_Config.m_KxRandomAim = pTarget->on;
                                         else if(str_comp(pTarget->pName, "Trajectory") == 0)
@@ -4195,32 +4157,13 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                                 ts.m_ShowForCurrent = pTarget->on;
                                                 }
                                         }
-                                        // v1.56.90: Block children toggles
-                                        else if(str_comp(row.pName, "Block") == 0 && pTarget != &row)
+                                        // v1.56.258: Block children toggles.
+                                        else if(str_comp(row.pName, "Helpers") == 0 && pTarget != &row)
                                         {
-                                                CBotNet &bn = GameClient()->m_BotNet;
-                                                if(str_comp(pTarget->pName, "Attack Main") == 0) g_Config.m_KxAtkMain = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Auto Main") == 0) g_Config.m_KxAutoMain = pTarget->on;
+                                                if(str_comp(pTarget->pName, "Auto Main") == 0) g_Config.m_KxAutoMain = pTarget->on;
                                                 else if(str_comp(pTarget->pName, "All Target") == 0) g_Config.m_KxTargetAll = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Auto Aim") == 0) g_Config.m_KxAutoAim = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Auto Fire") == 0) g_Config.m_KxAutoFire = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Auto Hook") == 0) g_Config.m_KxAutoHook = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Auto Hammer") == 0) g_Config.m_KxHammer = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Move Enabled") == 0) g_Config.m_KxMove = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Stand Enabled") == 0) g_Config.m_KxStand = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Stand On X Only") == 0) g_Config.m_KxStandOnX = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Smart Detect") == 0) g_Config.m_KxSmartDetect = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Smart Rescue") == 0) g_Config.m_KxSmartRescue = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Rescue Frozen") == 0) g_Config.m_KxRescue = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Rescue All") == 0) g_Config.m_KxRescueAll = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Kill On Freeze") == 0) g_Config.m_KxKillFrz = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Avoid Freeze") == 0) g_Config.m_KxAvoidFreeze = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Laser Rescue") == 0) g_Config.m_KxLaserRescue = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Pathfinder Enabled") == 0) g_Config.m_KxAtkPathfinder = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Simulate Players") == 0) g_Config.m_KxPfSimulatePlayers = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Fix Snap") == 0) g_Config.m_KxAtkPathfinderSnap = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Hook Enabled") == 0) g_Config.m_KxPfHook = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "SPS (Push)") == 0) g_Config.m_KxAtkPathfinderSps = pTarget->on ? 1 : 0;
+                                                else if(str_comp(pTarget->pName, "Rescue") == 0) g_Config.m_KxRescue = pTarget->on;
+                                                else if(str_comp(pTarget->pName, "All Rescue") == 0) g_Config.m_KxRescueAll = pTarget->on;
                                         }
                                         // Copy Moves Filter expandable is master toggle.
                                         else if(str_comp(pTarget->pName, "Copy Moves Filter") == 0)
@@ -4287,8 +4230,9 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 g_Config.m_KxHitboxesTeeTrigger = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Show for others") == 0 && str_comp(row.pName, "Hitboxes") == 0)
                                                 g_Config.m_KxHitboxesShowOthers = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Filters") == 0 && str_comp(row.pName, "Hitboxes") == 0)
-                                                g_Config.m_KxHitboxesFilters = pTarget->on ? 1 : 0;
+                                        // v1.56.257: Hitboxes expandable header = master toggle (like IRC/Spoofer).
+                                        else if(str_comp(pTarget->pName, "Hitboxes") == 0)
+                                                g_Config.m_KxHitboxes = pTarget->on ? 1 : 0;
                                         // Pathfinder → Visuals children
                                         else if(str_comp(pTarget->pName, "Show field") == 0)
                                                 g_Config.m_KxPfShowField = pTarget->on ? 1 : 0;
@@ -5079,7 +5023,7 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                                                                 continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c))
+if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c)))
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
         continue;
@@ -5179,6 +5123,19 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                                 else if(c == 4)
                                                                         g_Config.m_KxHitboxesTriggerStyle = o;
                                                         }
+                                                        // v1.56.257: Hitboxes filter dropdowns — same labels as ESP, own cvars.
+                                                        else if(str_comp(target.pName, "Team") == 0 && str_comp(row.pName, "Hitboxes") == 0)
+                                                                g_Config.m_KxHitboxesTeamFilter = o;
+                                                        else if(str_comp(target.pName, "Friend") == 0 && str_comp(row.pName, "Hitboxes") == 0)
+                                                                g_Config.m_KxHitboxesFriendFilter = o;
+                                                        else if(str_comp(target.pName, "Dummy") == 0 && str_comp(row.pName, "Hitboxes") == 0)
+                                                                g_Config.m_KxHitboxesDummyFilter = o;
+                                                        else if(str_comp(target.pName, "Clanmate") == 0 && str_comp(row.pName, "Hitboxes") == 0)
+                                                                g_Config.m_KxHitboxesClanmateFilter = o;
+                                                        else if(str_comp(target.pName, "Freeze") == 0 && str_comp(row.pName, "Hitboxes") == 0)
+                                                                g_Config.m_KxHitboxesFreezeFilter = o;
+                                                        else if(str_comp(target.pName, "Targets filter") == 0 && str_comp(row.pName, "Hitboxes") == 0)
+                                                                g_Config.m_KxHitboxesTargetsFilterMode = o;
                                                         // v1.56.83: AimBot per-weapon dropdowns (parent = "AimBot")
                                                         else if(str_comp(row.pName, "AimBot") == 0)
                                                         {
@@ -5358,7 +5315,7 @@ void CClickGui::RenderDropdownPopup(float alpha)
                                                                 continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c))
+if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c)))
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
         continue;
@@ -5612,7 +5569,7 @@ bool CClickGui::HitTestRow(vec2 mousePos, int panelIdx, int &outRow, int &outChi
                                                                 continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c))
+if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c)))
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
         continue;
@@ -5721,38 +5678,40 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
                 }
                 else if(str_comp(pOwner, "ESP") == 0)
                         str_copy(g_Config.m_KxEspTargetsFilter, pRow->m_aInputBuf, sizeof(g_Config.m_KxEspTargetsFilter));
+                // v1.56.257: Hitboxes → Targets IDs.
+                else if(str_comp(pOwner, "Hitboxes") == 0)
+                        str_copy(g_Config.m_KxHitboxesTargetsFilter, pRow->m_aInputBuf, sizeof(g_Config.m_KxHitboxesTargetsFilter));
         }
         // Block children: string IDs.
         else if(str_comp(pRow->pName, "Main ID") == 0)
-                g_Config.m_KxMain = atoi(pRow->m_aInputBuf);
+        {
+                // v1.56.259: empty field = no main (-1), not player 0.
+                g_Config.m_KxMain = pRow->m_aInputBuf[0] ? atoi(pRow->m_aInputBuf) : -1;
+        }
         else if(str_comp(pRow->pName, "Dummy ID") == 0)
                 g_Config.m_KxTripleFlyDummyId = atoi(pRow->m_aInputBuf);
         else if(str_comp(pRow->pName, "Target IDs") == 0 && m_InputPanel >= 0 && m_InputPanel < NUM_PANELS && m_InputRow >= 0 && m_InputRow < g_Panels[m_InputPanel].rowCount && str_comp(g_Panels[m_InputPanel].pRows[m_InputRow].pName, "Auto Triple Fly") == 0)
                 str_copy(g_Config.m_KxTripleFlyTargetIds, pRow->m_aInputBuf, sizeof(g_Config.m_KxTripleFlyTargetIds));
-        else if(str_comp(pRow->pName, "Target IDs") == 0)
+        else if(str_comp(pRow->pName, "Target IDs") == 0 || str_comp(pRow->pName, "Untarget IDs") == 0)
                 str_copy(GameClient()->m_BotNet.m_aTargetIDsStr, pRow->m_aInputBuf, sizeof(GameClient()->m_BotNet.m_aTargetIDsStr));
-        else if(str_comp(pRow->pName, "Rescue IDs") == 0)
+        else if(str_comp(pRow->pName, "Rescue IDs") == 0 || str_comp(pRow->pName, "Unrescue IDs") == 0)
                 str_copy(GameClient()->m_BotNet.m_aRescueIDsStr, pRow->m_aInputBuf, sizeof(GameClient()->m_BotNet.m_aRescueIDsStr));
+        // "Dummy IDs" lives in two panels (Helpers + SDS): guard by the owning row.
+        else if(str_comp(pRow->pName, "Dummy IDs") == 0 && m_InputPanel >= 0 && m_InputPanel < NUM_PANELS && m_InputRow >= 0 && m_InputRow < g_Panels[m_InputPanel].rowCount && str_comp(g_Panels[m_InputPanel].pRows[m_InputRow].pName, "Helpers") == 0)
+                str_copy(GameClient()->m_BotNet.m_aHelpersDummyIDsStr, pRow->m_aInputBuf, sizeof(GameClient()->m_BotNet.m_aHelpersDummyIDsStr));
         // Block children: numeric distances.
-        else if(str_comp(pRow->pName, "Avoid Freeze Radius") == 0) g_Config.m_KxAvoidFreezeRadius = atoi(pRow->m_aInputBuf);
-        else if(str_comp(pRow->pName, "Fire Dist") == 0) g_Config.m_KxFireDist = (int)atof(pRow->m_aInputBuf);
-        else if(str_comp(pRow->pName, "Hook Dist") == 0) g_Config.m_KxHookDist = (int)atof(pRow->m_aInputBuf);
-        else if(str_comp(pRow->pName, "Rescue Radius") == 0) g_Config.m_KxRescueRadius = (int)atof(pRow->m_aInputBuf);
+        else if(str_comp(pRow->pName, "Rescue Dist") == 0) g_Config.m_KxRescueRadius = (int)atof(pRow->m_aInputBuf);
         else if(str_comp(pRow->pName, "Target Dist") == 0) g_Config.m_KxTargetDist = (int)atof(pRow->m_aInputBuf);
         else if(str_comp(pRow->pName, "Main Dist") == 0) g_Config.m_KxMainDist = (int)atof(pRow->m_aInputBuf);
         else if(str_comp(pRow->pName, "Stand Dist") == 0) g_Config.m_KxStandDist = (int)atof(pRow->m_aInputBuf);
-        else if(str_comp(pRow->pName, "Main Stand Dist") == 0) g_Config.m_KxMainStandDist = (int)atof(pRow->m_aInputBuf);
-        else if(str_comp(pRow->pName, "Laser Rescue Dist") == 0) g_Config.m_KxLaserRescueDist = (int)atof(pRow->m_aInputBuf);
-        else if(str_comp(pRow->pName, "Simulate Score") == 0) g_Config.m_KxPfSimulateScore = (int)atof(pRow->m_aInputBuf);
-        else if(str_comp(pRow->pName, "Rays") == 0) g_Config.m_KxAtkPathfinderRays = atoi(pRow->m_aInputBuf);
-        else if(str_comp(pRow->pName, "Dist") == 0) g_Config.m_KxAtkPathfinderRaysDist = atoi(pRow->m_aInputBuf);
+        else if(str_comp(pRow->pName, "MStand Dist") == 0) g_Config.m_KxMainStandDist = (int)atof(pRow->m_aInputBuf);
         else if(str_comp(pRow->pName, "Buttons") == 0) str_copy(g_Config.m_KxEdgeBindButtons, pRow->m_aInputBuf, sizeof(g_Config.m_KxEdgeBindButtons));
         else if(str_comp(pRow->pName, "Dummy IDs") == 0) str_copy(g_Config.m_KxSdsDummyIds, pRow->m_aInputBuf, sizeof(g_Config.m_KxSdsDummyIds));
         // v1.56.171 BUG9: Binds panel — unified bind/unbind logic.
         // For each bind row: look up the command string, find the currently bound key
         // (if any), unbind it, then bind the new key (if non-empty). When the field is
         // emptied, only the unbind runs. All kx_ targets are now cvars, so
-        // `toggle kx_X 1 0` works (no more "Invalid command: 'kx_attack'").
+        // `toggle kx_X 1 0` works (no more "Invalid command: 'kx_helpers'").
         else if(m_InputPanel == 4 && pRow->type == ERowType::Input)
         {
                 const char *pCmd = nullptr;
@@ -5766,7 +5725,7 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
                 else if(str_comp(pRow->pName, "Trajectory") == 0) pCmd = "toggle kx_show_trajectory 1 0";
                 else if(str_comp(pRow->pName, "ESP") == 0) pCmd = "toggle kx_esp 1 0";
                 else if(str_comp(pRow->pName, "Basic Avoid Freeze") == 0) pCmd = "toggle kx_basic_avoid_freeze 1 0";
-                else if(str_comp(pRow->pName, "Block") == 0) pCmd = "toggle kx_attack 1 0";
+                else if(str_comp(pRow->pName, "Helpers") == 0) pCmd = "toggle kx_helpers 1 0";
                 else if(str_comp(pRow->pName, "Auto Triple Fly") == 0) pCmd = "toggle kx_triple_fly 1 0";
                 else if(str_comp(pRow->pName, "Record") == 0) pCmd = "toggle kx_tas_record 1 0";
                 else if(str_comp(pRow->pName, "Pause") == 0) pCmd = "toggle kx_tas_pause 1 0";
@@ -5862,7 +5821,7 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                                                 continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c))
+if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c)))
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
         continue;
@@ -5945,7 +5904,7 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                                 continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c))
+if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c)))
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
         continue;
@@ -6028,7 +5987,7 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                                 continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c))
+if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c)))
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
         continue;
@@ -6670,7 +6629,7 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                                 continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c))
+if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c)))
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
         continue;
@@ -6713,7 +6672,7 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                 if(str_comp(row.pName, "AimBot") == 0 && !AimBotChildVisible(row.pChildren, row.childCount, c)) continue;
                                 if(str_comp(row.pName, "TriggerBot") == 0 && !TriggerBotChildVisible(row.pChildren, row.childCount, c)) continue;
                                 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c)) continue;
-                                if((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) continue;
+                                if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c))) continue;
                                 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c)) continue;
                                 if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c)) continue;
                                 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c)) continue;
@@ -6757,7 +6716,7 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                                 continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c))
+if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c)))
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
         continue;
@@ -6956,6 +6915,13 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                         const float labelW = TextRender()->TextWidth(15.0f, pLabel);
                                         DrawText(crx + (crw - labelW) * 0.5f, cry + 7.0f, 15.0f, pLabel,
                                                 ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                                        break;
+                                }
+                                case ERowType::Label:
+                                {
+                                        // v1.56.258: Label child (Block "Dists:") — non-interactive text.
+                                        DrawText(crx + 4.0f, cry + 5.0f, 15.0f, child.pName,
+                                                ColorRGBA(0xffb8b8c8, true).WithAlpha(alpha));
                                         break;
                                 }
                                 case ERowType::DoubleButton:

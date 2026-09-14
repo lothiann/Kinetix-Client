@@ -42,10 +42,8 @@ void CBotNet::LoadMapGrid()
 		delete[] m_pFrontGrid;
 	if(m_pfDist)
 		delete[] m_pfDist;
-	if(m_pfVisited)
-		delete[] m_pfVisited;
-	if(m_PfPlayerPenalty)
-		delete[] m_PfPlayerPenalty;
+	if(m_pfFreezeDist)
+		delete[] m_pfFreezeDist;
 	if(m_pForbiddenGrid)
 		delete[] m_pForbiddenGrid;
 	if(m_pCustomFinishGrid)
@@ -77,8 +75,7 @@ void CBotNet::LoadMapGrid()
 	m_pMapGrid = new unsigned char[Size];
 	m_pFrontGrid = new unsigned char[Size];
 	m_pfDist = new float[Size];
-	m_pfVisited = new bool[Size];
-	m_PfPlayerPenalty = new float[Size];
+	m_pfFreezeDist = new unsigned char[Size];
 	m_pForbiddenGrid = new unsigned char[Size];
 	m_pCustomFinishGrid = new unsigned char[Size];
 
@@ -126,9 +123,12 @@ void CBotNet::LoadMapGrid()
 	for(int i = 0; i < Size; i++)
 	{
 		m_pfDist[i] = 1e18f;
-		m_pfVisited[i] = false;
-		m_PfPlayerPenalty[i] = 0.0f;
+		m_pfFreezeDist[i] = 255;
 	}
+
+	// Route distance to every freeze pool — once per map load; the
+	// survival retreat reads it.
+	ComputeFreezeDistField();
 
 	m_MapGridLoaded = true;
 	m_aLastMapName[0] = '\0';
@@ -172,113 +172,52 @@ bool CBotNet::IsTileFreeze(int tx, int ty)
 	return false;
 }
 
-float CBotNet::GetTileCost(int tx, int ty)
-{
-	if(tx < 0 || ty < 0 || tx >= m_MapWidth || ty >= m_MapHeight)
-		return -1.0f;
-	int idx = ty * m_MapWidth + tx;
-	if(m_pForbiddenGrid && m_pForbiddenGrid[idx])
-		return -1.0f;
-	unsigned char tile = m_pMapGrid[idx];
-	if(tile == TILE_SOLID || tile == TILE_DEATH || tile == TILE_NOHOOK)
-		return -1.0f;
-	unsigned char ftile = m_pFrontGrid[idx];
-	if(ftile == TILE_SOLID || ftile == TILE_DEATH)
-		return -1.0f;
-
-	float cost = 1.0f;
-	if(tile == TILE_FREEZE || tile == TILE_DFREEZE)
-		cost += PF_FREEZE_COST;
-	if(ftile == TILE_FREEZE || ftile == TILE_DFREEZE)
-		cost += PF_FREEZE_COST;
-
-	if(g_Config.m_KxPfSimulatePlayers && m_PfPlayerPenalty)
-		cost += m_PfPlayerPenalty[idx];
-
-	return cost;
-}
-
 // =========================================================
-// GRID A* — multi-source, octile heuristic, 8 neighbours with
-// corner-cut prevention. Fills m_pfDist / m_pfVisited.
-//   skipFreeze = true  -> freeze tiles are walls (rescue variant)
-//   skipFreeze = false -> freeze tiles passable at +PF_FREEZE_COST
-// Returns true if the bot tile was reached.
+// FREEZE ROUTE DISTANCE - multi-source BFS from every freeze
+// tile through walkable tiles only, so the distance is a real
+// route (walls are never crossed).  255 = no freeze in reach.
+// Feeds the A* danger cost and the survival retreat.
 // =========================================================
 
-bool CBotNet::PfAStarSearch(int botTX, int botTY,
-	const std::vector<std::pair<int, int>> &sources, bool skipFreeze)
+void CBotNet::ComputeFreezeDistField()
 {
 	int Size = m_MapWidth * m_MapHeight;
 	for(int i = 0; i < Size; i++)
+		m_pfFreezeDist[i] = 255;
+
+	static const int dr[] = {-1, 1, 0, 0};
+	static const int dc[] = {0, 0, -1, 1};
+	std::vector<int> q;
+	q.reserve(Size);
+	int head = 0;
+	for(int i = 0; i < Size; i++)
 	{
-		m_pfDist[i] = 1e18f;
-		m_pfVisited[i] = false;
-	}
-
-	const float SQRT2 = 1.4142135623730951f;
-	static const int dr[] = {-1, 1, 0, 0, -1, -1, 1, 1};
-	static const int dc[] = {0, 0, -1, 1, -1, 1, -1, 1};
-
-	auto heuristic = [&](int r, int c) -> float {
-		int dy = abs(r - botTY);
-		int dx = abs(c - botTX);
-		return pf_maxf((float)dy, (float)dx) + (SQRT2 - 1.0f) * pf_minf((float)dy, (float)dx);
-	};
-
-	std::priority_queue<PfNode, std::vector<PfNode>, std::greater<PfNode>> open;
-	for(const auto &src : sources)
-	{
-		if(src.first < 0 || src.second < 0 || src.first >= m_MapWidth || src.second >= m_MapHeight)
-			continue;
-		int idx = src.second * m_MapWidth + src.first;
-		m_pfDist[idx] = 0.0f;
-		open.push({heuristic(src.second, src.first), 0.0f, src.second, src.first});
-	}
-
-	while(!open.empty())
-	{
-		PfNode cur = open.top();
-		open.pop();
-
-		if(m_pfVisited[cur.r * m_MapWidth + cur.c])
-			continue;
-		m_pfVisited[cur.r * m_MapWidth + cur.c] = true;
-
-		if(cur.r == botTY && cur.c == botTX)
-			break;
-
-		for(int d = 0; d < 8; d++)
+		if(IsTileFreeze(i % m_MapWidth, i / m_MapWidth))
 		{
-			int nr = cur.r + dr[d];
-			int nc = cur.c + dc[d];
-			if(nc < 0 || nr < 0 || nc >= m_MapWidth || nr >= m_MapHeight)
-				continue;
-
-			if(skipFreeze && IsTileFreeze(nc, nr))
-				continue;
-
-			float tileCost = GetTileCost(nc, nr);
-			if(tileCost < 0)
-				continue;
-
-			if(abs(dr[d]) + abs(dc[d]) == 2)
-			{
-				if(!IsTileWalkable(cur.c, cur.r + dr[d]) || !IsTileWalkable(cur.c + dc[d], cur.r))
-					continue;
-			}
-
-			float moveCost = (abs(dr[d]) + abs(dc[d]) == 2) ? SQRT2 * tileCost : tileCost;
-			float newG = cur.g + moveCost;
-			int nIdx = nr * m_MapWidth + nc;
-
-			if(newG < m_pfDist[nIdx])
-			{
-				m_pfDist[nIdx] = newG;
-				open.push({newG + heuristic(nr, nc), newG, nr, nc});
-			}
+			m_pfFreezeDist[i] = 0;
+			q.push_back(i);
 		}
 	}
 
-	return m_pfVisited[botTY * m_MapWidth + botTX];
+	while(head < (int)q.size())
+	{
+		int idx = q[head++];
+		int r = idx / m_MapWidth, c = idx % m_MapWidth;
+		int nd = m_pfFreezeDist[idx] + 1;
+		if(nd >= 255)
+			continue;
+		for(int d = 0; d < 4; d++)
+		{
+			int nr = r + dr[d], nc = c + dc[d];
+			if(nc < 0 || nr < 0 || nc >= m_MapWidth || nr >= m_MapHeight)
+				continue;
+			int nIdx = nr * m_MapWidth + nc;
+			if(m_pfFreezeDist[nIdx] <= nd)
+				continue;
+			if(!IsTileWalkable(nc, nr))
+				continue;
+			m_pfFreezeDist[nIdx] = nd;
+			q.push_back(nIdx);
+		}
+	}
 }

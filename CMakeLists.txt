@@ -2600,8 +2600,6 @@ if(CLIENT)
     components/kinetix/kinetix_internal.h
     components/kinetix/kinetix_lines.cpp
     components/kinetix/kinetix_lines.h
-    components/kinetix/kinodynamic/kinodynamic.cpp
-    components/kinetix/kinodynamic/kinodynamic_render.cpp
     components/kinetix/laser_unfreeze.cpp
     components/kinetix/fly_ride.cpp
     components/kinetix/triple_fly.cpp

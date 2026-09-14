@@ -143,7 +143,7 @@ void CBotNet::ConSendDummy(IConsole::IResult *pResult, void *pUserData)
 }
 
 // =========================================================
-// KINODYNAMIC A* — CONSOLE COMMANDS
+// PATHFINDER TAB — CONSOLE COMMANDS
 // =========================================================
 
 void CBotNet::ConPfLive(IConsole::IResult *pResult, void *pUserData)

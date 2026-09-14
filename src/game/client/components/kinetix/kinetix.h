@@ -21,24 +21,9 @@
 
 // Pathfinder constants
 static const int PF_MAX_MAP_SIZE = 2048;
-static const float PF_FREEZE_COST = 50.0f;
-static const float PF_PLAYER_COST = 1e18f;
-static const float PF_FREEZE_REPEL_WEIGHT = 3.0f;
 
-// Kinodynamic A* (State-Lattice) constants
-static const int KINO_MAX_TICKS = 128; // room for a full primitive plan
-
-// State-Lattice A* constants
-// v1.40: bumped LATTICE_MAX_DEPTH to 20 and LATTICE_MAX_PRIMITIVES to 48 to
-// accommodate the new HOOK_HOLD / HOOK_RELEASE primitives and let the search
-// plan long enough to complete wall-climbs and ceiling-swings (verified via
-// Python model in /home/z/my-project/verify/).
-static const int LATTICE_MAX_NODES = 2000; // hard cap on A* node budget
-static const int LATTICE_MAX_DEPTH = 20; // max primitives in a plan (was 12)
-static const int LATTICE_MAX_PRIMITIVES = 48; // 6 base + up to 32 hook fire + 3 hold + 1 release
-static const int LATTICE_PRIM_MAX_TICKS = 12; // longest single primitive (HOOK_FIRE = 10)
-static const float LATTICE_FREEZE_PENALTY = 5.0f; // cost added per freeze tile crossed
-static const float LATTICE_H_SCALE = 2.0f; // heuristic multiplier (admissible: <3.2 ticks/tile)
+// Helpers plan constants
+static const int HELPERS_MAX_TICKS = 1024; // max ticks in one helpers plan
 
 // =========================================================
 // Pathfinder tab (Kinetix→Pathfinder) — chunk-based mini TAS maker
@@ -131,11 +116,12 @@ struct PfBacktrackEntry
 };
 
 // =========================================================
-// Kinodynamic A* — cached input package per dummy
+// Helpers plan — cached physics input package per dummy
+// (ComputeHelpersPath builds it, ApplyHelpersPlan replays it)
 // =========================================================
-struct CKinodynamicCache
+struct CHelpersPlan
 {
-        CNetObj_PlayerInput aInputs[KINO_MAX_TICKS]; // the winning input package
+        CNetObj_PlayerInput aInputs[HELPERS_MAX_TICKS]; // the winning input package
         int NumTicks;           // how many ticks in the package
         int CurrentTick;        // which tick of the package we're currently applying
         int ComputeTick;        // game tick when this was computed
@@ -143,7 +129,7 @@ struct CKinodynamicCache
         vec2 BotPos;            // bot position at compute time (for invalidation)
         std::vector<vec2> vPath; // predicted positions for rendering
 
-        CKinodynamicCache() { Reset(); }
+        CHelpersPlan() { Reset(); }
 
         void Reset()
         {
@@ -173,6 +159,8 @@ struct CBotNetDummy
         int m_LastTargetTX, m_LastTargetTY;
         int m_LastBotTX, m_LastBotTY;
         bool m_PathFound;
+        bool m_RescueField; // current field is the rescue FMM (flow = field gradient)
+        bool m_FlowThroughFreeze; // rescue Phase 2: field intentionally crosses freeze
 
         // Attack runtime
         int m_HookTickTimer;
@@ -189,8 +177,8 @@ struct CBotNetDummy
         // Random aim timing
         int64_t m_NextRandomAimTick;
 
-        // Kinodynamic A* cache
-        CKinodynamicCache m_KinoCache;
+        // Helpers plan (physics movement cache)
+        CHelpersPlan m_HelpersPlan;
 
         // Copy moves
         int m_LastTargetAttackTick;
@@ -223,6 +211,8 @@ struct CBotNetDummy
                 m_LastTargetTX = m_LastTargetTY = -1;
                 m_LastBotTX = m_LastBotTY = -1;
                 m_PathFound = false;
+                m_RescueField = false;
+                m_FlowThroughFreeze = false;
                 m_HookTickTimer = 0;
                 m_JumpTicks = 0;
                 m_LastPos = vec2(0, 0);
@@ -273,34 +263,22 @@ public:
         bool m_TargetList[128];
         bool m_BotsList[128];
         bool m_RescueList[128];
+        // Which dummy slots act as helpers (parsed from the "Dummy IDs" field).
+        bool m_HelpersDummyList[MAX_DUMMIES];
 
         // v1.56.171 BUG9: previous cvar values for change-detection in OnUpdate.
         // When a cvar transitions 1→0, we run the side effects that used to live
         // in the old Con-handlers (ResetDummyInputs, KinoCache.Reset, etc.).
-        int m_PrevKxAttack = 0;
-        int m_PrevKxStand = 0;
-        int m_PrevKxAutoAim = 0;
-        int m_PrevKxAutoFire = 0;
-        int m_PrevKxAutoHook = 0;
-        int m_PrevKxMove = 0;
+        int m_PrevKxHelpers = 0;
         int m_PrevKxRescue = 0;
-        int m_PrevKxKillFrz = 0;
-        int m_PrevKxAtkMain = 0;
-        int m_PrevKxHammer = 0;
-        int m_PrevKxSmartDetect = 0;
-        int m_PrevKxSmartRescue = 0;
-        int m_PrevKxAvoidFreeze = 0;
-        int m_PrevKxPfHook = 0;
-        int m_PrevKxKinodynamic = 0;
-        int m_PrevKxAtkPathfinder = 0;
-        int m_PrevKxPfSimulatePlayers = 0;
-        int m_PrevKxAtkHookDelay = 0;
         int m_PrevKxCopyMoves = 0;
+        // v1.56.258: m_PrevKx* members for removed legacy attack cvars deleted.
 
         // String buffers for UI input fields (comma-separated IDs)
         char m_aTargetIDsStr[256];
         char m_aBotsIDsStr[256];
         char m_aRescueIDsStr[256];
+        char m_aHelpersDummyIDsStr[256];
 
         // Pathfinder tab (Kinetix→Pathfinder) — chunk-based mini TAS maker.
         // State machine driven by m_PfState; trajectory in m_PfVPath.
@@ -417,11 +395,10 @@ public:
         int m_MapHeight;
         unsigned char *m_pMapGrid;
         unsigned char *m_pFrontGrid;
-        float *m_PfPlayerPenalty;
         bool m_MapGridLoaded;
         char m_aLastMapName[256];
         float *m_pfDist;
-        bool *m_pfVisited;
+        unsigned char *m_pfFreezeDist; // BFS route distance to nearest freeze, 255 = none in reach
 
         CBotNet();
         ~CBotNet();
@@ -437,6 +414,10 @@ public:
         // Process one inactive dummy
         void ProcessDummy(int Dummy);
 
+        // Helpers (attack/rescue/escort) — the whole feature for one dummy
+        // tick: target selection, movement, aim/hook/fire (attack.cpp).
+        void UpdateHelpers(CGameClient *pGame, CNetObj_PlayerInput *pInput, int Dummy, CBotNetDummy &State, int LocalID);
+
         // Check if botnet is active for a specific dummy
         bool IsDummyActive(int Dummy) const;
 
@@ -446,24 +427,35 @@ public:
         // Sync ID list string <-> bool array
         void SyncIDsToStr(const bool *pList, char *pStr, int StrSize);
         void SyncStrToIDs(const char *pStr, bool *pList);
+        void SyncStrToDummyIDs(const char *pStr, bool *pList); // dummy slots (empty = all)
+        bool IsHelpersDummy(int Dummy); // listed slot AND not the current dummy
 
         // Pathfinder (shared map, per-dummy flow)
         void LoadMapGrid();
         bool IsTileWalkable(int tx, int ty);
         bool IsTileFreeze(int tx, int ty);
-        float GetTileCost(int tx, int ty);
         void ComputePathfinder(int botTX, int botTY, int targetTX, int targetTY, CBotNetDummy &State);
+        // Rescue guidance: multi-source safe-tile rings around a frozen ally,
+        // freeze tiles impassable.  Fills m_pfDist + flow on success.
         void ComputePathfinderRescue(int botTX, int botTY, int targetTX, int targetTY, CBotNetDummy &State);
+        // Route distance to the nearest freeze tile for the whole grid:
+        // multi-source BFS from freeze tiles through walkable tiles only
+        // (walls are never crossed).  255 = no freeze in reach.  Feeds the
+        // A* danger cost and the survival retreat.
+        void ComputeFreezeDistField();
         bool HasLineOfSightTiles(int r1, int c1, int r2, int c2);
+        // walkable + no LOS-visible freeze within SAFETY_MARGIN — survival check
+        bool IsSafeSpot(int tx, int ty);
         void ComputeFlowForTile(int r, int c, CBotNetDummy &State);
-        vec2 ComputeFreezeRepel(int botTX, int botTY);
-        void UpdatePlayerPenalty(int botTX, int botTY, int excludeTX, int excludeTY, int LocalID);
+        void RescueFlowForTile(int r, int c, CBotNetDummy &State); // rescue FMM gradient
         void GetMovementFromFlow(const CBotNetDummy &State, bool &outLeft, bool &outRight, bool &outJump);
 
-        // Kinodynamic A* — physics-aware input planning
-        void ComputeKinodynamic(int Dummy, const vec2 &MyPos, int botTX, int botTY, int targetTX, int targetTY, CBotNetDummy &State);
-        void ApplyKinodynamicCache(int Dummy, CNetObj_PlayerInput *pInput, CBotNetDummy &State);
-        bool IsKinodynamicCacheValid(int targetTX, int targetTY, const vec2 &MyPos) const;
+        // Helpers physics plan (pathfinder.cpp) — greedy on-the-fly builder:
+        // the plan is built window by window (12 ticks of real physics per
+        // step) straight along the freeze-walled grid field; any freeze
+        // contact kills the window.  Drives attack/rescue/escort movement.
+        void ComputeHelpersPath(int Dummy, const vec2 &MyPos, int botTX, int botTY, int targetTX, int targetTY, CBotNetDummy &State);
+        void ApplyHelpersPlan(int Dummy, CNetObj_PlayerInput *pInput, CBotNetDummy &State);
         void RenderPackage(int Dummy);
         void RenderVectorField();
 
@@ -554,47 +546,24 @@ public:
         static void ConSetTargets(IConsole::IResult *pResult, void *pUserData);
         static void ConSetBots(IConsole::IResult *pResult, void *pUserData);
         static void ConSetTargetAll(IConsole::IResult *pResult, void *pUserData);
-        static void ConAttackSettings(IConsole::IResult *pResult, void *pUserData);
         static void ConAttackDists(IConsole::IResult *pResult, void *pUserData);
-        static void ConAttackHookDelay(IConsole::IResult *pResult, void *pUserData);
         static void ConClientDelay(IConsole::IResult *pResult, void *pUserData);
-        static void ConStandOnX(IConsole::IResult *pResult, void *pUserData);
         static void ConRescueIds(IConsole::IResult *pResult, void *pUserData);
-        static void ConPathfinder(IConsole::IResult *pResult, void *pUserData);
-        static void ConPathfinderRays(IConsole::IResult *pResult, void *pUserData);
-        static void ConPathfinderRaysDist(IConsole::IResult *pResult, void *pUserData);
-        static void ConPathfinderSnap(IConsole::IResult *pResult, void *pUserData);
-        static void ConPathfinderSps(IConsole::IResult *pResult, void *pUserData);
         static void ConPathfinderGo(IConsole::IResult *pResult, void *pUserData);
+        // v1.56.258: ConAttackSettings/ConAttackHookDelay/ConStandOnX/ConPathfinder*/
+        // ConPathfinderRays*/ConPathfinderSnap/ConPathfinderSps removed.
         static void ConMacroLoad(IConsole::IResult *pResult, void *pUserData);
         static void ConMacroPlay(IConsole::IResult *pResult, void *pUserData);
         static void ConMacroRecord(IConsole::IResult *pResult, void *pUserData);
         static void ConMacroSave(IConsole::IResult *pResult, void *pUserData);
         static void ConMacroCapture(IConsole::IResult *pResult, void *pUserData);
 
-        // Individual toggle commands (easier than kx_atk_set with 15 params)
-        static void ConStand(IConsole::IResult *pResult, void *pUserData);
-        static void ConAutoAim(IConsole::IResult *pResult, void *pUserData);
-        static void ConAutoFire(IConsole::IResult *pResult, void *pUserData);
-        static void ConAutoHook(IConsole::IResult *pResult, void *pUserData);
-        static void ConMove(IConsole::IResult *pResult, void *pUserData);
+        // v1.56.258: legacy individual toggle commands removed (ConStand/
+        // ConAutoAim/ConAutoFire/ConAutoHook/ConMove/ConKillFrz/ConAtkMain/
+        // ConHammer/ConSmartDetect/ConSmartRescue/ConAvoidFreeze/ConPfHook/
+        // ConKinodynamic/ConKino*).
         static void ConRescue(IConsole::IResult *pResult, void *pUserData);
-        static void ConKillFrz(IConsole::IResult *pResult, void *pUserData);
-        static void ConAtkMain(IConsole::IResult *pResult, void *pUserData);
         static void ConAutoMain(IConsole::IResult *pResult, void *pUserData);
-        static void ConHammer(IConsole::IResult *pResult, void *pUserData);
-        static void ConSmartDetect(IConsole::IResult *pResult, void *pUserData);
-        static void ConSmartRescue(IConsole::IResult *pResult, void *pUserData);
-        static void ConAvoidFreeze(IConsole::IResult *pResult, void *pUserData);
-        static void ConPfHook(IConsole::IResult *pResult, void *pUserData);
-        static void ConKinodynamic(IConsole::IResult *pResult, void *pUserData);
-        static void ConKinoCandidates(IConsole::IResult *pResult, void *pUserData);
-        static void ConKinoTicks(IConsole::IResult *pResult, void *pUserData);
-        static void ConKinoHookAngles(IConsole::IResult *pResult, void *pUserData);
-        static void ConKinoCacheTicks(IConsole::IResult *pResult, void *pUserData);
-        static void ConKinoShowPath(IConsole::IResult *pResult, void *pUserData);
-        static void ConKinoShowField(IConsole::IResult *pResult, void *pUserData);
-        static void ConKinoAggressive(IConsole::IResult *pResult, void *pUserData);
         static void ConSendDummy(IConsole::IResult *pResult, void *pUserData);
 
         // Pathfinder tab (Kinetix→Pathfinder) console commands
@@ -630,20 +599,42 @@ private:
         bool MaybeReloadMapGrid(int reloadSlot);
 
         // The stand-distance used by the "stand when close" check, depending
-        // on whether the current target is the main player (and g_Config.m_KxAtkMain
-        // is off) and not a rescue target.  Replaces the 6x duplicated ternary.
+        // on whether the current target is the main player and not a rescue
+        // target.  Replaces the 6x duplicated ternary.
         float EffectiveStandDist(bool TargetIsMain, bool TargetIsRescue) const;
 
-        // True when the bot's tile is adjacent to freeze tiles (repel nonzero).
-        // Replaces the repeated (repel.x*repel.x + repel.y*repel.y) > 0.0001f.
-        bool IsNearFreeze(int botTX, int botTY) const;
-
-        // PfSnap "snap to tile center" — when no horizontal movement, nudge
-        // left/right toward the current tile's center.  Replaces 2x 10-line dup.
-        void ApplyPfSnap(const vec2 &MyPos, bool &left, bool &right) const;
-
-        // Hook pulse cycle (ticks) from g_Config.m_KxAtkHookDelay.  Replaces 2x identical calc.
+        // Hook pulse cycle (ticks) — fixed 1s pulse (v1.56.258).  Replaces 2x identical calc.
         int ComputeHookTicksCycle() const;
+
+        // --- Helpers internals (attack.cpp) ---
+        // Target selection: rescue → attack → escort.  For rescue it runs
+        // ComputePathfinderRescue, leaving the rescue field in m_pfDist.
+        // Returns the target client id or -1.
+        int FindHelpersTarget(CGameClient *pGame, int LocalID, const vec2 &MyPos, CBotNetDummy &State,
+                bool &TargetIsMain, bool &TargetIsRescue, bool &TargetExplicit);
+        // Movement for the picked target: guidance field + physics plan with a
+        // grid-flow fallback.  Returns true while the plan owns the inputs.
+        bool MoveToHelpersTarget(CGameClient *pGame, CNetObj_PlayerInput *pInput, int Dummy, CBotNetDummy &State,
+                int LocalID, int TargetID, const vec2 &MyPos, const vec2 &TPos, float dx, bool TargetIsRescue);
+        // Old AutoHook pulse: hook the target within range/LOS with no other
+        // tee in between.  Frozen targets are hooked only for rescue.
+        void UpdateHelpersHook(CGameClient *pGame, CNetObj_PlayerInput *pInput, int Dummy, CBotNetDummy &State,
+                int LocalID, int TargetID, const vec2 &MyPos, const vec2 &TPos, float Dist,
+                bool CanShoot, bool TargetIsRescue, bool tgtFrozen);
+        // Shared field-walker for targeting and idle safety: refreshes the
+        // per-tile flow, replays/builds the physics plan toward (gtx, gty)
+        // and falls back to grid flow.  JumpProbeDX gives the jump-over probe
+        // direction (0 = use the flow's horizontal sign); BlockerId is the
+        // tee the probe ignores (-1 = jump over anyone).  Returns true while
+        // the plan owns the inputs.
+        bool MoveAlongField(CGameClient *pGame, CNetObj_PlayerInput *pInput, int Dummy, CBotNetDummy &State,
+                int LocalID, const vec2 &MyPos, int gtx, int gty, float JumpProbeDX, int BlockerId);
+        // Idle safety: an AFK bot never sits where a hook/hammer can shove it
+        // into freeze — it retreats to the nearest tile with no freeze within
+        // margin.  Returns 0 = nothing to do (caller idles), 1 = plan active,
+        // 2 = grid fallback already drove the bot.
+        int MoveToSafety(CGameClient *pGame, CNetObj_PlayerInput *pInput, int Dummy, CBotNetDummy &State,
+                int LocalID, const vec2 &MyPos);
 
         // --- ProcessDummy sub-steps (each returns true when it handled the
         //     tick and ProcessDummy should return immediately; false = fall
@@ -657,13 +648,6 @@ private:
         bool ProcessPathfinderGo(CGameClient *pGame, CNetObj_PlayerInput *pInput, int Dummy, CBotNetDummy &State, int LocalID);
         void ProcessRandomAim(int Dummy, CBotNetDummy &State, int64_t CurTick); // fall-through (void)
 
-        // Shared A* engine for ComputePathfinder / ComputePathfinderRescue.
-        // Multi-source BFS-style Dijkstra/A* from `sources` toward bot tile.
-        //   skipFreeze = true  → freeze tiles are impassable (rescue variant)
-        //   skipFreeze = false → freeze tiles passable at +PF_FREEZE_COST
-        // Returns true if the bot tile was reached.  Fills m_pfDist / m_pfVisited.
-        bool PfAStarSearch(int botTX, int botTY,
-                const std::vector<std::pair<int, int>> &sources, bool skipFreeze);
 };
 
 #endif

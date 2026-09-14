@@ -20,7 +20,8 @@ void CEsp::OnReset()
 {
 }
 
-bool CEsp::PassesFilters(int ClientId, int LocalId) const
+// v1.56.257: shared filter body — callers pass their own config filter values.
+bool CEsp::PassesFiltersImpl(int ClientId, int LocalId, int teamFilter, int friendFilter, int dummyFilter, int clanmateFilter, int targetsFilterMode, const char *pTargetsIds, int freezeFilter) const
 {
 	CGameClient *pGame = GameClient();
 	if(!pGame->m_aClients[ClientId].m_Active)
@@ -32,20 +33,20 @@ bool CEsp::PassesFilters(int ClientId, int LocalId) const
 		return false;
 
 	// Team filter: 0=both 1=war 2=my
-	if(g_Config.m_KxEspTeamFilter == 1)
+	if(teamFilter == 1)
 	{
 		if(pGame->m_Teams.SameTeam(LocalId, ClientId))
 			return false;
 	}
-	else if(g_Config.m_KxEspTeamFilter == 2)
+	else if(teamFilter == 2)
 	{
 		if(!pGame->m_Teams.SameTeam(LocalId, ClientId))
 			return false;
 	}
 	// Friend filter: 0=both 1=ignore 2=only
-	if(g_Config.m_KxEspFriendFilter == 1 && pGame->m_aClients[ClientId].m_Friend)
+	if(friendFilter == 1 && pGame->m_aClients[ClientId].m_Friend)
 		return false;
-	if(g_Config.m_KxEspFriendFilter == 2 && !pGame->m_aClients[ClientId].m_Friend)
+	if(friendFilter == 2 && !pGame->m_aClients[ClientId].m_Friend)
 		return false;
 	// Dummy filter: 0=both 1=ignore 2=only
 	bool isDummy = false;
@@ -57,19 +58,19 @@ bool CEsp::PassesFilters(int ClientId, int LocalId) const
 			break;
 		}
 	}
-	if(g_Config.m_KxEspDummyFilter == 1 && isDummy)
+	if(dummyFilter == 1 && isDummy)
 		return false;
-	if(g_Config.m_KxEspDummyFilter == 2 && !isDummy)
+	if(dummyFilter == 2 && !isDummy)
 		return false;
-	if(g_Config.m_KxEspClanmateFilter == 1 && str_comp(pGame->m_aClients[ClientId].m_aClan, pGame->m_aClients[LocalId].m_aClan) == 0)
+	if(clanmateFilter == 1 && str_comp(pGame->m_aClients[ClientId].m_aClan, pGame->m_aClients[LocalId].m_aClan) == 0)
 		return false;
-	if(g_Config.m_KxEspClanmateFilter == 2 && str_comp(pGame->m_aClients[ClientId].m_aClan, pGame->m_aClients[LocalId].m_aClan) != 0)
+	if(clanmateFilter == 2 && str_comp(pGame->m_aClients[ClientId].m_aClan, pGame->m_aClients[LocalId].m_aClan) != 0)
 		return false;
-	if(g_Config.m_KxEspTargetsFilterMode != 0)
+	if(targetsFilterMode != 0)
 	{
 		bool found = false;
 		bool anyValid = false;
-		const char *pIds = g_Config.m_KxEspTargetsFilter;
+		const char *pIds = pTargetsIds;
 		while(*pIds)
 		{
 			while(*pIds && (*pIds == ' ' || *pIds == ',' || *pIds == ';'))
@@ -89,18 +90,28 @@ bool CEsp::PassesFilters(int ClientId, int LocalId) const
 			while(*pIds && *pIds != ' ' && *pIds != ',' && *pIds != ';')
 				pIds++;
 		}
-		if(g_Config.m_KxEspTargetsFilterMode == 1 && anyValid && !found)
+		if(targetsFilterMode == 1 && anyValid && !found)
 			return false;
-		if(g_Config.m_KxEspTargetsFilterMode == 2 && anyValid && found)
+		if(targetsFilterMode == 2 && anyValid && found)
 			return false;
 	}
 	// Freeze filter: 0=both 1=freeze 2=no_freeze
 	bool isFrozen = pGame->m_aClients[ClientId].m_FreezeEnd != 0;
-	if(g_Config.m_KxEspFreezeFilter == 1 && !isFrozen)
+	if(freezeFilter == 1 && !isFrozen)
 		return false;
-	if(g_Config.m_KxEspFreezeFilter == 2 && isFrozen)
+	if(freezeFilter == 2 && isFrozen)
 		return false;
 	return true;
+}
+
+bool CEsp::PassesFilters(int ClientId, int LocalId) const
+{
+	return PassesFiltersImpl(ClientId, LocalId, g_Config.m_KxEspTeamFilter, g_Config.m_KxEspFriendFilter, g_Config.m_KxEspDummyFilter, g_Config.m_KxEspClanmateFilter, g_Config.m_KxEspTargetsFilterMode, g_Config.m_KxEspTargetsFilter, g_Config.m_KxEspFreezeFilter);
+}
+
+bool CEsp::PassesHitboxesFilters(int ClientId, int LocalId) const
+{
+	return PassesFiltersImpl(ClientId, LocalId, g_Config.m_KxHitboxesTeamFilter, g_Config.m_KxHitboxesFriendFilter, g_Config.m_KxHitboxesDummyFilter, g_Config.m_KxHitboxesClanmateFilter, g_Config.m_KxHitboxesTargetsFilterMode, g_Config.m_KxHitboxesTargetsFilter, g_Config.m_KxHitboxesFreezeFilter);
 }
 
 // v1.56.113: Draw a single solid segment (immediate mode).
@@ -380,6 +391,8 @@ void CEsp::EmitBox(const vec2 &center, int playerIndex) const
 // on other players (optionally filtered like ESP).
 void CEsp::EmitHitboxes(int LocalId) const
 {
+	if(!g_Config.m_KxHitboxes) // v1.56.257: master toggle on the Hitboxes header.
+		return;
 	CGameClient *pGame = GameClient();
 	const bool tile = g_Config.m_KxHitboxesTeeTile != 0;
 	const bool trigger = g_Config.m_KxHitboxesTeeTrigger != 0;
@@ -409,7 +422,7 @@ void CEsp::EmitHitboxes(int LocalId) const
 	{
 		if(i == LocalId || !pGame->m_aClients[i].m_Active || !pGame->m_Snap.m_aCharacters[i].m_Active)
 			continue;
-		if(g_Config.m_KxHitboxesFilters && !PassesFilters(i, LocalId))
+		if(!PassesHitboxesFilters(i, LocalId))
 			continue;
 		draw(i);
 	}
@@ -435,7 +448,7 @@ void CEsp::EmitRectShape(const vec2 &center, float halfW, float halfH, int style
 		const ColorRGBA fill = col(playerIndex);
 		Graphics()->SetColor(fill.r, fill.g, fill.b, fill.a);
 		IGraphics::CQuadItem q(center.x - halfW, center.y - halfH, halfW * 2.0f, halfH * 2.0f);
-		Graphics()->QuadsDraw(&q, 1);
+		Graphics()->QuadsDrawTL(&q, 1); // v1.56.257: TL variant — QuadsDraw() centers on (x, y)
 		Graphics()->QuadsEnd();
 		return;
 	}

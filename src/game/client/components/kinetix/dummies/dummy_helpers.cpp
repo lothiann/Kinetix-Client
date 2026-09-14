@@ -3,12 +3,10 @@
 
 bool CBotNet::HandleFrozenDummy(CGameClient *pGame, CNetObj_PlayerInput *pInput, int Dummy, int LocalID)
 {
-        // Frozen / deep-frozen dummies can't act.  Optionally kill on freeze,
-        // then zero inputs and bail for the rest of the tick.
+        // Frozen / deep-frozen dummies can't act — zero inputs and bail for
+        // the rest of the tick. v1.56.258: Kill On Freeze removed.
         if(pGame->m_aClients[LocalID].m_FreezeEnd > 0 || pGame->m_aClients[LocalID].m_DeepFrozen)
         {
-                if(g_Config.m_KxKillFrz && pGame->m_aClients[LocalID].m_FreezeEnd > 0)
-                        IssueKillForDummy(Dummy);
                 ResetAndCommitInput(pGame, pInput, Dummy);
                 return true;
         }
@@ -18,7 +16,7 @@ bool CBotNet::HandleFrozenDummy(CGameClient *pGame, CNetObj_PlayerInput *pInput,
 bool CBotNet::HandleNoFeatureIdle(CGameClient *pGame, CNetObj_PlayerInput *pInput, int Dummy, CBotNetDummy &State)
 {
         // Nothing to do this tick — clear inputs and return.
-        if(!g_Config.m_KxAttack && !g_Config.m_KxCopyMoves && !g_Config.m_KxRandomAim && !State.m_MacroPlaying && !State.m_PathfinderGoActive)
+        if(!g_Config.m_KxHelpers && !g_Config.m_KxCopyMoves && !g_Config.m_KxRandomAim && !State.m_MacroPlaying && !State.m_PathfinderGoActive)
         {
                 ResetAndCommitInput(pGame, pInput, Dummy);
                 return true;
@@ -303,15 +301,13 @@ bool CBotNet::ProcessPathfinderGo(CGameClient *pGame, CNetObj_PlayerInput *pInpu
                 return true;
         }
 
-        if(g_Config.m_KxAtkPathfinder)
+        if(true) // v1.56.258: grid flow always used for PathfinderGo (KxAtkPathfinder removed)
         {
                 // Shared 5s reload slot with Attack-BranchA (legacy behaviour).
                 MaybeReloadMapGrid(0);
 
                 if(m_MapGridLoaded)
                 {
-                        UpdatePlayerPenalty(botTX, botTY, targetTX, targetTY, LocalID);
-
                         // Recompute the A* field only when target moved, no path yet, or
                         // the bot ended up on an unreachable tile.
                         bool needRecalc = (targetTX != State.m_LastTargetTX || targetTY != State.m_LastTargetTY) || !State.m_PathFound;
@@ -346,10 +342,10 @@ bool CBotNet::ProcessPathfinderGo(CGameClient *pGame, CNetObj_PlayerInput *pInpu
 void CBotNet::ProcessRandomAim(int Dummy, CBotNetDummy &State, int64_t CurTick)
 {
         // Fall-through (no return): override aim to a random point on a schedule.
-        // Guarded by !g_Config.m_KxAttack && !g_Config.m_KxCopyMoves — not redundant with the
+        // Guarded by !g_Config.m_KxHelpers && !g_Config.m_KxCopyMoves — not redundant with the
         // no-feature-idle check because CopyMoves may fall through with an inactive
         // target while g_Config.m_KxCopyMoves is still true.
-        if(!(g_Config.m_KxRandomAim && !g_Config.m_KxAttack && !g_Config.m_KxCopyMoves))
+        if(!(g_Config.m_KxRandomAim && !g_Config.m_KxHelpers && !g_Config.m_KxCopyMoves))
                 return;
 
         if(CurTick >= State.m_NextRandomAimTick)

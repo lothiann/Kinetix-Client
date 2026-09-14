@@ -35,7 +35,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
+#include <functional>
 #include <fstream>
 #include <queue>
 #include <sstream>
@@ -54,14 +57,6 @@ static inline float pf_minf(float a, float b) { return a < b ? a : b; }
 #define INPUT_STATE_MASK 3
 #endif
 
-// --- Pathfinder heap node ---
-struct PfNode
-{
-        float f; // g + h
-        float g; // cost from start
-        int r, c; // tile coords
-        bool operator>(const PfNode &o) const { return f > o.f; }
-};
 
 // =========================================================
 // PfChunkResult - shared between pathfinder_astar.cpp and
@@ -91,7 +86,7 @@ struct PfChunkResult
 
 // =========================================================
 // SetDirection / SetMousePos - input helpers used by
-// dummy_helpers.cpp, process_dummy.cpp, kinodynamic.cpp.
+// dummy_helpers.cpp, process_dummy.cpp, pathfinder.cpp.
 // =========================================================
 static inline void SetDirection(CGameClient *pGame, int Dummy, bool Left, bool Right)
 {
@@ -596,6 +591,106 @@ inline unsigned KxLineColorAt(EKxLineComponent c, int segment_index)
         unsigned ug = (unsigned)(g * 255.0f);
         unsigned ub = (unsigned)(b * 255.0f);
         return 0xff000000u | (ur << 16) | (ug << 8) | ub;
+}
+
+// =========================================================
+// PfBfsFill — multi-source FMM/Eikonal field fill, verbatim the
+// solver the Pathfinder tab uses for its flow field.
+// Two phases come free: freezePassable=false keeps freeze at 1e18;
+// a second call with freezePassable=true lets routes cross freeze.
+// =========================================================
+template<typename TWalk, typename TFreeze>
+void PfBfsFill(float *pField, int FW, int FH, const std::vector<std::pair<int, int>> &vSources,
+	TWalk fnWalk, TFreeze fnFreeze, bool freezePassable, const float *pHop = nullptr)
+{
+	int Size = FW * FH;
+	for(int i = 0; i < Size; i++)
+		pField[i] = 1e18f;
+
+	std::vector<char> state(Size, 0);
+	using FNode = std::pair<float, int>;
+	std::priority_queue<FNode, std::vector<FNode>, std::greater<FNode>> open;
+	static const int dr[] = {-1, 1, 0, 0};
+	static const int dc[] = {0, 0, -1, 1};
+
+	auto walkOk = [&](int x, int y) -> bool {
+		if(!fnWalk(x, y)) return false;
+		if(!freezePassable && fnFreeze(x, y)) return false;
+		return true;
+	};
+
+	auto eikonal = [&](int x, int y) -> float {
+		float hop = pHop ? pHop[y * FW + x] : 1.0f;
+		if(hop < 0.0001f)
+			hop = 0.0001f;
+		float txm = (x > 0 && state[y * FW + (x - 1)] == 2) ? pField[y * FW + (x - 1)] : 1e18f;
+		float txp = (x < FW - 1 && state[y * FW + (x + 1)] == 2) ? pField[y * FW + (x + 1)] : 1e18f;
+		float tym = (y > 0 && state[(y - 1) * FW + x] == 2) ? pField[(y - 1) * FW + x] : 1e18f;
+		float typ = (y < FH - 1 && state[(y + 1) * FW + x] == 2) ? pField[(y + 1) * FW + x] : 1e18f;
+		float a = std::min(txm, txp);
+		float b = std::min(tym, typ);
+		if(a >= 1e17f && b >= 1e17f) return 1e18f;
+		if(a >= 1e17f) return b + hop;
+		if(b >= 1e17f) return a + hop;
+		float diff = a - b;
+		if(diff < 0.0f) diff = -diff;
+		if(diff >= hop) return std::min(a, b) + hop;
+		return (a + b + std::sqrt(2.0f * hop * hop - diff * diff)) * 0.5f;
+	};
+
+	auto relax = [&](int x, int y) {
+		int idx = y * FW + x;
+		if(state[idx] == 2) return;
+		float t = eikonal(x, y);
+		if(t < pField[idx])
+		{
+			pField[idx] = t;
+			state[idx] = 1;
+			open.push({t, idx});
+		}
+	};
+
+	for(const auto &src : vSources)
+	{
+		int x = src.first, y = src.second;
+		if(x < 0 || y < 0 || x >= FW || y >= FH) continue;
+		if(!fnWalk(x, y)) continue;
+		int idx = y * FW + x;
+		if(state[idx] == 2) continue;
+		pField[idx] = 0.0f;
+		state[idx] = 2;
+	}
+	for(const auto &src : vSources)
+	{
+		int x = src.first, y = src.second;
+		if(x < 0 || y < 0 || x >= FW || y >= FH) continue;
+		if(!fnWalk(x, y)) continue;
+		for(int k = 0; k < 4; k++)
+		{
+			int nx = x + dc[k], ny = y + dr[k];
+			if(nx < 0 || ny < 0 || nx >= FW || ny >= FH) continue;
+			if(!walkOk(nx, ny)) continue;
+			relax(nx, ny);
+		}
+	}
+
+	while(!open.empty())
+	{
+		FNode cur = open.top();
+		open.pop();
+		int idx = cur.second;
+		if(state[idx] == 2) continue;
+		if(cur.first > pField[idx]) continue;
+		state[idx] = 2;
+		int x = idx % FW, y = idx / FW;
+		for(int k = 0; k < 4; k++)
+		{
+			int nx = x + dc[k], ny = y + dr[k];
+			if(nx < 0 || ny < 0 || nx >= FW || ny >= FH) continue;
+			if(!walkOk(nx, ny)) continue;
+			relax(nx, ny);
+		}
+	}
 }
 
 #endif // GAME_CLIENT_COMPONENTS_KINETIX_INTERNAL_H

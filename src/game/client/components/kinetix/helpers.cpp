@@ -77,36 +77,13 @@ float CBotNet::EffectiveStandDist(bool TargetIsMain, bool TargetIsRescue) const
         // When targeting the main player and not in attack-main mode (and not a
         // rescue target), use the larger g_Config.m_KxMainStandDist so the bot keeps some
         // distance; otherwise g_Config.m_KxStandDist.
-        return (TargetIsMain && !g_Config.m_KxAtkMain && !TargetIsRescue) ? (float)g_Config.m_KxMainStandDist : (float)g_Config.m_KxStandDist;
-}
-
-bool CBotNet::IsNearFreeze(int botTX, int botTY) const
-{
-        // ComputeFreezeRepel returns a unit-ish vec2 pointing away from nearby
-        // freeze tiles; nonzero => at least one freeze neighbour is exerting force.
-        if(!g_Config.m_KxAvoidFreeze || !m_MapGridLoaded)
-                return false;
-        vec2 repel = const_cast<CBotNet *>(this)->ComputeFreezeRepel(botTX, botTY);
-        return (repel.x * repel.x + repel.y * repel.y) > 0.0001f;
-}
-
-void CBotNet::ApplyPfSnap(const vec2 &MyPos, bool &left, bool &right) const
-{
-        // When no horizontal movement is requested, nudge toward the current
-        // tile's X center so the bot rides the tile grid cleanly (PfSnap option).
-        int snapTX = (int)roundf(MyPos.x / 32.0f);
-        float tileCenterX = snapTX * 32.0f + 16.0f;
-        float offsetX = MyPos.x - tileCenterX;
-        if(offsetX > 0)
-                left = true;
-        else if(offsetX < 0)
-                right = true;
+        return (TargetIsMain && !TargetIsRescue) ? (float)g_Config.m_KxMainStandDist : (float)g_Config.m_KxStandDist; // v1.56.258: attack-main mode removed
 }
 
 int CBotNet::ComputeHookTicksCycle() const
 {
-        // Hook pulse period in ticks, derived from g_Config.m_KxAtkHookDelay (ms).  Min 2 ticks.
-        int cycle = (50 * g_Config.m_KxAtkHookDelay / 1000);
+        // Hook pulse period in ticks. v1.56.258: fixed 1-second (50 ticks) pulse.
+        int cycle = 50; // v1.56.258: hardcoded (KxAtkHookDelay removed)
         return cycle < 2 ? 2 : cycle;
 }
 
@@ -148,4 +125,40 @@ void CBotNet::SyncStrToIDs(const char *pStr, bool *pList)
                 if(pC)
                         pC++;
         }
+}
+
+// Dummy-slot variant: parses dummy indices (0..MAX_DUMMIES-1), invalid
+// values are ignored.  An empty field enables every dummy — helpers
+// used to run on all dummies before this field existed.
+void CBotNet::SyncStrToDummyIDs(const char *pStr, bool *pList)
+{
+        for(int i = 0; i < MAX_DUMMIES; i++)
+                pList[i] = true;
+        if(!pStr || !pStr[0])
+                return;
+        for(int i = 0; i < MAX_DUMMIES; i++)
+                pList[i] = false;
+        char aBuf[256];
+        str_copy(aBuf, pStr, sizeof(aBuf));
+        char *pC = aBuf;
+        while(pC)
+        {
+                int id = atoi(pC);
+                if(id >= 0 && id < MAX_DUMMIES)
+                        pList[id] = true;
+                pC = strchr(pC, ',');
+                if(pC)
+                        pC++;
+        }
+}
+
+// A dummy acts as a helper when its slot is listed in "Dummy IDs"
+// (empty = all) and it is not the currently controlled dummy.
+bool CBotNet::IsHelpersDummy(int Dummy)
+{
+        if(Dummy < 0 || Dummy >= MAX_DUMMIES)
+                return false;
+        if(Dummy == g_Config.m_ClDummy)
+                return false; // the current dummy is ignored
+        return m_HelpersDummyList[Dummy];
 }
