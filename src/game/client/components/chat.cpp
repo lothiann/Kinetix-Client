@@ -1385,11 +1385,39 @@ void CChat::SendChat(int Team, const char *pLine)
                 return;
         }
 
-        // send chat message
-        CNetMsg_Cl_Say Msg;
-        Msg.m_Team = Team;
-        Msg.m_pMessage = pLine;
-        Client()->SendPackMsgActive(&Msg, MSGFLAG_VITAL);
+	// send chat message
+	CNetMsg_Cl_Say Msg;
+	Msg.m_Team = Team;
+	Msg.m_pMessage = pLine;
+	Client()->SendPackMsgActive(&Msg, MSGFLAG_VITAL);
+}
+
+void CChat::SendChatFrom(int Dummy, int Team, const char *pLine)
+{
+	// don't send empty messages
+	if(*str_utf8_skip_whitespaces(pLine) == '\0')
+		return;
+	if(Dummy < 0 || Dummy >= MAX_DUMMIES)
+		return;
+
+	m_LastChatSend = time();
+
+	const int Conn = Dummy == 0 ? IClient::CONN_MAIN : IClient::CONN_DUMMY_START + Dummy - 1;
+	if(GameClient()->Client()->IsSixup())
+	{
+		protocol7::CNetMsg_Cl_Say Msg7;
+		Msg7.m_Mode = Team == 1 ? protocol7::CHAT_TEAM : protocol7::CHAT_ALL;
+		Msg7.m_Target = -1;
+		Msg7.m_pMessage = pLine;
+		Client()->SendPackMsg(Conn, &Msg7, MSGFLAG_VITAL, true);
+		return;
+	}
+
+	// send chat message
+	CNetMsg_Cl_Say Msg;
+	Msg.m_Team = Team;
+	Msg.m_pMessage = pLine;
+	Client()->SendPackMsg(Conn, &Msg, MSGFLAG_VITAL);
 }
 
 void CChat::SendChatQueued(const char *pLine)
@@ -1410,11 +1438,33 @@ void CChat::SendChatQueued(const char *pLine)
                 AddEntry = true;
         }
 
-        if(AddEntry)
-        {
-                const int Length = str_length(pLine);
-                CHistoryEntry *pEntry = m_History.Allocate(sizeof(CHistoryEntry) + Length);
-                pEntry->m_Team = m_Mode == MODE_ALL ? 0 : 1;
-                str_copy(pEntry->m_aText, pLine, Length + 1);
-        }
+	if(AddEntry)
+	{
+		const int Length = str_length(pLine);
+		CHistoryEntry *pEntry = m_History.Allocate(sizeof(CHistoryEntry) + Length);
+		pEntry->m_Team = m_Mode == MODE_ALL ? 0 : 1;
+		str_copy(pEntry->m_aText, pLine, Length + 1);
+	}
+}
+
+int CChat::GetRecentLines(CChatLineInfo *pLines, int MaxLines) const
+{
+	if(MaxLines > MAX_LINES)
+		MaxLines = MAX_LINES;
+	int Avail = 0;
+	for(; Avail < MaxLines; Avail++)
+	{
+		if(!m_aLines[((m_CurrentLine - Avail) + MAX_LINES) % MAX_LINES].m_Initialized)
+			break;
+	}
+	for(int i = 0; i < Avail; i++)
+	{
+		const CLine &Line = m_aLines[((m_CurrentLine - (Avail - 1 - i)) + MAX_LINES) % MAX_LINES];
+		pLines[i].m_Time = Line.m_Time;
+		pLines[i].m_ClientId = Line.m_ClientId;
+		pLines[i].m_TeamNumber = Line.m_TeamNumber;
+		str_copy(pLines[i].m_aName, Line.m_aName, sizeof(pLines[i].m_aName));
+		str_copy(pLines[i].m_aText, Line.m_aText, sizeof(pLines[i].m_aText));
+	}
+	return Avail;
 }

@@ -175,6 +175,18 @@ public:
 	void UnregisterCommand(const char *pName);
 	void Echo(const char *pString);
 
+	// Snapshot of a chat line for external readers (Lua bindings etc.)
+	struct CChatLineInfo
+	{
+		int64_t m_Time;
+		int m_ClientId;
+		int m_TeamNumber;
+		char m_aName[64];
+		char m_aText[MAX_LINE_LENGTH];
+	};
+	// Fills pLines with up to MaxLines recent lines, oldest first. Returns count written.
+	int GetRecentLines(CChatLineInfo *pLines, int MaxLines) const;
+
 	void OnWindowResize() override;
 	void OnConsoleInit() override;
 	void OnStateChange(int NewState, int OldState) override;
@@ -214,5 +226,9 @@ public:
 	//
 	// It uses team or public chat depending on m_Mode.
 	void SendChatQueued(const char *pLine);
+
+	// Like SendChat, but sends through an explicit connection
+	// (0 = main client, 1+ = dummy index) instead of the active one.
+	void SendChatFrom(int Dummy, int Team, const char *pLine);
 };
 #endif

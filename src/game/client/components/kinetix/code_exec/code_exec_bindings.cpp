@@ -56,12 +56,61 @@
 #include <engine/keys.h>
 #include <engine/client/client.h>
 #include <base/vmath.h>
+#include <engine/http.h>
+#include <engine/shared/http.h>
 
 #include <lua.hpp>
 #include <sol.hpp>
 
 #include <cstdio>
 #include <cstring>
+#include <memory>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <tuple>
+
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+
+// =============================================================
+// Code Execution — Lua API (обзор)
+//
+//   print(...)        — вывод в игровой чат
+//   vec2(x, y)        — вектор;  CONST.* — константы движка
+//
+//   gc                — CGameClient, всё состояние игры:
+//                       gc.m_Chat (GetRecentLines(n), SendChat,
+//                       SendChatQueued, SendChatFrom(dummy, team, msg)),
+//                       gc.m_aClients[i].m_aName, gc.m_aLocalIds[d],
+//                       gc.m_Snap, gc.m_GameWorld, gc.m_PredictedWorld,
+//                       gc.m_Controls, gc.m_Camera, gc.m_BotNet, ...
+//   cl.*              — IClient: Connect/Disconnect, DummyConnect(d),
+//                       DummyConnected(d), PlayerName, GameTick, LocalTime,
+//                       Rcon/RconAuth, DummyName, ...
+//   config            — конфиг:
+//                       config.get(name) / config.set(name, value) — ЛЮБАЯ
+//                       переменная по имени (динамически, через реестр);
+//                       config.m_<Var> — легаси-доступ к отдельным полям
+//   console.execute(line), console.print(s), console.execute_file(f)
+//
+//   net.get(url[, timeout])                     -> job
+//   net.post(url, body[, timeout])              -> job
+//   net.post_json(url, json[, hdrs][, timeout]) -> job
+//       job:done() job:status() job:result() job:code() job:abort()
+//
+//   io.popen(cmd)     — процесс БЕЗ окна консоли -> job:
+//                       job:done() job:output() job:exitcode()
+//                       job:read("*a") job:close()   (блокируют, как popen)
+//   os.execute(cmd)   — синхронно, без окна; возвращает ok, "exit", code
+//
+//   gfx.* sound.* input.* text.* — рендер, звук, ввод, текст
+// =============================================================
 
 // =============================================================
 // RegisterRawAPI — ALL DDNet classes, ALL public members/methods
@@ -728,7 +777,29 @@ void CCodeExec::RegisterRawAPI()
                 "ClearLines", [](CChat &c) { c.ClearLines(); },
                 "RegisterCommand", [](CChat &c, const std::string &name, const std::string &params, const std::string &help) { c.RegisterCommand(name.c_str(), params.c_str(), help.c_str()); },
                 "UnregisterCommand", [](CChat &c, const std::string &name) { c.UnregisterCommand(name.c_str()); },
-                "FontSize", [](CChat &c) -> float { return c.FontSize(); }
+                "FontSize", [](CChat &c) -> float { return c.FontSize(); },
+                "GetRecentLines", [this, &lua](CChat &c, sol::optional<int> Count) -> sol::table {
+                        int Want = Count.value_or(20);
+                        if(Want < 1)
+                                Want = 1;
+                        if(Want > 64)
+                                Want = 64;
+                        CChat::CChatLineInfo aLines[64];
+                        const int Num = c.GetRecentLines(aLines, Want);
+                        auto t = lua.create_table();
+                        for(int i = 0; i < Num; i++)
+                        {
+                                sol::table e = lua.create_table();
+                                e["time"] = aLines[i].m_Time;
+                                e["clientid"] = aLines[i].m_ClientId;
+                                e["team"] = aLines[i].m_TeamNumber;
+                                e["name"] = std::string(aLines[i].m_aName);
+                                e["text"] = std::string(aLines[i].m_aText);
+                                t[i + 1] = e;
+                        }
+                        return t;
+                },
+                "SendChatFrom", [](CChat &c, int Dummy, int Team, const std::string &Msg) { c.SendChatFrom(Dummy, Team, Msg.c_str()); }
         );
 
         // CControls
@@ -1422,6 +1493,200 @@ void CCodeExec::RegisterRawAPI()
         cl.set_function("Notify", [this](const std::string &Title, const std::string &Msg) { Client()->Notify(Title.c_str(), Msg.c_str()); });
         cl.set_function("IsSixup", [this]() -> bool { return Client()->IsSixup(); });
 
+        // ===================== Net (net) =====================
+        // Async HTTP through the engine's libcurl thread. Non-blocking.
+        //   net.get(url[, timeout]) / net.post(url, body[, timeout])
+        //   net.post_json(url, json[, headers][, timeout])
+        // -> job: job:done() job:status() job:result() job:code() job:abort()
+        auto NetPrep = [](const std::shared_ptr<CHttpRequest> &pReq, int TimeoutSec) {
+                pReq->WriteToMemory();
+                pReq->LogProgress(HTTPLOG::FAILURE);
+                pReq->FailOnErrorStatus(false);
+                pReq->MaxResponseSize(16 * 1024 * 1024);
+                pReq->Timeout(CTimeout{4000, TimeoutSec * 1000, 1, 30});
+        };
+        lua.new_usertype<CHttpRequest>("NetJob",
+                "done", [](CHttpRequest &R) -> bool { return R.Done(); },
+                "status", [](CHttpRequest &R) -> std::string {
+                        const EHttpState St = R.State();
+                        if(St == EHttpState::QUEUED)
+                                return "queued";
+                        if(St == EHttpState::RUNNING)
+                                return "running";
+                        if(St == EHttpState::DONE)
+                                return "done";
+                        if(St == EHttpState::ABORTED)
+                                return "aborted";
+                        return "error";
+                },
+                "result", [](CHttpRequest &R) -> std::string {
+                        if(R.State() != EHttpState::DONE)
+                                return std::string();
+                        unsigned char *pData = nullptr;
+                        size_t Len = 0;
+                        R.Result(&pData, &Len);
+                        return pData ? std::string((const char *)pData, Len) : std::string();
+                },
+                "code", [](CHttpRequest &R) -> int {
+                        if(R.State() != EHttpState::DONE)
+                                return 0;
+                        return R.StatusCode();
+                },
+                "abort", [](CHttpRequest &R) { R.Abort(); }
+        );
+        auto net = lua["net"].get_or_create<sol::table>();
+        net.set_function("get", [this, NetPrep](const std::string &Url, sol::optional<int> TimeoutSec) -> std::shared_ptr<CHttpRequest> {
+                auto pReq = std::make_shared<CHttpRequest>(Url.c_str());
+                NetPrep(pReq, TimeoutSec.value_or(30));
+                Http()->Run(pReq);
+                return pReq;
+        });
+        net.set_function("post", [this, NetPrep](const std::string &Url, const std::string &Body, sol::optional<int> TimeoutSec) -> std::shared_ptr<CHttpRequest> {
+                auto pReq = std::make_shared<CHttpRequest>(Url.c_str());
+                NetPrep(pReq, TimeoutSec.value_or(30));
+                pReq->Post((const unsigned char *)Body.data(), Body.size());
+                Http()->Run(pReq);
+                return pReq;
+        });
+        net.set_function("post_json", [this, NetPrep](const std::string &Url, const std::string &Json, sol::object Headers, sol::optional<int> TimeoutSec) -> std::shared_ptr<CHttpRequest> {
+                auto pReq = std::make_shared<CHttpRequest>(Url.c_str());
+                NetPrep(pReq, TimeoutSec.value_or(30));
+                pReq->PostJson(Json.c_str());
+                if(Headers.is<sol::table>())
+                {
+                        for(auto &kv : Headers.as<sol::table>())
+                        {
+                                const std::string Name = kv.first.as<std::string>();
+                                const std::string Value = kv.second.as<std::string>();
+                                pReq->HeaderString(Name.c_str(), Value.c_str());
+                        }
+                }
+                Http()->Run(pReq);
+                return pReq;
+        });
+
+        // ============ Safe io.popen / os.execute replacement ============
+        // CRT _popen/_system spawn cmd.exe with a new console window in a GUI
+        // application and block the render thread. These replacements run the
+        // command via CreateProcess with CREATE_NO_WINDOW; io.popen executes
+        // on a background thread so scripts can poll it with :done().
+        struct SPopenJob
+        {
+                std::mutex m_Mutex;
+                std::condition_variable m_Cv;
+                std::string m_Output;
+                int m_ExitCode = -1;
+                bool m_Done = false;
+        };
+        auto RunCommandNoWindow = [](const std::string &Cmd, std::string *pOut) -> int {
+                SECURITY_ATTRIBUTES sa;
+                sa.nLength = sizeof(sa);
+                sa.bInheritHandle = TRUE;
+                sa.lpSecurityDescriptor = nullptr;
+                HANDLE ReadPipe = nullptr;
+                HANDLE WritePipe = nullptr;
+                HANDLE NullIn = INVALID_HANDLE_VALUE;
+                HANDLE Process = nullptr;
+                HANDLE ThreadHandle = nullptr;
+                int ExitCode = -1;
+                do
+                {
+                        if(!CreatePipe(&ReadPipe, &WritePipe, &sa, 0))
+                                break;
+                        SetHandleInformation(ReadPipe, HANDLE_FLAG_INHERIT, 0);
+                        NullIn = CreateFileA("NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, OPEN_EXISTING, 0, nullptr);
+                        STARTUPINFOA si;
+                        mem_zero(&si, sizeof(si));
+                        si.cb = sizeof(si);
+                        si.dwFlags = STARTF_USESTDHANDLES;
+                        si.hStdInput = NullIn;
+                        si.hStdOutput = WritePipe;
+                        si.hStdError = WritePipe;
+                        PROCESS_INFORMATION pi;
+                        mem_zero(&pi, sizeof(pi));
+                        std::string MutableCmd = Cmd; // CreateProcessA may modify the buffer
+                        if(!CreateProcessA(nullptr, MutableCmd.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi))
+                                break;
+                        Process = pi.hProcess;
+                        ThreadHandle = pi.hThread;
+                        CloseHandle(WritePipe);
+                        WritePipe = nullptr;
+                        char aBuf[4096];
+                        unsigned long NumRead = 0;
+                        for(;;)
+                        {
+                                if(!ReadFile(ReadPipe, aBuf, sizeof(aBuf), &NumRead, nullptr) || NumRead == 0)
+                                        break;
+                                if(pOut)
+                                        pOut->append(aBuf, (size_t)NumRead);
+                        }
+                        WaitForSingleObject(Process, INFINITE);
+                        unsigned long Exit = (unsigned long)-1;
+                        GetExitCodeProcess(Process, &Exit);
+                        ExitCode = (int)Exit;
+                } while(false);
+                if(WritePipe)
+                        CloseHandle(WritePipe);
+                if(ReadPipe)
+                        CloseHandle(ReadPipe);
+                if(NullIn != INVALID_HANDLE_VALUE)
+                        CloseHandle(NullIn);
+                if(ThreadHandle)
+                        CloseHandle(ThreadHandle);
+                if(Process)
+                        CloseHandle(Process);
+                return ExitCode;
+        };
+
+        lua.new_usertype<SPopenJob>("SPopenJob",
+                "done", [](SPopenJob &J) -> bool {
+                        std::lock_guard<std::mutex> Lock(J.m_Mutex);
+                        return J.m_Done;
+                },
+                "output", [](SPopenJob &J) -> std::string {
+                        std::lock_guard<std::mutex> Lock(J.m_Mutex);
+                        return J.m_Output;
+                },
+                "exitcode", [](SPopenJob &J) -> int {
+                        std::lock_guard<std::mutex> Lock(J.m_Mutex);
+                        return J.m_ExitCode;
+                },
+                // Compatible with the original popen handle: blocks until done.
+                "read", [](SPopenJob &J, sol::optional<std::string> Fmt) -> std::string {
+                        (void)Fmt;
+                        std::unique_lock<std::mutex> Lock(J.m_Mutex);
+                        J.m_Cv.wait(Lock, [&J]() { return J.m_Done; });
+                        return J.m_Output;
+                },
+                "close", [](SPopenJob &J) -> int {
+                        std::unique_lock<std::mutex> Lock(J.m_Mutex);
+                        J.m_Cv.wait(Lock, [&J]() { return J.m_Done; });
+                        return J.m_ExitCode;
+                }
+        );
+
+        lua["os"]["execute"] = [RunCommandNoWindow](const std::string &Cmd) -> std::tuple<bool, const char *, int> {
+                std::string Output;
+                const int ExitCode = RunCommandNoWindow(Cmd, &Output);
+                if(ExitCode < 0)
+                        return {false, "exit", -1};
+                return {true, "exit", ExitCode};
+        };
+
+        lua["io"]["popen"] = [RunCommandNoWindow](const std::string &Cmd) -> std::shared_ptr<SPopenJob> {
+                auto Job = std::make_shared<SPopenJob>();
+                std::thread([Job, RunCommandNoWindow, Cmd]() {
+                        std::string Output;
+                        const int ExitCode = RunCommandNoWindow(Cmd, &Output);
+                        std::lock_guard<std::mutex> Lock(Job->m_Mutex);
+                        Job->m_Output = std::move(Output);
+                        Job->m_ExitCode = ExitCode;
+                        Job->m_Done = true;
+                        Job->m_Cv.notify_all();
+                }).detach();
+                return Job;
+        };
+
         lua["config"] = &g_Config;
         lua.new_usertype<CConfig>("CConfig",
                 "m_ClDummy", &CConfig::m_ClDummy,
@@ -1438,7 +1703,58 @@ void CCodeExec::RegisterRawAPI()
                 "m_KxFlyRide", &CConfig::m_KxFlyRide,
                 "m_KxDummyAim", &CConfig::m_KxDummyAim,
                 "m_KxDummyDirection", &CConfig::m_KxDummyDirection,
-                "m_KxDummyCopyMovesFilter", &CConfig::m_KxDummyCopyMovesFilter
+                "m_KxDummyCopyMovesFilter", &CConfig::m_KxDummyCopyMovesFilter,
+                // Dynamic access to ANY config variable by script name:
+                // config.get("kx_helpers") -> value (nil if unknown)
+                // config.set("kx_helpers", 1) -> true on success
+                "get", [this, &lua](const std::string &Name) -> sol::object {
+                        struct SFindCtx
+                        {
+                                const char *pName;
+                                const SConfigVariable *pVariable;
+                        };
+                        SFindCtx Ctx{Name.c_str(), nullptr};
+                        if(!ConfigManager())
+                                return sol::lua_nil;
+                        ConfigManager()->PossibleConfigVariables(Ctx.pName, -1, [](const SConfigVariable *pVariable, void *pUserData) {
+                                SFindCtx *pCtx = (SFindCtx *)pUserData;
+                                if(!pCtx->pVariable && str_comp(pVariable->m_pScriptName, pCtx->pName) == 0)
+                                        pCtx->pVariable = pVariable;
+                        }, &Ctx);
+                        if(!Ctx.pVariable)
+                                return sol::lua_nil;
+                        if(Ctx.pVariable->m_Type == SConfigVariable::VAR_STRING)
+                                return sol::make_object(lua.lua_state(), std::string(static_cast<const SStringConfigVariable *>(Ctx.pVariable)->m_pStr));
+                        if(Ctx.pVariable->m_Type == SConfigVariable::VAR_COLOR)
+                                return sol::make_object(lua.lua_state(), (int)*static_cast<const SColorConfigVariable *>(Ctx.pVariable)->m_pVariable);
+                        return sol::make_object(lua.lua_state(), *static_cast<const SIntConfigVariable *>(Ctx.pVariable)->m_pVariable);
+                },
+                "set", [this](const std::string &Name, sol::object Value) -> bool {
+                        struct SFindCtx
+                        {
+                                const char *pName;
+                                SConfigVariable *pVariable;
+                        };
+                        SFindCtx Ctx{Name.c_str(), nullptr};
+                        if(!ConfigManager())
+                                return false;
+                        ConfigManager()->PossibleConfigVariables(Ctx.pName, -1, [](const SConfigVariable *pVariable, void *pUserData) {
+                                SFindCtx *pCtx = (SFindCtx *)pUserData;
+                                if(!pCtx->pVariable && str_comp(pVariable->m_pScriptName, pCtx->pName) == 0)
+                                        pCtx->pVariable = const_cast<SConfigVariable *>(pVariable);
+                        }, &Ctx);
+                        if(!Ctx.pVariable)
+                                return false;
+                        if(Ctx.pVariable->m_Type == SConfigVariable::VAR_INT)
+                                static_cast<SIntConfigVariable *>(Ctx.pVariable)->SetValue(Value.as<int>());
+                        else if(Ctx.pVariable->m_Type == SConfigVariable::VAR_COLOR)
+                                static_cast<SColorConfigVariable *>(Ctx.pVariable)->SetValue((unsigned)Value.as<int>());
+                        else if(Ctx.pVariable->m_Type == SConfigVariable::VAR_STRING)
+                                static_cast<SStringConfigVariable *>(Ctx.pVariable)->SetValue(Value.as<std::string>().c_str());
+                        else
+                                return false;
+                        return true;
+                }
         );
 
         auto con = lua["console"].get_or_create<sol::table>();
