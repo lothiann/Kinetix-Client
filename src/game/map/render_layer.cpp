@@ -1463,6 +1463,81 @@ bool CRenderLayerEntityBase::DoRender(const CRenderLayerParams &Params)
 	return true;
 }
 
+// =========================================================
+// v1.56.261: Kinetix "Rainbow entities" — recolor entity tiles per
+// category. Tile buffering bakes colors into GPU buffers, so when the
+// rainbow is active we force the immediate path, where every visible
+// tile gets its category color before the draw. Speed convention
+// matches KxVisualRainbowColor (kinetix_internal.h): hue advances
+// speed-cvar * 6 deg/sec.
+// =========================================================
+static bool KxEntRainbowActive()
+{
+	return g_Config.m_KxRainbowEnt &&
+	       (g_Config.m_KxRainbowEntHookable || g_Config.m_KxRainbowEntUnhookable ||
+		g_Config.m_KxRainbowEntFreeze || g_Config.m_KxRainbowEntDeath ||
+		g_Config.m_KxRainbowEntOthers);
+}
+
+static ColorRGBA KxEntRainbowColor(float Seconds, int SpeedCvar)
+{
+	float h = std::fmod(Seconds * (float)SpeedCvar * 6.0f, 360.0f) / 60.0f;
+	const float x = 1.0f - std::abs(std::fmod(h, 2.0f) - 1.0f);
+	float r = 0.0f, g = 0.0f, b = 0.0f;
+	if(h < 1.0f) { r = 1.0f; g = x; }
+	else if(h < 2.0f) { r = x; g = 1.0f; }
+	else if(h < 3.0f) { g = 1.0f; b = x; }
+	else if(h < 4.0f) { g = x; b = 1.0f; }
+	else if(h < 5.0f) { r = x; b = 1.0f; }
+	else { r = 1.0f; b = x; }
+	return ColorRGBA(r, g, b, 1.0f);
+}
+
+void CRenderLayerEntityBase::KxRenderRainbow(const CRenderLayerParams &Params)
+{
+	UseTexture(GetTexture());
+	const ColorRGBA Color = GetRenderColor(Params);
+
+	RenderMap()->m_TileRainbowEnt = true;
+	RenderMap()->m_TileRainbowEntMask =
+		(g_Config.m_KxRainbowEntHookable ? 1u : 0u) |
+		(g_Config.m_KxRainbowEntUnhookable ? 2u : 0u) |
+		(g_Config.m_KxRainbowEntFreeze ? 4u : 0u) |
+		(g_Config.m_KxRainbowEntDeath ? 8u : 0u) |
+		(g_Config.m_KxRainbowEntOthers ? 16u : 0u);
+	const float Seconds = time_get() / (float)time_freq();
+	RenderMap()->m_aTileRainbowEntColor[0] = KxEntRainbowColor(Seconds, g_Config.m_KxRainbowEntHookableSpeed);
+	RenderMap()->m_aTileRainbowEntColor[1] = KxEntRainbowColor(Seconds, g_Config.m_KxRainbowEntUnhookableSpeed);
+	RenderMap()->m_aTileRainbowEntColor[2] = KxEntRainbowColor(Seconds, g_Config.m_KxRainbowEntFreezeSpeed);
+	RenderMap()->m_aTileRainbowEntColor[3] = KxEntRainbowColor(Seconds, g_Config.m_KxRainbowEntDeathSpeed);
+	RenderMap()->m_aTileRainbowEntColor[4] = KxEntRainbowColor(Seconds, g_Config.m_KxRainbowEntOthersSpeed);
+
+	// virtual — Game's override also draws the kill-tile border,
+	// Front falls back to the base implementation.
+	RenderTileLayerNoTileBuffer(Color, Params);
+	RenderMap()->m_TileRainbowEnt = false;
+}
+
+void CRenderLayerEntityGame::Render(const CRenderLayerParams &Params)
+{
+	if(KxEntRainbowActive())
+	{
+		KxRenderRainbow(Params);
+		return;
+	}
+	CRenderLayerEntityBase::Render(Params);
+}
+
+void CRenderLayerEntityFront::Render(const CRenderLayerParams &Params)
+{
+	if(KxEntRainbowActive())
+	{
+		KxRenderRainbow(Params);
+		return;
+	}
+	CRenderLayerEntityBase::Render(Params);
+}
+
 IGraphics::CTextureHandle CRenderLayerEntityBase::GetTexture() const
 {
 	return m_pMapImages->GetEntities(MAP_IMAGE_ENTITY_LAYER_TYPE_ALL_EXCEPT_SWITCH);

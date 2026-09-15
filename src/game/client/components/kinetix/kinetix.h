@@ -175,7 +175,6 @@ struct CBotNetDummy
         vec2 m_PathfinderGoPos;
 
         // Random aim timing
-        int64_t m_NextRandomAimTick;
 
         // Helpers plan (physics movement cache)
         CHelpersPlan m_HelpersPlan;
@@ -219,7 +218,6 @@ struct CBotNetDummy
                 m_StuckTicks = 0;
                 m_PathfinderGoActive = false;
                 m_PathfinderGoPos = vec2(0, 0);
-                m_NextRandomAimTick = 0;
                 m_LastTargetAttackTick = -1;
                 m_MacroRecording = false;
                 m_MacroPlaying = false;
@@ -539,7 +537,6 @@ public:
 	bool PfSpectateUpdateCamera(vec2 &outCamPos);
 
         // --- Console commands ---
-        static void ConRandomAim(IConsole::IResult *pResult, void *pUserData);
         static void ConCopyMoves(IConsole::IResult *pResult, void *pUserData);
         static void ConAttackEnable(IConsole::IResult *pResult, void *pUserData);
         static void ConSetMain(IConsole::IResult *pResult, void *pUserData);
@@ -646,7 +643,6 @@ private:
         bool ApplyClientDelayGate(CGameClient *pGame, CNetObj_PlayerInput *pInput, int Dummy);
         bool ProcessCopyMoves(CGameClient *pGame, CNetObj_PlayerInput *pInput, int Dummy);
         bool ProcessPathfinderGo(CGameClient *pGame, CNetObj_PlayerInput *pInput, int Dummy, CBotNetDummy &State, int LocalID);
-        void ProcessRandomAim(int Dummy, CBotNetDummy &State, int64_t CurTick); // fall-through (void)
 
 };
 

@@ -197,9 +197,9 @@ void CBotNet::OnConsoleInit()
 // botnet modes and resets every dummy's state machine + input buffer.
 void CBotNet::OnReset()
 {
-        g_Config.m_KxHelpers = false;
-        g_Config.m_KxCopyMoves = false;
-        g_Config.m_KxRandomAim = false; // v1.56.258: KxKinodynamic reset removed
+        // v1.56.260: feature toggles (Helpers/CopyMoves) are no longer zeroed
+        // here — they persist across server changes until the user disables
+        // them (Random Aim removed entirely).
         for(int D = 0; D < MAX_DUMMIES; D++)
         {
                 m_aDummies[D].Reset();
@@ -345,7 +345,7 @@ void CBotNet::OnUpdate()
         //
         // Solution: skip the entire ProcessDummy loop when no botnet features are
         // active. This makes the default dummy input pipeline byte-identical to DDNet.
-        bool anyBotnetFeature = g_Config.m_KxHelpers || g_Config.m_KxCopyMoves || g_Config.m_KxRandomAim;
+        bool anyBotnetFeature = g_Config.m_KxHelpers || g_Config.m_KxCopyMoves;
         if(!anyBotnetFeature)
         {
                 for(int D = 0; D < MAX_DUMMIES; D++)

@@ -1046,9 +1046,8 @@ MACRO_CONFIG_INT(ClVideoRecorderFPS, cl_video_recorder_fps, 60, 1, 1000, CFGFLAG
 // ============================================================================
 
 // Helpers / botnet on/off flags
+// v1.56.260: Random Aim removed (old test feature).
 MACRO_CONFIG_INT(KxHelpers, kx_helpers, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Helpers Mode: 1=on 0=off")
-MACRO_CONFIG_INT(KxRandomAim, kx_random_aim, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Random Aim: 1=on 0=off")
-MACRO_CONFIG_INT(KxRandomAimInterval, kx_random_aim_interval, 100, 0, 10000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Random Aim: change interval in ms (0=default)")
 MACRO_CONFIG_INT(KxCopyMoves, kx_copy_moves, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Copy Moves: 1=on 0=off")
 MACRO_CONFIG_INT(KxCopyTargetId, kx_copy_target_id, -1, -1, 127, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Copy Moves: target player ID (-1=disabled)")
 MACRO_CONFIG_INT(KxTargetAll, kx_target_all, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Attack all (targets become blacklist): 1=on 0=off")
@@ -1128,6 +1127,39 @@ MACRO_CONFIG_STR(KxUiPanelColor, kx_ui_panel_color, 9, "161622", CFGFLAG_CLIENT 
 MACRO_CONFIG_INT(KxUiRainbow, kx_ui_rainbow, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ClickGUI: rainbow accent color animation")
 MACRO_CONFIG_INT(KxUiRainbowSpeed, kx_ui_rainbow_speed, 10, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ClickGUI: rainbow speed x10 (1-100 = 0.1-10.0)")
 MACRO_CONFIG_INT(KxUiBlackout, kx_ui_blackout, 30, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ClickGUI: background blackout percent (0-100)")
+
+// v1.56.260: Visuals panel — world rainbow + hide particles.
+MACRO_CONFIG_INT(KxRainbowTee, kx_rainbow_tee, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: rainbow tee body")
+MACRO_CONFIG_INT(KxRainbowTeeSpeed, kx_rainbow_tee_speed, 10, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: rainbow tee speed x10 (1-100 = 0.1-10.0)")
+MACRO_CONFIG_INT(KxRainbowLegs, kx_rainbow_legs, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: rainbow tee legs")
+MACRO_CONFIG_INT(KxRainbowLegsSpeed, kx_rainbow_legs_speed, 10, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: rainbow legs speed x10")
+	MACRO_CONFIG_INT(KxRainbowEnt, kx_rainbow_ent, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: rainbow entities master")
+	MACRO_CONFIG_INT(KxRainbowEntHookable, kx_rainbow_ent_hookable, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: rainbow hookable entities")
+MACRO_CONFIG_INT(KxRainbowEntHookableSpeed, kx_rainbow_ent_hookable_speed, 10, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: hookable rainbow speed x10")
+MACRO_CONFIG_INT(KxRainbowEntUnhookable, kx_rainbow_ent_unhookable, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: rainbow unhookable entities")
+MACRO_CONFIG_INT(KxRainbowEntUnhookableSpeed, kx_rainbow_ent_unhookable_speed, 10, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: unhookable rainbow speed x10")
+MACRO_CONFIG_INT(KxRainbowEntFreeze, kx_rainbow_ent_freeze, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: rainbow freeze entities")
+MACRO_CONFIG_INT(KxRainbowEntFreezeSpeed, kx_rainbow_ent_freeze_speed, 10, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: freeze rainbow speed x10")
+MACRO_CONFIG_INT(KxRainbowEntDeath, kx_rainbow_ent_death, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: rainbow death entities")
+MACRO_CONFIG_INT(KxRainbowEntDeathSpeed, kx_rainbow_ent_death_speed, 10, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: death rainbow speed x10")
+MACRO_CONFIG_INT(KxRainbowEntOthers, kx_rainbow_ent_others, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: rainbow other entities")
+MACRO_CONFIG_INT(KxRainbowEntOthersSpeed, kx_rainbow_ent_others_speed, 10, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: other entities rainbow speed x10")
+MACRO_CONFIG_INT(KxRainbowGuns, kx_rainbow_guns, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: rainbow guns")
+MACRO_CONFIG_INT(KxRainbowGunsSpeed, kx_rainbow_guns_speed, 10, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: rainbow guns speed x10")
+MACRO_CONFIG_INT(KxRainbowHook, kx_rainbow_hook, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: rainbow hook")
+MACRO_CONFIG_INT(KxRainbowHookSpeed, kx_rainbow_hook_speed, 10, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: rainbow hook speed x10")
+MACRO_CONFIG_INT(KxRainbowHud, kx_rainbow_hud, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: rainbow HUD")
+MACRO_CONFIG_INT(KxRainbowHudSpeed, kx_rainbow_hud_speed, 10, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: rainbow HUD speed x10")
+MACRO_CONFIG_INT(KxRainbowParticles, kx_rainbow_particles, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: rainbow particles")
+MACRO_CONFIG_INT(KxRainbowParticlesSpeed, kx_rainbow_particles_speed, 10, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: rainbow particles speed x10")
+MACRO_CONFIG_INT(KxRainbowEmoticons, kx_rainbow_emoticons, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: rainbow emoticons")
+MACRO_CONFIG_INT(KxRainbowEmoticonsSpeed, kx_rainbow_emoticons_speed, 10, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: rainbow emoticons speed x10")
+MACRO_CONFIG_INT(KxHideParticles, kx_hide_particles, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: hide Particles sprites")
+
+// v1.56.260: ClickGUI panels layout + drag-to-sort.
+MACRO_CONFIG_INT(KxPanelsStartX, kx_panels_start_x, 60, 0, 3840, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ClickGUI: panels start X (px)")
+MACRO_CONFIG_INT(KxPanelsStartY, kx_panels_start_y, 90, 0, 2160, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ClickGUI: panels start Y (px)")
+MACRO_CONFIG_INT(KxDragToSort, kx_drag_to_sort, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ClickGUI: drag-to-sort (1=swap by dragging over slot, 0=free positioning)")
 
 // v1.56.255: AimBot per-weapon persisted settings (CAimBot::m_AimBotWeapons).
 // Weapon order matches g_ABWeaponOpts: hammer, pistol, shotgun, grenade, laser, ninja, hook.

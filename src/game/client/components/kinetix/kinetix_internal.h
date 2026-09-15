@@ -594,6 +594,31 @@ inline unsigned KxLineColorAt(EKxLineComponent c, int segment_index)
 }
 
 // =========================================================
+// v1.56.260: Visuals-panel world rainbow. Speed cvars store display*10
+// (0.1-10.0); hue advances display*60 deg/sec — same convention as the
+// ClickGUI accent rainbow (m_RainbowHue += dt * speed * 60).
+// =========================================================
+inline float KxVisualRainbowHue(float TimeSeconds, int SpeedCvar)
+{
+	float h = std::fmod(TimeSeconds * (float)SpeedCvar * 6.0f, 360.0f);
+	return h < 0.0f ? h + 360.0f : h;
+}
+
+inline ColorRGBA KxVisualRainbowColor(float TimeSeconds, int SpeedCvar, float Alpha)
+{
+	const float h = KxVisualRainbowHue(TimeSeconds, SpeedCvar) / 60.0f;
+	const float x = 1.0f - std::abs(std::fmod(h, 2.0f) - 1.0f);
+	float r = 0.0f, g = 0.0f, b = 0.0f;
+	if(h < 1.0f) { r = 1.0f; g = x; }
+	else if(h < 2.0f) { r = x; g = 1.0f; }
+	else if(h < 3.0f) { g = 1.0f; b = x; }
+	else if(h < 4.0f) { g = x; b = 1.0f; }
+	else if(h < 5.0f) { r = x; b = 1.0f; }
+	else { r = 1.0f; b = x; }
+	return ColorRGBA(r, g, b, Alpha);
+}
+
+// =========================================================
 // PfBfsFill — multi-source FMM/Eikonal field fill, verbatim the
 // solver the Pathfinder tab uses for its flow field.
 // Two phases come free: freezePassable=false keeps freeze at 1e18;

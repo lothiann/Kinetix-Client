@@ -1699,7 +1699,6 @@ void CCodeExec::RegisterRawAPI()
                 "m_ClDummyRestoreWeapon", &CConfig::m_ClDummyRestoreWeapon,
                 "m_KxHelpers", &CConfig::m_KxHelpers,
                 "m_KxCopyMoves", &CConfig::m_KxCopyMoves,
-                "m_KxRandomAim", &CConfig::m_KxRandomAim,
                 "m_KxFlyRide", &CConfig::m_KxFlyRide,
                 "m_KxDummyAim", &CConfig::m_KxDummyAim,
                 "m_KxDummyDirection", &CConfig::m_KxDummyDirection,

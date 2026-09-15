@@ -19,6 +19,7 @@
 #include <generated/protocol.h>
 
 #include <game/client/animstate.h>
+#include <game/client/components/kinetix/kinetix_internal.h>
 #include <game/client/components/kinetix/tas.h>
 #include <game/client/components/scoreboard.h>
 #include <game/client/gameclient.h>
@@ -762,34 +763,54 @@ void CHud::RenderAmmoHealthAndArmor(const CNetObj_Character *pCharacter)
                                 RenderNinjaBarPos(5 + 10 * 12, 5, 6.f, 24.f, NinjaProgress);
                         }
                 }
-                else if(CurWeapon >= 0 && GameClient()->m_GameSkin.m_aSpriteWeaponProjectiles[CurWeapon].IsValid())
-                {
-                        Graphics()->TextureSet(GameClient()->m_GameSkin.m_aSpriteWeaponProjectiles[CurWeapon]);
-                        if(AmmoOffsetY > 0)
-                        {
-                                Graphics()->RenderQuadContainerEx(m_HudQuadContainerIndex, m_aAmmoOffset[CurWeapon] + QuadOffsetSixup, std::clamp(pCharacter->m_AmmoCount, 0, 10), 0, AmmoOffsetY);
-                        }
-                        else
-                        {
-                                Graphics()->RenderQuadContainer(m_HudQuadContainerIndex, m_aAmmoOffset[CurWeapon] + QuadOffsetSixup, std::clamp(pCharacter->m_AmmoCount, 0, 10));
-                        }
-                }
+		else if(CurWeapon >= 0 && GameClient()->m_GameSkin.m_aSpriteWeaponProjectiles[CurWeapon].IsValid())
+		{
+			// v1.56.260: Visuals rainbow HUD — tint ammo pips.
+			// v1.56.261: plain RenderQuadContainer ignores the current color — use Ex when tinting.
+			const bool RainbowHudAmmo = g_Config.m_KxRainbowHud != 0;
+			if(RainbowHudAmmo)
+				Graphics()->SetColor(KxVisualRainbowColor(Client()->GlobalTime(), g_Config.m_KxRainbowHudSpeed, 1.0f));
+			Graphics()->TextureSet(GameClient()->m_GameSkin.m_aSpriteWeaponProjectiles[CurWeapon]);
+			if(AmmoOffsetY > 0 || RainbowHudAmmo)
+			{
+				Graphics()->RenderQuadContainerEx(m_HudQuadContainerIndex, m_aAmmoOffset[CurWeapon] + QuadOffsetSixup, std::clamp(pCharacter->m_AmmoCount, 0, 10), 0, AmmoOffsetY);
+			}
+			else
+			{
+				Graphics()->RenderQuadContainer(m_HudQuadContainerIndex, m_aAmmoOffset[CurWeapon] + QuadOffsetSixup, std::clamp(pCharacter->m_AmmoCount, 0, 10));
+			}
+			if(RainbowHudAmmo)
+				Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
+		}
         }
 
-        if(GameClient()->m_GameInfo.m_HudHealthArmor)
-        {
-                // health display
-                Graphics()->TextureSet(GameClient()->m_GameSkin.m_SpriteHealthFull);
-                Graphics()->RenderQuadContainer(m_HudQuadContainerIndex, m_HealthOffset + QuadOffsetSixup, minimum(pCharacter->m_Health, 10));
-                Graphics()->TextureSet(GameClient()->m_GameSkin.m_SpriteHealthEmpty);
-                Graphics()->RenderQuadContainer(m_HudQuadContainerIndex, m_EmptyHealthOffset + QuadOffsetSixup + minimum(pCharacter->m_Health, 10), 10 - minimum(pCharacter->m_Health, 10));
+	if(GameClient()->m_GameInfo.m_HudHealthArmor)
+	{
+		// v1.56.260: Visuals rainbow HUD — tint health/armor pips.
+		// v1.56.261: plain RenderQuadContainer ignores the current color — use Ex when tinting.
+		const bool RainbowHud = g_Config.m_KxRainbowHud != 0;
+		if(RainbowHud)
+			Graphics()->SetColor(KxVisualRainbowColor(Client()->GlobalTime(), g_Config.m_KxRainbowHudSpeed, 1.0f));
+		auto RenderHudPips = [&](int Offset, int Num) {
+			if(RainbowHud)
+				Graphics()->RenderQuadContainerEx(m_HudQuadContainerIndex, Offset, Num, 0, 0);
+			else
+				Graphics()->RenderQuadContainer(m_HudQuadContainerIndex, Offset, Num);
+		};
+		// health display
+		Graphics()->TextureSet(GameClient()->m_GameSkin.m_SpriteHealthFull);
+		RenderHudPips(m_HealthOffset + QuadOffsetSixup, minimum(pCharacter->m_Health, 10));
+		Graphics()->TextureSet(GameClient()->m_GameSkin.m_SpriteHealthEmpty);
+		RenderHudPips(m_EmptyHealthOffset + QuadOffsetSixup + minimum(pCharacter->m_Health, 10), 10 - minimum(pCharacter->m_Health, 10));
 
-                // armor display
-                Graphics()->TextureSet(GameClient()->m_GameSkin.m_SpriteArmorFull);
-                Graphics()->RenderQuadContainer(m_HudQuadContainerIndex, m_ArmorOffset + QuadOffsetSixup, minimum(pCharacter->m_Armor, 10));
-                Graphics()->TextureSet(GameClient()->m_GameSkin.m_SpriteArmorEmpty);
-                Graphics()->RenderQuadContainer(m_HudQuadContainerIndex, m_ArmorOffset + QuadOffsetSixup + minimum(pCharacter->m_Armor, 10), 10 - minimum(pCharacter->m_Armor, 10));
-        }
+		// armor display
+		Graphics()->TextureSet(GameClient()->m_GameSkin.m_SpriteArmorFull);
+		RenderHudPips(m_ArmorOffset + QuadOffsetSixup, minimum(pCharacter->m_Armor, 10));
+		Graphics()->TextureSet(GameClient()->m_GameSkin.m_SpriteArmorEmpty);
+		RenderHudPips(m_ArmorOffset + QuadOffsetSixup + minimum(pCharacter->m_Armor, 10), 10 - minimum(pCharacter->m_Armor, 10));
+		if(RainbowHud)
+			Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
+	}
 }
 
 void CHud::PreparePlayerStateQuads()
@@ -907,6 +928,9 @@ void CHud::RenderPlayerState(const int ClientId)
                 }
 
                 // render available and used jumps
+                // v1.56.261: rainbow HUD tints the jump icons.
+                if(g_Config.m_KxRainbowHud)
+                        Graphics()->SetColor(KxVisualRainbowColor(Client()->GlobalTime(), g_Config.m_KxRainbowHudSpeed, 1.0f));
                 int JumpsOffsetY = ((GameClient()->m_GameInfo.m_HudHealthArmor && g_Config.m_ClShowhudHealthAmmo ? 24 : 0) +
                                     (GameClient()->m_GameInfo.m_HudAmmo && g_Config.m_ClShowhudHealthAmmo ? 12 : 0));
                 if(JumpsOffsetY > 0)
@@ -923,6 +947,9 @@ void CHud::RenderPlayerState(const int ClientId)
                         Graphics()->TextureSet(GameClient()->m_HudSkin.m_SpriteHudAirjumpEmpty);
                         Graphics()->RenderQuadContainer(m_HudQuadContainerIndex, m_AirjumpEmptyOffset + AvailableJumpsToDisplay, TotalJumpsToDisplay - AvailableJumpsToDisplay);
                 }
+                // v1.56.261: reset the tinted jump icons color.
+                if(g_Config.m_KxRainbowHud)
+                        Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
         }
 
         float x = 5 + 12;
@@ -943,7 +970,10 @@ void CHud::RenderPlayerState(const int ClientId)
                                 x += aWeaponInitialOffset[Weapon];
                                 InitialOffsetAdded = true;
                         }
-                        if(pPlayer->m_Weapon != Weapon)
+                        // v1.56.261: rainbow guns also tints the top-left weapon icons.
+                        if(g_Config.m_KxRainbowGuns)
+                                Graphics()->SetColor(KxVisualRainbowColor(Client()->GlobalTime(), g_Config.m_KxRainbowGunsSpeed, pPlayer->m_Weapon != Weapon ? 0.4f : 1.0f));
+                        else if(pPlayer->m_Weapon != Weapon)
                                 Graphics()->SetColor(1.0f, 1.0f, 1.0f, 0.4f);
                         Graphics()->QuadsSetRotation(pi * 7 / 4);
                         Graphics()->TextureSet(GameClient()->m_GameSkin.m_aSpritePickupWeapons[Weapon]);
@@ -963,6 +993,9 @@ void CHud::RenderPlayerState(const int ClientId)
                 }
         }
 
+        // v1.56.261: rainbow HUD tints the capability/status icons below.
+        if(g_Config.m_KxRainbowHud)
+                Graphics()->SetColor(KxVisualRainbowColor(Client()->GlobalTime(), g_Config.m_KxRainbowHudSpeed, 1.0f));
         // render capabilities
         x = 5;
         y += 12;
@@ -1111,6 +1144,9 @@ void CHud::RenderPlayerState(const int ClientId)
                 Graphics()->TextureSet(GameClient()->m_HudSkin.m_SpriteHudLiveFrozen);
                 Graphics()->RenderQuadContainerAsSprite(m_HudQuadContainerIndex, m_LiveFrozenOffset, x, y);
         }
+        // v1.56.261: reset the tinted capability/status icons color.
+        if(g_Config.m_KxRainbowHud)
+                Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
 }
 
 void CHud::RenderNinjaBarPos(const float x, float y, const float Width, const float Height, float Progress, const float Alpha)

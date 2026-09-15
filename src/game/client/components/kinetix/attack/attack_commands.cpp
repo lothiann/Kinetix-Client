@@ -110,13 +110,7 @@ void CBotNet::ConSetMain(IConsole::IResult *pResult, void *pUserData)
         g_Config.m_KxMain = pResult->GetInteger(0);
 }
 
-void CBotNet::ConRandomAim(IConsole::IResult *pResult, void *pUserData)
-{
-        CBotNet *pSelf = (CBotNet *)pUserData;
-        g_Config.m_KxRandomAim = pResult->GetInteger(0) != 0;
-        if(pResult->NumArguments() > 1)
-                g_Config.m_KxRandomAimInterval = pResult->GetInteger(1);
-}
+// v1.56.260: ConRandomAim removed (old test feature).
 
 void CBotNet::ConCopyMoves(IConsole::IResult *pResult, void *pUserData)
 {

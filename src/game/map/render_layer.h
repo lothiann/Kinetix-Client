@@ -289,6 +289,8 @@ public:
 protected:
 	ColorRGBA GetRenderColor(const CRenderLayerParams &Params) const override { return ColorRGBA(1.0f, 1.0f, 1.0f, Params.m_EntityOverlayVal / 100.0f); }
 	IGraphics::CTextureHandle GetTexture() const override;
+	// v1.56.261: Kinetix "Rainbow entities" immediate-path rendering (Game/Front).
+	void KxRenderRainbow(const CRenderLayerParams &Params);
 };
 
 class CRenderLayerEntityGame final : public CRenderLayerEntityBase
@@ -296,6 +298,7 @@ class CRenderLayerEntityGame final : public CRenderLayerEntityBase
 public:
 	CRenderLayerEntityGame(int GroupId, int LayerId, int Flags, CMapItemLayerTilemap *pLayerTilemap);
 	void Init() override;
+	void Render(const CRenderLayerParams &Params) override;
 
 protected:
 	void RenderTileLayerWithTileBuffer(const ColorRGBA &Color, const CRenderLayerParams &Params) override;
@@ -310,6 +313,7 @@ class CRenderLayerEntityFront final : public CRenderLayerEntityBase
 public:
 	CRenderLayerEntityFront(int GroupId, int LayerId, int Flags, CMapItemLayerTilemap *pLayerTilemap);
 	int GetDataIndex(unsigned int &TileSize) const override;
+	void Render(const CRenderLayerParams &Params) override;
 };
 
 class CRenderLayerEntityTele final : public CRenderLayerEntityBase

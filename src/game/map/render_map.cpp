@@ -670,6 +670,26 @@ void CRenderMap::RenderTilemap(CTile *pTiles, int w, int h, float Scale, ColorRG
 
 				if(Render)
 				{
+					// v1.56.261: Kinetix "Rainbow entities" — tint by tile category
+					// (disabled categories keep the layer color).
+					if(m_TileRainbowEnt)
+					{
+						unsigned Cat;
+						if(Index == TILE_SOLID)
+							Cat = 0;
+						else if(Index == TILE_NOHOOK)
+							Cat = 1;
+						else if(Index == TILE_FREEZE || Index == TILE_LFREEZE)
+							Cat = 2;
+						else if(Index == TILE_DEATH)
+							Cat = 3;
+						else
+							Cat = 4;
+						if(m_TileRainbowEntMask & (1u << Cat))
+							Graphics()->SetColor(Color.Multiply(m_aTileRainbowEntColor[Cat]));
+						else
+							Graphics()->SetColor(Color);
+					}
 					int tx = Index % 16;
 					int ty = Index / 16;
 					int Px0 = tx * (1024 / 16);

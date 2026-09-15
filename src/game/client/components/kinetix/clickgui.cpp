@@ -236,34 +236,7 @@ static SRow g_HelpersChildren[] = {
         {ERowType::Input, "Stand Dist", nullptr, false, false, 0, 0, 0, 0, nullptr, "64", "value...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Input, "MStand Dist", nullptr, false, false, 0, 0, 0, 0, nullptr, "128", "value...", nullptr, 0, 0, nullptr, 0},
 };
-static SRow g_FunctionsRows[] = {
-        {ERowType::Expandable, "Dummies", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_DummiesChildren, 9},
-        {ERowType::Expandable, "Helpers", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_HelpersChildren, 16},
-        {ERowType::Toggle, "Random Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        // v1.56.83: AimBot + TriggerBot expandables
-        {ERowType::Expandable, "AimBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AimBotChildren, 20},
-        {ERowType::Expandable, "TriggerBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TriggerBotChildren, 19},
-        // Fly sub-section
-        {ERowType::Toggle, "Preserve input", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Expandable, "Custom latency", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CustomLatencyChildren, 1},
-        // v1.56.189: Auto fly is now an expandable with Max Distance + Predict children.
-        {ERowType::Expandable, "Auto fly", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AutoFlyChildren, 2},
-        {ERowType::Expandable, "Auto Triple Fly", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TripleFlyChildren, 6},
-        // Copy Moves sub-section
-        {ERowType::Expandable, "Copy Moves Filter", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CopyMovesFilterChildren, 6},
-        {ERowType::Toggle, "Mirror direction", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Dropdown, "Aim mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_AimModeOpts, 2, 0, nullptr, 0},
-        // Conditional aim options (visibility based on Aim mode)
-        {ERowType::Toggle, "Mirror aim X", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Mirror aim Y", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Smart aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        // v1.56.151: Fly Ride — pilot hooks/hammers nearest dummy, WASD moves anchor.
-        {ERowType::Toggle, "Fly Ride", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        // v1.56.186: Copy Moves Latency — staggered input replay delay for inactive dummies.
-        {ERowType::Expandable, "Copy Moves Latency", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CopyMovesLatencyChildren, 1},
-};
-
-// ---------- Advanced panel (5) ----------
+// ---------- Children shared by the Functions and Visuals panels ----------
 // "Laser unfreeze" expandable: predictive laser self-unfreeze.
 static SRow g_LaserUnfreezeChildren[] = {
         {ERowType::Toggle, "Auto laser", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
@@ -372,13 +345,36 @@ static SRow g_BasicAvoidFreezeChildren[] = {
         {ERowType::Slider, "Ticks", nullptr, false, false, 1.0f, 20.0f, 1.0f, 10.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Trigger ticks", nullptr, false, false, 1.0f, 20.0f, 1.0f, 3.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
-static SRow g_AdvancedRows[] = {
-        {ERowType::Expandable, "Trajectory", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TrajectoryChildren, 7},
+// v1.56.260: Functions panel merged with the former Advanced rows (Laser unfreeze,
+// Fake Aim, Basic Avoid Freeze). Trajectory/ESP/Hitboxes moved to the Visuals
+// panel; Random Aim rows removed (feature deleted).
+static SRow g_FunctionsRows[] = {
+        {ERowType::Expandable, "Dummies", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_DummiesChildren, 9},
+        {ERowType::Expandable, "Helpers", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_HelpersChildren, 16},
+        // v1.56.83: AimBot + TriggerBot expandables
+        {ERowType::Expandable, "AimBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AimBotChildren, 20},
+        {ERowType::Expandable, "TriggerBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TriggerBotChildren, 19},
+        // Fly sub-section
+        {ERowType::Toggle, "Preserve input", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Expandable, "Custom latency", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CustomLatencyChildren, 1},
+        // v1.56.189: Auto fly is now an expandable with Max Distance + Predict children.
+        {ERowType::Expandable, "Auto fly", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AutoFlyChildren, 2},
+        {ERowType::Expandable, "Auto Triple Fly", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TripleFlyChildren, 6},
+        // Copy Moves sub-section
+        {ERowType::Expandable, "Copy Moves Filter", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CopyMovesFilterChildren, 6},
+        {ERowType::Toggle, "Mirror direction", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "Aim mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_AimModeOpts, 2, 0, nullptr, 0},
+        // Conditional aim options (visibility based on Aim mode)
+        {ERowType::Toggle, "Mirror aim X", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Mirror aim Y", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Smart aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        // v1.56.151: Fly Ride — pilot hooks/hammers nearest dummy, WASD moves anchor.
+        {ERowType::Toggle, "Fly Ride", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        // v1.56.186: Copy Moves Latency — staggered input replay delay for inactive dummies.
+        {ERowType::Expandable, "Copy Moves Latency", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CopyMovesLatencyChildren, 1},
+        // v1.56.260: former Advanced rows (Trajectory/ESP/Hitboxes now live in Visuals).
         {ERowType::Expandable, "Laser unfreeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LaserUnfreezeChildren, 7},
         {ERowType::Expandable, "Fake Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_FakeAimChildren, 5},
-        {ERowType::Expandable, "ESP", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_EspChildren, 18},
-        // v1.56.256/257: "Hitboxes" expandable — header body click = master toggle (like IRC/Spoofer).
-        {ERowType::Expandable, "Hitboxes", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_HitboxesChildren, 14},
         {ERowType::Expandable, "Basic Avoid Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BasicAvoidFreezeChildren, 12},
 };
 
@@ -429,6 +425,10 @@ static SRow g_SettingsRows[] = {
         {ERowType::Input, "Panel Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "161622", "hex...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "BG blackout", nullptr, false, false, 0.0f, 100.0f, 1.0f, 30.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "ClickGUI Scale", nullptr, false, false, 0.1f, 2.0f, 0.1f, 1.0f, "x", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        // v1.56.260: panels start offset + drag-to-sort.
+        {ERowType::Slider, "Panels Start X", nullptr, false, false, 0.0f, 1920.0f, 1.0f, 60.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Panels Start Y", nullptr, false, false, 0.0f, 1080.0f, 1.0f, 90.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Drag-To-Sort", nullptr, true, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Expandable, "Line rendering", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LineRenderingChildren, 9},
         {ERowType::Expandable, "IRC", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_IrcChildren, 2},
         {ERowType::Expandable, "Spoofer", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_SpooferChildren, 7},
@@ -643,9 +643,66 @@ static SRow g_TasRows[] = {
         {ERowType::Label, g_TasDyn_Status, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 
+// ---------- Visuals panel (v1.56.260) ----------
+// Rainbow expandables: header body click = master toggle, single "Speed" child
+// slider (cvars store display*10, range 0.1..10.0). "Rainbow entities" carries
+// 10 children: category toggle + its Speed slider, x5 (sync/write use child
+// indices 0-9, speeds at odd indices). Header body click = master toggle
+// (v1.56.261).
+static SRow g_RainbowTeeChildren[] = {
+        {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
+static SRow g_RainbowLegsChildren[] = {
+        {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
+static SRow g_RainbowEntChildren[] = {
+        {ERowType::Toggle, "Hookable", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Unhookable", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Death", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Others", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
+static SRow g_RainbowGunsChildren[] = {
+        {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
+static SRow g_RainbowHookChildren[] = {
+        {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
+static SRow g_RainbowHudChildren[] = {
+        {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
+static SRow g_RainbowParticlesChildren[] = {
+        {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
+static SRow g_RainbowEmoticonsChildren[] = {
+        {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
+
+static SRow g_VisualsRows[] = {
+        {ERowType::Expandable, "Rainbow tee", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowTeeChildren, 1},
+        {ERowType::Expandable, "Rainbow legs", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowLegsChildren, 1},
+        {ERowType::Expandable, "Rainbow entities", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowEntChildren, 10},
+        {ERowType::Expandable, "Rainbow guns", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowGunsChildren, 1},
+        {ERowType::Expandable, "Rainbow hook", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowHookChildren, 1},
+        {ERowType::Expandable, "Rainbow HUD", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowHudChildren, 1},
+        {ERowType::Expandable, "Rainbow particles", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowParticlesChildren, 1},
+        {ERowType::Expandable, "Rainbow emoticons", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowEmoticonsChildren, 1},
+        {ERowType::Toggle, "Hide particles", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        // v1.56.260: moved from the Advanced panel.
+        {ERowType::Expandable, "Trajectory", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TrajectoryChildren, 7},
+        {ERowType::Expandable, "ESP", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_EspChildren, 18},
+        {ERowType::Expandable, "Hitboxes", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_HitboxesChildren, 14},
+};
+
 static SPanel g_Panels[NUM_PANELS] = {
         {"Functions", g_FunctionsRows, sizeof(g_FunctionsRows) / sizeof(g_FunctionsRows[0])},
-        {"Advanced", g_AdvancedRows, sizeof(g_AdvancedRows) / sizeof(g_AdvancedRows[0])},
+        // v1.56.260: Visuals panel replaces Advanced (same slot position).
+        {"Visuals", g_VisualsRows, sizeof(g_VisualsRows) / sizeof(g_VisualsRows[0])},
         {"Settings", g_SettingsRows, sizeof(g_SettingsRows) / sizeof(g_SettingsRows[0])},
         {"Pathfinder", g_PathfinderRows, sizeof(g_PathfinderRows) / sizeof(g_PathfinderRows[0])},
         {"Binds", g_BindsRows, sizeof(g_BindsRows) / sizeof(g_BindsRows[0])},
@@ -1240,8 +1297,9 @@ vec2 CClickGui::SlotHomePos(int slot) const
         // panel, so a relocated panel never drags its lower neighbour with it.
         // Layout runs in the virtual 1920x1080 space (DPI-independent).
         const float screenW = VScreenWidth();
-        const float startX = 60.0f;
-        const float startY = 90.0f;
+        // v1.56.260: configurable start offset (Settings → Panels Start X/Y).
+        const float startX = (float)g_Config.m_KxPanelsStartX;
+        const float startY = (float)g_Config.m_KxPanelsStartY;
         const float spacingX = 30.0f; // gap between panels horizontally
         const float spacingY = FLOW_GAP; // gap between rows vertically
 
@@ -2079,7 +2137,8 @@ void CClickGui::OnReset()
         {
                 m_aOffscreenValid[i] = false;
                 m_aPanelPosValid[i] = false;
-                m_aPanelCollapsed[i] = false;
+                // v1.56.260: collapsed state persists across server changes —
+                // panels only reset on client exit (process lifetime).
                 m_aPanelScroll[i] = 0.0f;
                 m_aPanelScrollStored[i] = 0.0f;
                 m_aZOrder[i] = i;
@@ -2207,14 +2266,12 @@ void CClickGui::OnRender()
                                 SRow &row = g_Panels[p].pRows[r];
                                 if(str_comp(row.pName, "Helpers") == 0)
                                         row.on = g_Config.m_KxHelpers;
-                                else if(str_comp(row.pName, "Random Aim") == 0)
-                                        row.on = g_Config.m_KxRandomAim;
                                 else if(str_comp(row.pName, "Trajectory") == 0)
                                         row.on = g_Config.m_KxShowTrajectory != 0;
                                 // Advanced → Laser unfreeze expandable is master toggle.
                                 else if(str_comp(row.pName, "Laser unfreeze") == 0)
                                         row.on = g_Config.m_KxLaserUnfreeze != 0;
-				else if(str_comp(row.pName, "Fake Aim") == 0 && str_comp(g_Panels[p].pTitle, "Advanced") == 0)
+				else if(str_comp(row.pName, "Fake Aim") == 0 && str_comp(g_Panels[p].pTitle, "Functions") == 0)
 					row.on = g_Config.m_KxFakeAim != 0;
                                 else if(str_comp(row.pName, "ESP") == 0)
                                         row.on = g_Config.m_KxEsp != 0;
@@ -2410,7 +2467,7 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                         else if(str_comp(child.pName, "Trigger ticks") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
                                                 child.value = (float)g_Config.m_KxBafTriggerTicks;
                                         // Fake Aim children
-					else if(str_comp(child.pName, "Mode") == 0 && str_comp(row.pName, "Fake Aim") == 0 && str_comp(g_Panels[p].pTitle, "Advanced") == 0)
+					else if(str_comp(child.pName, "Mode") == 0 && str_comp(row.pName, "Fake Aim") == 0 && str_comp(g_Panels[p].pTitle, "Functions") == 0)
 						child.valueIdx = g_Config.m_KxFakeAimMode;
                                         else if(str_comp(child.pName, "Speed") == 0 && str_comp(row.pName, "Fake Aim") == 0)
                                                 child.value = (float)g_Config.m_KxFakeAimSpeed;
@@ -3014,6 +3071,80 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                 if(!(m_DragSliderPanel == p && m_DragSliderRow == r && m_DragSliderChild == -1))
                                         row.value = g_Config.m_KxClickGuiScale / 10.0f;
                         }
+                        // v1.56.260: Panels Start X/Y + Drag-To-Sort.
+                        else if(str_comp(row.pName, "Panels Start X") == 0 && row.type == ERowType::Slider)
+                        {
+                                if(!(m_DragSliderPanel == p && m_DragSliderRow == r && m_DragSliderChild == -1))
+                                        row.value = (float)g_Config.m_KxPanelsStartX;
+                        }
+                        else if(str_comp(row.pName, "Panels Start Y") == 0 && row.type == ERowType::Slider)
+                        {
+                                if(!(m_DragSliderPanel == p && m_DragSliderRow == r && m_DragSliderChild == -1))
+                                        row.value = (float)g_Config.m_KxPanelsStartY;
+                        }
+                        else if(str_comp(row.pName, "Drag-To-Sort") == 0 && row.type == ERowType::Toggle)
+                                row.on = g_Config.m_KxDragToSort != 0;
+                        // v1.56.260: Visuals panel.
+                        else if(str_comp(row.pName, "Hide particles") == 0 && row.type == ERowType::Toggle)
+                                row.on = g_Config.m_KxHideParticles != 0;
+                        else if(str_comp(row.pName, "Rainbow tee") == 0 && row.type == ERowType::Expandable)
+                        {
+                                row.on = g_Config.m_KxRainbowTee != 0;
+                                row.pChildren[0].value = (float)g_Config.m_KxRainbowTeeSpeed / 10.0f;
+                        }
+                        else if(str_comp(row.pName, "Rainbow legs") == 0 && row.type == ERowType::Expandable)
+                        {
+                                row.on = g_Config.m_KxRainbowLegs != 0;
+                                row.pChildren[0].value = (float)g_Config.m_KxRainbowLegsSpeed / 10.0f;
+                        }
+                        else if(str_comp(row.pName, "Rainbow entities") == 0 && row.type == ERowType::Expandable)
+                        {
+                                // v1.56.261: master toggle state.
+                                row.on = g_Config.m_KxRainbowEnt != 0;
+                                // Duplicate child labels are disambiguated by index.
+                                for(int c = 0; c < row.childCount && c < 10; ++c)
+                                {
+                                        SRow &ch = row.pChildren[c];
+                                        switch(c)
+                                        {
+                                        case 0: ch.on = g_Config.m_KxRainbowEntHookable != 0; break;
+                                        case 1: ch.value = (float)g_Config.m_KxRainbowEntHookableSpeed / 10.0f; break;
+                                        case 2: ch.on = g_Config.m_KxRainbowEntUnhookable != 0; break;
+                                        case 3: ch.value = (float)g_Config.m_KxRainbowEntUnhookableSpeed / 10.0f; break;
+                                        case 4: ch.on = g_Config.m_KxRainbowEntFreeze != 0; break;
+                                        case 5: ch.value = (float)g_Config.m_KxRainbowEntFreezeSpeed / 10.0f; break;
+                                        case 6: ch.on = g_Config.m_KxRainbowEntDeath != 0; break;
+                                        case 7: ch.value = (float)g_Config.m_KxRainbowEntDeathSpeed / 10.0f; break;
+                                        case 8: ch.on = g_Config.m_KxRainbowEntOthers != 0; break;
+                                        case 9: ch.value = (float)g_Config.m_KxRainbowEntOthersSpeed / 10.0f; break;
+                                        }
+                                }
+                        }
+                        else if(str_comp(row.pName, "Rainbow guns") == 0 && row.type == ERowType::Expandable)
+                        {
+                                row.on = g_Config.m_KxRainbowGuns != 0;
+                                row.pChildren[0].value = (float)g_Config.m_KxRainbowGunsSpeed / 10.0f;
+                        }
+                        else if(str_comp(row.pName, "Rainbow hook") == 0 && row.type == ERowType::Expandable)
+                        {
+                                row.on = g_Config.m_KxRainbowHook != 0;
+                                row.pChildren[0].value = (float)g_Config.m_KxRainbowHookSpeed / 10.0f;
+                        }
+                        else if(str_comp(row.pName, "Rainbow HUD") == 0 && row.type == ERowType::Expandable)
+                        {
+                                row.on = g_Config.m_KxRainbowHud != 0;
+                                row.pChildren[0].value = (float)g_Config.m_KxRainbowHudSpeed / 10.0f;
+                        }
+                        else if(str_comp(row.pName, "Rainbow particles") == 0 && row.type == ERowType::Expandable)
+                        {
+                                row.on = g_Config.m_KxRainbowParticles != 0;
+                                row.pChildren[0].value = (float)g_Config.m_KxRainbowParticlesSpeed / 10.0f;
+                        }
+                        else if(str_comp(row.pName, "Rainbow emoticons") == 0 && row.type == ERowType::Expandable)
+                        {
+                                row.on = g_Config.m_KxRainbowEmoticons != 0;
+                                row.pChildren[0].value = (float)g_Config.m_KxRainbowEmoticonsSpeed / 10.0f;
+                        }
                         else if(p == 4 && row.type == ERowType::Dropdown && str_comp(row.pName, "Bind Mode") == 0)
                                 row.valueIdx = g_Config.m_KxBindsMode;
                         // v1.56.199: Binds panel — sync input fields with actual bound keys
@@ -3326,7 +3457,8 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                         m_aPanelTarget[m_DragPanelIdx].x + PANEL_WIDTH * 0.5f,
                         m_aPanelTarget[m_DragPanelIdx].y + HEADER_HEIGHT * 0.5f);
                 const int dragSlot = SlotOf(m_DragPanelIdx);
-                for(int s = 0; s < NUM_PANELS; ++s)
+                // v1.56.260: Drag-To-Sort off → free positioning, no slot swaps.
+                for(int s = 0; s < NUM_PANELS && g_Config.m_KxDragToSort; ++s)
                 {
                         if(s == dragSlot)
                                 continue;
@@ -3375,6 +3507,11 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                 g_Config.m_KxDummyHammerLatencyMs = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "BG blackout") == 0)
                                 m_BgBlackout = (int)pTarget->value;
+                        // v1.56.260: Panels Start X/Y live update while dragging.
+                        else if(str_comp(pTarget->pName, "Panels Start X") == 0)
+                                g_Config.m_KxPanelsStartX = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Panels Start Y") == 0)
+                                g_Config.m_KxPanelsStartY = (int)pTarget->value;
                         // v1.56.204: Line rendering per-component Speed slider (display = config/10)
                         else if(str_comp(pTarget->pName, "Speed") == 0 && str_comp(row.pName, "Line rendering") == 0)
                         {
@@ -3508,6 +3645,42 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                 int sel = traj.m_SelectedType;
                                 if(sel >= 0 && sel < CTrajectory::NUM_TRAJ_TYPES)
                                         traj.m_aTypes[sel].m_PredictionTicks = (int)pTarget->value;
+                        }
+                        // v1.56.260: Visuals rainbow Speed sliders (before the generic
+                        // "Speed" branch, which would otherwise write Fake Aim speed).
+                        else if(str_comp(pTarget->pName, "Speed") == 0 && str_comp(row.pName, "Rainbow entities") == 0)
+                        {
+                                int rawVal = (int)(pTarget->value * 10.0f + 0.5f);
+                                switch(m_DragSliderChild)
+                                {
+                                case 1: g_Config.m_KxRainbowEntHookableSpeed = rawVal; break;
+                                case 3: g_Config.m_KxRainbowEntUnhookableSpeed = rawVal; break;
+                                case 5: g_Config.m_KxRainbowEntFreezeSpeed = rawVal; break;
+                                case 7: g_Config.m_KxRainbowEntDeathSpeed = rawVal; break;
+                                case 9: g_Config.m_KxRainbowEntOthersSpeed = rawVal; break;
+                                }
+                        }
+                        else if(str_comp(pTarget->pName, "Speed") == 0 &&
+                                (str_comp(row.pName, "Rainbow tee") == 0 || str_comp(row.pName, "Rainbow legs") == 0 ||
+                                 str_comp(row.pName, "Rainbow guns") == 0 || str_comp(row.pName, "Rainbow hook") == 0 ||
+                                 str_comp(row.pName, "Rainbow HUD") == 0 || str_comp(row.pName, "Rainbow particles") == 0 ||
+                                 str_comp(row.pName, "Rainbow emoticons") == 0))
+                        {
+                                int rawVal = (int)(pTarget->value * 10.0f + 0.5f);
+                                if(str_comp(row.pName, "Rainbow tee") == 0)
+                                        g_Config.m_KxRainbowTeeSpeed = rawVal;
+                                else if(str_comp(row.pName, "Rainbow legs") == 0)
+                                        g_Config.m_KxRainbowLegsSpeed = rawVal;
+                                else if(str_comp(row.pName, "Rainbow guns") == 0)
+                                        g_Config.m_KxRainbowGunsSpeed = rawVal;
+                                else if(str_comp(row.pName, "Rainbow hook") == 0)
+                                        g_Config.m_KxRainbowHookSpeed = rawVal;
+                                else if(str_comp(row.pName, "Rainbow HUD") == 0)
+                                        g_Config.m_KxRainbowHudSpeed = rawVal;
+                                else if(str_comp(row.pName, "Rainbow particles") == 0)
+                                        g_Config.m_KxRainbowParticlesSpeed = rawVal;
+                                else
+                                        g_Config.m_KxRainbowEmoticonsSpeed = rawVal;
                         }
                         else if(str_comp(pTarget->pName, "Speed") == 0)
                         {
@@ -3660,7 +3833,7 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                         m_aPanelPos[i].x + (m_aPanelTarget[i].x - m_aPanelPos[i].x) * dragFactor,
                         m_aPanelPos[i].y + (m_aPanelTarget[i].y - m_aPanelPos[i].y) * dragFactor);
         }
-        else
+        else if(g_Config.m_KxDragToSort)
         {
                 // Non-dragged panel: glide toward its slot home (supports drag-to-sort
                 // swaps). When already at home this is a no-op.
@@ -4055,14 +4228,45 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         // Wire reference toggles to real subsystems.
                                         if(str_comp(pTarget->pName, "Helpers") == 0)
                                                 g_Config.m_KxHelpers = pTarget->on;
-                                        else if(str_comp(pTarget->pName, "Random Aim") == 0)
-                                                g_Config.m_KxRandomAim = pTarget->on;
+                                        // v1.56.260: Visuals panel toggles.
+                                        else if(str_comp(pTarget->pName, "Rainbow tee") == 0)
+                                                g_Config.m_KxRainbowTee = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Rainbow legs") == 0)
+                                                g_Config.m_KxRainbowLegs = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Rainbow guns") == 0)
+                                                g_Config.m_KxRainbowGuns = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Rainbow hook") == 0)
+                                                g_Config.m_KxRainbowHook = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Rainbow HUD") == 0)
+                                                g_Config.m_KxRainbowHud = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Rainbow particles") == 0)
+                                                g_Config.m_KxRainbowParticles = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Rainbow emoticons") == 0)
+                                                g_Config.m_KxRainbowEmoticons = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Hide particles") == 0)
+                                                g_Config.m_KxHideParticles = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Drag-To-Sort") == 0)
+                                                g_Config.m_KxDragToSort = pTarget->on ? 1 : 0;
+                                        // v1.56.261: Rainbow entities master toggle.
+                                        else if(str_comp(pTarget->pName, "Rainbow entities") == 0)
+                                                g_Config.m_KxRainbowEnt = pTarget->on ? 1 : 0;
+                                        // v1.56.260: Rainbow entities per-category child toggles.
+                                        else if(str_comp(pTarget->pName, "Hookable") == 0 && str_comp(row.pName, "Rainbow entities") == 0)
+                                                g_Config.m_KxRainbowEntHookable = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Unhookable") == 0 && str_comp(row.pName, "Rainbow entities") == 0)
+                                                g_Config.m_KxRainbowEntUnhookable = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Freeze") == 0 && str_comp(row.pName, "Rainbow entities") == 0)
+                                                g_Config.m_KxRainbowEntFreeze = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Death") == 0 && str_comp(row.pName, "Rainbow entities") == 0)
+                                                g_Config.m_KxRainbowEntDeath = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Others") == 0 && str_comp(row.pName, "Rainbow entities") == 0)
+                                                g_Config.m_KxRainbowEntOthers = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Trajectory") == 0)
                                                 g_Config.m_KxShowTrajectory = pTarget->on ? 1 : 0;
                                         // Advanced → Laser unfreeze expandable is master toggle.
                                         else if(str_comp(pTarget->pName, "Laser unfreeze") == 0)
                                                 g_Config.m_KxLaserUnfreeze = pTarget->on ? 1 : 0;
-					else if(str_comp(pTarget->pName, "Fake Aim") == 0 && str_comp(g_Panels[i].pTitle, "Advanced") == 0)
+					else if(str_comp(pTarget->pName, "Fake Aim") == 0 && str_comp(g_Panels[i].pTitle, "Functions") == 0)
 						g_Config.m_KxFakeAim = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "ESP") == 0)
                                                 g_Config.m_KxEsp = pTarget->on ? 1 : 0;
@@ -4824,6 +5028,11 @@ void CClickGui::HandleMouseUp(vec2 mousePos)
                         SRow *pTarget = (m_DragSliderChild >= 0 && row.pChildren) ? &row.pChildren[m_DragSliderChild] : &row;
                         if(str_comp(pTarget->pName, "ClickGUI Scale") == 0)
                                 g_Config.m_KxClickGuiScale = (int)(pTarget->value * 10.0f + 0.5f);
+                        // v1.56.260: Panels Start X/Y commit on slider release.
+                        else if(str_comp(pTarget->pName, "Panels Start X") == 0)
+                                g_Config.m_KxPanelsStartX = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Panels Start Y") == 0)
+                                g_Config.m_KxPanelsStartY = (int)pTarget->value;
                 }
         }
         m_Dragging = false;
@@ -4972,7 +5181,7 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                                                         }
                                                 }
                                         }
-					else if(str_comp(target.pName, "Mode") == 0 && str_comp(row.pName, "Fake Aim") == 0 && str_comp(panel.pTitle, "Advanced") == 0)
+					else if(str_comp(target.pName, "Mode") == 0 && str_comp(row.pName, "Fake Aim") == 0 && str_comp(panel.pTitle, "Functions") == 0)
 						g_Config.m_KxFakeAimMode = o;
                                         // v1.56.254: ESP dropdowns — renamed, parent-gated to "ESP";
                                         // Fake Aim "Mode" above is now row-gated so the renamed ESP
@@ -5094,7 +5303,7 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                                         }
                                                                 }
                                                         }
-							else if(str_comp(target.pName, "Mode") == 0 && str_comp(row.pName, "Fake Aim") == 0 && str_comp(panel.pTitle, "Advanced") == 0)
+							else if(str_comp(target.pName, "Mode") == 0 && str_comp(row.pName, "Fake Aim") == 0 && str_comp(panel.pTitle, "Functions") == 0)
 								g_Config.m_KxFakeAimMode = o;
                                                         // ESP dropdowns
                                                         else if(str_comp(target.pName, "Team") == 0 && str_comp(row.pName, "ESP") == 0)

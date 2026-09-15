@@ -8,10 +8,12 @@
 
 #include <engine/demo.h>
 #include <engine/graphics.h>
+#include <engine/shared/config.h>
 
 #include <generated/client_data.h>
 
 #include <game/client/gameclient.h>
+#include <game/client/components/kinetix/kinetix_internal.h>
 
 CParticles::CParticles()
 {
@@ -191,6 +193,19 @@ bool CParticles::ParticleIsVisibleOnScreen(const vec2 &CurPos, float CurSize)
 
 void CParticles::RenderGroup(int Group)
 {
+	// v1.56.260: Visuals — hide particle sprites entirely.
+	if(g_Config.m_KxHideParticles)
+		return;
+
+	// v1.56.260: Visuals rainbow particles — one animated hue for the group.
+	const bool RainbowParts = g_Config.m_KxRainbowParticles != 0;
+	const ColorRGBA RainbowPartsColor = RainbowParts ? KxVisualRainbowColor(Client()->GlobalTime(), g_Config.m_KxRainbowParticlesSpeed, 1.0f) : ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f);
+	auto PartColor = [&](const CParticle &Part, float Alpha) {
+		if(RainbowParts)
+			return ColorRGBA(RainbowPartsColor.r, RainbowPartsColor.g, RainbowPartsColor.b, Alpha);
+		return ColorRGBA(Part.m_Color.r, Part.m_Color.g, Part.m_Color.b, Alpha);
+	};
+
 	IGraphics::CTextureHandle *aParticles = GameClient()->m_ParticlesSkin.m_aSpriteParticles;
 	int FirstParticleOffset = SPRITE_PART_SLICE;
 	int ParticleQuadContainerIndex = m_ParticleQuadContainerIndex;
@@ -222,16 +237,9 @@ void CParticles::RenderGroup(int Group)
 				float a = m_aParticles[i].m_Life / m_aParticles[i].m_LifeSpan;
 				Alpha = mix(m_aParticles[i].m_StartAlpha, m_aParticles[i].m_EndAlpha, a);
 			}
-			LastColor.r = m_aParticles[i].m_Color.r;
-			LastColor.g = m_aParticles[i].m_Color.g;
-			LastColor.b = m_aParticles[i].m_Color.b;
-			LastColor.a = Alpha;
+			LastColor = PartColor(m_aParticles[i], Alpha);
 
-			Graphics()->SetColor(
-				m_aParticles[i].m_Color.r,
-				m_aParticles[i].m_Color.g,
-				m_aParticles[i].m_Color.b,
-				Alpha);
+			Graphics()->SetColor(LastColor);
 
 			LastQuadOffset = m_aParticles[i].m_Spr;
 		}
@@ -251,7 +259,8 @@ void CParticles::RenderGroup(int Group)
 			// the current position, respecting the size, is inside the viewport, render it, else ignore
 			if(ParticleIsVisibleOnScreen(p, Size))
 			{
-				if((size_t)CurParticleRenderCount == GRAPHICS_MAX_PARTICLES_RENDER_COUNT || LastColor.r != m_aParticles[i].m_Color.r || LastColor.g != m_aParticles[i].m_Color.g || LastColor.b != m_aParticles[i].m_Color.b || LastColor.a != Alpha || LastQuadOffset != QuadOffset)
+				const ColorRGBA CurCol = PartColor(m_aParticles[i], Alpha);
+				if((size_t)CurParticleRenderCount == GRAPHICS_MAX_PARTICLES_RENDER_COUNT || LastColor.r != CurCol.r || LastColor.g != CurCol.g || LastColor.b != CurCol.b || LastColor.a != CurCol.a || LastQuadOffset != QuadOffset)
 				{
 					dbg_assert(LastQuadOffset >= FirstParticleOffset, "Invalid particle offsets: %d < %d", LastQuadOffset, FirstParticleOffset);
 					Graphics()->TextureSet(aParticles[LastQuadOffset - FirstParticleOffset]);
@@ -259,16 +268,9 @@ void CParticles::RenderGroup(int Group)
 					CurParticleRenderCount = 0;
 					LastQuadOffset = QuadOffset;
 
-					Graphics()->SetColor(
-						m_aParticles[i].m_Color.r,
-						m_aParticles[i].m_Color.g,
-						m_aParticles[i].m_Color.b,
-						Alpha);
+					Graphics()->SetColor(CurCol);
 
-					LastColor.r = m_aParticles[i].m_Color.r;
-					LastColor.g = m_aParticles[i].m_Color.g;
-					LastColor.b = m_aParticles[i].m_Color.b;
-					LastColor.a = Alpha;
+					LastColor = CurCol;
 				}
 
 				s_aParticleRenderInfo[CurParticleRenderCount].m_Pos[0] = p.x;
@@ -314,11 +316,7 @@ void CParticles::RenderGroup(int Group)
 
 				Graphics()->QuadsSetRotation(m_aParticles[i].m_Rot);
 
-				Graphics()->SetColor(
-					m_aParticles[i].m_Color.r,
-					m_aParticles[i].m_Color.g,
-					m_aParticles[i].m_Color.b,
-					Alpha);
+				Graphics()->SetColor(PartColor(m_aParticles[i], Alpha));
 
 				IGraphics::CQuadItem QuadItem(p.x, p.y, Size, Size);
 				Graphics()->QuadsDraw(&QuadItem, 1);

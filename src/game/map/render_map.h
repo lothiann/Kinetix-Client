@@ -76,6 +76,16 @@ public:
 	IGraphics *Graphics() { return m_pGraphics; }
 	ITextRender *TextRender() { return m_pTextRender; }
 
+	// v1.56.261: Kinetix "Rainbow entities" — set by CRenderLayerEntityGame/Front
+	// around their immediate-path RenderTilemap calls. Mask bits: 0 hookable,
+	// 1 unhookable, 2 freeze, 3 death, 4 others; disabled categories keep Color.
+	bool m_TileRainbowEnt = false;
+	unsigned m_TileRainbowEntMask = 0;
+	ColorRGBA m_aTileRainbowEntColor[5] = {
+		ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f), ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f),
+		ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f), ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f),
+		ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f)};
+
 	// map render methods (render_map.cpp)
 	static void RenderEvalEnvelope(const IEnvelopePointAccess *pPoints, std::chrono::nanoseconds TimeNanos, ColorRGBA &Result, size_t Channels);
 	void ForceRenderQuads(CQuad *pQuads, int NumQuads, int Flags, IEnvelopeEval *pEnvEval, float Alpha = 1.0f);

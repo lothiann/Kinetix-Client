@@ -52,7 +52,6 @@ void CBotNet::ProcessDummy(int Dummy)
                 UpdateHelpers(pGame, pInput, Dummy, State, LocalID);
 
         // Random aim (fall-through — overrides aim on a schedule, does not return).
-        ProcessRandomAim(Dummy, State, CurTick);
 
         // Always copy back at end
         pGame->m_Controls.m_aInputData[Dummy] = *pInput;

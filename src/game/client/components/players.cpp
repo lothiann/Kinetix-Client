@@ -576,9 +576,13 @@ void CPlayers::RenderHook(
                 Position = mix(vec2(Prev.m_X, Prev.m_Y), vec2(Player.m_X, Player.m_Y), Intra);
 
         // draw hook
-        Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
+        // v1.56.260: Visuals rainbow hook color.
+        ColorRGBA HookSpriteColor = ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f);
         if(ClientId == -2)
-                Graphics()->SetColor(1.0f, 1.0f, 1.0f, 0.5f);
+                HookSpriteColor = ColorRGBA(1.0f, 1.0f, 1.0f, 0.5f);
+        if(g_Config.m_KxRainbowHook)
+                HookSpriteColor = KxVisualRainbowColor(Client()->GlobalTime(), g_Config.m_KxRainbowHookSpeed, HookSpriteColor.a);
+        Graphics()->SetColor(HookSpriteColor);
 
         vec2 Pos = Position;
         vec2 HookPos;
@@ -595,7 +599,7 @@ void CPlayers::RenderHook(
         Graphics()->QuadsSetRotation(angle(Dir) + pi);
         // render head
         int QuadOffset = NUM_WEAPONS * 2 + 2;
-        Graphics()->SetColor(1.0f, 1.0f, 1.0f, Alpha);
+        Graphics()->SetColor(HookSpriteColor.r, HookSpriteColor.g, HookSpriteColor.b, Alpha);
         Graphics()->RenderQuadContainerAsSprite(m_WeaponEmoteQuadContainerIndex, QuadOffset, HookPos.x, HookPos.y);
 
         // render chain
@@ -632,6 +636,12 @@ void CPlayers::RenderPlayer(
         Player = *pPlayerChar;
 
         CTeeRenderInfo RenderInfo = *pRenderInfo;
+
+        // v1.56.260: Visuals rainbow — tee body and legs colors.
+        if(g_Config.m_KxRainbowTee)
+                RenderInfo.m_ColorBody = KxVisualRainbowColor(Client()->GlobalTime(), g_Config.m_KxRainbowTeeSpeed, 1.0f);
+        if(g_Config.m_KxRainbowLegs)
+                RenderInfo.m_ColorFeet = KxVisualRainbowColor(Client()->GlobalTime(), g_Config.m_KxRainbowLegsSpeed, 1.0f);
 
         const bool Paused = GameClient()->IsWorldPaused() || GameClient()->IsDemoPlaybackPaused();
         bool Local = GameClient()->m_Snap.m_LocalClientId == ClientId;
@@ -744,7 +754,11 @@ void CPlayers::RenderPlayer(
         {
                 if(!(RenderInfo.m_TeeRenderFlags & TEE_NO_WEAPON))
                 {
-                        Graphics()->SetColor(1.0f, 1.0f, 1.0f, Alpha);
+                        // v1.56.260: Visuals rainbow guns.
+                        if(g_Config.m_KxRainbowGuns)
+                                Graphics()->SetColor(KxVisualRainbowColor(Client()->GlobalTime(), g_Config.m_KxRainbowGunsSpeed, Alpha));
+                        else
+                                Graphics()->SetColor(1.0f, 1.0f, 1.0f, Alpha);
 
                         // normal weapons
                         int CurrentWeapon = std::clamp(Player.m_Weapon, 0, NUM_WEAPONS - 1);
@@ -961,7 +975,11 @@ void CPlayers::RenderPlayer(
                         int CurEmoticon = (SPRITE_ZZZ - SPRITE_OOP);
                         Graphics()->TextureSet(GameClient()->m_EmoticonsSkin.m_aSpriteEmoticons[CurEmoticon]);
                         int QuadOffset = QuadOffsetToEmoticon + CurEmoticon;
-                        Graphics()->SetColor(1.0f, 1.0f, 1.0f, Alpha);
+                        // v1.56.260: Visuals rainbow emoticons.
+                        if(g_Config.m_KxRainbowEmoticons)
+                                Graphics()->SetColor(KxVisualRainbowColor(Client()->GlobalTime(), g_Config.m_KxRainbowEmoticonsSpeed, Alpha));
+                        else
+                                Graphics()->SetColor(1.0f, 1.0f, 1.0f, Alpha);
                         Graphics()->RenderQuadContainerAsSprite(m_WeaponEmoteQuadContainerIndex, QuadOffset, Position.x + 24.f, Position.y - 40.f);
 
                         Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
@@ -993,7 +1011,11 @@ void CPlayers::RenderPlayer(
 
                         Graphics()->QuadsSetRotation(pi / 6 * WiggleAngle);
 
-                        Graphics()->SetColor(1.0f, 1.0f, 1.0f, a * Alpha);
+                        // v1.56.260: Visuals rainbow emoticons.
+                        if(g_Config.m_KxRainbowEmoticons)
+                                Graphics()->SetColor(KxVisualRainbowColor(Client()->GlobalTime(), g_Config.m_KxRainbowEmoticonsSpeed, a * Alpha));
+                        else
+                                Graphics()->SetColor(1.0f, 1.0f, 1.0f, a * Alpha);
                         // client_datas::emoticon is an offset from the first emoticon
                         int QuadOffset = QuadOffsetToEmoticon + GameClient()->m_aClients[ClientId].m_Emoticon;
                         Graphics()->TextureSet(GameClient()->m_EmoticonsSkin.m_aSpriteEmoticons[GameClient()->m_aClients[ClientId].m_Emoticon]);

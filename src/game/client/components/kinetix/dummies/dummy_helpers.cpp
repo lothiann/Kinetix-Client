@@ -16,7 +16,7 @@ bool CBotNet::HandleFrozenDummy(CGameClient *pGame, CNetObj_PlayerInput *pInput,
 bool CBotNet::HandleNoFeatureIdle(CGameClient *pGame, CNetObj_PlayerInput *pInput, int Dummy, CBotNetDummy &State)
 {
         // Nothing to do this tick — clear inputs and return.
-        if(!g_Config.m_KxHelpers && !g_Config.m_KxCopyMoves && !g_Config.m_KxRandomAim && !State.m_MacroPlaying && !State.m_PathfinderGoActive)
+        if(!g_Config.m_KxHelpers && !g_Config.m_KxCopyMoves && !State.m_MacroPlaying && !State.m_PathfinderGoActive)
         {
                 ResetAndCommitInput(pGame, pInput, Dummy);
                 return true;
@@ -254,7 +254,7 @@ bool CBotNet::ProcessCopyMoves(CGameClient *pGame, CNetObj_PlayerInput *pInput, 
 {
         // Mirror another client's input onto this dummy.  Falls through (returns
         // false) when the target is valid but inactive — preserves the ability to
-        // fall back to Attack/RandomAim.
+        // fall back to Attack.
         if(!(g_Config.m_KxCopyMoves && g_Config.m_KxCopyTargetId >= 0 && g_Config.m_KxCopyTargetId < 128))
                 return false;
 
@@ -339,19 +339,4 @@ bool CBotNet::ProcessPathfinderGo(CGameClient *pGame, CNetObj_PlayerInput *pInpu
         return true;
 }
 
-void CBotNet::ProcessRandomAim(int Dummy, CBotNetDummy &State, int64_t CurTick)
-{
-        // Fall-through (no return): override aim to a random point on a schedule.
-        // Guarded by !g_Config.m_KxHelpers && !g_Config.m_KxCopyMoves — not redundant with the
-        // no-feature-idle check because CopyMoves may fall through with an inactive
-        // target while g_Config.m_KxCopyMoves is still true.
-        if(!(g_Config.m_KxRandomAim && !g_Config.m_KxHelpers && !g_Config.m_KxCopyMoves))
-                return;
-
-        if(CurTick >= State.m_NextRandomAimTick)
-        {
-                GameClient()->m_BotControl.ActionOverrideAim((rand() % 2001) - 1000, (rand() % 2001) - 1000, Dummy);
-                int TS = Client()->GameTickSpeed();
-                State.m_NextRandomAimTick = CurTick + (int64_t)(TS != 0 ? TS : 50) * g_Config.m_KxRandomAimInterval / 1000;
-        }
-}
+// v1.56.260: ProcessRandomAim removed (Random Aim was an old test feature).

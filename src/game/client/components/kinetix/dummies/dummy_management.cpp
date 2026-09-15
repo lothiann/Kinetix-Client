@@ -3,7 +3,7 @@
 
 bool CBotNet::IsDummyActive(int Dummy) const
 {
-        if(g_Config.m_KxHelpers || g_Config.m_KxCopyMoves || g_Config.m_KxRandomAim)
+        if(g_Config.m_KxHelpers || g_Config.m_KxCopyMoves)
                 return true;
         if(Dummy >= 0 && Dummy < MAX_DUMMIES)
         {
