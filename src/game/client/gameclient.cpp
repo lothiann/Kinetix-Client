@@ -890,6 +890,17 @@ void CGameClient::ApplyCopyMovesTransforms(int D, const CNetObj_PlayerInput &Src
         if(!wantSmart && !wantMirror)
                 return;
 
+        // v1.56.273: Smart aim no longer touches the fake aim — with smart aim
+        // on, the fake-aim copy for dummies is disabled entirely and smart aims
+        // at the player's REAL world aim point. Mirror keeps the spoofed aim.
+        int AimX = SrcInput.m_TargetX;
+        int AimY = SrcInput.m_TargetY;
+        if(wantMirror && g_Config.m_KxFakeAim && m_Controls.m_FakeAimRenderActive)
+        {
+                AimX = (int)m_Controls.m_FakeAimRenderOffset.x;
+                AimY = (int)m_Controls.m_FakeAimRenderOffset.y;
+        }
+
         const int activeId = m_aLocalIds[g_Config.m_ClDummy];
         if(activeId < 0 || m_aLocalIds[D] < 0)
                 return;
@@ -902,9 +913,21 @@ void CGameClient::ApplyCopyMovesTransforms(int D, const CNetObj_PlayerInput &Src
                 // Player's world aim = activePos + (m_TargetX, m_TargetY) from SrcInput.
                 // v1.56.186: SrcInput is the (possibly delayed) source — keeps smart
                 // aim in sync with movement/fire replay delay.
-                const vec2 playerWorldAim = activePos + vec2(
-                        (float)SrcInput.m_TargetX,
-                        (float)SrcInput.m_TargetY);
+                // v1.56.273: zoom compensation — with cl_dyncam the world point under
+                // the crosshair carries a camera-lag term (same as m_aTargetPos in
+                // CControls::OnRender): cursor = anchor + aim + DyncamOffsetDelta *
+                // (1/Zoom - 1). Without it the dummy aims at a shifted point while
+                // zoomed.
+                vec2 playerWorldAim = activePos + vec2(
+                        (float)AimX,
+                        (float)AimY);
+                if(g_Config.m_ClDyncam)
+                {
+                        const vec2 Dod = m_Camera.m_DyncamTargetCameraOffset - m_Camera.m_aDyncamCurrentCameraOffset[g_Config.m_ClDummy];
+                        const float Zoom = m_Camera.m_Zoom;
+                        if(Zoom > 0.001f)
+                                playerWorldAim += Dod * (1.0f / Zoom - 1.0f);
+                }
                 const vec2 dummyAim = playerWorldAim - dummyPos;
                 m_aDummyInput[D].m_TargetX = (int)dummyAim.x;
                 m_aDummyInput[D].m_TargetY = (int)dummyAim.y;
@@ -913,8 +936,8 @@ void CGameClient::ApplyCopyMovesTransforms(int D, const CNetObj_PlayerInput &Src
         {
                 // Mirror aim: reflect the player's LOCAL aim vector by X and/or Y.
                 // v1.56.186: SrcInput is the (possibly delayed) source.
-                int tx = SrcInput.m_TargetX;
-                int ty = SrcInput.m_TargetY;
+                int tx = AimX;
+                int ty = AimY;
                 if(g_Config.m_KxDummyCopyMirrorAimX)
                         tx = -tx;
                 if(g_Config.m_KxDummyCopyMirrorAimY)
@@ -2151,6 +2174,13 @@ static CGameInfo GetGameInfo(const CNetObj_GameInfoEx *pInfoEx, int InfoExSize, 
                 Info.m_PredictEvents = Flags2 & GAMEINFOFLAG2_PREDICT_EVENTS;
         }
 
+        // v1.56.262: Visuals bypasses — force zoom / DDNet entity assets even
+        // when the server locks them.
+        if(g_Config.m_KxZoomUnlock)
+                Info.m_AllowZoom = true;
+        if(g_Config.m_KxAssetUnlock)
+                Info.m_EntitiesDDNet = true;
+
         return Info;
 }
 
@@ -2796,6 +2826,17 @@ void CGameClient::OnNewSnapshot(bool DummySwapped)
                 Deadzone = m_LastDeadzone;
                 FollowFactor = m_LastFollowFactor;
         }
+
+        // v1.56.273: Spoof Zoom — replace the reported camera zoom with the fake
+        // value BEFORE the change detection below: the spoofed value change
+        // itself triggers the resend, so enabling/tuning/disabling the spoof
+        // applies immediately, while real zoom changes stay hidden from the
+        // server while the spoof is on. The slider is inverted magnification:
+        // 1 = zoomed out (max distance), 50 = zoomed in (max approach),
+        // 10 = the default view — the cvar stores the level x10 and the camera
+        // value is 100 / cvar.
+        if(g_Config.m_KxSpoofZoom)
+                Zoom = 100.0f / g_Config.m_KxSpoofZoomValue;
 
         // initialize dummy vital when first connected
         if(Client()->AnyDummyConnected() && !m_LastDummyConnected)

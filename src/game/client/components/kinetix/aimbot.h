@@ -39,7 +39,12 @@ public:
                 // the random offset (normal mode) / random distance along a random
                 // RAY THAT HIT the player (raycast-angle mode).
                 float m_Jitter = 0.0f;
-                int m_AimMode = 0; // 0=silent 1=trigger 2=always (AimBot only)
+		// v1.56.262: Silent became a separate toggle; Mode is 0=edge 1=trigger
+		// 2=always 3=smooth (AimBot only, TriggerBot ignores it).
+		int m_AimMode = 0;
+		bool m_Silent = true; // aim changes don't move the visible crosshair
+		float m_SmoothSpeed = 3.0f; // Smooth mode: max aim travel per tick, px
+		bool m_SmoothCenterSnap = true; // Smooth mode: rotate around the player center
                 int m_TeamFilter = 0; // 0=both 1=war 2=my
                 int m_FriendFilter = 0; // 0=both 1=ignore 2=only
                 int m_DummyFilter = 0; // 0=both 1=ignore 2=only
@@ -56,9 +61,17 @@ public:
         bool m_AimBotShowFov = false;
         bool m_AimBotShowRadius = false;
         bool m_AimBotUseRaycastShow = false;
-        bool m_TriggerBotShowFov = false;
-        bool m_TriggerBotShowRadius = false;
-        bool m_TriggerBotUseRaycastShow = false;
+	bool m_TriggerBotShowFov = false;
+	bool m_TriggerBotShowRadius = false;
+	bool m_TriggerBotUseRaycastShow = false;
+
+	// v1.56.262: Edge mode — restores the pre-snap crosshair position on the
+	// tick AFTER the snap (1-tick visible aim). Silent Smooth glides its own
+	// server-side offset independently of the visible crosshair.
+	bool m_AimEdgeRestore = false;
+	vec2 m_AimEdgeRestorePos = vec2(0, 0);
+	vec2 m_SilentSmoothPos = vec2(0, 0);
+	bool m_SilentSmoothInit = false;
 
         SWeaponSettings m_AimBotWeapons[NUM_WEAPONS_AIM];
         SWeaponSettings m_TriggerBotWeapons[NUM_WEAPONS_TRIGGER];
@@ -80,6 +93,13 @@ private:
         void UpdateTriggerBot();
         int FindTarget(const SWeaponSettings &Settings, int Weapon, int LocalId, const vec2 &MyPos, const vec2 &AimDir, const vec2 &AimPos, vec2 &outAimPoint);
         bool IsVisible(const vec2 &From, const vec2 &To);
+        // v1.56.263: InsertCharacter — true when another player's hitbox
+        // intersects the segment (hooks/projectiles/lasers stop on the first
+        // player touched, so a target behind a player is unreachable).
+        bool LineBlockedByCharacter(int LocalId, int TargetId, const vec2 &From, const vec2 &To) const;
+        // v1.56.263: show-raycast endpoint — clips the ray on walls AND players
+        // (used by FOV/radius "Use raycast (Show)" rendering).
+        vec2 RayShowEndPoint(const vec2 &From, const vec2 &To) const;
         bool PassesFilters(int ClientId, int LocalId, const SWeaponSettings &Settings);
         void ApplyAim(int ClientId, const vec2 &MyPos, const SWeaponSettings &Settings, const vec2 &AimPoint);
         void FireWeapon();

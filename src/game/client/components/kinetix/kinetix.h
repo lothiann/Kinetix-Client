@@ -477,6 +477,8 @@ public:
         int m_FlyRidePilotHook = 0;         // 0 or 1 (read by CControls::SnapInput)
         int m_FlyRideTargetDummy = -1;      // nearest dummy index (for cleanup)
         void UpdateTripleFly();
+        // v1.56.262: Admin Alarm — chat alert when an RCON admin is on the server.
+        void UpdateAdminAlarm();
         bool m_TripleFlyWasActive = false;
         int m_TripleFlyDummy = -1;
         bool m_TripleFlyHooking = false;

@@ -142,7 +142,11 @@ static const char *const g_ABWeaponOpts[] = {"Hammer", "Pistol", "Shotgun", "Gre
 static const char *const g_ABWeaponOptsNoHook[] = {"Hammer", "Pistol", "Shotgun", "Grenade", "Laser", "Ninja"};
 static const char *const g_ABTriggerOpts[] = {"Fire", "Hook"};
 static const char *const g_ABTriggerModeOpts[] = {"One tick", "Hold", "Every tick"};
-static const char *const g_ABAimModeOpts[] = {"Silent", "Trigger", "Always"};
+// v1.56.262: AimBot modes reworked — Silent became a separate toggle, Mode is
+// Edge/Trigger/Always/Smooth. While Silent is on the dropdown swaps to
+// g_ABModeOptsNoTrigger ("Trigger" hidden) and the index is remapped.
+static const char *const g_ABModeOpts[] = {"Edge", "Trigger", "Always", "Smooth"};
+static const char *const g_ABModeOptsNoTrigger[] = {"Edge", "Always", "Smooth"};
 static const char *const g_ABRulesOpts[] = {"None", "Insert line", "Raycast"};
 static const char *const g_ABTeamOpts[] = {"Both", "War", "My"};
 static const char *const g_ABFriendOpts[] = {"Both", "Ignore", "Only"};
@@ -150,12 +154,31 @@ static const char *const g_ABDummyOpts[] = {"Both", "Ignore", "Only"};
 static const char *const g_ABTargetsFilterOpts[] = {"Both", "Only", "Ignore"};
 static const char *const g_ABFreezeOpts[] = {"Both", "Freeze", "No freeze"};
 static const char *const g_ABPriorityOpts[] = {"Nearest FOV", "Nearest Aim", "Nearest to me"};
+// v1.56.262: "Auto Fire" expandable — auto-fire every Delay ticks while fire is held.
+static SRow g_AutoFireChildren[] = {
+        {ERowType::Slider, "Delay", nullptr, false, false, 0.0f, 50.0f, 1.0f, 0.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
+// v1.56.262: "BalanceBot" expandable — X-axis balance against the nearest
+// matching player (drives the current dummy only). Filters reuse AimBot/ESP ones.
+static const char *const g_BbVerticalOpts[] = {"Below", "Above", "Both"};
+static SRow g_BalanceBotChildren[] = {
+        {ERowType::Dropdown, "Vertical Filter", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_BbVerticalOpts, 3, 0, nullptr, 0},
+        {ERowType::Slider, "Radius Filter", nullptr, false, false, 0.0f, 1000.0f, 1.0f, 500.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Stand Radius", nullptr, false, false, 1.0f, 10.0f, 1.0f, 3.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTeamOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "Clanmate", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "Targets", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0},
+        {ERowType::Input, "Targets IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0},
+};
 // v1.56.83: AimBot expandable — 15 children.
 static SRow g_AimBotChildren[] = {
-        {ERowType::Dropdown, "AB Weapon", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABWeaponOpts, 7, 0, nullptr, 0},
-        {ERowType::Toggle, "AB Enable", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "AB FOV", nullptr, false, false, 1.0f, 360.0f, 1.0f, 90.0f, "\xc2\xb0", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "AB Radius", nullptr, false, false, 1.0f, 2000.0f, 1.0f, 300.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "Weapon", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABWeaponOpts, 7, 0, nullptr, 0},
+        {ERowType::Toggle, "Enable", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "FOV", nullptr, false, false, 1.0f, 360.0f, 1.0f, 90.0f, "\xc2\xb0", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Radius", nullptr, false, false, 1.0f, 2000.0f, 1.0f, 300.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Show FOV", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Show Radius", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Use raycast (Show)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
@@ -165,37 +188,41 @@ static SRow g_AimBotChildren[] = {
         {ERowType::Toggle, "Predict", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         // v1.56.248: AB Jitter — randomize the aim point within the player hitbox
         // (raycast-angle mode: random RAY THAT HIT the player + random distance).
-        {ERowType::Slider, "AB Jitter", nullptr, false, false, 0.0f, 100.0f, 1.0f, 0.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Dropdown, "AB Aim Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABAimModeOpts, 3, 0, nullptr, 0},
-        {ERowType::Dropdown, "AB Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTeamOpts, 3, 0, nullptr, 0},
-        {ERowType::Dropdown, "AB Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
-        {ERowType::Dropdown, "AB Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 3, 0, nullptr, 0},
-        {ERowType::Dropdown, "Clanmate filter", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
-        {ERowType::Dropdown, "AB Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0},
-        {ERowType::Dropdown, "AB Priority", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABPriorityOpts, 3, 0, nullptr, 0},
-        {ERowType::Dropdown, "Targets filter", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0},
+        {ERowType::Slider, "Jitter", nullptr, false, false, 0.0f, 100.0f, 1.0f, 0.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        // v1.56.262: Silent toggle + Mode dropdown (Edge/Trigger/Always/Smooth).
+        {ERowType::Toggle, "Silent", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABModeOpts, 4, 0, nullptr, 0},
+        {ERowType::Slider, "Smooth Speed", nullptr, false, false, 0.1f, 50.0f, 0.1f, 3.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Center snap", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTeamOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "Clanmate", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "Priority", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABPriorityOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "Targets", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0},
         {ERowType::Input, "Targets IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0},
 };
 // v1.56.86: TriggerBot expandable — 17 children (no Hook, has Trigger + Trigger mode + Latency).
 static SRow g_TriggerBotChildren[] = {
-        {ERowType::Dropdown, "TB Weapon", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABWeaponOptsNoHook, 6, 0, nullptr, 0},
-        {ERowType::Toggle, "TB Enable", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Dropdown, "TB Trigger", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTriggerOpts, 2, 0, nullptr, 0},
-        {ERowType::Dropdown, "TB Trigger mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTriggerModeOpts, 3, 0, nullptr, 0},
-        {ERowType::Slider, "TB FOV", nullptr, false, false, 1.0f, 360.0f, 1.0f, 90.0f, "\xc2\xb0", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "TB Radius", nullptr, false, false, 1.0f, 2000.0f, 1.0f, 300.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "TB Show FOV", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "TB Show Radius", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "TB Use raycast (Show)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Dropdown, "TB Rules", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABRulesOpts, 3, 0, nullptr, 0},
-        {ERowType::Slider, "TB Latency", nullptr, false, false, 0.0f, 10.0f, 1.0f, 0.0f, " ticks", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Dropdown, "TB Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTeamOpts, 3, 0, nullptr, 0},
-        {ERowType::Dropdown, "TB Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
-        {ERowType::Dropdown, "TB Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 3, 0, nullptr, 0},
-        {ERowType::Dropdown, "Clanmate filter", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
-        {ERowType::Dropdown, "TB Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0},
-        {ERowType::Dropdown, "TB Priority", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABPriorityOpts, 3, 0, nullptr, 0},
-        {ERowType::Dropdown, "Targets filter", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "Weapon", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABWeaponOptsNoHook, 6, 0, nullptr, 0},
+        {ERowType::Toggle, "Enable", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "Trigger", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTriggerOpts, 2, 0, nullptr, 0},
+        {ERowType::Dropdown, "Trigger mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTriggerModeOpts, 3, 0, nullptr, 0},
+        {ERowType::Slider, "FOV", nullptr, false, false, 1.0f, 360.0f, 1.0f, 90.0f, "\xc2\xb0", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Radius", nullptr, false, false, 1.0f, 2000.0f, 1.0f, 300.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Show FOV", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Show Radius", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Use raycast (Show)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "Rules", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABRulesOpts, 3, 0, nullptr, 0},
+        {ERowType::Slider, "Latency", nullptr, false, false, 0.0f, 10.0f, 1.0f, 0.0f, " ticks", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTeamOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "Clanmate", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "Priority", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABPriorityOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "Targets", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0},
         {ERowType::Input, "Targets IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0},
 };
 // v1.56.90: Dummies expandable — dummy connect/disconnect/switch buttons.
@@ -259,6 +286,11 @@ static SRow g_FakeAimChildren[] = {
         {ERowType::Slider, "Jitter", nullptr, false, false, 1.0f, 100.0f, 1.0f, 20.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Distance from center", nullptr, false, false, 0.0f, 500.0f, 5.0f, 0.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Show for me", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        // v1.56.262: renders what the server actually sees (visible only with Show for me).
+        {ERowType::Toggle, "Show Server-Side Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        // v1.56.263: between ticks advance the rendered aim at frame rate;
+        // Real mode renders exactly like no Fake Aim.
+        {ERowType::Toggle, "Predict", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 // v1.56.178: "Trajectory" expandable — per-type settings (Tee/Pistol/Shotgun/Grenade/Laser).
 // Type dropdown selects which type's settings are being edited (same pattern as
@@ -305,7 +337,7 @@ static SRow g_EspChildren[] = {
         {ERowType::Dropdown, "Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_EspModeOpts, 2, 0, nullptr, 0},
         {ERowType::Slider, "X", nullptr, false, false, 0.0f, 7680.0f, 1.0f, 0.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Y", nullptr, false, false, 0.0f, 4320.0f, 1.0f, 0.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Dropdown, "Targets filter", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "Targets", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0},
         {ERowType::Input, "Targets IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0},
 };
 // v1.56.256: "Hitboxes" expandable — tee tile-collision square (28x28) and the
@@ -327,7 +359,7 @@ static SRow g_HitboxesChildren[] = {
         {ERowType::Dropdown, "Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "Clanmate", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0},
-        {ERowType::Dropdown, "Targets filter", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0},
+        {ERowType::Dropdown, "Targets", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0},
         {ERowType::Input, "Targets IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0},
 };
 // v1.56.121: "Basic Avoid Freeze" expandable.
@@ -351,9 +383,12 @@ static SRow g_BasicAvoidFreezeChildren[] = {
 static SRow g_FunctionsRows[] = {
         {ERowType::Expandable, "Dummies", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_DummiesChildren, 9},
         {ERowType::Expandable, "Helpers", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_HelpersChildren, 16},
-        // v1.56.83: AimBot + TriggerBot expandables
-        {ERowType::Expandable, "AimBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AimBotChildren, 20},
+        // v1.56.83: AimBot + TriggerBot expandables (AimBot: 23 children since v1.56.262)
+        {ERowType::Expandable, "AimBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AimBotChildren, 23},
         {ERowType::Expandable, "TriggerBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TriggerBotChildren, 19},
+        // v1.56.262: Auto Fire + BalanceBot expandables.
+        {ERowType::Expandable, "Auto Fire", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AutoFireChildren, 1},
+        {ERowType::Expandable, "BalanceBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BalanceBotChildren, 10},
         // Fly sub-section
         {ERowType::Toggle, "Preserve input", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Expandable, "Custom latency", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CustomLatencyChildren, 1},
@@ -374,7 +409,7 @@ static SRow g_FunctionsRows[] = {
         {ERowType::Expandable, "Copy Moves Latency", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CopyMovesLatencyChildren, 1},
         // v1.56.260: former Advanced rows (Trajectory/ESP/Hitboxes now live in Visuals).
         {ERowType::Expandable, "Laser unfreeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LaserUnfreezeChildren, 7},
-        {ERowType::Expandable, "Fake Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_FakeAimChildren, 5},
+        {ERowType::Expandable, "Fake Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_FakeAimChildren, 7},
         {ERowType::Expandable, "Basic Avoid Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BasicAvoidFreezeChildren, 12},
 };
 
@@ -395,6 +430,18 @@ static SRow g_SpooferChildren[] = {
         {ERowType::Input, "Git hash value", nullptr, false, false, 0, 0, 0, 0, nullptr, "abc1234", "hash...", nullptr, 0, 0, nullptr, 0},
         // v1.56.174: BestClient extra NETMSGs toggle (visible only when preset=BestClient, see SpooferChildVisible).
         {ERowType::Toggle, "Extra NETMSGs", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
+// v1.56.273: "Spoof Zoom" expandable: fake zoom slider (header = master toggle).
+static SRow g_SpoofZoomChildren[] = {
+        {ERowType::Slider, "Fake Zoom", nullptr, false, false, 1.0f, 50.0f, 0.1f, 10.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
+// v1.56.273: "Spoof Spectate" expandable: mode + fake fields (header = master toggle).
+static const char *const g_SpoofSpectateModeOpts[] = {"Follow Coordinates", "Follow Player"};
+static SRow g_SpoofSpectateChildren[] = {
+        {ERowType::Dropdown, "Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_SpoofSpectateModeOpts, 2, 0, nullptr, 0},
+        {ERowType::Input, "Fake spectate X", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "x...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Fake spectate Y", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "y...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Fake Follow ID", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0},
 };
 // v1.56.77: "Rainbow color" expandable: toggle + speed slider.
 static SRow g_RainbowChildren[] = {
@@ -432,6 +479,9 @@ static SRow g_SettingsRows[] = {
         {ERowType::Expandable, "Line rendering", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LineRenderingChildren, 9},
         {ERowType::Expandable, "IRC", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_IrcChildren, 2},
         {ERowType::Expandable, "Spoofer", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_SpooferChildren, 7},
+        // v1.56.273: Spoof Zoom / Spoof Spectate (headers are master toggles).
+        {ERowType::Expandable, "Spoof Zoom", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_SpoofZoomChildren, 1},
+        {ERowType::Expandable, "Spoof Spectate", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_SpoofSpectateChildren, 4},
 };
 
 // ---------- Pathfinder panel (7) ----------
@@ -517,6 +567,8 @@ static SRow g_BindsRows[] = {
         {ERowType::Input, "Basic Avoid Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Input, "Helpers", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Input, "Auto Triple Fly", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Auto Fire", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "BalanceBot", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Expandable, "TAS", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BindsTasChildren, 4},
         {ERowType::Expandable, "Edge bind", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BindsEdgeChildren, 2},
         {ERowType::Expandable, "Smart dummy switch", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BindsSdsChildren, 3},
@@ -683,6 +735,19 @@ static SRow g_RainbowEmoticonsChildren[] = {
         {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 
+// v1.56.263: "Admin Alarm" expandable — per-level, like AimBot per-weapon:
+// the Level dropdown selects which level's settings are being edited. The
+// alarm shows a LOCAL chat echo; {n} = admin nickname. "Every ms" is visible
+// only when Repeat is on (AdminAlarmChildVisible).
+static const char *const g_AdminLevelOpts[] = {"Helper", "Moderator", "Admin"};
+static SRow g_AdminAlarmChildren[] = {
+        {ERowType::Dropdown, "Admin level", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_AdminLevelOpts, 3, 0, nullptr, 0},
+        {ERowType::Input, "Message", nullptr, false, false, 0, 0, 0, 0, nullptr, "Admin on server!", "text...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, "Use {n} for nickname", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Repeat", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Every ms", nullptr, false, false, 100.0f, 10000.0f, 100.0f, 1000.0f, "ms", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
+
 static SRow g_VisualsRows[] = {
         {ERowType::Expandable, "Rainbow tee", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowTeeChildren, 1},
         {ERowType::Expandable, "Rainbow legs", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowLegsChildren, 1},
@@ -697,6 +762,10 @@ static SRow g_VisualsRows[] = {
         {ERowType::Expandable, "Trajectory", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TrajectoryChildren, 7},
         {ERowType::Expandable, "ESP", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_EspChildren, 18},
         {ERowType::Expandable, "Hitboxes", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_HitboxesChildren, 14},
+        // v1.56.262: bypass locks + admin alarm.
+        {ERowType::Toggle, "Bypass Zoom Lock", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Bypass Asset Lock", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Expandable, "Admin Alarm", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AdminAlarmChildren, 5},
 };
 
 static SPanel g_Panels[NUM_PANELS] = {
@@ -867,6 +936,51 @@ static bool FakeAimChildVisible(const SRow *pChildren, int childCount, int idx)
                 return modeIdx != 1 && modeIdx != 5;
         if(str_comp(row.pName, "Jitter") == 0)
                 return modeIdx == 4;
+        // v1.56.262: Show Server-Side Aim — visible only when Show for me is on.
+        if(str_comp(row.pName, "Show Server-Side Aim") == 0)
+        {
+                for(int i = 0; i < childCount; ++i)
+                {
+                        if(str_comp(pChildren[i].pName, "Show for me") == 0)
+                                return pChildren[i].on != 0;
+                }
+                return false;
+        }
+        return true;
+}
+// v1.56.262: Admin Alarm — "Every ms" visible only when Repeat is on.
+static bool AdminAlarmChildVisible(const SRow *pChildren, int childCount, int idx)
+{
+        if(idx < 0 || idx >= childCount)
+                return false;
+        const SRow &row = pChildren[idx];
+        if(str_comp(row.pName, "Every ms") == 0)
+        {
+                for(int i = 0; i < childCount; ++i)
+                {
+                        if(str_comp(pChildren[i].pName, "Repeat") == 0)
+                                return pChildren[i].on != 0;
+                }
+                return false;
+        }
+        return true;
+}
+// v1.56.263: BalanceBot — "Targets IDs" visible only when Targets filter != 0
+// (same rule as AimBot / TriggerBot / ESP).
+static bool BalanceBotChildVisible(const SRow *pChildren, int childCount, int idx)
+{
+        if(idx < 0 || idx >= childCount)
+                return false;
+        const SRow &row = pChildren[idx];
+        if(str_comp(row.pName, "Targets IDs") == 0 || str_comp(row.pName, "Untargets IDs") == 0)
+        {
+                for(int i = 0; i < childCount; ++i)
+                {
+                        if(str_comp(pChildren[i].pName, "Targets") == 0)
+                                return pChildren[i].valueIdx != 0;
+                }
+                return false;
+        }
         return true;
 }
 
@@ -890,7 +1004,7 @@ static bool AimBotChildVisible(const SRow *pChildren, int childCount, int idx)
         int targetsIdx = 0;
         for(int i = 0; i < childCount; ++i)
         {
-                if(str_comp(pChildren[i].pName, "Targets filter") == 0)
+                if(str_comp(pChildren[i].pName, "Targets") == 0)
                 {
                         targetsIdx = pChildren[i].valueIdx;
                         break;
@@ -901,6 +1015,23 @@ static bool AimBotChildVisible(const SRow *pChildren, int childCount, int idx)
                 return isRaycastMode;
         if(str_comp(row.pName, "Targets IDs") == 0 || str_comp(row.pName, "Untargets IDs") == 0)
                 return targetsIdx != 0;
+        // v1.56.262: Smooth Speed / Center snap visible only in Smooth mode.
+        // While Silent is on the Mode dropdown shows g_ABModeOptsNoTrigger
+        // ("Trigger" hidden) — remap the displayed index back to the stored mode.
+        if(str_comp(row.pName, "Smooth Speed") == 0 || str_comp(row.pName, "Center snap") == 0)
+        {
+                bool silent = true;
+                int modeDisp = 0;
+                for(int i = 0; i < childCount; ++i)
+                {
+                        if(str_comp(pChildren[i].pName, "Silent") == 0)
+                                silent = pChildren[i].on != 0;
+                        else if(str_comp(pChildren[i].pName, "Mode") == 0)
+                                modeDisp = pChildren[i].valueIdx;
+                }
+                const int mode = silent ? (modeDisp == 0 ? 0 : modeDisp == 1 ? 2 : 3) : modeDisp;
+                return mode == 3;
+        }
         return true;
 }
 
@@ -913,7 +1044,7 @@ static bool TriggerBotChildVisible(const SRow *pChildren, int childCount, int id
         int targetsIdx = 0;
         for(int i = 0; i < childCount; ++i)
         {
-                if(str_comp(pChildren[i].pName, "Targets filter") == 0)
+                if(str_comp(pChildren[i].pName, "Targets") == 0)
                 {
                         targetsIdx = pChildren[i].valueIdx;
                         break;
@@ -1007,7 +1138,7 @@ static bool EspChildVisible(const SRow *pChildren, int childCount, int idx)
         int targetsIdx = 0;
         for(int i = 0; i < childCount; ++i)
         {
-                if(str_comp(pChildren[i].pName, "Targets filter") == 0)
+                if(str_comp(pChildren[i].pName, "Targets") == 0)
                 {
                         targetsIdx = pChildren[i].valueIdx;
                         break;
@@ -1015,6 +1146,28 @@ static bool EspChildVisible(const SRow *pChildren, int childCount, int idx)
         }
         if(str_comp(row.pName, "Targets IDs") == 0 || str_comp(row.pName, "Untargets IDs") == 0)
                 return targetsIdx != 0;
+        return true;
+}
+// v1.56.273: Spoof Spectate — "Fake spectate X/Y" visible only in Follow
+// Coordinates mode (0); "Fake Follow ID" only in Follow Player (1).
+static bool SpoofSpectateChildVisible(const SRow *pChildren, int childCount, int idx)
+{
+        if(idx < 0 || idx >= childCount)
+                return false;
+        const SRow &row = pChildren[idx];
+        int modeIdx = 0;
+        for(int i = 0; i < childCount; ++i)
+        {
+                if(str_comp(pChildren[i].pName, "Mode") == 0)
+                {
+                        modeIdx = pChildren[i].valueIdx;
+                        break;
+                }
+        }
+        if(str_comp(row.pName, "Fake spectate X") == 0 || str_comp(row.pName, "Fake spectate Y") == 0)
+                return modeIdx == 0;
+        if(str_comp(row.pName, "Fake Follow ID") == 0)
+                return modeIdx == 1;
         return true;
 }
 // v1.56.107: Spoofer — "Custom client name" visible only when preset=Custom (3).
@@ -2286,6 +2439,17 @@ void CClickGui::OnRender()
                                         row.on = g_Config.m_KxDummyHammerAuto != 0;
                                 else if(str_comp(row.pName, "Auto Triple Fly") == 0)
                                         row.on = g_Config.m_KxTripleFly != 0;
+                                // v1.56.262: Visuals bypasses + Admin Alarm + Functions headers.
+                                else if(str_comp(row.pName, "Bypass Zoom Lock") == 0)
+                                        row.on = g_Config.m_KxZoomUnlock != 0;
+                                else if(str_comp(row.pName, "Bypass Asset Lock") == 0)
+                                        row.on = g_Config.m_KxAssetUnlock != 0;
+                                else if(str_comp(row.pName, "Admin Alarm") == 0)
+                                        row.on = g_Config.m_KxAdminAlarm != 0;
+                                else if(str_comp(row.pName, "Auto Fire") == 0)
+                                        row.on = g_Config.m_KxAutoFire != 0;
+                                else if(str_comp(row.pName, "BalanceBot") == 0)
+                                        row.on = g_Config.m_KxBalanceBot != 0;
                                 else if(str_comp(row.pName, "Mirror direction") == 0)
                                         row.on = g_Config.m_KxDummyCopyMirrorDir != 0;
                                 else if(str_comp(row.pName, "Aim mode") == 0)
@@ -2331,6 +2495,10 @@ void CClickGui::OnRender()
                                         row.on = g_Config.m_KxIrcEnabled != 0;
                                 else if(str_comp(row.pName, "Spoofer") == 0)
                                         row.on = (g_Config.m_KxVersionSpoof != 0 || g_Config.m_KxSpoofClientStr != 0);
+                                else if(str_comp(row.pName, "Spoof Zoom") == 0)
+                                        row.on = g_Config.m_KxSpoofZoom != 0;
+                                else if(str_comp(row.pName, "Spoof Spectate") == 0)
+                                        row.on = g_Config.m_KxSpoofSpectate != 0;
                                 // v1.56.257: Hitboxes expandable header = master toggle.
                                 else if(str_comp(row.pName, "Hitboxes") == 0)
                                         row.on = g_Config.m_KxHitboxes != 0;
@@ -2353,7 +2521,7 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
         continue;
 if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c)))
         continue;
-if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
+if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c) || (str_comp(row.pName, "Spoof Spectate") == 0 && !SpoofSpectateChildVisible(row.pChildren, row.childCount, c)))
         continue;
 if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
         continue;
@@ -2361,7 +2529,7 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c))
+if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                         if(str_comp(child.pName, "Latency (ms)") == 0 && str_comp(row.pName, "Custom latency") == 0)
                                                 child.value = (float)g_Config.m_KxDummyHammerLatencyMs;
@@ -2477,6 +2645,63 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                 child.value = (float)g_Config.m_KxFakeAimDistCenter;
                                         else if(str_comp(child.pName, "Show for me") == 0)
                                                 child.on = g_Config.m_KxFakeAimShowForMe != 0;
+                                        // v1.56.263: Admin Alarm children — per-level, like AimBot
+                                        // per-weapon: the Level dropdown selects which level's
+                                        // settings are being edited.
+                                        else if(str_comp(child.pName, "Admin level") == 0 && str_comp(row.pName, "Admin Alarm") == 0)
+                                                child.valueIdx = g_Config.m_KxAdminAlarmLevel;
+                                        else if(str_comp(child.pName, "Message") == 0 && str_comp(row.pName, "Admin Alarm") == 0)
+                                        {
+                                                const char *pAlarmMsg = (g_Config.m_KxAdminAlarmLevel == 0) ? g_Config.m_KxAdminAlarmMsg1 :
+                                                        (g_Config.m_KxAdminAlarmLevel == 1) ? g_Config.m_KxAdminAlarmMsg2 : g_Config.m_KxAdminAlarmMsg3;
+                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                {
+                                                        str_copy(child.m_aInputBuf, pAlarmMsg, sizeof(child.m_aInputBuf));
+                                                        child.m_InputInitialized = true;
+                                                }
+                                        }
+                                        else if(str_comp(child.pName, "Repeat") == 0 && str_comp(row.pName, "Admin Alarm") == 0)
+                                                child.on = (g_Config.m_KxAdminAlarmLevel == 0) ? g_Config.m_KxAdminAlarmRep1 != 0 :
+                                                        (g_Config.m_KxAdminAlarmLevel == 1) ? g_Config.m_KxAdminAlarmRep2 != 0 : g_Config.m_KxAdminAlarmRep3 != 0;
+                                        else if(str_comp(child.pName, "Every ms") == 0 && str_comp(row.pName, "Admin Alarm") == 0)
+                                                child.value = (float)((g_Config.m_KxAdminAlarmLevel == 0) ? g_Config.m_KxAdminAlarmMs1 :
+                                                        (g_Config.m_KxAdminAlarmLevel == 1) ? g_Config.m_KxAdminAlarmMs2 : g_Config.m_KxAdminAlarmMs3);
+                                        // v1.56.262: Fake Aim — Show Server-Side Aim.
+                                        else if(str_comp(child.pName, "Show Server-Side Aim") == 0 && str_comp(row.pName, "Fake Aim") == 0)
+                                                child.on = g_Config.m_KxFakeAimShowServerSide != 0;
+                                        // v1.56.263: Fake Aim — Predict.
+                                        else if(str_comp(child.pName, "Predict") == 0 && str_comp(row.pName, "Fake Aim") == 0)
+                                                child.on = g_Config.m_KxFakeAimPredict != 0;
+                                        // v1.56.262: Auto Fire + BalanceBot children.
+                                        else if(str_comp(child.pName, "Delay") == 0 && str_comp(row.pName, "Auto Fire") == 0)
+                                                child.value = (float)g_Config.m_KxAutoFireDelay;
+                                        else if(str_comp(child.pName, "Vertical Filter") == 0 && str_comp(row.pName, "BalanceBot") == 0)
+                                                child.valueIdx = g_Config.m_KxBalanceBotVertical;
+                                        else if(str_comp(child.pName, "Radius Filter") == 0 && str_comp(row.pName, "BalanceBot") == 0)
+                                                child.value = (float)g_Config.m_KxBalanceBotRadius;
+                                        else if(str_comp(child.pName, "Stand Radius") == 0 && str_comp(row.pName, "BalanceBot") == 0)
+                                                child.value = (float)g_Config.m_KxBalanceBotStandRadius;
+                                        else if(str_comp(child.pName, "Team") == 0 && str_comp(row.pName, "BalanceBot") == 0)
+                                                child.valueIdx = g_Config.m_KxBbTeam;
+                                        else if(str_comp(child.pName, "Friend") == 0 && str_comp(row.pName, "BalanceBot") == 0)
+                                                child.valueIdx = g_Config.m_KxBbFriend;
+                                        else if(str_comp(child.pName, "Dummy") == 0 && str_comp(row.pName, "BalanceBot") == 0)
+                                                child.valueIdx = g_Config.m_KxBbDummy;
+                                        else if(str_comp(child.pName, "Clanmate") == 0 && str_comp(row.pName, "BalanceBot") == 0)
+                                                child.valueIdx = g_Config.m_KxBbClanmate;
+                                        else if(str_comp(child.pName, "Freeze") == 0 && str_comp(row.pName, "BalanceBot") == 0)
+                                                child.valueIdx = g_Config.m_KxBbFreeze;
+                                        else if(str_comp(child.pName, "Targets") == 0 && str_comp(row.pName, "BalanceBot") == 0)
+                                                child.valueIdx = g_Config.m_KxBbTargetsFilter;
+                                        else if((str_comp(child.pName, "Targets IDs") == 0 || str_comp(child.pName, "Untargets IDs") == 0) && str_comp(row.pName, "BalanceBot") == 0)
+                                        {
+                                                child.pName = (g_Config.m_KxBbTargetsFilter == 2) ? "Untargets IDs" : "Targets IDs";
+                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                {
+                                                        str_copy(child.m_aInputBuf, g_Config.m_KxBbTargetsIds, sizeof(child.m_aInputBuf));
+                                                        child.m_InputInitialized = true;
+                                                }
+                                        }
                                         // v1.56.254: ESP children — renamed (Pointer Style/Speed, unprefixed
                                         // filters, new Box Style/Box Speed). Renamed branches are parent-gated
                                         // to "ESP" since the generic names now collide with other panels.
@@ -2488,7 +2713,7 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                 child.valueIdx = g_Config.m_KxEspDummyFilter;
                                         else if(str_comp(child.pName, "Clanmate") == 0 && str_comp(row.pName, "ESP") == 0)
                                                 child.valueIdx = g_Config.m_KxEspClanmateFilter;
-                                        else if(str_comp(child.pName, "Targets filter") == 0 && str_comp(row.pName, "ESP") == 0)
+                                        else if(str_comp(child.pName, "Targets") == 0 && str_comp(row.pName, "ESP") == 0)
                                                 child.valueIdx = g_Config.m_KxEspTargetsFilterMode;
                                         else if((str_comp(child.pName, "Targets IDs") == 0 || str_comp(child.pName, "Untargets IDs") == 0) && str_comp(row.pName, "ESP") == 0)
                                         {
@@ -2593,6 +2818,41 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                         // v1.56.174: BestClient "Extra NETMSGs" checkbox sync.
                                         else if(str_comp(child.pName, "Extra NETMSGs") == 0)
                                                 child.on = (g_Config.m_KxSpoofClientPreset == 1 ? g_Config.m_KxSpoofTClientExtraNetmsgs : g_Config.m_KxSpoofBestClientExtraNetmsgs) != 0;
+                                        // v1.56.273: Spoof Zoom / Spoof Spectate children.
+                                        else if(str_comp(child.pName, "Fake Zoom") == 0)
+                                                child.value = g_Config.m_KxSpoofZoomValue / 10.0f;
+                                        else if(str_comp(child.pName, "Mode") == 0 && str_comp(row.pName, "Spoof Spectate") == 0)
+                                                child.valueIdx = g_Config.m_KxSpoofSpectateMode;
+                                        else if(str_comp(child.pName, "Fake spectate X") == 0)
+                                        {
+                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                {
+                                                        char aBuf[16];
+                                                        str_format(aBuf, sizeof(aBuf), "%d", g_Config.m_KxSpoofSpectateX);
+                                                        str_copy(child.m_aInputBuf, aBuf, sizeof(child.m_aInputBuf));
+                                                        child.m_InputInitialized = true;
+                                                }
+                                        }
+                                        else if(str_comp(child.pName, "Fake spectate Y") == 0)
+                                        {
+                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                {
+                                                        char aBuf[16];
+                                                        str_format(aBuf, sizeof(aBuf), "%d", g_Config.m_KxSpoofSpectateY);
+                                                        str_copy(child.m_aInputBuf, aBuf, sizeof(child.m_aInputBuf));
+                                                        child.m_InputInitialized = true;
+                                                }
+                                        }
+                                        else if(str_comp(child.pName, "Fake Follow ID") == 0)
+                                        {
+                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                {
+                                                        char aBuf[16];
+                                                        str_format(aBuf, sizeof(aBuf), "%d", g_Config.m_KxSpoofSpectateFollowId);
+                                                        str_copy(child.m_aInputBuf, aBuf, sizeof(child.m_aInputBuf));
+                                                        child.m_InputInitialized = true;
+                                                }
+                                        }
                                         // Pathfinder → Visuals children
                                         else if(str_comp(child.pName, "Show field") == 0)
                                                 child.on = g_Config.m_KxPfShowField != 0;
@@ -2629,13 +2889,13 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                         for(int c = 0; c < row.childCount; ++c)
                                         {
                                                 SRow &ch = row.pChildren[c];
-                                                if(str_comp(ch.pName, "AB Weapon") == 0)
+                                                if(str_comp(ch.pName, "Weapon") == 0)
                                                         ch.valueIdx = w;
-                                                else if(str_comp(ch.pName, "AB Enable") == 0)
+                                                else if(str_comp(ch.pName, "Enable") == 0)
                                                         ch.on = s.m_Enabled;
-                                                else if(str_comp(ch.pName, "AB FOV") == 0)
+                                                else if(str_comp(ch.pName, "FOV") == 0)
                                                         ch.value = s.m_Fov;
-                                                else if(str_comp(ch.pName, "AB Radius") == 0)
+                                                else if(str_comp(ch.pName, "Radius") == 0)
                                                 {
                                                         ch.max = aimbot.GetWeaponRadius(w);
                                                         ch.value = s.m_Radius;
@@ -2650,25 +2910,46 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                         ch.valueIdx = s.m_Rules;
                                                 else if(str_comp(ch.pName, "Use raycast angle (AB)") == 0)
                                                         ch.on = s.m_UseAngle;
-                                                else if(str_comp(ch.pName, "AB Aim Mode") == 0)
-                                                        ch.valueIdx = s.m_AimMode;
-                                                else if(str_comp(ch.pName, "AB Team") == 0)
+                                                else if(str_comp(ch.pName, "Silent") == 0)
+                                                        ch.on = s.m_Silent;
+                                                else if(str_comp(ch.pName, "Mode") == 0)
+                                                {
+                                                        // v1.56.262: while Silent is on the dropdown hides the
+                                                        // "Trigger" option — swap the option list and remap.
+                                                        if(s.m_Silent)
+                                                        {
+                                                                ch.pOptions = g_ABModeOptsNoTrigger;
+                                                                ch.optionCount = 3;
+                                                                ch.valueIdx = (s.m_AimMode == 2) ? 1 : (s.m_AimMode == 3) ? 2 : 0;
+                                                        }
+                                                        else
+                                                        {
+                                                                ch.pOptions = g_ABModeOpts;
+                                                                ch.optionCount = 4;
+                                                                ch.valueIdx = s.m_AimMode;
+                                                        }
+                                                }
+                                                else if(str_comp(ch.pName, "Smooth Speed") == 0)
+                                                        ch.value = s.m_SmoothSpeed;
+                                                else if(str_comp(ch.pName, "Center snap") == 0)
+                                                        ch.on = s.m_SmoothCenterSnap;
+                                                else if(str_comp(ch.pName, "Team") == 0)
                                                         ch.valueIdx = s.m_TeamFilter;
-                                                else if(str_comp(ch.pName, "AB Friend") == 0)
+                                                else if(str_comp(ch.pName, "Friend") == 0)
                                                         ch.valueIdx = s.m_FriendFilter;
                                                 else if(str_comp(ch.pName, "Predict") == 0)
                                                         ch.on = s.m_Predict;
-                                                else if(str_comp(ch.pName, "AB Jitter") == 0)
+                                                else if(str_comp(ch.pName, "Jitter") == 0)
                                                         ch.value = s.m_Jitter;
-                                                else if(str_comp(ch.pName, "AB Dummy") == 0)
+                                                else if(str_comp(ch.pName, "Dummy") == 0)
                                                         ch.valueIdx = s.m_DummyFilter;
-                                                else if(str_comp(ch.pName, "Clanmate filter") == 0)
+                                                else if(str_comp(ch.pName, "Clanmate") == 0)
                                                         ch.valueIdx = s.m_ClanmateFilter;
-                                                else if(str_comp(ch.pName, "AB Freeze") == 0)
+                                                else if(str_comp(ch.pName, "Freeze") == 0)
                                                         ch.valueIdx = s.m_FreezeFilter;
-                                                else if(str_comp(ch.pName, "AB Priority") == 0)
+                                                else if(str_comp(ch.pName, "Priority") == 0)
                                                         ch.valueIdx = s.m_Priority;
-                                                else if(str_comp(ch.pName, "Targets filter") == 0)
+                                                else if(str_comp(ch.pName, "Targets") == 0)
                                                         ch.valueIdx = s.m_TargetsFilter;
                                                 else if(str_comp(ch.pName, "Targets IDs") == 0 || str_comp(ch.pName, "Untargets IDs") == 0)
                                                 {
@@ -2691,44 +2972,44 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                         for(int c = 0; c < row.childCount; ++c)
                                         {
                                                 SRow &ch = row.pChildren[c];
-                                                if(str_comp(ch.pName, "TB Weapon") == 0)
+                                                if(str_comp(ch.pName, "Weapon") == 0)
                                                         ch.valueIdx = w;
-                                                else if(str_comp(ch.pName, "TB Enable") == 0)
+                                                else if(str_comp(ch.pName, "Enable") == 0)
                                                         ch.on = s.m_Enabled;
-                                                else if(str_comp(ch.pName, "TB Trigger") == 0)
+                                                else if(str_comp(ch.pName, "Trigger") == 0)
                                                         ch.valueIdx = s.m_Trigger;
-                                                else if(str_comp(ch.pName, "TB Trigger mode") == 0)
+                                                else if(str_comp(ch.pName, "Trigger mode") == 0)
                                                         ch.valueIdx = s.m_TriggerMode;
-                                                else if(str_comp(ch.pName, "TB FOV") == 0)
+                                                else if(str_comp(ch.pName, "FOV") == 0)
                                                         ch.value = s.m_Fov;
-                                                else if(str_comp(ch.pName, "TB Radius") == 0)
+                                                else if(str_comp(ch.pName, "Radius") == 0)
                                                 {
                                                         ch.max = aimbot.GetWeaponRadius(w);
                                                         ch.value = s.m_Radius;
                                                 }
-                                                else if(str_comp(ch.pName, "TB Show FOV") == 0)
+                                                else if(str_comp(ch.pName, "Show FOV") == 0)
                                                         ch.on = aimbot.m_TriggerBotShowFov;
-                                                else if(str_comp(ch.pName, "TB Show Radius") == 0)
+                                                else if(str_comp(ch.pName, "Show Radius") == 0)
                                                         ch.on = aimbot.m_TriggerBotShowRadius;
-                                                else if(str_comp(ch.pName, "TB Use raycast (Show)") == 0)
+                                                else if(str_comp(ch.pName, "Use raycast (Show)") == 0)
                                                         ch.on = s.m_UseRaycastShow;
-                                                else if(str_comp(ch.pName, "TB Rules") == 0)
+                                                else if(str_comp(ch.pName, "Rules") == 0)
                                                         ch.valueIdx = s.m_Rules;
-                                                else if(str_comp(ch.pName, "TB Latency") == 0)
+                                                else if(str_comp(ch.pName, "Latency") == 0)
                                                         ch.value = (float)s.m_RandomLatency;
-                                                else if(str_comp(ch.pName, "TB Team") == 0)
+                                                else if(str_comp(ch.pName, "Team") == 0)
                                                         ch.valueIdx = s.m_TeamFilter;
-                                                else if(str_comp(ch.pName, "TB Friend") == 0)
+                                                else if(str_comp(ch.pName, "Friend") == 0)
                                                         ch.valueIdx = s.m_FriendFilter;
-                                                else if(str_comp(ch.pName, "TB Dummy") == 0)
+                                                else if(str_comp(ch.pName, "Dummy") == 0)
                                                         ch.valueIdx = s.m_DummyFilter;
-                                                else if(str_comp(ch.pName, "Clanmate filter") == 0)
+                                                else if(str_comp(ch.pName, "Clanmate") == 0)
                                                         ch.valueIdx = s.m_ClanmateFilter;
-                                                else if(str_comp(ch.pName, "TB Freeze") == 0)
+                                                else if(str_comp(ch.pName, "Freeze") == 0)
                                                         ch.valueIdx = s.m_FreezeFilter;
-                                                else if(str_comp(ch.pName, "TB Priority") == 0)
+                                                else if(str_comp(ch.pName, "Priority") == 0)
                                                         ch.valueIdx = s.m_Priority;
-                                                else if(str_comp(ch.pName, "Targets filter") == 0)
+                                                else if(str_comp(ch.pName, "Targets") == 0)
                                                         ch.valueIdx = s.m_TargetsFilter;
                                                 else if(str_comp(ch.pName, "Targets IDs") == 0 || str_comp(ch.pName, "Untargets IDs") == 0)
                                                 {
@@ -2796,6 +3077,56 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                 }
                                                 else if(str_comp(ch.pName, "Extra NETMSGs") == 0)
                                                         ch.on = (g_Config.m_KxSpoofClientPreset == 1 ? g_Config.m_KxSpoofTClientExtraNetmsgs : g_Config.m_KxSpoofBestClientExtraNetmsgs) != 0;
+                                        }
+                                }
+                                else if(str_comp(row.pName, "Spoof Zoom") == 0)
+                                {
+                                        row.on = g_Config.m_KxSpoofZoom != 0;
+                                        for(int c = 0; c < row.childCount; ++c)
+                                        {
+                                                SRow &ch = row.pChildren[c];
+                                                if(str_comp(ch.pName, "Fake Zoom") == 0)
+                                                        ch.value = g_Config.m_KxSpoofZoomValue / 10.0f;
+                                        }
+                                }
+                                else if(str_comp(row.pName, "Spoof Spectate") == 0)
+                                {
+                                        row.on = g_Config.m_KxSpoofSpectate != 0;
+                                        for(int c = 0; c < row.childCount; ++c)
+                                        {
+                                                SRow &ch = row.pChildren[c];
+                                                if(str_comp(ch.pName, "Mode") == 0)
+                                                        ch.valueIdx = g_Config.m_KxSpoofSpectateMode;
+                                                else if(str_comp(ch.pName, "Fake spectate X") == 0)
+                                                {
+                                                        if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                        {
+                                                                char aBuf[16];
+                                                                str_format(aBuf, sizeof(aBuf), "%d", g_Config.m_KxSpoofSpectateX);
+                                                                str_copy(ch.m_aInputBuf, aBuf, sizeof(ch.m_aInputBuf));
+                                                                ch.m_InputInitialized = true;
+                                                        }
+                                                }
+                                                else if(str_comp(ch.pName, "Fake spectate Y") == 0)
+                                                {
+                                                        if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                        {
+                                                                char aBuf[16];
+                                                                str_format(aBuf, sizeof(aBuf), "%d", g_Config.m_KxSpoofSpectateY);
+                                                                str_copy(ch.m_aInputBuf, aBuf, sizeof(ch.m_aInputBuf));
+                                                                ch.m_InputInitialized = true;
+                                                        }
+                                                }
+                                                else if(str_comp(ch.pName, "Fake Follow ID") == 0)
+                                                {
+                                                        if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                        {
+                                                                char aBuf[16];
+                                                                str_format(aBuf, sizeof(aBuf), "%d", g_Config.m_KxSpoofSpectateFollowId);
+                                                                str_copy(ch.m_aInputBuf, aBuf, sizeof(ch.m_aInputBuf));
+                                                                ch.m_InputInitialized = true;
+                                                        }
+                                                }
                                         }
                                 }
                         }
@@ -3562,6 +3893,8 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                 g_Config.m_KxEdgeBindMs = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Version ID") == 0)
                                 g_Config.m_KxVersionSpoofId = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Fake Zoom") == 0)
+                                g_Config.m_KxSpoofZoomValue = (int)(pTarget->value * 10.0f + 0.5f);
                         else if(str_comp(pTarget->pName, "FOV") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
                                 g_Config.m_KxLaserUnfreezeFov = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Angles") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
@@ -3704,9 +4037,53 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                         }
                         // v1.56.247: Fake Aim Chaos jitter strength + Distance from center.
                         else if(str_comp(pTarget->pName, "Jitter") == 0)
-                                g_Config.m_KxFakeAimJitter = (int)pTarget->value;
+                        {
+                                // v1.56.268: "Jitter" is shared by Fake Aim and the per-weapon
+                                // AimBot slider after the label cleanup. Disambiguate by which
+                                // panel the slider is in — same technique as "Speed" above.
+                                bool isAimBot = false;
+                                if(m_DragSliderChild >= 0 && m_DragSliderPanel >= 0)
+                                {
+                                        SPanel &dragPanel = g_Panels[m_DragSliderPanel];
+                                        if(m_DragSliderRow >= 0 && m_DragSliderRow < dragPanel.rowCount)
+                                        {
+                                                SRow &parentRow = dragPanel.pRows[m_DragSliderRow];
+                                                if(str_comp(parentRow.pName, "AimBot") == 0)
+                                                        isAimBot = true;
+                                        }
+                                }
+                                if(isAimBot)
+                                {
+                                        CAimBot &ab = GameClient()->m_AimBot;
+                                        int w = ab.m_AimBotSelectedWeapon;
+                                        if(w >= 0 && w < CAimBot::NUM_WEAPONS_AIM)
+                                        {
+                                                auto &s = ab.m_AimBotWeapons[w];
+                                                s.m_Jitter = pTarget->value;
+                                        }
+                                }
+                                else
+                                        g_Config.m_KxFakeAimJitter = (int)pTarget->value;
+                        }
                         else if(str_comp(pTarget->pName, "Distance from center") == 0)
                                 g_Config.m_KxFakeAimDistCenter = (int)pTarget->value;
+                        // v1.56.262: Admin Alarm interval + Auto Fire + BalanceBot radii.
+                        else if(str_comp(pTarget->pName, "Every ms") == 0)
+                        {
+                                // per level (Level dropdown selects which one is edited)
+                                if(g_Config.m_KxAdminAlarmLevel == 0)
+                                        g_Config.m_KxAdminAlarmMs1 = (int)pTarget->value;
+                                else if(g_Config.m_KxAdminAlarmLevel == 1)
+                                        g_Config.m_KxAdminAlarmMs2 = (int)pTarget->value;
+                                else
+                                        g_Config.m_KxAdminAlarmMs3 = (int)pTarget->value;
+                        }
+                        else if(str_comp(pTarget->pName, "Delay") == 0)
+                                g_Config.m_KxAutoFireDelay = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Radius Filter") == 0)
+                                g_Config.m_KxBalanceBotRadius = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Stand Radius") == 0)
+                                g_Config.m_KxBalanceBotStandRadius = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Hook angles") == 0)
                                 g_Config.m_KxPfHookAngles = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "A* Weight") == 0)
@@ -3733,12 +4110,14 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                 if(w >= 0 && w < CAimBot::NUM_WEAPONS_AIM)
                                                 {
                                                     auto &s = ab.m_AimBotWeapons[w];
-                                                    if(str_comp(pTarget->pName, "AB FOV") == 0)
+                                                    if(str_comp(pTarget->pName, "FOV") == 0)
                                                         s.m_Fov = pTarget->value;
-                                                    else if(str_comp(pTarget->pName, "AB Radius") == 0)
+                                                    else if(str_comp(pTarget->pName, "Radius") == 0)
                                                         s.m_Radius = pTarget->value;
-                                                    else if(str_comp(pTarget->pName, "AB Jitter") == 0)
+                                                    else if(str_comp(pTarget->pName, "Jitter") == 0)
                                                         s.m_Jitter = pTarget->value;
+                                                    else if(str_comp(pTarget->pName, "Smooth Speed") == 0)
+                                                        s.m_SmoothSpeed = pTarget->value;
                                                 }
                                         }
                                         else if(str_comp(parentRow.pName, "TriggerBot") == 0)
@@ -3747,11 +4126,11 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                 if(w >= 0 && w < CAimBot::NUM_WEAPONS_TRIGGER)
                                                 {
                                                     auto &s = ab.m_TriggerBotWeapons[w];
-                                                    if(str_comp(pTarget->pName, "TB FOV") == 0)
+                                                    if(str_comp(pTarget->pName, "FOV") == 0)
                                                         s.m_Fov = pTarget->value;
-                                                    else if(str_comp(pTarget->pName, "TB Radius") == 0)
+                                                    else if(str_comp(pTarget->pName, "Radius") == 0)
                                                         s.m_Radius = pTarget->value;
-                                                    else if(str_comp(pTarget->pName, "TB Latency") == 0)
+                                                    else if(str_comp(pTarget->pName, "Latency") == 0)
                                                         s.m_RandomLatency = (int)pTarget->value;
                                                 }
                                         }
@@ -4245,6 +4624,27 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 g_Config.m_KxRainbowEmoticons = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Hide particles") == 0)
                                                 g_Config.m_KxHideParticles = pTarget->on ? 1 : 0;
+                                        // v1.56.262: Visuals bypasses + Admin Alarm + Functions headers.
+                                        else if(str_comp(pTarget->pName, "Bypass Zoom Lock") == 0)
+                                                g_Config.m_KxZoomUnlock = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Bypass Asset Lock") == 0)
+                                                g_Config.m_KxAssetUnlock = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Admin Alarm") == 0)
+                                                g_Config.m_KxAdminAlarm = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Repeat") == 0 && str_comp(row.pName, "Admin Alarm") == 0)
+                                        {
+                                                // per level (Level dropdown selects which one is edited)
+                                                if(g_Config.m_KxAdminAlarmLevel == 0)
+                                                        g_Config.m_KxAdminAlarmRep1 = pTarget->on ? 1 : 0;
+                                                else if(g_Config.m_KxAdminAlarmLevel == 1)
+                                                        g_Config.m_KxAdminAlarmRep2 = pTarget->on ? 1 : 0;
+                                                else
+                                                        g_Config.m_KxAdminAlarmRep3 = pTarget->on ? 1 : 0;
+                                        }
+                                        else if(str_comp(pTarget->pName, "Auto Fire") == 0)
+                                                g_Config.m_KxAutoFire = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "BalanceBot") == 0)
+                                                g_Config.m_KxBalanceBot = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Drag-To-Sort") == 0)
                                                 g_Config.m_KxDragToSort = pTarget->on ? 1 : 0;
                                         // v1.56.261: Rainbow entities master toggle.
@@ -4309,7 +4709,7 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 if(w >= 0 && w < CAimBot::NUM_WEAPONS_AIM)
                                                 {
                                                         auto &s = ab.m_AimBotWeapons[w];
-                                                        if(str_comp(pTarget->pName, "AB Enable") == 0)
+                                                        if(str_comp(pTarget->pName, "Enable") == 0)
                                                             s.m_Enabled = pTarget->on;
                                                         else if(str_comp(pTarget->pName, "Show FOV") == 0)
                                                             ab.m_AimBotShowFov = pTarget->on;
@@ -4321,6 +4721,15 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                             s.m_UseAngle = pTarget->on;
                                                         else if(str_comp(pTarget->pName, "Predict") == 0)
                                                             s.m_Predict = pTarget->on;
+                                                        else if(str_comp(pTarget->pName, "Silent") == 0)
+                                                        {
+                                                            s.m_Silent = pTarget->on;
+                                                            // "Trigger" is hidden while Silent is on — remap.
+                                                            if(s.m_Silent && s.m_AimMode == 1)
+                                                                s.m_AimMode = 0;
+                                                        }
+                                                        else if(str_comp(pTarget->pName, "Center snap") == 0)
+                                                            s.m_SmoothCenterSnap = pTarget->on;
                                                 }
                                         }
                                         // v1.56.83: TriggerBot per-weapon child toggles (parent = "TriggerBot")
@@ -4331,13 +4740,13 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 if(w >= 0 && w < CAimBot::NUM_WEAPONS_TRIGGER)
                                                 {
                                                         auto &s = tb.m_TriggerBotWeapons[w];
-                                                        if(str_comp(pTarget->pName, "TB Enable") == 0)
+                                                        if(str_comp(pTarget->pName, "Enable") == 0)
                                                             s.m_Enabled = pTarget->on;
-                                                        else if(str_comp(pTarget->pName, "TB Show FOV") == 0)
+                                                        else if(str_comp(pTarget->pName, "Show FOV") == 0)
                                                             tb.m_TriggerBotShowFov = pTarget->on;
-                                                        else if(str_comp(pTarget->pName, "TB Show Radius") == 0)
+                                                        else if(str_comp(pTarget->pName, "Show Radius") == 0)
                                                             tb.m_TriggerBotShowRadius = pTarget->on;
-                                                        else if(str_comp(pTarget->pName, "TB Use raycast (Show)") == 0)
+                                                        else if(str_comp(pTarget->pName, "Use raycast (Show)") == 0)
                                                             s.m_UseRaycastShow = pTarget->on;
                                                 }
                                         }
@@ -4422,6 +4831,12 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 g_Config.m_KxBafSilent = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Show for me") == 0)
                                                 g_Config.m_KxFakeAimShowForMe = pTarget->on ? 1 : 0;
+                                        // v1.56.262: Fake Aim — Show Server-Side Aim.
+                                        else if(str_comp(pTarget->pName, "Show Server-Side Aim") == 0 && str_comp(row.pName, "Fake Aim") == 0)
+                                                g_Config.m_KxFakeAimShowServerSide = pTarget->on ? 1 : 0;
+                                        // v1.56.263: Fake Aim — Predict.
+                                        else if(str_comp(pTarget->pName, "Predict") == 0 && str_comp(row.pName, "Fake Aim") == 0)
+                                                g_Config.m_KxFakeAimPredict = pTarget->on ? 1 : 0;
                                         // v1.56.256: ESP pointer/box visibility toggles.
                                         else if(str_comp(pTarget->pName, "Pointer") == 0 && str_comp(row.pName, "ESP") == 0)
                                                 g_Config.m_KxEspPointer = pTarget->on ? 1 : 0;
@@ -4459,6 +4874,11 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 g_Config.m_KxVersionSpoof = pTarget->on ? 1 : 0;
                                                 g_Config.m_KxSpoofClientStr = pTarget->on ? 1 : 0;
                                         }
+                                        // v1.56.273: Spoof Zoom / Spoof Spectate headers = master toggles.
+                                        else if(str_comp(pTarget->pName, "Spoof Zoom") == 0)
+                                                g_Config.m_KxSpoofZoom = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Spoof Spectate") == 0)
+                                                g_Config.m_KxSpoofSpectate = pTarget->on ? 1 : 0;
                                         // v1.56.107: Spoofer → Git hash toggle (child)
                                         else if(str_comp(pTarget->pName, "Git hash") == 0 && str_comp(row.pName, "Spoofer") == 0)
                                                 g_Config.m_KxSpoofGitHashEnabled = pTarget->on ? 1 : 0;
@@ -4845,6 +5265,8 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         g_Config.m_KxEdgeBindMs = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Version ID") == 0)
                                         g_Config.m_KxVersionSpoofId = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Fake Zoom") == 0)
+                                        g_Config.m_KxSpoofZoomValue = (int)(pTarget->value * 10.0f + 0.5f);
                                 else if(str_comp(pTarget->pName, "FOV") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
                                         g_Config.m_KxLaserUnfreezeFov = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Angles") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
@@ -5148,6 +5570,9 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                                                 g_Config.m_KxLineComponent = o;
                                         else if(str_comp(target.pName, "Bind Mode") == 0)
                                                 g_Config.m_KxBindsMode = o;
+                                        // v1.56.273: Spoof Spectate mode.
+                                        else if(str_comp(target.pName, "Mode") == 0 && str_comp(row.pName, "Spoof Spectate") == 0)
+                                                g_Config.m_KxSpoofSpectateMode = o;
                                         else if(str_comp(target.pName, "Client preset") == 0)
                                         {
                                                 g_Config.m_KxSpoofClientPreset = o;
@@ -5196,7 +5621,7 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                                                 g_Config.m_KxEspClanmateFilter = o;
                                         else if(str_comp(target.pName, "Freeze") == 0 && str_comp(row.pName, "ESP") == 0)
                                                 g_Config.m_KxEspFreezeFilter = o;
-                                        else if(str_comp(target.pName, "Targets filter") == 0 && str_comp(row.pName, "ESP") == 0)
+                                        else if(str_comp(target.pName, "Targets") == 0 && str_comp(row.pName, "ESP") == 0)
                                                 g_Config.m_KxEspTargetsFilterMode = o;
                                         else if(str_comp(target.pName, "Mode") == 0 && str_comp(row.pName, "ESP") == 0)
                                                 g_Config.m_KxEspMode = o;
@@ -5234,7 +5659,7 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
         continue;
 if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c)))
         continue;
-if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
+if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c) || (str_comp(row.pName, "Spoof Spectate") == 0 && !SpoofSpectateChildVisible(row.pChildren, row.childCount, c)))
         continue;
 if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
         continue;
@@ -5242,7 +5667,7 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c))
+if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                 const float crh = RowHeight(child.type);
                                 if(r == m_DropdownRow && c == m_DropdownChild)
@@ -5270,6 +5695,9 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                                 g_Config.m_KxLineComponent = o;
                                                         else if(str_comp(target.pName, "Mode") == 0 && str_comp(row.pName, "Smart dummy switch") == 0)
                                                                 g_Config.m_KxSdsMode = o;
+                                                        // v1.56.273: Spoof Spectate mode.
+                                                        else if(str_comp(target.pName, "Mode") == 0 && str_comp(row.pName, "Spoof Spectate") == 0)
+                                                                g_Config.m_KxSpoofSpectateMode = o;
                                                         else if(str_comp(target.pName, "Client preset") == 0)
                                                         {
                                                                 g_Config.m_KxSpoofClientPreset = o;
@@ -5316,7 +5744,7 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                                 g_Config.m_KxEspClanmateFilter = o;
                                                         else if(str_comp(target.pName, "Freeze") == 0 && str_comp(row.pName, "ESP") == 0)
                                                                 g_Config.m_KxEspFreezeFilter = o;
-                                                        else if(str_comp(target.pName, "Targets filter") == 0 && str_comp(row.pName, "ESP") == 0)
+                                                        else if(str_comp(target.pName, "Targets") == 0 && str_comp(row.pName, "ESP") == 0)
                                                                 g_Config.m_KxEspTargetsFilterMode = o;
                                                         else if(str_comp(target.pName, "Mode") == 0 && str_comp(row.pName, "ESP") == 0)
                                                                 g_Config.m_KxEspMode = o;
@@ -5343,13 +5771,30 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                                 g_Config.m_KxHitboxesClanmateFilter = o;
                                                         else if(str_comp(target.pName, "Freeze") == 0 && str_comp(row.pName, "Hitboxes") == 0)
                                                                 g_Config.m_KxHitboxesFreezeFilter = o;
-                                                        else if(str_comp(target.pName, "Targets filter") == 0 && str_comp(row.pName, "Hitboxes") == 0)
+                                                        else if(str_comp(target.pName, "Targets") == 0 && str_comp(row.pName, "Hitboxes") == 0)
                                                                 g_Config.m_KxHitboxesTargetsFilterMode = o;
+                                                        // v1.56.262: Admin Alarm + BalanceBot dropdowns.
+                                                        else if(str_comp(target.pName, "Admin level") == 0 && str_comp(row.pName, "Admin Alarm") == 0)
+                                                                g_Config.m_KxAdminAlarmLevel = o;
+                                                        else if(str_comp(target.pName, "Vertical Filter") == 0 && str_comp(row.pName, "BalanceBot") == 0)
+                                                                g_Config.m_KxBalanceBotVertical = o;
+                                                        else if(str_comp(target.pName, "Team") == 0 && str_comp(row.pName, "BalanceBot") == 0)
+                                                                g_Config.m_KxBbTeam = o;
+                                                        else if(str_comp(target.pName, "Friend") == 0 && str_comp(row.pName, "BalanceBot") == 0)
+                                                                g_Config.m_KxBbFriend = o;
+                                                        else if(str_comp(target.pName, "Dummy") == 0 && str_comp(row.pName, "BalanceBot") == 0)
+                                                                g_Config.m_KxBbDummy = o;
+                                                        else if(str_comp(target.pName, "Clanmate") == 0 && str_comp(row.pName, "BalanceBot") == 0)
+                                                                g_Config.m_KxBbClanmate = o;
+                                                        else if(str_comp(target.pName, "Freeze") == 0 && str_comp(row.pName, "BalanceBot") == 0)
+                                                                g_Config.m_KxBbFreeze = o;
+                                                        else if(str_comp(target.pName, "Targets") == 0 && str_comp(row.pName, "BalanceBot") == 0)
+                                                                g_Config.m_KxBbTargetsFilter = o;
                                                         // v1.56.83: AimBot per-weapon dropdowns (parent = "AimBot")
                                                         else if(str_comp(row.pName, "AimBot") == 0)
                                                         {
                                                                 CAimBot &ab = GameClient()->m_AimBot;
-                                                                if(str_comp(target.pName, "AB Weapon") == 0)
+                                                                if(str_comp(target.pName, "Weapon") == 0)
                                                                         ab.m_AimBotSelectedWeapon = o;
                                                                 else
                                                                 {
@@ -5357,23 +5802,27 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                                         if(w >= 0 && w < CAimBot::NUM_WEAPONS_AIM)
                                                                         {
                                                                                 auto &s = ab.m_AimBotWeapons[w];
-                                                                                if(str_comp(target.pName, "AB Aim Mode") == 0)
-                                                                                        s.m_AimMode = o;
+                                                                                if(str_comp(target.pName, "Mode") == 0)
+                                                                                {
+                                                                                        // v1.56.262: while Silent is on the dropdown hides
+                                                                                        // "Trigger" — remap the displayed index.
+                                                                                        s.m_AimMode = s.m_Silent ? (o == 0 ? 0 : o == 1 ? 2 : 3) : o;
+                                                                                }
                                                                                 else if(str_comp(target.pName, "Rules") == 0)
                                                                                         s.m_Rules = o;
-                                                                                else if(str_comp(target.pName, "AB Team") == 0)
+                                                                                else if(str_comp(target.pName, "Team") == 0)
                                                                                         s.m_TeamFilter = o;
-                                                                                else if(str_comp(target.pName, "AB Friend") == 0)
+                                                                                else if(str_comp(target.pName, "Friend") == 0)
                                                                                         s.m_FriendFilter = o;
-                                                                                else if(str_comp(target.pName, "AB Dummy") == 0)
+                                                                                else if(str_comp(target.pName, "Dummy") == 0)
                                                                                         s.m_DummyFilter = o;
-                                                                                else if(str_comp(target.pName, "Clanmate filter") == 0)
+                                                                                else if(str_comp(target.pName, "Clanmate") == 0)
                                                                                         s.m_ClanmateFilter = o;
-                                                                                else if(str_comp(target.pName, "AB Freeze") == 0)
+                                                                                else if(str_comp(target.pName, "Freeze") == 0)
                                                                                         s.m_FreezeFilter = o;
-                                                                                else if(str_comp(target.pName, "AB Priority") == 0)
+                                                                                else if(str_comp(target.pName, "Priority") == 0)
                                                                                         s.m_Priority = o;
-                                                                                else if(str_comp(target.pName, "Targets filter") == 0)
+                                                                                else if(str_comp(target.pName, "Targets") == 0)
                                                                                         s.m_TargetsFilter = o;
                                                                         }
                                                                 }
@@ -5382,7 +5831,7 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                         else if(str_comp(row.pName, "TriggerBot") == 0)
                                                         {
                                                                 CAimBot &tb = GameClient()->m_AimBot;
-                                                                if(str_comp(target.pName, "TB Weapon") == 0)
+                                                                if(str_comp(target.pName, "Weapon") == 0)
                                                                         tb.m_TriggerBotSelectedWeapon = o;
                                                                 else
                                                                 {
@@ -5390,25 +5839,25 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                                                         if(w >= 0 && w < CAimBot::NUM_WEAPONS_TRIGGER)
                                                                         {
                                                                                 auto &s = tb.m_TriggerBotWeapons[w];
-                                                                                if(str_comp(target.pName, "TB Trigger") == 0)
+                                                                                if(str_comp(target.pName, "Trigger") == 0)
                                                                                         s.m_Trigger = o;
-                                                                                else if(str_comp(target.pName, "TB Trigger mode") == 0)
+                                                                                else if(str_comp(target.pName, "Trigger mode") == 0)
                                                                                         s.m_TriggerMode = o;
-                                                                                else if(str_comp(target.pName, "TB Rules") == 0)
+                                                                                else if(str_comp(target.pName, "Rules") == 0)
                                                                                         s.m_Rules = o;
-                                                                                else if(str_comp(target.pName, "TB Team") == 0)
+                                                                                else if(str_comp(target.pName, "Team") == 0)
                                                                                         s.m_TeamFilter = o;
-                                                                                else if(str_comp(target.pName, "TB Friend") == 0)
+                                                                                else if(str_comp(target.pName, "Friend") == 0)
                                                                                         s.m_FriendFilter = o;
-                                                                                else if(str_comp(target.pName, "TB Dummy") == 0)
+                                                                                else if(str_comp(target.pName, "Dummy") == 0)
                                                                                         s.m_DummyFilter = o;
-                                                                                else if(str_comp(target.pName, "Clanmate filter") == 0)
+                                                                                else if(str_comp(target.pName, "Clanmate") == 0)
                                                                                         s.m_ClanmateFilter = o;
-                                                                                else if(str_comp(target.pName, "TB Freeze") == 0)
+                                                                                else if(str_comp(target.pName, "Freeze") == 0)
                                                                                         s.m_FreezeFilter = o;
-                                                                                else if(str_comp(target.pName, "TB Priority") == 0)
+                                                                                else if(str_comp(target.pName, "Priority") == 0)
                                                                                         s.m_Priority = o;
-                                                                                else if(str_comp(target.pName, "Targets filter") == 0)
+                                                                                else if(str_comp(target.pName, "Targets") == 0)
                                                                                         s.m_TargetsFilter = o;
                                                                         }
                                                                 }
@@ -5526,7 +5975,7 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
         continue;
 if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c)))
         continue;
-if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
+if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c) || (str_comp(row.pName, "Spoof Spectate") == 0 && !SpoofSpectateChildVisible(row.pChildren, row.childCount, c)))
         continue;
 if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
         continue;
@@ -5534,7 +5983,7 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c))
+if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                 const float crh = RowHeight(child.type);
                                 if(r == m_DropdownRow && c == m_DropdownChild)
@@ -5780,7 +6229,7 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
         continue;
 if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c)))
         continue;
-if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
+if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c) || (str_comp(row.pName, "Spoof Spectate") == 0 && !SpoofSpectateChildVisible(row.pChildren, row.childCount, c)))
         continue;
 if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
         continue;
@@ -5788,7 +6237,7 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c))
+if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                 const float crh = RowHeight(child.type);
                                 const float crw = rw - SUB_LIST_INDENT;
@@ -5869,6 +6318,13 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
                 str_copy(g_Config.m_KxSpoofClientVersion, pRow->m_aInputBuf, sizeof(g_Config.m_KxSpoofClientVersion));
         else if(str_comp(pRow->pName, "Git hash value") == 0)
                 str_copy(g_Config.m_KxSpoofGitHash, pRow->m_aInputBuf, sizeof(g_Config.m_KxSpoofGitHash));
+        // v1.56.263: Admin Alarm message — per level (Level dropdown selects).
+        else if(str_comp(pRow->pName, "Message") == 0)
+        {
+                char *pAlarmDst = (g_Config.m_KxAdminAlarmLevel == 0) ? g_Config.m_KxAdminAlarmMsg1 :
+                        (g_Config.m_KxAdminAlarmLevel == 1) ? g_Config.m_KxAdminAlarmMsg2 : g_Config.m_KxAdminAlarmMsg3;
+                str_copy(pAlarmDst, pRow->m_aInputBuf, 128);
+        }
         else if((str_comp(pRow->pName, "Targets IDs") == 0 || str_comp(pRow->pName, "Untargets IDs") == 0) && m_InputPanel >= 0 && m_InputPanel < NUM_PANELS && m_InputRow >= 0 && m_InputRow < g_Panels[m_InputPanel].rowCount)
         {
                 const char *pOwner = g_Panels[m_InputPanel].pRows[m_InputRow].pName;
@@ -5890,6 +6346,9 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
                 // v1.56.257: Hitboxes → Targets IDs.
                 else if(str_comp(pOwner, "Hitboxes") == 0)
                         str_copy(g_Config.m_KxHitboxesTargetsFilter, pRow->m_aInputBuf, sizeof(g_Config.m_KxHitboxesTargetsFilter));
+                // v1.56.262: BalanceBot → Targets IDs.
+                else if(str_comp(pOwner, "BalanceBot") == 0)
+                        str_copy(g_Config.m_KxBbTargetsIds, pRow->m_aInputBuf, sizeof(g_Config.m_KxBbTargetsIds));
         }
         // Block children: string IDs.
         else if(str_comp(pRow->pName, "Main ID") == 0)
@@ -5916,6 +6375,10 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
         else if(str_comp(pRow->pName, "MStand Dist") == 0) g_Config.m_KxMainStandDist = (int)atof(pRow->m_aInputBuf);
         else if(str_comp(pRow->pName, "Buttons") == 0) str_copy(g_Config.m_KxEdgeBindButtons, pRow->m_aInputBuf, sizeof(g_Config.m_KxEdgeBindButtons));
         else if(str_comp(pRow->pName, "Dummy IDs") == 0) str_copy(g_Config.m_KxSdsDummyIds, pRow->m_aInputBuf, sizeof(g_Config.m_KxSdsDummyIds));
+        // v1.56.273: Spoof Spectate numeric fields.
+        else if(str_comp(pRow->pName, "Fake spectate X") == 0) g_Config.m_KxSpoofSpectateX = atoi(pRow->m_aInputBuf);
+        else if(str_comp(pRow->pName, "Fake spectate Y") == 0) g_Config.m_KxSpoofSpectateY = atoi(pRow->m_aInputBuf);
+        else if(str_comp(pRow->pName, "Fake Follow ID") == 0) g_Config.m_KxSpoofSpectateFollowId = atoi(pRow->m_aInputBuf);
         // v1.56.171 BUG9: Binds panel — unified bind/unbind logic.
         // For each bind row: look up the command string, find the currently bound key
         // (if any), unbind it, then bind the new key (if non-empty). When the field is
@@ -5935,7 +6398,9 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
                 else if(str_comp(pRow->pName, "ESP") == 0) pCmd = "toggle kx_esp 1 0";
                 else if(str_comp(pRow->pName, "Basic Avoid Freeze") == 0) pCmd = "toggle kx_basic_avoid_freeze 1 0";
                 else if(str_comp(pRow->pName, "Helpers") == 0) pCmd = "toggle kx_helpers 1 0";
-                else if(str_comp(pRow->pName, "Auto Triple Fly") == 0) pCmd = "toggle kx_triple_fly 1 0";
+                                else if(str_comp(pRow->pName, "Auto Triple Fly") == 0) pCmd = "toggle kx_triple_fly 1 0";
+                                else if(str_comp(pRow->pName, "Auto Fire") == 0) pCmd = "toggle kx_auto_fire 1 0";
+                                else if(str_comp(pRow->pName, "BalanceBot") == 0) pCmd = "toggle kx_balance_bot 1 0";
                 else if(str_comp(pRow->pName, "Record") == 0) pCmd = "toggle kx_tas_record 1 0";
                 else if(str_comp(pRow->pName, "Pause") == 0) pCmd = "toggle kx_tas_pause 1 0";
                 else if(str_comp(pRow->pName, "Rewind") == 0) pCmd = "kx_tas_rewind";
@@ -6032,7 +6497,7 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
         continue;
 if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c)))
         continue;
-if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
+if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c) || (str_comp(row.pName, "Spoof Spectate") == 0 && !SpoofSpectateChildVisible(row.pChildren, row.childCount, c)))
         continue;
 if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
         continue;
@@ -6040,7 +6505,7 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c))
+if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                 sig = sig * 31u + (unsigned)(c + 100);
                         }
@@ -6115,7 +6580,7 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
         continue;
 if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c)))
         continue;
-if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
+if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c) || (str_comp(row.pName, "Spoof Spectate") == 0 && !SpoofSpectateChildVisible(row.pChildren, row.childCount, c)))
         continue;
 if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
         continue;
@@ -6123,7 +6588,7 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c))
+if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                                 addRowNode(row.pChildren[c], true);
                                         }
@@ -6198,7 +6663,7 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
         continue;
 if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c)))
         continue;
-if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
+if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c) || (str_comp(row.pName, "Spoof Spectate") == 0 && !SpoofSpectateChildVisible(row.pChildren, row.childCount, c)))
         continue;
 if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
         continue;
@@ -6206,7 +6671,7 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c))
+if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                 childrenBlockH += RowHeight(row.pChildren[c].type);
                                 visibleCount++;
@@ -6840,7 +7305,7 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
         continue;
 if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c)))
         continue;
-if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
+if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c) || (str_comp(row.pName, "Spoof Spectate") == 0 && !SpoofSpectateChildVisible(row.pChildren, row.childCount, c)))
         continue;
 if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
         continue;
@@ -6848,7 +7313,7 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c))
+if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                         ++rowIdx;
                                 }
@@ -6882,12 +7347,12 @@ if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChi
                                 if(str_comp(row.pName, "TriggerBot") == 0 && !TriggerBotChildVisible(row.pChildren, row.childCount, c)) continue;
                                 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c)) continue;
                                 if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c))) continue;
-                                if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c)) continue;
+                                if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c) || (str_comp(row.pName, "Spoof Spectate") == 0 && !SpoofSpectateChildVisible(row.pChildren, row.childCount, c))) continue;
                                 if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c)) continue;
                                 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c)) continue;
                                 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c))
                                         continue;
-                                if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) continue;
+                                if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c))) continue;
                                 const YGNodeRef pn = rowNodes[preIdx];
                                 const float py2 = bodyY + YGNodeLayoutGetTop(pn) + rowYOffset;
                                 const float ph2 = YGNodeLayoutGetHeight(pn);
@@ -6927,7 +7392,7 @@ if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, ro
         continue;
 if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c)))
         continue;
-if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c))
+if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c) || (str_comp(row.pName, "Spoof Spectate") == 0 && !SpoofSpectateChildVisible(row.pChildren, row.childCount, c)))
         continue;
 if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
         continue;
@@ -6935,7 +7400,7 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c))
+if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                 const YGNodeRef cnode = rowNodes[rowIdx];
                                 const float crx = bodyX + YGNodeLayoutGetLeft(cnode);

@@ -50,6 +50,15 @@ public:
         bool m_FakeAimRenderActive = false;
         vec2 m_FakeAimRenderOffset = vec2(0, 0);
 
+        // v1.56.263: Fake Aim Predict — per-frame prediction of the rendered aim
+        // (see SnapInput / OnRender): 0 = off, 1 = live mouse (Real mode and
+        // fire/hook release ticks), 2 = Spin angle advanced by the intra-tick
+        // fraction. The authoritative spin state lives here so SnapInput and
+        // OnRender share it.
+        int m_FakeAimPredictMode = 0;
+        float m_FakeAimSpinAngle = 0.0f;
+        float m_FakeAimSpinStep = 0.0f;
+
         CControls();
         int Sizeof() const override { return sizeof(*this); }
 

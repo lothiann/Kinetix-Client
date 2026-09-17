@@ -1,5 +1,6 @@
 #include <game/client/components/kinetix/kinetix.h>
 #include <game/client/components/kinetix/kinetix_internal.h>
+#include <game/client/components/chat.h>
 
 // =========================================================
 // CONSTRUCTOR / DESTRUCTOR
@@ -298,6 +299,9 @@ void CBotNet::OnUpdate()
 
         UpdateTripleFly();
 
+        // v1.56.262: Admin Alarm — alert in chat when an RCON admin is present.
+        UpdateAdminAlarm();
+
         UpdatePfTileEditor();
 
         CGameClient *pGame = GameClient();
@@ -406,6 +410,114 @@ void CBotNet::OnRender()
         // v1.56.159: Fly Ride — render red tile at anchor (debug visual).
         RenderFlyRideAnchor();
 
+}
+
+// =========================================================
+// v1.56.263: Admin Alarm (Visuals) — per-level, like AimBot per-weapon.
+// Watches every player's auth level (the same m_AuthLevel the scoreboard
+// uses for the authed-name color); each level (helper / moderator / admin)
+// has its own Message / Repeat / Every ms config. The alarm shows a LOCAL
+// chat echo — nothing is ever sent to the server — with {n} replaced by
+// the admin's nickname. Without Repeat it fires only on the join
+// transition; with Repeat it keeps echoing every level's interval while
+// such an admin is online.
+// =========================================================
+
+// Appends Src into Dst replacing every "{n}" with pNick.
+static void AdminAlarmBuildMsg(char *pDst, int DstSize, const char *pSrc, const char *pNick)
+{
+        int w = 0;
+        for(int r = 0; pSrc[r] && w < DstSize - 1;)
+        {
+                if(pSrc[r] == '{' && pSrc[r + 1] == 'n' && pSrc[r + 2] == '}')
+                {
+                        for(const char *p = pNick; *p && w < DstSize - 1; p++)
+                                pDst[w++] = *p;
+                        r += 3;
+                }
+                else
+                {
+                        pDst[w++] = pSrc[r++];
+                }
+        }
+        pDst[w] = '\0';
+}
+
+void CBotNet::UpdateAdminAlarm()
+{
+        CGameClient *pGame = GameClient();
+        if(!pGame || Client()->State() != IClient::STATE_ONLINE)
+                return;
+
+        // Track the authed set every frame (even while the master toggle is
+        // off) so enabling the feature doesn't treat already-present admins
+        // as freshly joined.
+        static bool s_aWasAuthed[MAX_CLIENTS] = {};
+        static int s_aLastAlarmTick[3] = {-1000000, -1000000, -1000000};
+
+        bool aAnyAdmin[3] = {false, false, false};
+        bool aNewAdmin[3] = {false, false, false};
+        int aAdminId[3] = {-1, -1, -1};
+        int aNewAdminId[3] = {-1, -1, -1};
+        for(int i = 0; i < MAX_CLIENTS; i++)
+        {
+                const int L = pGame->m_aClients[i].m_Active ? pGame->m_aClients[i].m_AuthLevel : 0;
+                if(L >= 1)
+                {
+                        const int Idx = minimum(L, 3) - 1; // helper(1)→0, mod(2)→1, admin(3+)→2
+                        aAnyAdmin[Idx] = true;
+                        if(aAdminId[Idx] < 0)
+                                aAdminId[Idx] = i;
+                        if(!s_aWasAuthed[i])
+                        {
+                                aNewAdmin[Idx] = true;
+                                if(aNewAdminId[Idx] < 0)
+                                        aNewAdminId[Idx] = i;
+                        }
+                }
+                s_aWasAuthed[i] = L >= 1;
+        }
+
+        if(!g_Config.m_KxAdminAlarm)
+                return;
+
+        const int CurTick = Client()->GameTick(g_Config.m_ClDummy);
+        for(int L = 0; L < 3; L++)
+        {
+                const char *pMsg = (L == 0) ? g_Config.m_KxAdminAlarmMsg1 :
+                        (L == 1) ? g_Config.m_KxAdminAlarmMsg2 : g_Config.m_KxAdminAlarmMsg3;
+                const int Repeat = (L == 0) ? g_Config.m_KxAdminAlarmRep1 :
+                        (L == 1) ? g_Config.m_KxAdminAlarmRep2 : g_Config.m_KxAdminAlarmRep3;
+                const int IntervalMs = (L == 0) ? g_Config.m_KxAdminAlarmMs1 :
+                        (L == 1) ? g_Config.m_KxAdminAlarmMs2 : g_Config.m_KxAdminAlarmMs3;
+
+                bool fire = false;
+                int who = -1;
+                if(aNewAdmin[L])
+                {
+                        fire = true;
+                        who = aNewAdminId[L];
+                }
+                else if(aAnyAdmin[L] && Repeat)
+                {
+                        const int IntervalTicks = maximum(1, (IntervalMs * Client()->GameTickSpeed()) / 1000);
+                        if(CurTick - s_aLastAlarmTick[L] >= IntervalTicks)
+                        {
+                                fire = true;
+                                who = aAdminId[L];
+                        }
+                }
+                if(!fire || who < 0)
+                        continue;
+
+                s_aLastAlarmTick[L] = CurTick;
+
+                // Echo: a LOCAL chat line — nothing is sent to the server.
+                // {n} is replaced with the admin's nickname.
+                char aMsg[192];
+                AdminAlarmBuildMsg(aMsg, sizeof(aMsg), pMsg, pGame->m_aClients[who].m_aName);
+                pGame->m_Chat.AddLine(-1, 0, aMsg);
+        }
 }
 
 // =========================================================

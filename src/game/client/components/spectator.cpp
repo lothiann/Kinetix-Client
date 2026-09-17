@@ -630,7 +630,7 @@ void CSpectator::Spectate(int SpectatorId)
 			Msg.m_SpecMode = protocol7::SPEC_PLAYER;
 			Msg.m_SpectatorId = SpectatorId;
 		}
-		Client()->SendPackMsgActive(&Msg, MSGFLAG_VITAL, true);
+			Client()->SendPackMsgActive(&Msg, MSGFLAG_VITAL, true);
 		return;
 	}
 	CNetMsg_Cl_SetSpectatorMode Msg;

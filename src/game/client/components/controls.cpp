@@ -5,6 +5,7 @@
 #include <base/dbg.h>
 #include <base/math.h>
 #include <base/mem.h>
+#include <base/str.h>
 #include <base/time.h>
 #include <base/vmath.h>
 #include <cstdlib>
@@ -354,6 +355,30 @@ int CControls::SnapInput(int *pData)
         }
         else
         {
+                // v1.56.262: Auto Fire — while fire is held, force a new fire edge
+                // every Delay ticks (0 = every tick). Runs BEFORE the Fake Aim
+                // willFire prediction below, so the forced shot releases the fake
+                // aim and triggers AimBot on the same tick.
+                if(g_Config.m_KxAutoFire)
+                {
+                        static int s_AutoFireCounter = 0;
+                        CNetObj_PlayerInput *pAf = &m_aInputData[g_Config.m_ClDummy];
+                        if((pAf->m_Fire & 1) != 0)
+                        {
+                                const int AfDelay = g_Config.m_KxAutoFireDelay;
+                                if(AfDelay <= 0 || s_AutoFireCounter >= AfDelay - 1)
+                                {
+                                        pAf->m_Fire = (pAf->m_Fire + 1) | 1;
+                                        pAf->m_Fire &= INPUT_STATE_MASK;
+                                        s_AutoFireCounter = 0;
+                                }
+                                else
+                                        s_AutoFireCounter++;
+                        }
+                        else
+                                s_AutoFireCounter = 0;
+                }
+
                 m_aInputData[g_Config.m_ClDummy].m_TargetX = (int)m_aMousePos[g_Config.m_ClDummy].x;
                 m_aInputData[g_Config.m_ClDummy].m_TargetY = (int)m_aMousePos[g_Config.m_ClDummy].y;
 
@@ -376,6 +401,134 @@ int CControls::SnapInput(int *pData)
                         m_aInputData[g_Config.m_ClDummy].m_Direction = -1;
                 if(!m_aInputDirectionLeft[g_Config.m_ClDummy] && m_aInputDirectionRight[g_Config.m_ClDummy])
                         m_aInputData[g_Config.m_ClDummy].m_Direction = 1;
+
+                // v1.56.262: BalanceBot — keep X distance to the nearest matching
+                // player. Overrides the CURRENT dummy's direction EVERY tick (the
+                // player's own keys pass through only inside the Stand Radius).
+                if(g_Config.m_KxBalanceBot && GameClient()->m_Snap.m_LocalClientId >= 0)
+                {
+                        CGameClient *pBb = GameClient();
+                        const int BbLocal = pBb->m_Snap.m_LocalClientId;
+                        CCharacter *pBbMe = pBb->m_PredictedWorld.GetCharacterById(BbLocal);
+                        if(pBbMe)
+                        {
+                                const vec2 MyPos = pBbMe->Core()->m_Pos;
+                                const float BbIntra = pBb->Client()->IntraGameTick(g_Config.m_ClDummy);
+                                const float BbRadiusSq = (float)g_Config.m_KxBalanceBotRadius * (float)g_Config.m_KxBalanceBotRadius;
+                                const float StandRadius = (float)g_Config.m_KxBalanceBotStandRadius;
+
+                                int best = -1;
+                                float bestDistSq = 1e18f;
+                                vec2 bestPos(0, 0);
+                                for(int i = 0; i < MAX_CLIENTS; i++)
+                                {
+                                        if(i == BbLocal)
+                                                continue;
+                                        if(!pBb->m_aClients[i].m_Active || !pBb->m_Snap.m_aCharacters[i].m_Active)
+                                                continue;
+                                        const vec2 prevPos((float)pBb->m_Snap.m_aCharacters[i].m_Prev.m_X, (float)pBb->m_Snap.m_aCharacters[i].m_Prev.m_Y);
+                                        const vec2 curPos((float)pBb->m_Snap.m_aCharacters[i].m_Cur.m_X, (float)pBb->m_Snap.m_aCharacters[i].m_Cur.m_Y);
+                                        const vec2 tPos = mix(prevPos, curPos, BbIntra);
+
+                                        // Vertical filter: Below / Above / Both (relative to us).
+                                        const int vert = g_Config.m_KxBalanceBotVertical;
+                                        if(vert == 0 && tPos.y <= MyPos.y)
+                                                continue;
+                                        if(vert == 1 && tPos.y >= MyPos.y)
+                                                continue;
+
+                                        const float dx = tPos.x - MyPos.x;
+                                        const float dy = tPos.y - MyPos.y;
+                                        const float distSq = dx * dx + dy * dy;
+                                        if(distSq > BbRadiusSq || distSq >= bestDistSq)
+                                                continue;
+
+                                        // Exclude players through walls (insert line).
+                                        if(pBb->Collision()->IntersectLineTeleHook(MyPos, tPos, nullptr, nullptr) != 0)
+                                                continue;
+
+                                        // Team filter
+                                        if(g_Config.m_KxBbTeam == 1 && pBb->m_Teams.SameTeam(BbLocal, i))
+                                                continue;
+                                        if(g_Config.m_KxBbTeam == 2 && !pBb->m_Teams.SameTeam(BbLocal, i))
+                                                continue;
+                                        // Friend filter
+                                        if(g_Config.m_KxBbFriend == 1 && pBb->m_aClients[i].m_Friend)
+                                                continue;
+                                        if(g_Config.m_KxBbFriend == 2 && !pBb->m_aClients[i].m_Friend)
+                                                continue;
+                                        // Dummy filter
+                                        bool isDummy = false;
+                                        for(int d = 0; d < MAX_DUMMIES; d++)
+                                        {
+                                                if(pBb->m_aLocalIds[d] == i)
+                                                {
+                                                        isDummy = true;
+                                                        break;
+                                                }
+                                        }
+                                        if(g_Config.m_KxBbDummy == 1 && isDummy)
+                                                continue;
+                                        if(g_Config.m_KxBbDummy == 2 && !isDummy)
+                                                continue;
+                                        // Clanmate filter
+                                        const bool isClanmate = str_comp(pBb->m_aClients[i].m_aClan, pBb->m_aClients[BbLocal].m_aClan) == 0;
+                                        if(g_Config.m_KxBbClanmate == 1 && isClanmate)
+                                                continue;
+                                        if(g_Config.m_KxBbClanmate == 2 && !isClanmate)
+                                                continue;
+                                        // Freeze filter
+                                        const bool isFrozen = pBb->m_aClients[i].m_FreezeEnd != 0;
+                                        if(g_Config.m_KxBbFreeze == 1 && !isFrozen)
+                                                continue;
+                                        if(g_Config.m_KxBbFreeze == 2 && isFrozen)
+                                                continue;
+                                        // Targets filter (Both / Only / Ignore + IDs)
+                                        if(g_Config.m_KxBbTargetsFilter != 0)
+                                        {
+                                                bool found = false;
+                                                bool anyValid = false;
+                                                const char *pIds = g_Config.m_KxBbTargetsIds;
+                                                while(*pIds)
+                                                {
+                                                        while(*pIds && (*pIds == ' ' || *pIds == ',' || *pIds == ';'))
+                                                                pIds++;
+                                                        if(!*pIds)
+                                                                break;
+                                                        if(*pIds >= '0' && *pIds <= '9')
+                                                        {
+                                                                const int id = atoi(pIds);
+                                                                if(id >= 0 && id < 128 && pBb->m_aClients[id].m_Active)
+                                                                {
+                                                                        anyValid = true;
+                                                                        if(id == i)
+                                                                                found = true;
+                                                                }
+                                                        }
+                                                        while(*pIds && *pIds != ' ' && *pIds != ',' && *pIds != ';')
+                                                                pIds++;
+                                                }
+                                                if(g_Config.m_KxBbTargetsFilter == 1 && anyValid && !found)
+                                                        continue;
+                                                if(g_Config.m_KxBbTargetsFilter == 2 && anyValid && found)
+                                                        continue;
+                                        }
+
+                                        bestDistSq = distSq;
+                                        best = i;
+                                        bestPos = tPos;
+                                }
+
+                                // Outside the Stand Radius — walk toward the target on X
+                                // (Y ignored). Inside it — pass the player's own keys through.
+                                if(best >= 0)
+                                {
+                                        const float dx = bestPos.x - MyPos.x;
+                                        if(fabsf(dx) > StandRadius)
+                                                m_aInputData[g_Config.m_ClDummy].m_Direction = dx > 0 ? 1 : -1;
+                                }
+                        }
+                }
 
                 // dummy copy moves
                 if(g_Config.m_ClDummyCopyMoves)
@@ -439,8 +592,24 @@ int CControls::SnapInput(int *pData)
                                         pDummyInput->m_PlayerFlags = srcInput.m_PlayerFlags;
                                         if(copyAim)
                                         {
-                                                pDummyInput->m_TargetX = srcInput.m_TargetX;
-                                                pDummyInput->m_TargetY = srcInput.m_TargetY;
+                                                // v1.56.270: when Fake Aim is active, copy the FAKE aim
+                                                // (what the server sees for the active player), not the
+                                                // real crosshair. m_FakeAimRenderOffset holds the last
+                                                // fake offset — the fresh one is generated later in this
+                                                // call, so the copy lags by at most one send tick.
+                                                // v1.56.273: skipped when Smart aim is on — smart owns the
+                                                // dummy aim, the fake aim copy is disabled (no conflict).
+                                                if(g_Config.m_KxFakeAim && m_FakeAimRenderActive &&
+                                                        !(g_Config.m_KxDummyCopyAimMode == 0 && g_Config.m_KxDummyCopySmartAim))
+                                                {
+                                                        pDummyInput->m_TargetX = (int)m_FakeAimRenderOffset.x;
+                                                        pDummyInput->m_TargetY = (int)m_FakeAimRenderOffset.y;
+                                                }
+                                                else
+                                                {
+                                                        pDummyInput->m_TargetX = srcInput.m_TargetX;
+                                                        pDummyInput->m_TargetY = srcInput.m_TargetY;
+                                                }
                                         }
                                         if(copyWeapon)
                                                 pDummyInput->m_WantedWeapon = srcInput.m_WantedWeapon;
@@ -676,7 +845,7 @@ int CControls::SnapInput(int *pData)
         static vec2 s_RobotAim = vec2(0, 0);
         static bool s_RobotInit = false;
 
-        if(g_Config.m_KxFakeAim && !GameClient()->m_Tas.FakeAimActive())
+        if(g_Config.m_KxFakeAim && !GameClient()->m_Tas.IsRealPlaying())
         {
                 // Detect weapon fire via 1-tick prediction.
                 // This catches EVERY real shot (not just the rising edge of
@@ -761,7 +930,12 @@ int CControls::SnapInput(int *pData)
         }
 
         // Fake aim generation — skipped when laser unfreeze active (laser has priority)
-        if(g_Config.m_KxFakeAim && !laserAimActive && !GameClient()->m_Tas.FakeAimActive())
+        // v1.56.269: fully disable the original Fake Aim during TAS real
+        // playback. The old guard (take has fake aim) left the original fake
+        // aim running while replaying a take WITHOUT fake aim — conflicting
+        // with the replay. Same for the fire-detection, mask-hold and Predict
+        // guards below.
+        if(g_Config.m_KxFakeAim && !laserAimActive && !GameClient()->m_Tas.IsRealPlaying())
         {
                 // Decide: real or fake
                 if(willFire || hookPress)
@@ -834,9 +1008,11 @@ int CControls::SnapInput(int *pData)
                         }
                         else // Spin
                         {
-                                static float s_SpinAngle = 0.0f;
-                                s_SpinAngle += (speed / 100.0f) * 0.5f;
-                                fakeOffset = vec2(cosf(s_SpinAngle), sinf(s_SpinAngle)) * AIM_DIST;
+                                // v1.56.263: the authoritative spin state lives in the class —
+                                // Fake Aim Predict advances it by the intra-tick fraction in
+                                // OnRender for frame-rate smooth rotation.
+                                m_FakeAimSpinAngle += (speed / 100.0f) * 0.5f;
+                                fakeOffset = vec2(cosf(m_FakeAimSpinAngle), sinf(m_FakeAimSpinAngle)) * AIM_DIST;
                         }
 
                         // v1.56.247: Distance from center — rescale the fake aim to an
@@ -918,6 +1094,30 @@ int CControls::SnapInput(int *pData)
                 pSend->m_TargetY = (int)fakeOffset.y;
         }
 
+        // v1.56.274: Spoof Spectate — while spectating, the input target is the
+        // view data the server receives.
+        // Follow Coordinates (0): replace it with the fake X/Y.
+        // Follow Player (1): replace it with the world position of the fake
+        // followed player — the spec view "behind" that player.
+        if(g_Config.m_KxSpoofSpectate && GameClient()->m_Snap.m_SpecInfo.m_Active)
+        {
+                CNetObj_PlayerInput *pSpecSend = (CNetObj_PlayerInput *)pData;
+                if(g_Config.m_KxSpoofSpectateMode == 0)
+                {
+                        pSpecSend->m_TargetX = g_Config.m_KxSpoofSpectateX;
+                        pSpecSend->m_TargetY = g_Config.m_KxSpoofSpectateY;
+                }
+                else
+                {
+                        const int FakeId = g_Config.m_KxSpoofSpectateFollowId;
+                        if(FakeId >= 0 && FakeId < MAX_CLIENTS && GameClient()->m_aClients[FakeId].m_Active)
+                        {
+                                pSpecSend->m_TargetX = (int)GameClient()->m_aClients[FakeId].m_RenderPos.x;
+                                pSpecSend->m_TargetY = (int)GameClient()->m_aClients[FakeId].m_RenderPos.y;
+                        }
+                }
+        }
+
         // v1.56.209: Hold the fake mask across release ticks.
         // See the long comment near s_LastFakeRenderOffset declaration above
         // for the full explanation. Short version:
@@ -928,7 +1128,7 @@ int CControls::SnapInput(int *pData)
         //     live m_aMousePos.
         // The aim actually sent to the server (m_aInputData / pData) is not
         // touched here — this only affects the rendered character angle.
-        if(g_Config.m_KxFakeAim && s_HaveLastFake && !GameClient()->m_Tas.FakeAimActive())
+        if(g_Config.m_KxFakeAim && s_HaveLastFake && !GameClient()->m_Tas.IsRealPlaying())
         {
                 // Figure out whether this tick is a release tick.
                 bool aimOwnedByComponent = laserAimActive;
@@ -953,11 +1153,130 @@ int CControls::SnapInput(int *pData)
                 s_HaveLastFake = true;
         }
 
+        // v1.56.262: Show Server-Side Aim — render what the server actually sees
+        // this tick (the aim after every override: laser unfreeze silent channel,
+        // AimBot silent/edge/smooth, Fake Aim, Distance from center). Must run on
+        // EVERY tick while enabled: on ticks owned by other components BOTH
+        // fakeActive and the local fakeShowForMe stay false (Fake Aim generation
+        // is skipped for them), yet the aim SENT is exactly that component's aim —
+        // precisely what this toggle must reveal. Gate on the CVAR, not the local.
+        if(g_Config.m_KxFakeAim && g_Config.m_KxFakeAimShowServerSide && g_Config.m_KxFakeAimShowForMe)
+        {
+                m_FakeAimRenderActive = true;
+                m_FakeAimRenderOffset = vec2((float)m_aInputData[g_Config.m_ClDummy].m_TargetX,
+                        (float)m_aInputData[g_Config.m_ClDummy].m_TargetY);
+        }
+
+        // v1.56.263: Fake Aim Predict — pick what OnRender can advance per frame.
+        // Real (and fire/hook release ticks, where the sent aim IS the mouse) →
+        // the live mouse, rendered exactly like no Fake Aim. Spin → the spin
+        // angle advanced by the intra-tick fraction (smooth rotation). Random /
+        // Robot / Lag / Chaos hold a constant offset between re-rolls, nothing to
+        // predict there. Component-owned ticks (laser/aimbot silent channel) and
+        // the TAS replay are never predicted.
+        m_FakeAimPredictMode = 0;
+        if(g_Config.m_KxFakeAimPredict != 0 && m_FakeAimRenderActive && !GameClient()->m_Tas.IsRealPlaying() &&
+                fakeActive && !laserAimActive)
+        {
+                if(willFire || hookPress || g_Config.m_KxFakeAimMode == 5) // Real
+                        m_FakeAimPredictMode = 1;
+                else if(g_Config.m_KxFakeAimMode == 2) // Spin
+                {
+                        m_FakeAimPredictMode = 2;
+                        int speed = g_Config.m_KxFakeAimSpeed;
+                        if(speed < 1)
+                                speed = 1;
+                        if(speed > 100)
+                                speed = 100;
+                        m_FakeAimSpinStep = (speed / 100.0f) * 0.5f;
+                }
+        }
+
+        // v1.56.271: re-aim the copy-moves dummies AFTER the fake aim for this
+        // tick exists. The copy at the top of SnapInput runs BEFORE the fake
+        // aim generation, so the dummy received a one-tick-stale aim together
+        // with the FRESH hook/fire — it hooked first and re-aimed after, while
+        // the active player aims first and hooks after. Now the dummy gets the
+        // same fresh server-visible aim the active player has this tick.
+        if(g_Config.m_ClDummyCopyMoves && g_Config.m_KxFakeAim)
+        {
+                // v1.56.273: Smart aim owns the dummy aim — no fake aim copy at all,
+                // no conflict with ApplyCopyMovesTransforms.
+                const bool smartOn = (g_Config.m_KxDummyCopyAimMode == 0) && g_Config.m_KxDummyCopySmartAim;
+                if(!smartOn)
+                {
+                        // v1.56.273: mirror the ACTUAL sent aim (pData), not
+                        // m_FakeAimRenderOffset. The render offset is render-only: on
+                        // release ticks (fire/hook) the mask hold overwrites it with the
+                        // STALE held fake, so with Show for me / Show Server-Side Aim off
+                        // the dummy hooked with a one-tick-old fake aim again. pData holds
+                        // exactly what this tick sends to the server for the active
+                        // player.
+                        const CNetObj_PlayerInput *pSent = (const CNetObj_PlayerInput *)pData;
+                        const int Sx = pSent->m_TargetX;
+                        const int Sy = pSent->m_TargetY;
+                        const bool filter = g_Config.m_KxDummyCopyMovesFilter != 0;
+                        const bool wantMirror = (g_Config.m_KxDummyCopyAimMode == 1) && (g_Config.m_KxDummyCopyMirrorAimX || g_Config.m_KxDummyCopyMirrorAimY);
+                        for(int D = 0; D < MAX_DUMMIES; D++)
+                        {
+                                if(D == g_Config.m_ClDummy)
+                                        continue;
+                                if(D != 0 && !GameClient()->Client()->DummyConnected(D))
+                                        continue;
+                                if(filter && !g_Config.m_KxDummyCopyMovesFilterAim)
+                                        continue;
+                                const bool tfHooking = GameClient()->m_BotNet.m_TripleFlyHooking && GameClient()->m_BotNet.m_TripleFlyDummy == D;
+                                if(tfHooking)
+                                        continue;
+                                int Tx = Sx;
+                                int Ty = Sy;
+                                if(wantMirror)
+                                {
+                                        if(g_Config.m_KxDummyCopyMirrorAimX)
+                                                Tx = -Tx;
+                                        if(g_Config.m_KxDummyCopyMirrorAimY)
+                                                Ty = -Ty;
+                                }
+                                GameClient()->m_aDummyInput[D].m_TargetX = Tx;
+                                GameClient()->m_aDummyInput[D].m_TargetY = Ty;
+                                m_aInputData[D].m_TargetX = Tx;
+                                m_aInputData[D].m_TargetY = Ty;
+                        }
+                }
+        }
+
         return sizeof(m_aInputData[0]);
 }
 
 void CControls::OnRender()
 {
+		// v1.56.264: Fake Aim Predict — advance the rendered aim between sends.
+		// Real (and fire/hook release ticks) → the live mouse, exactly like no
+		// Fake Aim. Spin → interpolate between the last two SENT spin angles
+		// over the real send interval. Input is sent at a 25 Hz floor, NOT every
+		// game tick — extrapolating by IntraGameTick overshot each send interval
+		// and snapped back at every tick boundary (sawtooth = jerky rotation).
+		// Other modes hold a constant offset between re-rolls, nothing to advance.
+		if(m_FakeAimPredictMode == 1)
+			m_FakeAimRenderOffset = m_aMousePos[g_Config.m_ClDummy];
+		else if(m_FakeAimPredictMode == 2)
+		{
+			float Frac = (time_get() - m_LastSendTime) / (float)(time_freq() / 25);
+			if(Frac < 0.0f)
+				Frac = 0.0f;
+			if(Frac > 1.0f)
+				Frac = 1.0f;
+			// Sweep from the previous sent angle to the current one; the next
+			// send advances the base by exactly one step → no backward jumps.
+			const float Angle = m_FakeAimSpinAngle - m_FakeAimSpinStep + Frac * m_FakeAimSpinStep;
+			// Keep the radius the tick actually produced (Spin * AIM_DIST,
+			// possibly rescaled by Distance from center), not a hardcoded 200.
+			float Radius = length(m_FakeAimRenderOffset);
+			if(Radius < 0.5f)
+				Radius = 200.0f;
+			m_FakeAimRenderOffset = vec2(cosf(Angle), sinf(Angle)) * Radius;
+		}
+
         if(Client()->State() != IClient::STATE_ONLINE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
                 return;
 

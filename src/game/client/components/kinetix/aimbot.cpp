@@ -48,6 +48,9 @@ struct KxAbCvars
 	char *pTargetsIds;
 	int *pFreeze;
 	int *pPriority;
+	int *pSilent;
+	int *pSmoothSpeed;
+	int *pSmoothCenterSnap;
 };
 
 static const KxAbCvars s_aAbCvars[] = {
@@ -56,43 +59,57 @@ static const KxAbCvars s_aAbCvars[] = {
 		&g_Config.m_KxAbHammerPredict, &g_Config.m_KxAbHammerJitter, &g_Config.m_KxAbHammerAimMode,
 		&g_Config.m_KxAbHammerTeam, &g_Config.m_KxAbHammerFriend, &g_Config.m_KxAbHammerDummy,
 		&g_Config.m_KxAbHammerClanmate, &g_Config.m_KxAbHammerTargetsFilter, g_Config.m_KxAbHammerTargetsIds,
-		&g_Config.m_KxAbHammerFreeze, &g_Config.m_KxAbHammerPriority},
+		&g_Config.m_KxAbHammerFreeze, &g_Config.m_KxAbHammerPriority,
+		&g_Config.m_KxAbHammerSilent, &g_Config.m_KxAbHammerSmoothSpeed,
+		&g_Config.m_KxAbHammerSmoothCenterSnap},
 	{&g_Config.m_KxAbPistolEnabled, &g_Config.m_KxAbPistolFov, &g_Config.m_KxAbPistolRadius,
 		&g_Config.m_KxAbPistolRaycastShow, &g_Config.m_KxAbPistolRules, &g_Config.m_KxAbPistolUseAngle,
 		&g_Config.m_KxAbPistolPredict, &g_Config.m_KxAbPistolJitter, &g_Config.m_KxAbPistolAimMode,
 		&g_Config.m_KxAbPistolTeam, &g_Config.m_KxAbPistolFriend, &g_Config.m_KxAbPistolDummy,
 		&g_Config.m_KxAbPistolClanmate, &g_Config.m_KxAbPistolTargetsFilter, g_Config.m_KxAbPistolTargetsIds,
-		&g_Config.m_KxAbPistolFreeze, &g_Config.m_KxAbPistolPriority},
+		&g_Config.m_KxAbPistolFreeze, &g_Config.m_KxAbPistolPriority,
+		&g_Config.m_KxAbPistolSilent, &g_Config.m_KxAbPistolSmoothSpeed,
+		&g_Config.m_KxAbPistolSmoothCenterSnap},
 	{&g_Config.m_KxAbShotgunEnabled, &g_Config.m_KxAbShotgunFov, &g_Config.m_KxAbShotgunRadius,
 		&g_Config.m_KxAbShotgunRaycastShow, &g_Config.m_KxAbShotgunRules, &g_Config.m_KxAbShotgunUseAngle,
 		&g_Config.m_KxAbShotgunPredict, &g_Config.m_KxAbShotgunJitter, &g_Config.m_KxAbShotgunAimMode,
 		&g_Config.m_KxAbShotgunTeam, &g_Config.m_KxAbShotgunFriend, &g_Config.m_KxAbShotgunDummy,
 		&g_Config.m_KxAbShotgunClanmate, &g_Config.m_KxAbShotgunTargetsFilter, g_Config.m_KxAbShotgunTargetsIds,
-		&g_Config.m_KxAbShotgunFreeze, &g_Config.m_KxAbShotgunPriority},
+		&g_Config.m_KxAbShotgunFreeze, &g_Config.m_KxAbShotgunPriority,
+		&g_Config.m_KxAbShotgunSilent, &g_Config.m_KxAbShotgunSmoothSpeed,
+		&g_Config.m_KxAbShotgunSmoothCenterSnap},
 	{&g_Config.m_KxAbGrenadeEnabled, &g_Config.m_KxAbGrenadeFov, &g_Config.m_KxAbGrenadeRadius,
 		&g_Config.m_KxAbGrenadeRaycastShow, &g_Config.m_KxAbGrenadeRules, &g_Config.m_KxAbGrenadeUseAngle,
 		&g_Config.m_KxAbGrenadePredict, &g_Config.m_KxAbGrenadeJitter, &g_Config.m_KxAbGrenadeAimMode,
 		&g_Config.m_KxAbGrenadeTeam, &g_Config.m_KxAbGrenadeFriend, &g_Config.m_KxAbGrenadeDummy,
 		&g_Config.m_KxAbGrenadeClanmate, &g_Config.m_KxAbGrenadeTargetsFilter, g_Config.m_KxAbGrenadeTargetsIds,
-		&g_Config.m_KxAbGrenadeFreeze, &g_Config.m_KxAbGrenadePriority},
+		&g_Config.m_KxAbGrenadeFreeze, &g_Config.m_KxAbGrenadePriority,
+		&g_Config.m_KxAbGrenadeSilent, &g_Config.m_KxAbGrenadeSmoothSpeed,
+		&g_Config.m_KxAbGrenadeSmoothCenterSnap},
 	{&g_Config.m_KxAbLaserEnabled, &g_Config.m_KxAbLaserFov, &g_Config.m_KxAbLaserRadius,
 		&g_Config.m_KxAbLaserRaycastShow, &g_Config.m_KxAbLaserRules, &g_Config.m_KxAbLaserUseAngle,
 		&g_Config.m_KxAbLaserPredict, &g_Config.m_KxAbLaserJitter, &g_Config.m_KxAbLaserAimMode,
 		&g_Config.m_KxAbLaserTeam, &g_Config.m_KxAbLaserFriend, &g_Config.m_KxAbLaserDummy,
 		&g_Config.m_KxAbLaserClanmate, &g_Config.m_KxAbLaserTargetsFilter, g_Config.m_KxAbLaserTargetsIds,
-		&g_Config.m_KxAbLaserFreeze, &g_Config.m_KxAbLaserPriority},
+		&g_Config.m_KxAbLaserFreeze, &g_Config.m_KxAbLaserPriority,
+		&g_Config.m_KxAbLaserSilent, &g_Config.m_KxAbLaserSmoothSpeed,
+		&g_Config.m_KxAbLaserSmoothCenterSnap},
 	{&g_Config.m_KxAbNinjaEnabled, &g_Config.m_KxAbNinjaFov, &g_Config.m_KxAbNinjaRadius,
 		&g_Config.m_KxAbNinjaRaycastShow, &g_Config.m_KxAbNinjaRules, &g_Config.m_KxAbNinjaUseAngle,
 		&g_Config.m_KxAbNinjaPredict, &g_Config.m_KxAbNinjaJitter, &g_Config.m_KxAbNinjaAimMode,
 		&g_Config.m_KxAbNinjaTeam, &g_Config.m_KxAbNinjaFriend, &g_Config.m_KxAbNinjaDummy,
 		&g_Config.m_KxAbNinjaClanmate, &g_Config.m_KxAbNinjaTargetsFilter, g_Config.m_KxAbNinjaTargetsIds,
-		&g_Config.m_KxAbNinjaFreeze, &g_Config.m_KxAbNinjaPriority},
+		&g_Config.m_KxAbNinjaFreeze, &g_Config.m_KxAbNinjaPriority,
+		&g_Config.m_KxAbNinjaSilent, &g_Config.m_KxAbNinjaSmoothSpeed,
+		&g_Config.m_KxAbNinjaSmoothCenterSnap},
 	{&g_Config.m_KxAbHookEnabled, &g_Config.m_KxAbHookFov, &g_Config.m_KxAbHookRadius,
 		&g_Config.m_KxAbHookRaycastShow, &g_Config.m_KxAbHookRules, &g_Config.m_KxAbHookUseAngle,
 		&g_Config.m_KxAbHookPredict, &g_Config.m_KxAbHookJitter, &g_Config.m_KxAbHookAimMode,
 		&g_Config.m_KxAbHookTeam, &g_Config.m_KxAbHookFriend, &g_Config.m_KxAbHookDummy,
 		&g_Config.m_KxAbHookClanmate, &g_Config.m_KxAbHookTargetsFilter, g_Config.m_KxAbHookTargetsIds,
-		&g_Config.m_KxAbHookFreeze, &g_Config.m_KxAbHookPriority},
+		&g_Config.m_KxAbHookFreeze, &g_Config.m_KxAbHookPriority,
+		&g_Config.m_KxAbHookSilent, &g_Config.m_KxAbHookSmoothSpeed,
+		&g_Config.m_KxAbHookSmoothCenterSnap},
 };
 
 struct KxTbCvars
@@ -177,6 +194,9 @@ void CAimBot::SyncSavedSettings()
 			s.m_Predict = *c.pPredict != 0;
 			s.m_Jitter = (float)*c.pJitter;
 			s.m_AimMode = *c.pAimMode;
+			s.m_Silent = *c.pSilent != 0;
+			s.m_SmoothSpeed = *c.pSmoothSpeed / 10.0f;
+			s.m_SmoothCenterSnap = *c.pSmoothCenterSnap != 0;
 			s.m_TeamFilter = *c.pTeam;
 			s.m_FriendFilter = *c.pFriend;
 			s.m_DummyFilter = *c.pDummy;
@@ -228,6 +248,9 @@ void CAimBot::SyncSavedSettings()
 		*c.pPredict = s.m_Predict ? 1 : 0;
 		*c.pJitter = (int)(s.m_Jitter + 0.5f);
 		*c.pAimMode = s.m_AimMode;
+		*c.pSilent = s.m_Silent ? 1 : 0;
+		*c.pSmoothSpeed = (int)(s.m_SmoothSpeed * 10.0f + 0.5f);
+		*c.pSmoothCenterSnap = s.m_SmoothCenterSnap ? 1 : 0;
 		*c.pTeam = s.m_TeamFilter;
 		*c.pFriend = s.m_FriendFilter;
 		*c.pDummy = s.m_DummyFilter;
@@ -273,6 +296,9 @@ void CAimBot::OnReset()
         m_LatencyCounter = 0;
         m_PrevFire = false;
         m_PrevHook = false;
+        // v1.56.262: drop pending Edge snap restore + Smooth silent glide state.
+        m_AimEdgeRestore = false;
+        m_SilentSmoothInit = false;
 }
 
 float CAimBot::GetWeaponRadius(int Weapon) const
@@ -445,7 +471,14 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int Weapon, int LocalId
         CGameClient *pGame = GameClient();
         float myAngle = atan2f(AimDir.y, AimDir.x);
         float halfFovRad = (Settings.m_Fov * 0.5f) * (pi / 180.0f);
-        constexpr float HB_HITBOX = CCharacterCore::PhysicalSize() + 2.0f;
+        // v1.56.263: keep the sampling/jitter circle strictly INSIDE the real
+        // hitbox. Projectiles/lasers hit only when their path passes strictly
+        // less than the target's ProximityRadius (= CCharacterCore::PhysicalSize()
+        // = 28) from its center, so the old "+2" offset put edge samples and
+        // jitter aims ~1 unit OUTSIDE the hitbox and they missed (most visible
+        // with lasers). hbR below then lands 1 unit inside the edge, safe
+        // against the strict '<' check and float rounding — for ALL weapons.
+        constexpr float HB_HITBOX = CCharacterCore::PhysicalSize();
 
         int bestTarget = -1;
         float bestScore = 1e18f;
@@ -555,6 +588,46 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int Weapon, int LocalId
                 }
         }
 
+        // v1.56.263: predict-aware jitter re-timing, shared by BOTH jitter modes.
+        //
+        // The projectile is a STRAIGHT shot to a fixed aim point Cand: it arrives
+        // at time T(Cand) = |Cand - MyPos| / speed. For a guaranteed hit the aim
+        // must satisfy the fixed point  Cand = pos(T(Cand)) + JOff  — the
+        // projectile then passes exactly |JOff| (<= hbR) away from the target
+        // center at the moment of arrival. Solved by fixed-point iteration over
+        // the pre-rolled position table (sub-tick interpolated):
+        //   Cand_{k+1} = pos(|Cand_k - MyPos| / speed) + JOff
+        // The old v1.56.249 chase-walk modeled the projectile as RE-AIMING at the
+        // moving jittered point every tick — only an approximation of the ballistic
+        // straight shot — and the raycast-angle jitter mode had NO timing pass at
+        // all, so both could miss a moving target by 1-3 ticks of travel.
+        auto PredJitAim = [&](int TargetIdx, const vec2 &SeedCenter, const vec2 &JOff) -> vec2 {
+                vec2 Cand = SeedCenter + JOff;
+                for(int Iter = 0; Iter < 3; Iter++)
+                {
+                        float T = length(Cand - MyPos);
+                        if(projSpeedPerTick)
+                                T = T / projSpeed;
+                        else
+                                T = T * (float)SERVER_TICK_SPEED / projSpeed;
+                        if(T < 0.0f)
+                                T = 0.0f;
+                        if(T > (float)MAX_PREDICT_TICKS)
+                                T = (float)MAX_PREDICT_TICKS;
+                        const int t = (int)T;
+                        const int tNext = (t < MAX_PREDICT_TICKS) ? t + 1 : t;
+                        const float u = T - (float)t;
+                        const vec2 NewCand = mix(predPositions[TargetIdx][t], predPositions[TargetIdx][tNext], u) + JOff;
+                        if(length(NewCand - Cand) < 0.5f)
+                        {
+                                Cand = NewCand;
+                                break;
+                        }
+                        Cand = NewCand;
+                }
+                return Cand;
+        };
+
         for(int i = 0; i < MAX_CLIENTS; i++)
         {
                 if(i == LocalId)
@@ -643,6 +716,16 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int Weapon, int LocalId
                         }
                         targetCenter = predictedPos;
                 }
+
+                // v1.56.263: InsertCharacter — a player standing on the line
+                // physically stops hooks/hammer/projectiles/lasers (they hook/hit
+                // the first player touched), so a target behind another player is
+                // unreachable and must not be targeted. Applies to Rules 1+2
+                // (wherever the wall insert line applies); Rules = None keeps
+                // ignoring everything, as before.
+                const bool charBlocked = Settings.m_Rules != 0 &&
+                        LineBlockedByCharacter(LocalId, i, MyPos, targetCenter);
+
                 const float hbR = HB_HITBOX - 1.0f;
                 const float hbDistToMe = distance(MyPos, targetCenter);
                 const float hbToMeAngle = atan2f(MyPos.y - targetCenter.y, MyPos.x - targetCenter.x);
@@ -657,7 +740,7 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int Weapon, int LocalId
                         const float a = hbToMeAngle - hbArc + ((k + 0.5f) * 2.0f * hbArc) / (float)hbSamples;
                         hbPoints[k] = targetCenter + vec2(cosf(a), sinf(a)) * hbR;
                 }
-                const bool hbCenterVisible = Settings.m_Rules != 1 || IsVisible(MyPos, targetCenter);
+                const bool hbCenterVisible = (Settings.m_Rules != 1 || IsVisible(MyPos, targetCenter)) && !charBlocked;
                 float bestSampleScore = 1e18f;
                 bool anyPass = false;
                 vec2 sampleAimPoint = targetCenter;
@@ -690,7 +773,8 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int Weapon, int LocalId
                         }
                         else if(Settings.m_Rules == 2)
                         {
-                                visible = IsVisible(MyPos, sp);
+                                visible = IsVisible(MyPos, sp) &&
+                                        !LineBlockedByCharacter(LocalId, i, MyPos, sp);
                         }
                         if(visible)
                         {
@@ -728,6 +812,11 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int Weapon, int LocalId
                                         // HIT the player, plus a random distance along that ray
                                         // from its closest point to the target center — bounded
                                         // by the hitbox chord so the aim always stays on the tee.
+                                        // v1.56.263: with Predict on the chosen ray point is re-timed
+                                        // through PredJitAim — it sits up to hbR away from the center,
+                                        // which shifts the projectile's arrival by 1-3 ticks; without
+                                        // the re-timing the target has already moved on and the shot
+                                        // misses a fast-moving target.
                                         if(NumJitHits > 0)
                                         {
                                                 const vec2 HitSp = aJitHits[rand() % NumJitHits];
@@ -741,69 +830,28 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int Weapon, int LocalId
                                                         const float HalfChordSq = hbR * hbR - (length_squared(ToCenter) - Proj * Proj);
                                                         const float HalfChord = HalfChordSq > 0.0f ? sqrtf(HalfChordSq) : 0.0f;
                                                         const float Off = (((float)rand() / (float)RAND_MAX) * 2.0f - 1.0f) * HalfChord * JitScale;
-                                                        bestAimPoint = MyPos + RayDir * (Proj + Off);
+                                                        const vec2 RayAim = MyPos + RayDir * (Proj + Off);
+                                                        if(predictActive && predValid[i])
+                                                        {
+                                                                const vec2 JOff = RayAim - targetCenter;
+                                                                bestAimPoint = PredJitAim(i, targetCenter, JOff);
+                                                        }
+                                                        else
+                                                                bestAimPoint = RayAim;
                                                 }
                                         }
                                 }
                                 else
                                 {
-                                        // v1.56.249: Normal mode — predict-aware jitter with visibility
-                                        // retries. The offset is rolled up to 4 times:
-                                        //   - with Predict on, the position table is RE-WALKED with the
-                                        //     offset applied (flight time computed to the JITTERED point).
-                                        //     Without this, an edge point up to hbR away from the center
-                                        //     shifts the projectile's arrival by up to ~2 ticks and the
-                                        //     shot misses a moving target;
-                                        //   - the candidate must be visible (Rules != 0), otherwise the
-                                        //     shot would fly into a wall.
-                                        // If no candidate passes, the exact (unjittered) aim is kept.
-                                        // The re-walk mirrors the v1.56.196 walk (same sub-tick interp),
-                                        // only with the offset added to every sampled position.
+                                        // Normal mode — random offset inside the hitbox with visibility
+                                        // retries (the candidate must be visible for Rules != 0, otherwise
+                                        // the shot would fly into a wall). If no candidate passes, the
+                                        // exact (unjittered) aim is kept.
+                                        // v1.56.263: with Predict on the offset is re-timed through
+                                        // PredJitAim so the projectile arrives when the target is exactly
+                                        // JOff away from its center — an in-hitbox pass instead of the old
+                                        // chase approximation that lagged 1-3 ticks behind a fast target.
                                         const vec2 BaseAim = bestAimPoint;
-                                        auto PredJitWalk = [&](const vec2 &JOff) -> vec2 {
-                                                vec2 Out = predPositions[i][MAX_PREDICT_TICKS];
-                                                bool Found = false;
-                                                float PrevFlight = -1.0f;
-                                                for(int t = 0; t <= MAX_PREDICT_TICKS; t++)
-                                                {
-                                                        const float d = length(predPositions[i][t] + JOff - MyPos);
-                                                        if(d < 1.0f)
-                                                        {
-                                                                Out = predPositions[i][t];
-                                                                Found = true;
-                                                                break;
-                                                        }
-                                                        float flightTime;
-                                                        if(projSpeedPerTick)
-                                                                flightTime = d / projSpeed;
-                                                        else
-                                                                flightTime = d * (float)SERVER_TICK_SPEED / projSpeed;
-                                                        if(flightTime <= (float)t)
-                                                        {
-                                                                if(t == 0 || PrevFlight < 0.0f)
-                                                                        Out = predPositions[i][t];
-                                                                else
-                                                                {
-                                                                        float numerator = PrevFlight - (float)(t - 1);
-                                                                        float denominator = 1.0f - (flightTime - PrevFlight);
-                                                                        float u;
-                                                                        if(denominator > 0.001f)
-                                                                                u = numerator / denominator;
-                                                                        else
-                                                                                u = 0.5f;
-                                                                        if(u < 0.0f) u = 0.0f;
-                                                                        if(u > 1.0f) u = 1.0f;
-                                                                        Out = mix(predPositions[i][t - 1], predPositions[i][t], u);
-                                                                }
-                                                                Found = true;
-                                                                break;
-                                                        }
-                                                        PrevFlight = flightTime;
-                                                }
-                                                if(!Found)
-                                                        Out = predPositions[i][MAX_PREDICT_TICKS];
-                                                return Out;
-                                        };
                                         for(int Attempt = 0; Attempt < 4; Attempt++)
                                         {
                                                 const float JAng = ((float)rand() / (float)RAND_MAX) * pi * 2.0f;
@@ -811,8 +859,9 @@ int CAimBot::FindTarget(const SWeaponSettings &Settings, int Weapon, int LocalId
                                                 const vec2 JOff = vec2(cosf(JAng), sinf(JAng)) * JMag;
                                                 vec2 Cand = BaseAim + JOff;
                                                 if(predictActive && predValid[i])
-                                                        Cand = PredJitWalk(JOff) + JOff;
-                                                if(Settings.m_Rules == 0 || IsVisible(MyPos, Cand))
+                                                        Cand = PredJitAim(i, targetCenter, JOff);
+                                                if(Settings.m_Rules == 0 || (IsVisible(MyPos, Cand) &&
+                                                        !LineBlockedByCharacter(LocalId, i, MyPos, Cand)))
                                                 {
                                                         bestAimPoint = Cand;
                                                         break;
@@ -839,25 +888,185 @@ bool CAimBot::IsVisible(const vec2 &From, const vec2 &To)
         return GameClient()->Collision()->IntersectLineTeleHook(From, To, nullptr, nullptr) == 0;
 }
 
+// v1.56.263: InsertCharacter — true when another player's hitbox intersects
+// the From→To segment. Hook heads and projectiles physically stop on the
+// first player they touch (grab/hit radius = ProximityRadius = PhysicalSize
+// = 28), so a target standing behind another player is unreachable.
+// Blocker positions use the same interpolated snapshot coords as targets.
+bool CAimBot::LineBlockedByCharacter(int LocalId, int TargetId, const vec2 &From, const vec2 &To) const
+{
+        CGameClient *pGame = GameClient();
+        const float BlockRSq = CCharacterCore::PhysicalSize() * CCharacterCore::PhysicalSize();
+        const vec2 Dir = To - From;
+        const float LenSq = length_squared(Dir);
+        const float intra = pGame->Client()->IntraGameTick(g_Config.m_ClDummy);
+        for(int i = 0; i < MAX_CLIENTS; i++)
+        {
+                if(i == LocalId || i == TargetId)
+                        continue;
+                if(!pGame->m_aClients[i].m_Active || !pGame->m_Snap.m_aCharacters[i].m_Active)
+                        continue;
+                const vec2 prevPos((float)pGame->m_Snap.m_aCharacters[i].m_Prev.m_X, (float)pGame->m_Snap.m_aCharacters[i].m_Prev.m_Y);
+                const vec2 curPos((float)pGame->m_Snap.m_aCharacters[i].m_Cur.m_X, (float)pGame->m_Snap.m_aCharacters[i].m_Cur.m_Y);
+                const vec2 BlockerPos = mix(prevPos, curPos, intra);
+                // Closest point of the From→To segment to the blocker's center.
+                float t = 0.0f;
+                if(LenSq > 0.0001f)
+                        t = std::clamp(dot(BlockerPos - From, Dir) / LenSq, 0.0f, 1.0f);
+                const vec2 Closest = From + Dir * t;
+                if(length_squared(Closest - BlockerPos) < BlockRSq)
+                        return true;
+        }
+        return false;
+}
+
+// v1.56.263: "Use raycast (Show)" endpoint — the drawn ray stops on walls
+// AND on players, mirroring the targeting raycast physics (a hook/hit lands
+// on the first tee in the way, so drawing the ray through it is misleading).
+vec2 CAimBot::RayShowEndPoint(const vec2 &From, const vec2 &To) const
+{
+        vec2 End = To;
+        vec2 WallHit;
+        if(GameClient()->Collision()->IntersectLineTeleHook(From, To, &WallHit, nullptr) > 0)
+                End = WallHit;
+
+        CGameClient *pGame = GameClient();
+        const int LocalId = pGame->m_Snap.m_LocalClientId;
+        const float BlockRSq = CCharacterCore::PhysicalSize() * CCharacterCore::PhysicalSize();
+        const vec2 Dir = End - From;
+        const float LenSq = length_squared(Dir);
+        const float intra = pGame->Client()->IntraGameTick(g_Config.m_ClDummy);
+
+        float bestT = -1.0f;
+        for(int i = 0; i < MAX_CLIENTS; i++)
+        {
+                if(i == LocalId)
+                        continue;
+                if(!pGame->m_aClients[i].m_Active || !pGame->m_Snap.m_aCharacters[i].m_Active)
+                        continue;
+                const vec2 prevPos((float)pGame->m_Snap.m_aCharacters[i].m_Prev.m_X, (float)pGame->m_Snap.m_aCharacters[i].m_Prev.m_Y);
+                const vec2 curPos((float)pGame->m_Snap.m_aCharacters[i].m_Cur.m_X, (float)pGame->m_Snap.m_aCharacters[i].m_Cur.m_Y);
+                const vec2 BlockerPos = mix(prevPos, curPos, intra);
+                float t = 0.0f;
+                if(LenSq > 0.0001f)
+                        t = std::clamp(dot(BlockerPos - From, Dir) / LenSq, 0.0f, 1.0f);
+                if(bestT >= 0.0f && t >= bestT)
+                        continue;
+                const vec2 Closest = From + Dir * t;
+                if(length_squared(Closest - BlockerPos) < BlockRSq)
+                        bestT = t;
+        }
+        if(bestT >= 0.0f)
+                return From + Dir * bestT;
+        return End;
+}
+
 void CAimBot::ApplyAim(int ClientId, const vec2 &MyPos, const SWeaponSettings &Settings, const vec2 &AimPoint)
 {
         CGameClient *pGame = GameClient();
         vec2 aimOffset = AimPoint - MyPos;
-        if(Settings.m_AimMode == 0) // Silent
+
+        // v1.56.262: Smooth mode — glide from the CURRENT aim coordinates toward
+        // the target (reference: TAS Smooth Fake Aim). Smooth Speed = px per tick.
+        // Center Snap rotates the aim AROUND the player center (m_aMousePos is an
+        // offset from the tee, so a polar rotation around (0,0) orbits the tee);
+        // without it the aim simply travels straight to the target.
+        if(Settings.m_AimMode == 3)
         {
-                // Silent mode: do NOT change m_aMousePos (visible crosshair stays where the player aims).
-                // Set the silent aim override flag — SnapInput (controls.cpp) will use this offset
-                // for m_TargetX/Y right before sending to server. Same channel as Laser Unfreeze silent.
+                float speed = Settings.m_SmoothSpeed;
+                if(speed < 0.1f)
+                        speed = 0.1f;
+                // v1.56.267: glide exactly N px per game tick (50 Hz). UpdateAimBot
+                // runs per render frame, so the step is applied only on the first
+                // call of each game tick. The silent channel below is re-asserted
+                // on EVERY call: sends are time-based and can land on a repeat
+                // call within the same tick — skipping the channel there dropped
+                // the silent aim and sent the REAL aim for 1 tick (visible with
+                // Show Server-Side Aim).
+                static int s_SmoothLastTick = -1;
+                const int CurTick = Client()->GameTick(g_Config.m_ClDummy);
+                const bool NewTick = (s_SmoothLastTick != CurTick);
+                s_SmoothLastTick = CurTick;
+                vec2 cur;
+                if(Settings.m_Silent)
+                {
+                        // Silent Smooth: glide the server-side aim independently — it
+                        // starts from the visible crosshair ("from current aim coords").
+                        if(!m_SilentSmoothInit)
+                        {
+                                m_SilentSmoothPos = pGame->m_Controls.m_aMousePos[g_Config.m_ClDummy];
+                                m_SilentSmoothInit = true;
+                        }
+                        cur = m_SilentSmoothPos;
+                }
+                else
+                        cur = pGame->m_Controls.m_aMousePos[g_Config.m_ClDummy];
+
+                if(NewTick)
+                {
+                        const float dist = length(aimOffset - cur);
+                        if(dist <= speed)
+                                cur = aimOffset;
+                        else if(Settings.m_SmoothCenterSnap && length(cur) > 0.5f && length(aimOffset) > 0.5f)
+                        {
+                                // Polar glide: rotate along the shortest arc (arc step ~= speed
+                                // px) and move the radius toward the target radius by speed px.
+                                const float a0 = atan2f(cur.y, cur.x);
+                                const float a1 = atan2f(aimOffset.y, aimOffset.x);
+                                float dA = atan2f(sinf(a1 - a0), cosf(a1 - a0));
+                                const float maxRot = speed / std::max(length(cur), 1.0f);
+                                dA = std::clamp(dA, -maxRot, maxRot);
+                                float len = length(cur);
+                                const float maxLen = speed;
+                                len += std::clamp(length(aimOffset) - len, -maxLen, maxLen);
+                                cur = vec2(cosf(a0 + dA), sinf(a0 + dA)) * len;
+                        }
+                        else
+                                cur = cur + normalize(aimOffset - cur) * speed;
+
+                        if(Settings.m_Silent)
+                                m_SilentSmoothPos = cur;
+                        else
+                                pGame->m_Controls.m_aMousePos[g_Config.m_ClDummy] = cur;
+                }
+
+                if(Settings.m_Silent)
+                {
+                        pGame->m_Controls.m_LaserUnfreezeAimActive = true;
+                        pGame->m_Controls.m_LaserUnfreezeAimOffset = cur;
+                }
+                return;
+        }
+
+        m_SilentSmoothInit = false;
+
+        if(Settings.m_Silent)
+        {
+                // Silent: do NOT change m_aMousePos (visible crosshair stays where the
+                // player aims). Set the silent aim override flag — SnapInput
+                // (controls.cpp) will use this offset for m_TargetX/Y right before
+                // sending to server. Same channel as Laser Unfreeze silent.
                 pGame->m_Controls.m_LaserUnfreezeAimActive = true;
                 pGame->m_Controls.m_LaserUnfreezeAimOffset = aimOffset;
+                return;
         }
-        else // Trigger (1) or Always (2) — move visible crosshair
+
+        if(Settings.m_AimMode == 0) // Edge — 1-tick snap, restored on the next tick
         {
-                // TODO: remove ghost when show for me — visible crosshair moves to
-                // aimbot aim, but for a few frames the player's real angle flickers
-                // through. Same issue as fake aim showForMe before v1.56.135 sync.
+                if(!m_AimEdgeRestore)
+                {
+                        m_AimEdgeRestore = true;
+                        m_AimEdgeRestorePos = pGame->m_Controls.m_aMousePos[g_Config.m_ClDummy];
+                }
                 pGame->m_Controls.m_aMousePos[g_Config.m_ClDummy] = aimOffset;
+                return;
         }
+
+        // Trigger (1) or Always (2) — move visible crosshair permanently
+        // TODO: remove ghost when show for me — visible crosshair moves to
+        // aimbot aim, but for a few frames the player's real angle flickers
+        // through. Same issue as fake aim showForMe before v1.56.135 sync.
+        pGame->m_Controls.m_aMousePos[g_Config.m_ClDummy] = aimOffset;
 }
 
 void CAimBot::FireWeapon()
@@ -875,6 +1084,13 @@ void CAimBot::DoHook()
 void CAimBot::UpdateAimBot()
 {
         CGameClient *pGame = GameClient();
+        // v1.56.262: Edge mode — restore the crosshair snapped last tick FIRST,
+        // before any early return, so a pending 1-tick snap can never stick the aim.
+        if(m_AimEdgeRestore)
+        {
+                m_AimEdgeRestore = false;
+                pGame->m_Controls.m_aMousePos[g_Config.m_ClDummy] = m_AimEdgeRestorePos;
+        }
         int LocalId = pGame->m_Snap.m_LocalClientId;
         if(LocalId < 0)
                 return;
@@ -892,12 +1108,15 @@ void CAimBot::UpdateAimBot()
         if(length(AimDir) < 0.001f)
                 AimDir = vec2(1, 0);
 
-        // Silent (0) and Trigger (1) both trigger on willFire — 1-tick CopyWorld prediction
-        // (same technique as fake aim in controls.cpp). This catches every real shot
-        // (including auto-fire during reload), not just the rising edge of m_Fire.
-        // Difference between Silent and Trigger is in ApplyAim (visible vs invisible),
-        // NOT in the trigger condition. Always (2) triggers every tick.
-        // Hook (weapon 6) has no reload cadence, so Silent/Trigger use edge on m_Hook.
+        // Edge (0) and Trigger (1) both trigger on willFire — 1-tick CopyWorld
+        // prediction (same technique as fake aim in controls.cpp). This catches
+        // every real shot (including auto-fire during reload), not just the rising
+        // edge of m_Fire. Edge snaps the crosshair for exactly 1 tick (ApplyAim
+        // schedules the restore), Trigger moves it permanently. Always (2) and
+        // Smooth (3) run every tick; Smooth glides the crosshair toward the target.
+        // Silent (separate toggle) routes the aim through the invisible silent
+        // channel instead of the visible crosshair — orthogonal to the Mode.
+        // Hook (weapon 6) has no reload cadence, so Edge/Trigger use edge on m_Hook.
         bool willFire = false;
         bool needWillFire = weapon >= 0 && weapon < NUM_WEAPONS_AIM - 1
                 && m_AimBotWeapons[weapon].m_Enabled
@@ -922,31 +1141,47 @@ void CAimBot::UpdateAimBot()
                 }
         }
 
+        bool SmoothSilentApplied = false;
+
         // Active weapon (0-5)
         if(weapon >= 0 && weapon < NUM_WEAPONS_AIM - 1 && m_AimBotWeapons[weapon].m_Enabled)
         {
                 const SWeaponSettings &s = m_AimBotWeapons[weapon];
-                // AimMode: 0=silent, 1=trigger — both use willFire; 2=always
-                bool trigger = (s.m_AimMode == 2) ? true : willFire;
+                // Mode: Edge/Trigger use willFire; Always/Smooth run every tick.
+                bool trigger = (s.m_AimMode >= 2) ? true : willFire;
                 if(trigger)
                 {
                         vec2 aimPt; int t = FindTarget(s, weapon, LocalId, MyPos, AimDir, AimPos, aimPt);
                         if(t >= 0)
+                        {
                                 ApplyAim(t, MyPos, s, aimPt);
+                                if(s.m_AimMode == 3 && s.m_Silent)
+                                        SmoothSilentApplied = true;
+                        }
                 }
         }
-        // Hook (6): Silent/Trigger use hook edge (hook has no reload cadence); Always = every tick
+        // Hook (6): Edge/Trigger use hook edge (hook has no reload cadence); Always/Smooth = every tick
         if(m_AimBotWeapons[6].m_Enabled)
         {
                 const SWeaponSettings &s = m_AimBotWeapons[6];
-                bool trigger = (s.m_AimMode == 2) ? true : (hook && !m_PrevHook);
+                bool trigger = (s.m_AimMode >= 2) ? true : (hook && !m_PrevHook);
                 if(trigger)
                 {
                         vec2 aimPt; int t = FindTarget(s, 6, LocalId, MyPos, AimDir, AimPos, aimPt);
                         if(t >= 0)
+                        {
                                 ApplyAim(t, MyPos, s, aimPt);
+                                if(s.m_AimMode == 3 && s.m_Silent)
+                                        SmoothSilentApplied = true;
+                        }
                 }
         }
+        // v1.56.266: silent Smooth glides a VIRTUAL aim — restart it from the aim
+        // actually sent to the server whenever the glide is interrupted (target
+        // left FOV, weapon disabled, no trigger), so re-acquisition starts from
+        // the current real aim instead of a stale virtual position.
+        if(!SmoothSilentApplied)
+                m_SilentSmoothInit = false;
         m_PrevFire = fire;
         m_PrevHook = hook;
 }
@@ -1077,17 +1312,12 @@ void CAimBot::RenderFov(const SWeaponSettings &Settings, const vec2 &MyPos, cons
                 // The arc (radius circle) is drawn by RenderRadius with N raycast points.
                 float leftAngle = myAngle - halfFovRad;
                 float rightAngle = myAngle + halfFovRad;
-                vec2 leftEnd = MyPos + vec2(cosf(leftAngle), sinf(leftAngle)) * radius;
-                vec2 rightEnd = MyPos + vec2(cosf(rightAngle), sinf(rightAngle)) * radius;
-                vec2 hitPos;
-                if(GameClient()->Collision()->IntersectLineTeleHook(MyPos, leftEnd, &hitPos, nullptr) > 0)
-                        segments.push_back({MyPos, hitPos});
-                else
-                        segments.push_back({MyPos, leftEnd});
-                if(GameClient()->Collision()->IntersectLineTeleHook(MyPos, rightEnd, &hitPos, nullptr) > 0)
-                        segments.push_back({MyPos, hitPos});
-                else
-                        segments.push_back({MyPos, rightEnd});
+                // v1.56.263: show rays stop on walls AND players (same blocking
+                // physics as the targeting raycast) — no more rays drawn through tees.
+                const vec2 leftEnd = RayShowEndPoint(MyPos, MyPos + vec2(cosf(leftAngle), sinf(leftAngle)) * radius);
+                const vec2 rightEnd = RayShowEndPoint(MyPos, MyPos + vec2(cosf(rightAngle), sinf(rightAngle)) * radius);
+                segments.push_back({MyPos, leftEnd});
+                segments.push_back({MyPos, rightEnd});
         }
         else
         {
@@ -1164,9 +1394,8 @@ void CAimBot::RenderRadius(const SWeaponSettings &Settings, const vec2 &MyPos, c
                 vec2 p = MyPos + vec2(cosf(a), sinf(a)) * radius;
                 if(useRay)
                 {
-                        vec2 hit;
-                        if(GameClient()->Collision()->IntersectLineTeleHook(MyPos, p, &hit, nullptr) > 0)
-                                p = hit;
+                        // v1.56.263: stop arc rays on players too, not just walls.
+                        p = RayShowEndPoint(MyPos, p);
                 }
                 points.push_back(p);
         }
