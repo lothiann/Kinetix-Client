@@ -148,7 +148,10 @@ static const char *const g_ABTriggerModeOpts[] = {"One tick", "Hold", "Every tic
 static const char *const g_ABModeOpts[] = {"Edge", "Trigger", "Always", "Smooth"};
 static const char *const g_ABModeOptsNoTrigger[] = {"Edge", "Always", "Smooth"};
 static const char *const g_ABRulesOpts[] = {"None", "Insert line", "Raycast"};
-static const char *const g_ABTeamOpts[] = {"Both", "War", "My"};
+// v1.56.275: "Team" filter (Both/My/War/Blue/Red) and "DDrace Team" filter
+// (Both/My/Other/Target + Target ID field).
+static const char *const g_TeamFilterOpts[] = {"Both", "My", "War", "Blue", "Red"};
+static const char *const g_DDraceTeamOpts[] = {"Both", "My", "Other", "Target"};
 static const char *const g_ABFriendOpts[] = {"Both", "Ignore", "Only"};
 static const char *const g_ABDummyOpts[] = {"Both", "Ignore", "Only"};
 static const char *const g_ABTargetsFilterOpts[] = {"Both", "Only", "Ignore"};
@@ -165,11 +168,16 @@ static SRow g_BalanceBotChildren[] = {
         {ERowType::Dropdown, "Vertical Filter", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_BbVerticalOpts, 3, 0, nullptr, 0},
         {ERowType::Slider, "Radius Filter", nullptr, false, false, 0.0f, 1000.0f, 1.0f, 500.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Stand Radius", nullptr, false, false, 1.0f, 10.0f, 1.0f, 3.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Dropdown, "Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTeamOpts, 3, 0, nullptr, 0},
+        // v1.56.275: "Team" -> "DDrace Team" + Target ID + new "Team" filter.
+        {ERowType::Dropdown, "DDrace Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_DDraceTeamOpts, 4, 0, nullptr, 0},
+        {ERowType::Input, "Target ID", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TeamFilterOpts, 5, 0, nullptr, 0},
         {ERowType::Dropdown, "Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "Clanmate", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0},
+        // v1.56.275: FNG Freeze — ninja counts as frozen (FNG does not sync freeze).
+        {ERowType::Toggle, "FNG Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Dropdown, "Targets", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0},
         {ERowType::Input, "Targets IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0},
 };
@@ -194,11 +202,14 @@ static SRow g_AimBotChildren[] = {
         {ERowType::Dropdown, "Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABModeOpts, 4, 0, nullptr, 0},
         {ERowType::Slider, "Smooth Speed", nullptr, false, false, 0.1f, 50.0f, 0.1f, 3.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Center snap", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Dropdown, "Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTeamOpts, 3, 0, nullptr, 0},
+        // v1.56.275: "Team" — Both/My/War/Blue/Red.
+        {ERowType::Dropdown, "Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TeamFilterOpts, 5, 0, nullptr, 0},
         {ERowType::Dropdown, "Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "Clanmate", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0},
+        // v1.56.275: FNG Freeze — ninja counts as frozen (FNG does not sync freeze).
+        {ERowType::Toggle, "FNG Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Dropdown, "Priority", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABPriorityOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "Targets", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0},
         {ERowType::Input, "Targets IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0},
@@ -216,11 +227,14 @@ static SRow g_TriggerBotChildren[] = {
         {ERowType::Toggle, "Use raycast (Show)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Dropdown, "Rules", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABRulesOpts, 3, 0, nullptr, 0},
         {ERowType::Slider, "Latency", nullptr, false, false, 0.0f, 10.0f, 1.0f, 0.0f, " ticks", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Dropdown, "Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTeamOpts, 3, 0, nullptr, 0},
+        // v1.56.275: "Team" — Both/My/War/Blue/Red.
+        {ERowType::Dropdown, "Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TeamFilterOpts, 5, 0, nullptr, 0},
         {ERowType::Dropdown, "Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "Clanmate", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0},
+        // v1.56.275: FNG Freeze — ninja counts as frozen (FNG does not sync freeze).
+        {ERowType::Toggle, "FNG Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Dropdown, "Priority", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABPriorityOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "Targets", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0},
         {ERowType::Input, "Targets IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0},
@@ -329,11 +343,16 @@ static SRow g_EspChildren[] = {
         // v1.56.256: box size scale (X/Y — box dimensions, not line width).
         {ERowType::Slider, "X Box scale", nullptr, false, false, 10.0f, 1000.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Y Box scale", nullptr, false, false, 10.0f, 1000.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Dropdown, "Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTeamOpts, 3, 0, nullptr, 0},
+        // v1.56.275: "Team" -> "DDrace Team" + Target ID + new "Team" filter.
+        {ERowType::Dropdown, "DDrace Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_DDraceTeamOpts, 4, 0, nullptr, 0},
+        {ERowType::Input, "Target ID", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TeamFilterOpts, 5, 0, nullptr, 0},
         {ERowType::Dropdown, "Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "Clanmate", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0},
+        // v1.56.275: FNG Freeze — ninja counts as frozen (FNG does not sync freeze).
+        {ERowType::Toggle, "FNG Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Dropdown, "Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_EspModeOpts, 2, 0, nullptr, 0},
         {ERowType::Slider, "X", nullptr, false, false, 0.0f, 7680.0f, 1.0f, 0.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Y", nullptr, false, false, 0.0f, 4320.0f, 1.0f, 0.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
@@ -354,11 +373,16 @@ static SRow g_HitboxesChildren[] = {
         {ERowType::Slider, "Box Speed", nullptr, false, false, 0.0f, 100.0f, 1.0f, 30.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Show for others", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         // v1.56.257: full filter set (same as ESP/AimBot), visible when Show for others.
-        {ERowType::Dropdown, "Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTeamOpts, 3, 0, nullptr, 0},
+        // v1.56.275: "Team" -> "DDrace Team" + Target ID + new "Team" filter.
+        {ERowType::Dropdown, "DDrace Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_DDraceTeamOpts, 4, 0, nullptr, 0},
+        {ERowType::Input, "Target ID", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TeamFilterOpts, 5, 0, nullptr, 0},
         {ERowType::Dropdown, "Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "Clanmate", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0},
+        // v1.56.275: FNG Freeze — ninja counts as frozen (FNG does not sync freeze).
+        {ERowType::Toggle, "FNG Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Dropdown, "Targets", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0},
         {ERowType::Input, "Targets IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0},
 };
@@ -384,11 +408,11 @@ static SRow g_FunctionsRows[] = {
         {ERowType::Expandable, "Dummies", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_DummiesChildren, 9},
         {ERowType::Expandable, "Helpers", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_HelpersChildren, 16},
         // v1.56.83: AimBot + TriggerBot expandables (AimBot: 23 children since v1.56.262)
-        {ERowType::Expandable, "AimBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AimBotChildren, 23},
-        {ERowType::Expandable, "TriggerBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TriggerBotChildren, 19},
+        {ERowType::Expandable, "AimBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AimBotChildren, 24},
+        {ERowType::Expandable, "TriggerBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TriggerBotChildren, 20},
         // v1.56.262: Auto Fire + BalanceBot expandables.
         {ERowType::Expandable, "Auto Fire", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AutoFireChildren, 1},
-        {ERowType::Expandable, "BalanceBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BalanceBotChildren, 10},
+        {ERowType::Expandable, "BalanceBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BalanceBotChildren, 13},
         // Fly sub-section
         {ERowType::Toggle, "Preserve input", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Expandable, "Custom latency", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CustomLatencyChildren, 1},
@@ -696,42 +720,56 @@ static SRow g_TasRows[] = {
 };
 
 // ---------- Visuals panel (v1.56.260) ----------
-// Rainbow expandables: header body click = master toggle, single "Speed" child
-// slider (cvars store display*10, range 0.1..10.0). "Rainbow entities" carries
-// 10 children: category toggle + its Speed slider, x5 (sync/write use child
-// indices 0-9, speeds at odd indices). Header body click = master toggle
-// (v1.56.261).
+// v1.56.275: rainbow expandables — Color (hex) + Opacity (0-100%) + Rainbow
+// anim toggle + Speed (visible only when Rainbow is on). Header checkbox =
+// master (off = original look). Anim=1 -> hue rotation at Speed; Anim=0 ->
+// static Color with Opacity. Old per-entity-category children removed.
 static SRow g_RainbowTeeChildren[] = {
+        {ERowType::Input, "Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ffffff", "hex...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Rainbow", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 static SRow g_RainbowLegsChildren[] = {
+        {ERowType::Input, "Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ffffff", "hex...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Rainbow", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 static SRow g_RainbowEntChildren[] = {
-        {ERowType::Toggle, "Hookable", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Unhookable", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Death", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Others", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Input, "Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ffffff", "hex...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Rainbow", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 static SRow g_RainbowGunsChildren[] = {
+        {ERowType::Input, "Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ffffff", "hex...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Rainbow", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 static SRow g_RainbowHookChildren[] = {
+        {ERowType::Input, "Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ffffff", "hex...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Rainbow", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 static SRow g_RainbowHudChildren[] = {
+        {ERowType::Input, "Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ffffff", "hex...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Rainbow", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 static SRow g_RainbowParticlesChildren[] = {
+        {ERowType::Input, "Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ffffff", "hex...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Rainbow", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 static SRow g_RainbowEmoticonsChildren[] = {
+        {ERowType::Input, "Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ffffff", "hex...", nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Rainbow", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 
@@ -749,19 +787,19 @@ static SRow g_AdminAlarmChildren[] = {
 };
 
 static SRow g_VisualsRows[] = {
-        {ERowType::Expandable, "Rainbow tee", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowTeeChildren, 1},
-        {ERowType::Expandable, "Rainbow legs", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowLegsChildren, 1},
-        {ERowType::Expandable, "Rainbow entities", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowEntChildren, 10},
-        {ERowType::Expandable, "Rainbow guns", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowGunsChildren, 1},
-        {ERowType::Expandable, "Rainbow hook", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowHookChildren, 1},
-        {ERowType::Expandable, "Rainbow HUD", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowHudChildren, 1},
-        {ERowType::Expandable, "Rainbow particles", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowParticlesChildren, 1},
-        {ERowType::Expandable, "Rainbow emoticons", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowEmoticonsChildren, 1},
+        {ERowType::Expandable, "Custom color tee", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowTeeChildren, 4},
+        {ERowType::Expandable, "Custom color legs", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowLegsChildren, 4},
+        {ERowType::Expandable, "Custom color entities", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowEntChildren, 4},
+        {ERowType::Expandable, "Custom color guns", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowGunsChildren, 4},
+        {ERowType::Expandable, "Custom color hook", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowHookChildren, 4},
+        {ERowType::Expandable, "Custom color HUD", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowHudChildren, 4},
+        {ERowType::Expandable, "Custom color particles", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowParticlesChildren, 4},
+        {ERowType::Expandable, "Custom color emoticons", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowEmoticonsChildren, 4},
         {ERowType::Toggle, "Hide particles", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         // v1.56.260: moved from the Advanced panel.
         {ERowType::Expandable, "Trajectory", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TrajectoryChildren, 7},
-        {ERowType::Expandable, "ESP", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_EspChildren, 18},
-        {ERowType::Expandable, "Hitboxes", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_HitboxesChildren, 14},
+        {ERowType::Expandable, "ESP", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_EspChildren, 21},
+        {ERowType::Expandable, "Hitboxes", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_HitboxesChildren, 17},
         // v1.56.262: bypass locks + admin alarm.
         {ERowType::Toggle, "Bypass Zoom Lock", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Bypass Asset Lock", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
@@ -981,6 +1019,16 @@ static bool BalanceBotChildVisible(const SRow *pChildren, int childCount, int id
                 }
                 return false;
         }
+        // v1.56.275: "Target ID" visible only when DDrace Team = Target (3).
+        if(str_comp(row.pName, "Target ID") == 0)
+        {
+                for(int i = 0; i < childCount; ++i)
+                {
+                        if(str_comp(pChildren[i].pName, "DDrace Team") == 0)
+                                return pChildren[i].valueIdx == 3;
+                }
+                return false;
+        }
         return true;
 }
 
@@ -1087,7 +1135,10 @@ static bool HitboxesChildVisible(const SRow *pChildren, int childCount, int idx)
                 return trigger && pChildren[4].valueIdx == 2; // trigger Dotted Box
         }
         if(str_comp(row.pName, "Targets IDs") == 0 || str_comp(row.pName, "Untargets IDs") == 0)
-                return showOthers && pChildren[12].valueIdx != 0;
+                return showOthers && pChildren[15].valueIdx != 0;
+        // v1.56.275: "Target ID" visible only when DDrace Team = Target (3).
+        if(str_comp(row.pName, "Target ID") == 0)
+                return showOthers && pChildren[7].valueIdx == 3;
         if(idx >= 7)
                 return showOthers;
         return true;
@@ -1117,6 +1168,16 @@ static bool EspChildVisible(const SRow *pChildren, int childCount, int idx)
         // at every call site (checked via the static children array identity).
         if(pChildren == g_HitboxesChildren)
                 return HitboxesChildVisible(pChildren, childCount, idx);
+        // v1.56.275: "Target ID" visible only when DDrace Team = Target (3).
+        if(str_comp(row.pName, "Target ID") == 0)
+        {
+                for(int i = 0; i < childCount; ++i)
+                {
+                        if(str_comp(pChildren[i].pName, "DDrace Team") == 0)
+                                return pChildren[i].valueIdx == 3;
+                }
+                return false;
+        }
         int modeIdx = 0;
         int styleIdx = 0;
         int boxStyleIdx = 0;
@@ -1256,6 +1317,28 @@ static bool LineRenderingChildVisible(const SRow *pChildren, int childCount, int
                 return false;
         }
         return true;
+}
+// v1.56.275: Visuals rainbow expandables — "Speed" visible only when the
+// "Rainbow" anim toggle is on.
+static bool IsRainbowVisualRow(const char *pName)
+{
+        return str_comp(pName, "Custom color tee") == 0 || str_comp(pName, "Custom color legs") == 0 ||
+                str_comp(pName, "Custom color entities") == 0 || str_comp(pName, "Custom color guns") == 0 ||
+                str_comp(pName, "Custom color hook") == 0 || str_comp(pName, "Custom color HUD") == 0 ||
+                str_comp(pName, "Custom color particles") == 0 || str_comp(pName, "Custom color emoticons") == 0;
+}
+static bool VisualRainbowChildVisible(const SRow *pChildren, int childCount, int idx)
+{
+        if(idx < 0 || idx >= childCount)
+                return false;
+        if(str_comp(pChildren[idx].pName, "Speed") != 0)
+                return true;
+        for(int i = 0; i < childCount; ++i)
+        {
+                if(str_comp(pChildren[i].pName, "Rainbow") == 0)
+                        return pChildren[i].on;
+        }
+        return false;
 }
 static bool BindsChildVisible(const SRow *pChildren, int childCount, int idx)
 {
@@ -2527,7 +2610,7 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
         continue;
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c))
+if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
 if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
@@ -2683,6 +2766,17 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                 child.value = (float)g_Config.m_KxBalanceBotStandRadius;
                                         else if(str_comp(child.pName, "Team") == 0 && str_comp(row.pName, "BalanceBot") == 0)
                                                 child.valueIdx = g_Config.m_KxBbTeam;
+                                        // v1.56.275: BalanceBot DDrace Team + Target ID.
+                                        else if(str_comp(child.pName, "DDrace Team") == 0 && str_comp(row.pName, "BalanceBot") == 0)
+                                                child.valueIdx = g_Config.m_KxBbDDraceTeam;
+                                        else if(str_comp(child.pName, "Target ID") == 0 && str_comp(row.pName, "BalanceBot") == 0)
+                                        {
+                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                {
+                                                        str_format(child.m_aInputBuf, sizeof(child.m_aInputBuf), "%d", g_Config.m_KxBbDDraceTeamId);
+                                                        child.m_InputInitialized = true;
+                                                }
+                                        }
                                         else if(str_comp(child.pName, "Friend") == 0 && str_comp(row.pName, "BalanceBot") == 0)
                                                 child.valueIdx = g_Config.m_KxBbFriend;
                                         else if(str_comp(child.pName, "Dummy") == 0 && str_comp(row.pName, "BalanceBot") == 0)
@@ -2691,6 +2785,8 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                 child.valueIdx = g_Config.m_KxBbClanmate;
                                         else if(str_comp(child.pName, "Freeze") == 0 && str_comp(row.pName, "BalanceBot") == 0)
                                                 child.valueIdx = g_Config.m_KxBbFreeze;
+                                        else if(str_comp(child.pName, "FNG Freeze") == 0 && str_comp(row.pName, "BalanceBot") == 0)
+                                                child.on = g_Config.m_KxBbFngFreeze != 0;
                                         else if(str_comp(child.pName, "Targets") == 0 && str_comp(row.pName, "BalanceBot") == 0)
                                                 child.valueIdx = g_Config.m_KxBbTargetsFilter;
                                         else if((str_comp(child.pName, "Targets IDs") == 0 || str_comp(child.pName, "Untargets IDs") == 0) && str_comp(row.pName, "BalanceBot") == 0)
@@ -2707,6 +2803,17 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                         // to "ESP" since the generic names now collide with other panels.
                                         else if(str_comp(child.pName, "Team") == 0 && str_comp(row.pName, "ESP") == 0)
                                                 child.valueIdx = g_Config.m_KxEspTeamFilter;
+                                        // v1.56.275: ESP DDrace Team + Target ID.
+                                        else if(str_comp(child.pName, "DDrace Team") == 0 && str_comp(row.pName, "ESP") == 0)
+                                                child.valueIdx = g_Config.m_KxEspDDraceTeam;
+                                        else if(str_comp(child.pName, "Target ID") == 0 && str_comp(row.pName, "ESP") == 0)
+                                        {
+                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                {
+                                                        str_format(child.m_aInputBuf, sizeof(child.m_aInputBuf), "%d", g_Config.m_KxEspDDraceTeamId);
+                                                        child.m_InputInitialized = true;
+                                                }
+                                        }
                                         else if(str_comp(child.pName, "Friend") == 0 && str_comp(row.pName, "ESP") == 0)
                                                 child.valueIdx = g_Config.m_KxEspFriendFilter;
                                         else if(str_comp(child.pName, "Dummy") == 0 && str_comp(row.pName, "ESP") == 0)
@@ -2726,6 +2833,8 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                         }
                                         else if(str_comp(child.pName, "Freeze") == 0 && str_comp(row.pName, "ESP") == 0)
                                                 child.valueIdx = g_Config.m_KxEspFreezeFilter;
+                                        else if(str_comp(child.pName, "FNG Freeze") == 0 && str_comp(row.pName, "ESP") == 0)
+                                                child.on = g_Config.m_KxEspFngFreeze != 0;
                                         else if(str_comp(child.pName, "Mode") == 0 && str_comp(row.pName, "ESP") == 0)
                                                 child.valueIdx = g_Config.m_KxEspMode;
                                         else if(str_comp(child.pName, "Pointer Style") == 0 && str_comp(row.pName, "ESP") == 0)
@@ -2758,13 +2867,24 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                 case 4: child.valueIdx = g_Config.m_KxHitboxesTriggerStyle; break;
                                                 case 5: child.value = (float)g_Config.m_KxHitboxesTriggerSpeed; break;
                                                 case 6: child.on = g_Config.m_KxHitboxesShowOthers != 0; break;
-                                                case 7: child.valueIdx = g_Config.m_KxHitboxesTeamFilter; break;
-                                                case 8: child.valueIdx = g_Config.m_KxHitboxesFriendFilter; break;
-                                                case 9: child.valueIdx = g_Config.m_KxHitboxesDummyFilter; break;
-                                                case 10: child.valueIdx = g_Config.m_KxHitboxesClanmateFilter; break;
-                                                case 11: child.valueIdx = g_Config.m_KxHitboxesFreezeFilter; break;
-                                                case 12: child.valueIdx = g_Config.m_KxHitboxesTargetsFilterMode; break;
-                                                case 13:
+                                                // v1.56.275: DDrace Team + Target ID + new Team filter.
+                                                case 7: child.valueIdx = g_Config.m_KxHitboxesDDraceTeam; break;
+                                                case 8:
+                                                        if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                        {
+                                                                str_format(child.m_aInputBuf, sizeof(child.m_aInputBuf), "%d", g_Config.m_KxHitboxesDDraceTeamId);
+                                                                child.m_InputInitialized = true;
+                                                        }
+                                                        break;
+                                                case 9: child.valueIdx = g_Config.m_KxHitboxesTeamFilter; break;
+                                                case 10: child.valueIdx = g_Config.m_KxHitboxesFriendFilter; break;
+                                                case 11: child.valueIdx = g_Config.m_KxHitboxesDummyFilter; break;
+                                                case 12: child.valueIdx = g_Config.m_KxHitboxesClanmateFilter; break;
+                                                case 13: child.valueIdx = g_Config.m_KxHitboxesFreezeFilter; break;
+                                                // v1.56.275: FNG Freeze.
+                                                case 14: child.on = g_Config.m_KxHitboxesFngFreeze != 0; break;
+                                                case 15: child.valueIdx = g_Config.m_KxHitboxesTargetsFilterMode; break;
+                                                case 16:
                                                         child.pName = (g_Config.m_KxHitboxesTargetsFilterMode == 2) ? "Untargets IDs" : "Targets IDs";
                                                         if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
                                                         {
@@ -2947,6 +3067,8 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                         ch.valueIdx = s.m_ClanmateFilter;
                                                 else if(str_comp(ch.pName, "Freeze") == 0)
                                                         ch.valueIdx = s.m_FreezeFilter;
+                                                else if(str_comp(ch.pName, "FNG Freeze") == 0)
+                                                        ch.on = s.m_FngFreeze != 0;
                                                 else if(str_comp(ch.pName, "Priority") == 0)
                                                         ch.valueIdx = s.m_Priority;
                                                 else if(str_comp(ch.pName, "Targets") == 0)
@@ -3007,6 +3129,8 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                         ch.valueIdx = s.m_ClanmateFilter;
                                                 else if(str_comp(ch.pName, "Freeze") == 0)
                                                         ch.valueIdx = s.m_FreezeFilter;
+                                                else if(str_comp(ch.pName, "FNG Freeze") == 0)
+                                                        ch.on = s.m_FngFreeze != 0;
                                                 else if(str_comp(ch.pName, "Priority") == 0)
                                                         ch.valueIdx = s.m_Priority;
                                                 else if(str_comp(ch.pName, "Targets") == 0)
@@ -3418,63 +3542,118 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                         // v1.56.260: Visuals panel.
                         else if(str_comp(row.pName, "Hide particles") == 0 && row.type == ERowType::Toggle)
                                 row.on = g_Config.m_KxHideParticles != 0;
-                        else if(str_comp(row.pName, "Rainbow tee") == 0 && row.type == ERowType::Expandable)
+                        // v1.56.275: Visuals rainbow expandables — Color/Opacity/Rainbow/Speed.
+                        else if(str_comp(row.pName, "Custom color tee") == 0 && row.type == ERowType::Expandable)
                         {
                                 row.on = g_Config.m_KxRainbowTee != 0;
-                                row.pChildren[0].value = (float)g_Config.m_KxRainbowTeeSpeed / 10.0f;
+                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != 0)
+                                {
+                                        char aHex[8];
+                                        str_format(aHex, sizeof(aHex), "%06x", g_Config.m_KxRainbowTeeColor & 0xffffff);
+                                        str_copy(row.pChildren[0].m_aInputBuf, aHex, sizeof(row.pChildren[0].m_aInputBuf));
+                                        row.pChildren[0].m_InputInitialized = true;
+                                }
+                                row.pChildren[1].value = (float)g_Config.m_KxRainbowTeeAlpha;
+                                row.pChildren[2].on = g_Config.m_KxRainbowTeeAnim != 0;
+                                row.pChildren[3].value = (float)g_Config.m_KxRainbowTeeSpeed / 10.0f;
                         }
-                        else if(str_comp(row.pName, "Rainbow legs") == 0 && row.type == ERowType::Expandable)
+                        else if(str_comp(row.pName, "Custom color legs") == 0 && row.type == ERowType::Expandable)
                         {
                                 row.on = g_Config.m_KxRainbowLegs != 0;
-                                row.pChildren[0].value = (float)g_Config.m_KxRainbowLegsSpeed / 10.0f;
-                        }
-                        else if(str_comp(row.pName, "Rainbow entities") == 0 && row.type == ERowType::Expandable)
-                        {
-                                // v1.56.261: master toggle state.
-                                row.on = g_Config.m_KxRainbowEnt != 0;
-                                // Duplicate child labels are disambiguated by index.
-                                for(int c = 0; c < row.childCount && c < 10; ++c)
+                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != 0)
                                 {
-                                        SRow &ch = row.pChildren[c];
-                                        switch(c)
-                                        {
-                                        case 0: ch.on = g_Config.m_KxRainbowEntHookable != 0; break;
-                                        case 1: ch.value = (float)g_Config.m_KxRainbowEntHookableSpeed / 10.0f; break;
-                                        case 2: ch.on = g_Config.m_KxRainbowEntUnhookable != 0; break;
-                                        case 3: ch.value = (float)g_Config.m_KxRainbowEntUnhookableSpeed / 10.0f; break;
-                                        case 4: ch.on = g_Config.m_KxRainbowEntFreeze != 0; break;
-                                        case 5: ch.value = (float)g_Config.m_KxRainbowEntFreezeSpeed / 10.0f; break;
-                                        case 6: ch.on = g_Config.m_KxRainbowEntDeath != 0; break;
-                                        case 7: ch.value = (float)g_Config.m_KxRainbowEntDeathSpeed / 10.0f; break;
-                                        case 8: ch.on = g_Config.m_KxRainbowEntOthers != 0; break;
-                                        case 9: ch.value = (float)g_Config.m_KxRainbowEntOthersSpeed / 10.0f; break;
-                                        }
+                                        char aHex[8];
+                                        str_format(aHex, sizeof(aHex), "%06x", g_Config.m_KxRainbowLegsColor & 0xffffff);
+                                        str_copy(row.pChildren[0].m_aInputBuf, aHex, sizeof(row.pChildren[0].m_aInputBuf));
+                                        row.pChildren[0].m_InputInitialized = true;
                                 }
+                                row.pChildren[1].value = (float)g_Config.m_KxRainbowLegsAlpha;
+                                row.pChildren[2].on = g_Config.m_KxRainbowLegsAnim != 0;
+                                row.pChildren[3].value = (float)g_Config.m_KxRainbowLegsSpeed / 10.0f;
                         }
-                        else if(str_comp(row.pName, "Rainbow guns") == 0 && row.type == ERowType::Expandable)
+                        else if(str_comp(row.pName, "Custom color entities") == 0 && row.type == ERowType::Expandable)
+                        {
+                                row.on = g_Config.m_KxRainbowEnt != 0;
+                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != 0)
+                                {
+                                        char aHex[8];
+                                        str_format(aHex, sizeof(aHex), "%06x", g_Config.m_KxRainbowEntColor & 0xffffff);
+                                        str_copy(row.pChildren[0].m_aInputBuf, aHex, sizeof(row.pChildren[0].m_aInputBuf));
+                                        row.pChildren[0].m_InputInitialized = true;
+                                }
+                                row.pChildren[1].value = (float)g_Config.m_KxRainbowEntAlpha;
+                                row.pChildren[2].on = g_Config.m_KxRainbowEntAnim != 0;
+                                row.pChildren[3].value = (float)g_Config.m_KxRainbowEntSpeed / 10.0f;
+                        }
+                        else if(str_comp(row.pName, "Custom color guns") == 0 && row.type == ERowType::Expandable)
                         {
                                 row.on = g_Config.m_KxRainbowGuns != 0;
-                                row.pChildren[0].value = (float)g_Config.m_KxRainbowGunsSpeed / 10.0f;
+                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != 0)
+                                {
+                                        char aHex[8];
+                                        str_format(aHex, sizeof(aHex), "%06x", g_Config.m_KxRainbowGunsColor & 0xffffff);
+                                        str_copy(row.pChildren[0].m_aInputBuf, aHex, sizeof(row.pChildren[0].m_aInputBuf));
+                                        row.pChildren[0].m_InputInitialized = true;
+                                }
+                                row.pChildren[1].value = (float)g_Config.m_KxRainbowGunsAlpha;
+                                row.pChildren[2].on = g_Config.m_KxRainbowGunsAnim != 0;
+                                row.pChildren[3].value = (float)g_Config.m_KxRainbowGunsSpeed / 10.0f;
                         }
-                        else if(str_comp(row.pName, "Rainbow hook") == 0 && row.type == ERowType::Expandable)
+                        else if(str_comp(row.pName, "Custom color hook") == 0 && row.type == ERowType::Expandable)
                         {
                                 row.on = g_Config.m_KxRainbowHook != 0;
-                                row.pChildren[0].value = (float)g_Config.m_KxRainbowHookSpeed / 10.0f;
+                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != 0)
+                                {
+                                        char aHex[8];
+                                        str_format(aHex, sizeof(aHex), "%06x", g_Config.m_KxRainbowHookColor & 0xffffff);
+                                        str_copy(row.pChildren[0].m_aInputBuf, aHex, sizeof(row.pChildren[0].m_aInputBuf));
+                                        row.pChildren[0].m_InputInitialized = true;
+                                }
+                                row.pChildren[1].value = (float)g_Config.m_KxRainbowHookAlpha;
+                                row.pChildren[2].on = g_Config.m_KxRainbowHookAnim != 0;
+                                row.pChildren[3].value = (float)g_Config.m_KxRainbowHookSpeed / 10.0f;
                         }
-                        else if(str_comp(row.pName, "Rainbow HUD") == 0 && row.type == ERowType::Expandable)
+                        else if(str_comp(row.pName, "Custom color HUD") == 0 && row.type == ERowType::Expandable)
                         {
                                 row.on = g_Config.m_KxRainbowHud != 0;
-                                row.pChildren[0].value = (float)g_Config.m_KxRainbowHudSpeed / 10.0f;
+                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != 0)
+                                {
+                                        char aHex[8];
+                                        str_format(aHex, sizeof(aHex), "%06x", g_Config.m_KxRainbowHudColor & 0xffffff);
+                                        str_copy(row.pChildren[0].m_aInputBuf, aHex, sizeof(row.pChildren[0].m_aInputBuf));
+                                        row.pChildren[0].m_InputInitialized = true;
+                                }
+                                row.pChildren[1].value = (float)g_Config.m_KxRainbowHudAlpha;
+                                row.pChildren[2].on = g_Config.m_KxRainbowHudAnim != 0;
+                                row.pChildren[3].value = (float)g_Config.m_KxRainbowHudSpeed / 10.0f;
                         }
-                        else if(str_comp(row.pName, "Rainbow particles") == 0 && row.type == ERowType::Expandable)
+                        else if(str_comp(row.pName, "Custom color particles") == 0 && row.type == ERowType::Expandable)
                         {
                                 row.on = g_Config.m_KxRainbowParticles != 0;
-                                row.pChildren[0].value = (float)g_Config.m_KxRainbowParticlesSpeed / 10.0f;
+                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != 0)
+                                {
+                                        char aHex[8];
+                                        str_format(aHex, sizeof(aHex), "%06x", g_Config.m_KxRainbowParticlesColor & 0xffffff);
+                                        str_copy(row.pChildren[0].m_aInputBuf, aHex, sizeof(row.pChildren[0].m_aInputBuf));
+                                        row.pChildren[0].m_InputInitialized = true;
+                                }
+                                row.pChildren[1].value = (float)g_Config.m_KxRainbowParticlesAlpha;
+                                row.pChildren[2].on = g_Config.m_KxRainbowParticlesAnim != 0;
+                                row.pChildren[3].value = (float)g_Config.m_KxRainbowParticlesSpeed / 10.0f;
                         }
-                        else if(str_comp(row.pName, "Rainbow emoticons") == 0 && row.type == ERowType::Expandable)
+                        else if(str_comp(row.pName, "Custom color emoticons") == 0 && row.type == ERowType::Expandable)
                         {
                                 row.on = g_Config.m_KxRainbowEmoticons != 0;
-                                row.pChildren[0].value = (float)g_Config.m_KxRainbowEmoticonsSpeed / 10.0f;
+                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != 0)
+                                {
+                                        char aHex[8];
+                                        str_format(aHex, sizeof(aHex), "%06x", g_Config.m_KxRainbowEmoticonsColor & 0xffffff);
+                                        str_copy(row.pChildren[0].m_aInputBuf, aHex, sizeof(row.pChildren[0].m_aInputBuf));
+                                        row.pChildren[0].m_InputInitialized = true;
+                                }
+                                row.pChildren[1].value = (float)g_Config.m_KxRainbowEmoticonsAlpha;
+                                row.pChildren[2].on = g_Config.m_KxRainbowEmoticonsAnim != 0;
+                                row.pChildren[3].value = (float)g_Config.m_KxRainbowEmoticonsSpeed / 10.0f;
                         }
                         else if(p == 4 && row.type == ERowType::Dropdown && str_comp(row.pName, "Bind Mode") == 0)
                                 row.valueIdx = g_Config.m_KxBindsMode;
@@ -3981,39 +4160,55 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                         }
                         // v1.56.260: Visuals rainbow Speed sliders (before the generic
                         // "Speed" branch, which would otherwise write Fake Aim speed).
-                        else if(str_comp(pTarget->pName, "Speed") == 0 && str_comp(row.pName, "Rainbow entities") == 0)
-                        {
-                                int rawVal = (int)(pTarget->value * 10.0f + 0.5f);
-                                switch(m_DragSliderChild)
-                                {
-                                case 1: g_Config.m_KxRainbowEntHookableSpeed = rawVal; break;
-                                case 3: g_Config.m_KxRainbowEntUnhookableSpeed = rawVal; break;
-                                case 5: g_Config.m_KxRainbowEntFreezeSpeed = rawVal; break;
-                                case 7: g_Config.m_KxRainbowEntDeathSpeed = rawVal; break;
-                                case 9: g_Config.m_KxRainbowEntOthersSpeed = rawVal; break;
-                                }
-                        }
+                        // v1.56.275: entities now use the master Speed cvar.
                         else if(str_comp(pTarget->pName, "Speed") == 0 &&
-                                (str_comp(row.pName, "Rainbow tee") == 0 || str_comp(row.pName, "Rainbow legs") == 0 ||
-                                 str_comp(row.pName, "Rainbow guns") == 0 || str_comp(row.pName, "Rainbow hook") == 0 ||
-                                 str_comp(row.pName, "Rainbow HUD") == 0 || str_comp(row.pName, "Rainbow particles") == 0 ||
-                                 str_comp(row.pName, "Rainbow emoticons") == 0))
+                                (str_comp(row.pName, "Custom color tee") == 0 || str_comp(row.pName, "Custom color legs") == 0 ||
+                                 str_comp(row.pName, "Custom color entities") == 0 || str_comp(row.pName, "Custom color guns") == 0 ||
+                                 str_comp(row.pName, "Custom color hook") == 0 || str_comp(row.pName, "Custom color HUD") == 0 ||
+                                 str_comp(row.pName, "Custom color particles") == 0 || str_comp(row.pName, "Custom color emoticons") == 0))
                         {
                                 int rawVal = (int)(pTarget->value * 10.0f + 0.5f);
-                                if(str_comp(row.pName, "Rainbow tee") == 0)
+                                if(str_comp(row.pName, "Custom color tee") == 0)
                                         g_Config.m_KxRainbowTeeSpeed = rawVal;
-                                else if(str_comp(row.pName, "Rainbow legs") == 0)
+                                else if(str_comp(row.pName, "Custom color legs") == 0)
                                         g_Config.m_KxRainbowLegsSpeed = rawVal;
-                                else if(str_comp(row.pName, "Rainbow guns") == 0)
+                                else if(str_comp(row.pName, "Custom color entities") == 0)
+                                        g_Config.m_KxRainbowEntSpeed = rawVal;
+                                else if(str_comp(row.pName, "Custom color guns") == 0)
                                         g_Config.m_KxRainbowGunsSpeed = rawVal;
-                                else if(str_comp(row.pName, "Rainbow hook") == 0)
+                                else if(str_comp(row.pName, "Custom color hook") == 0)
                                         g_Config.m_KxRainbowHookSpeed = rawVal;
-                                else if(str_comp(row.pName, "Rainbow HUD") == 0)
+                                else if(str_comp(row.pName, "Custom color HUD") == 0)
                                         g_Config.m_KxRainbowHudSpeed = rawVal;
-                                else if(str_comp(row.pName, "Rainbow particles") == 0)
+                                else if(str_comp(row.pName, "Custom color particles") == 0)
                                         g_Config.m_KxRainbowParticlesSpeed = rawVal;
                                 else
                                         g_Config.m_KxRainbowEmoticonsSpeed = rawVal;
+                        }
+                        // v1.56.275: Visuals custom-color Opacity sliders.
+                        else if(str_comp(pTarget->pName, "Opacity") == 0 &&
+                                (str_comp(row.pName, "Custom color tee") == 0 || str_comp(row.pName, "Custom color legs") == 0 ||
+                                 str_comp(row.pName, "Custom color entities") == 0 || str_comp(row.pName, "Custom color guns") == 0 ||
+                                 str_comp(row.pName, "Custom color hook") == 0 || str_comp(row.pName, "Custom color HUD") == 0 ||
+                                 str_comp(row.pName, "Custom color particles") == 0 || str_comp(row.pName, "Custom color emoticons") == 0))
+                        {
+                                int rawVal = (int)(pTarget->value + 0.5f);
+                                if(str_comp(row.pName, "Custom color tee") == 0)
+                                        g_Config.m_KxRainbowTeeAlpha = rawVal;
+                                else if(str_comp(row.pName, "Custom color legs") == 0)
+                                        g_Config.m_KxRainbowLegsAlpha = rawVal;
+                                else if(str_comp(row.pName, "Custom color entities") == 0)
+                                        g_Config.m_KxRainbowEntAlpha = rawVal;
+                                else if(str_comp(row.pName, "Custom color guns") == 0)
+                                        g_Config.m_KxRainbowGunsAlpha = rawVal;
+                                else if(str_comp(row.pName, "Custom color hook") == 0)
+                                        g_Config.m_KxRainbowHookAlpha = rawVal;
+                                else if(str_comp(row.pName, "Custom color HUD") == 0)
+                                        g_Config.m_KxRainbowHudAlpha = rawVal;
+                                else if(str_comp(row.pName, "Custom color particles") == 0)
+                                        g_Config.m_KxRainbowParticlesAlpha = rawVal;
+                                else
+                                        g_Config.m_KxRainbowEmoticonsAlpha = rawVal;
                         }
                         else if(str_comp(pTarget->pName, "Speed") == 0)
                         {
@@ -4608,19 +4803,19 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         if(str_comp(pTarget->pName, "Helpers") == 0)
                                                 g_Config.m_KxHelpers = pTarget->on;
                                         // v1.56.260: Visuals panel toggles.
-                                        else if(str_comp(pTarget->pName, "Rainbow tee") == 0)
+                                        else if(str_comp(pTarget->pName, "Custom color tee") == 0)
                                                 g_Config.m_KxRainbowTee = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Rainbow legs") == 0)
+                                        else if(str_comp(pTarget->pName, "Custom color legs") == 0)
                                                 g_Config.m_KxRainbowLegs = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Rainbow guns") == 0)
+                                        else if(str_comp(pTarget->pName, "Custom color guns") == 0)
                                                 g_Config.m_KxRainbowGuns = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Rainbow hook") == 0)
+                                        else if(str_comp(pTarget->pName, "Custom color hook") == 0)
                                                 g_Config.m_KxRainbowHook = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Rainbow HUD") == 0)
+                                        else if(str_comp(pTarget->pName, "Custom color HUD") == 0)
                                                 g_Config.m_KxRainbowHud = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Rainbow particles") == 0)
+                                        else if(str_comp(pTarget->pName, "Custom color particles") == 0)
                                                 g_Config.m_KxRainbowParticles = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Rainbow emoticons") == 0)
+                                        else if(str_comp(pTarget->pName, "Custom color emoticons") == 0)
                                                 g_Config.m_KxRainbowEmoticons = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Hide particles") == 0)
                                                 g_Config.m_KxHideParticles = pTarget->on ? 1 : 0;
@@ -4647,20 +4842,45 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 g_Config.m_KxBalanceBot = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Drag-To-Sort") == 0)
                                                 g_Config.m_KxDragToSort = pTarget->on ? 1 : 0;
-                                        // v1.56.261: Rainbow entities master toggle.
-                                        else if(str_comp(pTarget->pName, "Rainbow entities") == 0)
+                                        // v1.56.275: FNG Freeze — per-context (ninja counts as frozen in FNG).
+                                        else if(str_comp(pTarget->pName, "FNG Freeze") == 0 && str_comp(row.pName, "AimBot") == 0)
+                                        {
+                                                CAimBot &ab = GameClient()->m_AimBot;
+                                                if(ab.m_AimBotSelectedWeapon >= 0 && ab.m_AimBotSelectedWeapon < CAimBot::NUM_WEAPONS_AIM)
+                                                        ab.m_AimBotWeapons[ab.m_AimBotSelectedWeapon].m_FngFreeze = pTarget->on;
+                                        }
+                                        else if(str_comp(pTarget->pName, "FNG Freeze") == 0 && str_comp(row.pName, "TriggerBot") == 0)
+                                        {
+                                                CAimBot &tb = GameClient()->m_AimBot;
+                                                if(tb.m_TriggerBotSelectedWeapon >= 0 && tb.m_TriggerBotSelectedWeapon < CAimBot::NUM_WEAPONS_TRIGGER)
+                                                        tb.m_TriggerBotWeapons[tb.m_TriggerBotSelectedWeapon].m_FngFreeze = pTarget->on;
+                                        }
+                                        else if(str_comp(pTarget->pName, "FNG Freeze") == 0 && str_comp(row.pName, "ESP") == 0)
+                                                g_Config.m_KxEspFngFreeze = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "FNG Freeze") == 0 && str_comp(row.pName, "Hitboxes") == 0)
+                                                g_Config.m_KxHitboxesFngFreeze = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "FNG Freeze") == 0 && str_comp(row.pName, "BalanceBot") == 0)
+                                                g_Config.m_KxBbFngFreeze = pTarget->on ? 1 : 0;
+                                        // v1.56.261: Custom color entities master toggle.
+                                        else if(str_comp(pTarget->pName, "Custom color entities") == 0)
                                                 g_Config.m_KxRainbowEnt = pTarget->on ? 1 : 0;
-                                        // v1.56.260: Rainbow entities per-category child toggles.
-                                        else if(str_comp(pTarget->pName, "Hookable") == 0 && str_comp(row.pName, "Rainbow entities") == 0)
-                                                g_Config.m_KxRainbowEntHookable = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Unhookable") == 0 && str_comp(row.pName, "Rainbow entities") == 0)
-                                                g_Config.m_KxRainbowEntUnhookable = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Freeze") == 0 && str_comp(row.pName, "Rainbow entities") == 0)
-                                                g_Config.m_KxRainbowEntFreeze = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Death") == 0 && str_comp(row.pName, "Rainbow entities") == 0)
-                                                g_Config.m_KxRainbowEntDeath = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Others") == 0 && str_comp(row.pName, "Rainbow entities") == 0)
-                                                g_Config.m_KxRainbowEntOthers = pTarget->on ? 1 : 0;
+                                        // v1.56.275: Visuals rainbow — per-feature Rainbow anim toggles.
+                                        else if(str_comp(pTarget->pName, "Rainbow") == 0 && str_comp(row.pName, "Custom color tee") == 0)
+                                                g_Config.m_KxRainbowTeeAnim = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Rainbow") == 0 && str_comp(row.pName, "Custom color legs") == 0)
+                                                g_Config.m_KxRainbowLegsAnim = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Rainbow") == 0 && str_comp(row.pName, "Custom color entities") == 0)
+                                                g_Config.m_KxRainbowEntAnim = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Rainbow") == 0 && str_comp(row.pName, "Custom color guns") == 0)
+                                                g_Config.m_KxRainbowGunsAnim = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Rainbow") == 0 && str_comp(row.pName, "Custom color hook") == 0)
+                                                g_Config.m_KxRainbowHookAnim = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Rainbow") == 0 && str_comp(row.pName, "Custom color HUD") == 0)
+                                                g_Config.m_KxRainbowHudAnim = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Rainbow") == 0 && str_comp(row.pName, "Custom color particles") == 0)
+                                                g_Config.m_KxRainbowParticlesAnim = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Rainbow") == 0 && str_comp(row.pName, "Custom color emoticons") == 0)
+                                                g_Config.m_KxRainbowEmoticonsAnim = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Trajectory") == 0)
                                                 g_Config.m_KxShowTrajectory = pTarget->on ? 1 : 0;
                                         // Advanced → Laser unfreeze expandable is master toggle.
@@ -5613,6 +5833,9 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                                         // "Mode" cannot fall into it.
                                         else if(str_comp(target.pName, "Team") == 0 && str_comp(row.pName, "ESP") == 0)
                                                 g_Config.m_KxEspTeamFilter = o;
+                                        // v1.56.275: ESP DDrace Team.
+                                        else if(str_comp(target.pName, "DDrace Team") == 0 && str_comp(row.pName, "ESP") == 0)
+                                                g_Config.m_KxEspDDraceTeam = o;
                                         else if(str_comp(target.pName, "Friend") == 0 && str_comp(row.pName, "ESP") == 0)
                                                 g_Config.m_KxEspFriendFilter = o;
                                         else if(str_comp(target.pName, "Dummy") == 0 && str_comp(row.pName, "ESP") == 0)
@@ -5665,7 +5888,7 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
         continue;
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c))
+if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
 if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
@@ -5736,6 +5959,9 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                         // ESP dropdowns
                                                         else if(str_comp(target.pName, "Team") == 0 && str_comp(row.pName, "ESP") == 0)
                                                                 g_Config.m_KxEspTeamFilter = o;
+                                                        // v1.56.275: ESP DDrace Team.
+                                                        else if(str_comp(target.pName, "DDrace Team") == 0 && str_comp(row.pName, "ESP") == 0)
+                                                                g_Config.m_KxEspDDraceTeam = o;
                                                         else if(str_comp(target.pName, "Friend") == 0 && str_comp(row.pName, "ESP") == 0)
                                                                 g_Config.m_KxEspFriendFilter = o;
                                                         else if(str_comp(target.pName, "Dummy") == 0 && str_comp(row.pName, "ESP") == 0)
@@ -5763,6 +5989,9 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                         // v1.56.257: Hitboxes filter dropdowns — same labels as ESP, own cvars.
                                                         else if(str_comp(target.pName, "Team") == 0 && str_comp(row.pName, "Hitboxes") == 0)
                                                                 g_Config.m_KxHitboxesTeamFilter = o;
+                                                        // v1.56.275: Hitboxes DDrace Team.
+                                                        else if(str_comp(target.pName, "DDrace Team") == 0 && str_comp(row.pName, "Hitboxes") == 0)
+                                                                g_Config.m_KxHitboxesDDraceTeam = o;
                                                         else if(str_comp(target.pName, "Friend") == 0 && str_comp(row.pName, "Hitboxes") == 0)
                                                                 g_Config.m_KxHitboxesFriendFilter = o;
                                                         else if(str_comp(target.pName, "Dummy") == 0 && str_comp(row.pName, "Hitboxes") == 0)
@@ -5780,6 +6009,9 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                                 g_Config.m_KxBalanceBotVertical = o;
                                                         else if(str_comp(target.pName, "Team") == 0 && str_comp(row.pName, "BalanceBot") == 0)
                                                                 g_Config.m_KxBbTeam = o;
+                                                        // v1.56.275: BalanceBot DDrace Team.
+                                                        else if(str_comp(target.pName, "DDrace Team") == 0 && str_comp(row.pName, "BalanceBot") == 0)
+                                                                g_Config.m_KxBbDDraceTeam = o;
                                                         else if(str_comp(target.pName, "Friend") == 0 && str_comp(row.pName, "BalanceBot") == 0)
                                                                 g_Config.m_KxBbFriend = o;
                                                         else if(str_comp(target.pName, "Dummy") == 0 && str_comp(row.pName, "BalanceBot") == 0)
@@ -5981,7 +6213,7 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
         continue;
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c))
+if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
 if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
@@ -6235,7 +6467,7 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
         continue;
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c))
+if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
 if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
@@ -6379,6 +6611,43 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
         else if(str_comp(pRow->pName, "Fake spectate X") == 0) g_Config.m_KxSpoofSpectateX = atoi(pRow->m_aInputBuf);
         else if(str_comp(pRow->pName, "Fake spectate Y") == 0) g_Config.m_KxSpoofSpectateY = atoi(pRow->m_aInputBuf);
         else if(str_comp(pRow->pName, "Fake Follow ID") == 0) g_Config.m_KxSpoofSpectateFollowId = atoi(pRow->m_aInputBuf);
+        // v1.56.275: DDrace team Target ID (ESP/Hitboxes/BalanceBot).
+        else if(str_comp(pRow->pName, "Target ID") == 0 && m_InputPanel >= 0 && m_InputPanel < NUM_PANELS && m_InputRow >= 0 && m_InputRow < g_Panels[m_InputPanel].rowCount)
+        {
+                const char *pOwner = g_Panels[m_InputPanel].pRows[m_InputRow].pName;
+                if(str_comp(pOwner, "ESP") == 0)
+                        g_Config.m_KxEspDDraceTeamId = atoi(pRow->m_aInputBuf);
+                else if(str_comp(pOwner, "Hitboxes") == 0)
+                        g_Config.m_KxHitboxesDDraceTeamId = atoi(pRow->m_aInputBuf);
+                else if(str_comp(pOwner, "BalanceBot") == 0)
+                        g_Config.m_KxBbDDraceTeamId = atoi(pRow->m_aInputBuf);
+        }
+        // v1.56.275: Visuals custom-color Color inputs (owner row selects the cvar).
+        else if(str_comp(pRow->pName, "Color") == 0 && m_InputPanel >= 0 && m_InputPanel < NUM_PANELS && m_InputRow >= 0 && m_InputRow < g_Panels[m_InputPanel].rowCount)
+        {
+                const char *pOwner = g_Panels[m_InputPanel].pRows[m_InputRow].pName;
+                unsigned hex = 0;
+                if(sscanf(pRow->m_aInputBuf, "%6x", &hex) == 1)
+                {
+                        const unsigned Packed = 0xff000000u | (hex & 0xffffff);
+                        if(str_comp(pOwner, "Custom color tee") == 0)
+                                g_Config.m_KxRainbowTeeColor = Packed;
+                        else if(str_comp(pOwner, "Custom color legs") == 0)
+                                g_Config.m_KxRainbowLegsColor = Packed;
+                        else if(str_comp(pOwner, "Custom color entities") == 0)
+                                g_Config.m_KxRainbowEntColor = Packed;
+                        else if(str_comp(pOwner, "Custom color guns") == 0)
+                                g_Config.m_KxRainbowGunsColor = Packed;
+                        else if(str_comp(pOwner, "Custom color hook") == 0)
+                                g_Config.m_KxRainbowHookColor = Packed;
+                        else if(str_comp(pOwner, "Custom color HUD") == 0)
+                                g_Config.m_KxRainbowHudColor = Packed;
+                        else if(str_comp(pOwner, "Custom color particles") == 0)
+                                g_Config.m_KxRainbowParticlesColor = Packed;
+                        else if(str_comp(pOwner, "Custom color emoticons") == 0)
+                                g_Config.m_KxRainbowEmoticonsColor = Packed;
+                }
+        }
         // v1.56.171 BUG9: Binds panel — unified bind/unbind logic.
         // For each bind row: look up the command string, find the currently bound key
         // (if any), unbind it, then bind the new key (if non-empty). When the field is
@@ -6503,7 +6772,7 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
         continue;
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c))
+if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
 if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
@@ -6586,7 +6855,7 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
         continue;
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c))
+if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
 if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
@@ -6669,7 +6938,7 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
         continue;
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c))
+if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
 if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
@@ -7311,7 +7580,7 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
         continue;
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c))
+if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
 if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
@@ -7350,7 +7619,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c) || (str_comp(row.pName, "Spoof Spectate") == 0 && !SpoofSpectateChildVisible(row.pChildren, row.childCount, c))) continue;
                                 if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c)) continue;
                                 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c)) continue;
-                                if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c))
+                                if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
                                         continue;
                                 if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c))) continue;
                                 const YGNodeRef pn = rowNodes[preIdx];
@@ -7398,7 +7667,7 @@ if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChild
         continue;
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c))
+if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
 if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
         continue;

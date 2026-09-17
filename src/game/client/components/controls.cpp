@@ -447,10 +447,22 @@ int CControls::SnapInput(int *pData)
                                         if(pBb->Collision()->IntersectLineTeleHook(MyPos, tPos, nullptr, nullptr) != 0)
                                                 continue;
 
-                                        // Team filter
-                                        if(g_Config.m_KxBbTeam == 1 && pBb->m_Teams.SameTeam(BbLocal, i))
+                                        // Team filter: 0=both 1=my 2=war 3=blue 4=red (v1.56.275).
+                                        // "Team" = REAL team (red/blue); My/War compare with ours.
+                                        if(g_Config.m_KxBbTeam == 1 && pBb->m_aClients[i].m_Team != pBb->m_aClients[BbLocal].m_Team)
                                                 continue;
-                                        if(g_Config.m_KxBbTeam == 2 && !pBb->m_Teams.SameTeam(BbLocal, i))
+                                        if(g_Config.m_KxBbTeam == 2 && pBb->m_aClients[i].m_Team == pBb->m_aClients[BbLocal].m_Team)
+                                                continue;
+                                        if(g_Config.m_KxBbTeam == 3 && pBb->m_aClients[i].m_Team != TEAM_BLUE)
+                                                continue;
+                                        if(g_Config.m_KxBbTeam == 4 && pBb->m_aClients[i].m_Team != TEAM_RED)
+                                                continue;
+                                        // DDrace team filter: 0=both 1=my 2=other 3=target (v1.56.275)
+                                        if(g_Config.m_KxBbDDraceTeam == 1 && !pBb->m_Teams.SameTeam(BbLocal, i))
+                                                continue;
+                                        if(g_Config.m_KxBbDDraceTeam == 2 && pBb->m_Teams.SameTeam(BbLocal, i))
+                                                continue;
+                                        if(g_Config.m_KxBbDDraceTeam == 3 && pBb->m_Teams.Team(i) != g_Config.m_KxBbDDraceTeamId)
                                                 continue;
                                         // Friend filter
                                         if(g_Config.m_KxBbFriend == 1 && pBb->m_aClients[i].m_Friend)
@@ -477,8 +489,13 @@ int CControls::SnapInput(int *pData)
                                                 continue;
                                         if(g_Config.m_KxBbClanmate == 2 && !isClanmate)
                                                 continue;
-                                        // Freeze filter
-                                        const bool isFrozen = pBb->m_aClients[i].m_FreezeEnd != 0;
+                                        // Freeze filter (LiveFrozen covers servers like FNG that hide
+                                        // the unfreeze tick — same check as the freeze flakes rendering)
+                                        // v1.56.275: FNG Freeze — ninja counts as frozen.
+                                        bool isFrozen = pBb->m_aClients[i].m_FreezeEnd != 0 ||
+                                                pBb->m_aClients[i].m_LiveFrozen;
+                                        if(g_Config.m_KxBbFngFreeze && pBb->m_Snap.m_aCharacters[i].m_Cur.m_Weapon == WEAPON_NINJA)
+                                                isFrozen = true;
                                         if(g_Config.m_KxBbFreeze == 1 && !isFrozen)
                                                 continue;
                                         if(g_Config.m_KxBbFreeze == 2 && isFrozen)

@@ -581,7 +581,13 @@ void CPlayers::RenderHook(
         if(ClientId == -2)
                 HookSpriteColor = ColorRGBA(1.0f, 1.0f, 1.0f, 0.5f);
         if(g_Config.m_KxRainbowHook)
-                HookSpriteColor = KxVisualRainbowColor(Client()->GlobalTime(), g_Config.m_KxRainbowHookSpeed, HookSpriteColor.a);
+        {
+                // v1.56.275: rainbow anim or static Color, both with Opacity.
+                if(g_Config.m_KxRainbowHookAnim)
+                        HookSpriteColor = KxVisualRainbowColor(Client()->GlobalTime(), g_Config.m_KxRainbowHookSpeed, HookSpriteColor.a * (g_Config.m_KxRainbowHookAlpha / 100.0f));
+                else
+                        HookSpriteColor = KxVisualFixedColor(g_Config.m_KxRainbowHookColor, g_Config.m_KxRainbowHookAlpha, HookSpriteColor.a);
+        }
         Graphics()->SetColor(HookSpriteColor);
 
         vec2 Pos = Position;
@@ -639,9 +645,20 @@ void CPlayers::RenderPlayer(
 
         // v1.56.260: Visuals rainbow — tee body and legs colors.
         if(g_Config.m_KxRainbowTee)
-                RenderInfo.m_ColorBody = KxVisualRainbowColor(Client()->GlobalTime(), g_Config.m_KxRainbowTeeSpeed, 1.0f);
+        {
+                // v1.56.275: rainbow anim or static Color, both with Opacity.
+                if(g_Config.m_KxRainbowTeeAnim)
+                        RenderInfo.m_ColorBody = KxVisualRainbowColor(Client()->GlobalTime(), g_Config.m_KxRainbowTeeSpeed, g_Config.m_KxRainbowTeeAlpha / 100.0f);
+                else
+                        RenderInfo.m_ColorBody = KxVisualFixedColor(g_Config.m_KxRainbowTeeColor, g_Config.m_KxRainbowTeeAlpha);
+        }
         if(g_Config.m_KxRainbowLegs)
-                RenderInfo.m_ColorFeet = KxVisualRainbowColor(Client()->GlobalTime(), g_Config.m_KxRainbowLegsSpeed, 1.0f);
+        {
+                if(g_Config.m_KxRainbowLegsAnim)
+                        RenderInfo.m_ColorFeet = KxVisualRainbowColor(Client()->GlobalTime(), g_Config.m_KxRainbowLegsSpeed, g_Config.m_KxRainbowLegsAlpha / 100.0f);
+                else
+                        RenderInfo.m_ColorFeet = KxVisualFixedColor(g_Config.m_KxRainbowLegsColor, g_Config.m_KxRainbowLegsAlpha);
+        }
 
         const bool Paused = GameClient()->IsWorldPaused() || GameClient()->IsDemoPlaybackPaused();
         bool Local = GameClient()->m_Snap.m_LocalClientId == ClientId;
@@ -754,9 +771,14 @@ void CPlayers::RenderPlayer(
         {
                 if(!(RenderInfo.m_TeeRenderFlags & TEE_NO_WEAPON))
                 {
-                        // v1.56.260: Visuals rainbow guns.
+                        // v1.56.260: Visuals rainbow guns. v1.56.275: Color/Opacity.
                         if(g_Config.m_KxRainbowGuns)
-                                Graphics()->SetColor(KxVisualRainbowColor(Client()->GlobalTime(), g_Config.m_KxRainbowGunsSpeed, Alpha));
+                        {
+                                if(g_Config.m_KxRainbowGunsAnim)
+                                        Graphics()->SetColor(KxVisualRainbowColor(Client()->GlobalTime(), g_Config.m_KxRainbowGunsSpeed, Alpha * (g_Config.m_KxRainbowGunsAlpha / 100.0f)));
+                                else
+                                        Graphics()->SetColor(KxVisualFixedColor(g_Config.m_KxRainbowGunsColor, g_Config.m_KxRainbowGunsAlpha, Alpha));
+                        }
                         else
                                 Graphics()->SetColor(1.0f, 1.0f, 1.0f, Alpha);
 
@@ -975,9 +997,14 @@ void CPlayers::RenderPlayer(
                         int CurEmoticon = (SPRITE_ZZZ - SPRITE_OOP);
                         Graphics()->TextureSet(GameClient()->m_EmoticonsSkin.m_aSpriteEmoticons[CurEmoticon]);
                         int QuadOffset = QuadOffsetToEmoticon + CurEmoticon;
-                        // v1.56.260: Visuals rainbow emoticons.
+                        // v1.56.260: Visuals rainbow emoticons. v1.56.275: Color/Opacity.
                         if(g_Config.m_KxRainbowEmoticons)
-                                Graphics()->SetColor(KxVisualRainbowColor(Client()->GlobalTime(), g_Config.m_KxRainbowEmoticonsSpeed, Alpha));
+                        {
+                                if(g_Config.m_KxRainbowEmoticonsAnim)
+                                        Graphics()->SetColor(KxVisualRainbowColor(Client()->GlobalTime(), g_Config.m_KxRainbowEmoticonsSpeed, Alpha * (g_Config.m_KxRainbowEmoticonsAlpha / 100.0f)));
+                                else
+                                        Graphics()->SetColor(KxVisualFixedColor(g_Config.m_KxRainbowEmoticonsColor, g_Config.m_KxRainbowEmoticonsAlpha, Alpha));
+                        }
                         else
                                 Graphics()->SetColor(1.0f, 1.0f, 1.0f, Alpha);
                         Graphics()->RenderQuadContainerAsSprite(m_WeaponEmoteQuadContainerIndex, QuadOffset, Position.x + 24.f, Position.y - 40.f);
@@ -1011,9 +1038,14 @@ void CPlayers::RenderPlayer(
 
                         Graphics()->QuadsSetRotation(pi / 6 * WiggleAngle);
 
-                        // v1.56.260: Visuals rainbow emoticons.
+                        // v1.56.260: Visuals rainbow emoticons. v1.56.275: Color/Opacity.
                         if(g_Config.m_KxRainbowEmoticons)
-                                Graphics()->SetColor(KxVisualRainbowColor(Client()->GlobalTime(), g_Config.m_KxRainbowEmoticonsSpeed, a * Alpha));
+                        {
+                                if(g_Config.m_KxRainbowEmoticonsAnim)
+                                        Graphics()->SetColor(KxVisualRainbowColor(Client()->GlobalTime(), g_Config.m_KxRainbowEmoticonsSpeed, a * Alpha * (g_Config.m_KxRainbowEmoticonsAlpha / 100.0f)));
+                                else
+                                        Graphics()->SetColor(KxVisualFixedColor(g_Config.m_KxRainbowEmoticonsColor, g_Config.m_KxRainbowEmoticonsAlpha, a * Alpha));
+                        }
                         else
                                 Graphics()->SetColor(1.0f, 1.0f, 1.0f, a * Alpha);
                         // client_datas::emoticon is an offset from the first emoticon

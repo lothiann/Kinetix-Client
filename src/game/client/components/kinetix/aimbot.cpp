@@ -47,6 +47,7 @@ struct KxAbCvars
 	int *pTargetsFilter;
 	char *pTargetsIds;
 	int *pFreeze;
+	int *pFngFreeze;
 	int *pPriority;
 	int *pSilent;
 	int *pSmoothSpeed;
@@ -59,7 +60,7 @@ static const KxAbCvars s_aAbCvars[] = {
 		&g_Config.m_KxAbHammerPredict, &g_Config.m_KxAbHammerJitter, &g_Config.m_KxAbHammerAimMode,
 		&g_Config.m_KxAbHammerTeam, &g_Config.m_KxAbHammerFriend, &g_Config.m_KxAbHammerDummy,
 		&g_Config.m_KxAbHammerClanmate, &g_Config.m_KxAbHammerTargetsFilter, g_Config.m_KxAbHammerTargetsIds,
-		&g_Config.m_KxAbHammerFreeze, &g_Config.m_KxAbHammerPriority,
+		&g_Config.m_KxAbHammerFreeze, &g_Config.m_KxAbHammerFngFreeze, &g_Config.m_KxAbHammerPriority,
 		&g_Config.m_KxAbHammerSilent, &g_Config.m_KxAbHammerSmoothSpeed,
 		&g_Config.m_KxAbHammerSmoothCenterSnap},
 	{&g_Config.m_KxAbPistolEnabled, &g_Config.m_KxAbPistolFov, &g_Config.m_KxAbPistolRadius,
@@ -67,7 +68,7 @@ static const KxAbCvars s_aAbCvars[] = {
 		&g_Config.m_KxAbPistolPredict, &g_Config.m_KxAbPistolJitter, &g_Config.m_KxAbPistolAimMode,
 		&g_Config.m_KxAbPistolTeam, &g_Config.m_KxAbPistolFriend, &g_Config.m_KxAbPistolDummy,
 		&g_Config.m_KxAbPistolClanmate, &g_Config.m_KxAbPistolTargetsFilter, g_Config.m_KxAbPistolTargetsIds,
-		&g_Config.m_KxAbPistolFreeze, &g_Config.m_KxAbPistolPriority,
+		&g_Config.m_KxAbPistolFreeze, &g_Config.m_KxAbPistolFngFreeze, &g_Config.m_KxAbPistolPriority,
 		&g_Config.m_KxAbPistolSilent, &g_Config.m_KxAbPistolSmoothSpeed,
 		&g_Config.m_KxAbPistolSmoothCenterSnap},
 	{&g_Config.m_KxAbShotgunEnabled, &g_Config.m_KxAbShotgunFov, &g_Config.m_KxAbShotgunRadius,
@@ -75,7 +76,7 @@ static const KxAbCvars s_aAbCvars[] = {
 		&g_Config.m_KxAbShotgunPredict, &g_Config.m_KxAbShotgunJitter, &g_Config.m_KxAbShotgunAimMode,
 		&g_Config.m_KxAbShotgunTeam, &g_Config.m_KxAbShotgunFriend, &g_Config.m_KxAbShotgunDummy,
 		&g_Config.m_KxAbShotgunClanmate, &g_Config.m_KxAbShotgunTargetsFilter, g_Config.m_KxAbShotgunTargetsIds,
-		&g_Config.m_KxAbShotgunFreeze, &g_Config.m_KxAbShotgunPriority,
+		&g_Config.m_KxAbShotgunFreeze, &g_Config.m_KxAbShotgunFngFreeze, &g_Config.m_KxAbShotgunPriority,
 		&g_Config.m_KxAbShotgunSilent, &g_Config.m_KxAbShotgunSmoothSpeed,
 		&g_Config.m_KxAbShotgunSmoothCenterSnap},
 	{&g_Config.m_KxAbGrenadeEnabled, &g_Config.m_KxAbGrenadeFov, &g_Config.m_KxAbGrenadeRadius,
@@ -83,7 +84,7 @@ static const KxAbCvars s_aAbCvars[] = {
 		&g_Config.m_KxAbGrenadePredict, &g_Config.m_KxAbGrenadeJitter, &g_Config.m_KxAbGrenadeAimMode,
 		&g_Config.m_KxAbGrenadeTeam, &g_Config.m_KxAbGrenadeFriend, &g_Config.m_KxAbGrenadeDummy,
 		&g_Config.m_KxAbGrenadeClanmate, &g_Config.m_KxAbGrenadeTargetsFilter, g_Config.m_KxAbGrenadeTargetsIds,
-		&g_Config.m_KxAbGrenadeFreeze, &g_Config.m_KxAbGrenadePriority,
+		&g_Config.m_KxAbGrenadeFreeze, &g_Config.m_KxAbGrenadeFngFreeze, &g_Config.m_KxAbGrenadePriority,
 		&g_Config.m_KxAbGrenadeSilent, &g_Config.m_KxAbGrenadeSmoothSpeed,
 		&g_Config.m_KxAbGrenadeSmoothCenterSnap},
 	{&g_Config.m_KxAbLaserEnabled, &g_Config.m_KxAbLaserFov, &g_Config.m_KxAbLaserRadius,
@@ -91,7 +92,7 @@ static const KxAbCvars s_aAbCvars[] = {
 		&g_Config.m_KxAbLaserPredict, &g_Config.m_KxAbLaserJitter, &g_Config.m_KxAbLaserAimMode,
 		&g_Config.m_KxAbLaserTeam, &g_Config.m_KxAbLaserFriend, &g_Config.m_KxAbLaserDummy,
 		&g_Config.m_KxAbLaserClanmate, &g_Config.m_KxAbLaserTargetsFilter, g_Config.m_KxAbLaserTargetsIds,
-		&g_Config.m_KxAbLaserFreeze, &g_Config.m_KxAbLaserPriority,
+		&g_Config.m_KxAbLaserFreeze, &g_Config.m_KxAbLaserFngFreeze, &g_Config.m_KxAbLaserPriority,
 		&g_Config.m_KxAbLaserSilent, &g_Config.m_KxAbLaserSmoothSpeed,
 		&g_Config.m_KxAbLaserSmoothCenterSnap},
 	{&g_Config.m_KxAbNinjaEnabled, &g_Config.m_KxAbNinjaFov, &g_Config.m_KxAbNinjaRadius,
@@ -99,7 +100,7 @@ static const KxAbCvars s_aAbCvars[] = {
 		&g_Config.m_KxAbNinjaPredict, &g_Config.m_KxAbNinjaJitter, &g_Config.m_KxAbNinjaAimMode,
 		&g_Config.m_KxAbNinjaTeam, &g_Config.m_KxAbNinjaFriend, &g_Config.m_KxAbNinjaDummy,
 		&g_Config.m_KxAbNinjaClanmate, &g_Config.m_KxAbNinjaTargetsFilter, g_Config.m_KxAbNinjaTargetsIds,
-		&g_Config.m_KxAbNinjaFreeze, &g_Config.m_KxAbNinjaPriority,
+		&g_Config.m_KxAbNinjaFreeze, &g_Config.m_KxAbNinjaFngFreeze, &g_Config.m_KxAbNinjaPriority,
 		&g_Config.m_KxAbNinjaSilent, &g_Config.m_KxAbNinjaSmoothSpeed,
 		&g_Config.m_KxAbNinjaSmoothCenterSnap},
 	{&g_Config.m_KxAbHookEnabled, &g_Config.m_KxAbHookFov, &g_Config.m_KxAbHookRadius,
@@ -107,7 +108,7 @@ static const KxAbCvars s_aAbCvars[] = {
 		&g_Config.m_KxAbHookPredict, &g_Config.m_KxAbHookJitter, &g_Config.m_KxAbHookAimMode,
 		&g_Config.m_KxAbHookTeam, &g_Config.m_KxAbHookFriend, &g_Config.m_KxAbHookDummy,
 		&g_Config.m_KxAbHookClanmate, &g_Config.m_KxAbHookTargetsFilter, g_Config.m_KxAbHookTargetsIds,
-		&g_Config.m_KxAbHookFreeze, &g_Config.m_KxAbHookPriority,
+		&g_Config.m_KxAbHookFreeze, &g_Config.m_KxAbHookFngFreeze, &g_Config.m_KxAbHookPriority,
 		&g_Config.m_KxAbHookSilent, &g_Config.m_KxAbHookSmoothSpeed,
 		&g_Config.m_KxAbHookSmoothCenterSnap},
 };
@@ -128,6 +129,7 @@ struct KxTbCvars
 	int *pTargetsFilter;
 	char *pTargetsIds;
 	int *pFreeze;
+	int *pFngFreeze;
 	int *pPriority;
 	int *pLatency;
 };
@@ -138,37 +140,37 @@ static const KxTbCvars s_aTbCvars[] = {
 		&g_Config.m_KxTbHammerRaycastShow, &g_Config.m_KxTbHammerRules,
 		&g_Config.m_KxTbHammerTeam, &g_Config.m_KxTbHammerFriend, &g_Config.m_KxTbHammerDummy,
 		&g_Config.m_KxTbHammerClanmate, &g_Config.m_KxTbHammerTargetsFilter, g_Config.m_KxTbHammerTargetsIds,
-		&g_Config.m_KxTbHammerFreeze, &g_Config.m_KxTbHammerPriority, &g_Config.m_KxTbHammerLatency},
+		&g_Config.m_KxTbHammerFreeze, &g_Config.m_KxTbHammerFngFreeze, &g_Config.m_KxTbHammerPriority, &g_Config.m_KxTbHammerLatency},
 	{&g_Config.m_KxTbPistolEnabled, &g_Config.m_KxTbPistolTrigger, &g_Config.m_KxTbPistolTriggerMode,
 		&g_Config.m_KxTbPistolFov, &g_Config.m_KxTbPistolRadius,
 		&g_Config.m_KxTbPistolRaycastShow, &g_Config.m_KxTbPistolRules,
 		&g_Config.m_KxTbPistolTeam, &g_Config.m_KxTbPistolFriend, &g_Config.m_KxTbPistolDummy,
 		&g_Config.m_KxTbPistolClanmate, &g_Config.m_KxTbPistolTargetsFilter, g_Config.m_KxTbPistolTargetsIds,
-		&g_Config.m_KxTbPistolFreeze, &g_Config.m_KxTbPistolPriority, &g_Config.m_KxTbPistolLatency},
+		&g_Config.m_KxTbPistolFreeze, &g_Config.m_KxTbPistolFngFreeze, &g_Config.m_KxTbPistolPriority, &g_Config.m_KxTbPistolLatency},
 	{&g_Config.m_KxTbShotgunEnabled, &g_Config.m_KxTbShotgunTrigger, &g_Config.m_KxTbShotgunTriggerMode,
 		&g_Config.m_KxTbShotgunFov, &g_Config.m_KxTbShotgunRadius,
 		&g_Config.m_KxTbShotgunRaycastShow, &g_Config.m_KxTbShotgunRules,
 		&g_Config.m_KxTbShotgunTeam, &g_Config.m_KxTbShotgunFriend, &g_Config.m_KxTbShotgunDummy,
 		&g_Config.m_KxTbShotgunClanmate, &g_Config.m_KxTbShotgunTargetsFilter, g_Config.m_KxTbShotgunTargetsIds,
-		&g_Config.m_KxTbShotgunFreeze, &g_Config.m_KxTbShotgunPriority, &g_Config.m_KxTbShotgunLatency},
+		&g_Config.m_KxTbShotgunFreeze, &g_Config.m_KxTbShotgunFngFreeze, &g_Config.m_KxTbShotgunPriority, &g_Config.m_KxTbShotgunLatency},
 	{&g_Config.m_KxTbGrenadeEnabled, &g_Config.m_KxTbGrenadeTrigger, &g_Config.m_KxTbGrenadeTriggerMode,
 		&g_Config.m_KxTbGrenadeFov, &g_Config.m_KxTbGrenadeRadius,
 		&g_Config.m_KxTbGrenadeRaycastShow, &g_Config.m_KxTbGrenadeRules,
 		&g_Config.m_KxTbGrenadeTeam, &g_Config.m_KxTbGrenadeFriend, &g_Config.m_KxTbGrenadeDummy,
 		&g_Config.m_KxTbGrenadeClanmate, &g_Config.m_KxTbGrenadeTargetsFilter, g_Config.m_KxTbGrenadeTargetsIds,
-		&g_Config.m_KxTbGrenadeFreeze, &g_Config.m_KxTbGrenadePriority, &g_Config.m_KxTbGrenadeLatency},
+		&g_Config.m_KxTbGrenadeFreeze, &g_Config.m_KxTbGrenadeFngFreeze, &g_Config.m_KxTbGrenadePriority, &g_Config.m_KxTbGrenadeLatency},
 	{&g_Config.m_KxTbLaserEnabled, &g_Config.m_KxTbLaserTrigger, &g_Config.m_KxTbLaserTriggerMode,
 		&g_Config.m_KxTbLaserFov, &g_Config.m_KxTbLaserRadius,
 		&g_Config.m_KxTbLaserRaycastShow, &g_Config.m_KxTbLaserRules,
 		&g_Config.m_KxTbLaserTeam, &g_Config.m_KxTbLaserFriend, &g_Config.m_KxTbLaserDummy,
 		&g_Config.m_KxTbLaserClanmate, &g_Config.m_KxTbLaserTargetsFilter, g_Config.m_KxTbLaserTargetsIds,
-		&g_Config.m_KxTbLaserFreeze, &g_Config.m_KxTbLaserPriority, &g_Config.m_KxTbLaserLatency},
+		&g_Config.m_KxTbLaserFreeze, &g_Config.m_KxTbLaserFngFreeze, &g_Config.m_KxTbLaserPriority, &g_Config.m_KxTbLaserLatency},
 	{&g_Config.m_KxTbNinjaEnabled, &g_Config.m_KxTbNinjaTrigger, &g_Config.m_KxTbNinjaTriggerMode,
 		&g_Config.m_KxTbNinjaFov, &g_Config.m_KxTbNinjaRadius,
 		&g_Config.m_KxTbNinjaRaycastShow, &g_Config.m_KxTbNinjaRules,
 		&g_Config.m_KxTbNinjaTeam, &g_Config.m_KxTbNinjaFriend, &g_Config.m_KxTbNinjaDummy,
 		&g_Config.m_KxTbNinjaClanmate, &g_Config.m_KxTbNinjaTargetsFilter, g_Config.m_KxTbNinjaTargetsIds,
-		&g_Config.m_KxTbNinjaFreeze, &g_Config.m_KxTbNinjaPriority, &g_Config.m_KxTbNinjaLatency},
+		&g_Config.m_KxTbNinjaFreeze, &g_Config.m_KxTbNinjaFngFreeze, &g_Config.m_KxTbNinjaPriority, &g_Config.m_KxTbNinjaLatency},
 };
 
 // v1.56.255: per-weapon settings persistence. Pulls the saved cvars into the
@@ -204,6 +206,7 @@ void CAimBot::SyncSavedSettings()
 			s.m_TargetsFilter = *c.pTargetsFilter;
 			str_copy(s.m_aTargetsFilter, c.pTargetsIds, sizeof(s.m_aTargetsFilter));
 			s.m_FreezeFilter = *c.pFreeze;
+			s.m_FngFreeze = *c.pFngFreeze != 0;
 			s.m_Priority = *c.pPriority;
 		}
 		for(int w = 0; w < NUM_WEAPONS_TRIGGER; w++)
@@ -224,6 +227,7 @@ void CAimBot::SyncSavedSettings()
 			s.m_TargetsFilter = *c.pTargetsFilter;
 			str_copy(s.m_aTargetsFilter, c.pTargetsIds, sizeof(s.m_aTargetsFilter));
 			s.m_FreezeFilter = *c.pFreeze;
+			s.m_FngFreeze = *c.pFngFreeze != 0;
 			s.m_Priority = *c.pPriority;
 			s.m_RandomLatency = *c.pLatency;
 		}
@@ -258,6 +262,7 @@ void CAimBot::SyncSavedSettings()
 		*c.pTargetsFilter = s.m_TargetsFilter;
 		str_copy(c.pTargetsIds, s.m_aTargetsFilter, 64);
 		*c.pFreeze = s.m_FreezeFilter;
+		*c.pFngFreeze = s.m_FngFreeze ? 1 : 0;
 		*c.pPriority = s.m_Priority;
 	}
 	for(int w = 0; w < NUM_WEAPONS_TRIGGER; w++)
@@ -278,6 +283,7 @@ void CAimBot::SyncSavedSettings()
 		*c.pTargetsFilter = s.m_TargetsFilter;
 		str_copy(c.pTargetsIds, s.m_aTargetsFilter, 64);
 		*c.pFreeze = s.m_FreezeFilter;
+		*c.pFngFreeze = s.m_FngFreeze ? 1 : 0;
 		*c.pPriority = s.m_Priority;
 		*c.pLatency = s.m_RandomLatency;
 	}
@@ -393,15 +399,27 @@ bool CAimBot::PassesFilters(int ClientId, int LocalId, const SWeaponSettings &Se
                 return false;
         if(!pGame->m_Snap.m_aCharacters[ClientId].m_Active)
                 return false;
-        // Team filter
+        // Team filter: 0=both 1=my 2=war 3=blue 4=red (v1.56.275).
+        // "Team" = REAL team (red/blue); My/War compare real team with ours.
+        const int MyRealTeam = pGame->m_aClients[LocalId].m_Team;
         if(Settings.m_TeamFilter == 1)
         {
-                if(pGame->m_Teams.SameTeam(LocalId, ClientId))
+                if(pGame->m_aClients[ClientId].m_Team != MyRealTeam)
                         return false;
         }
         else if(Settings.m_TeamFilter == 2)
         {
-                if(!pGame->m_Teams.SameTeam(LocalId, ClientId))
+                if(pGame->m_aClients[ClientId].m_Team == MyRealTeam)
+                        return false;
+        }
+        else if(Settings.m_TeamFilter == 3)
+        {
+                if(pGame->m_aClients[ClientId].m_Team != TEAM_BLUE)
+                        return false;
+        }
+        else if(Settings.m_TeamFilter == 4)
+        {
+                if(pGame->m_aClients[ClientId].m_Team != TEAM_RED)
                         return false;
         }
         // Friend filter
@@ -457,8 +475,13 @@ bool CAimBot::PassesFilters(int ClientId, int LocalId, const SWeaponSettings &Se
                 if(Settings.m_TargetsFilter == 2 && anyValid && found)
                         return false;
         }
-        // Freeze filter
-        bool isFrozen = pGame->m_aClients[ClientId].m_FreezeEnd != 0;
+        // Freeze filter (LiveFrozen covers servers like FNG that hide the
+        // unfreeze tick — same check as the freeze flakes rendering)
+        bool isFrozen = pGame->m_aClients[ClientId].m_FreezeEnd != 0 ||
+                pGame->m_aClients[ClientId].m_LiveFrozen;
+        // v1.56.275: FNG Freeze — ninja counts as frozen (FNG does not sync freeze).
+        if(Settings.m_FngFreeze && pGame->m_Snap.m_aCharacters[ClientId].m_Cur.m_Weapon == WEAPON_NINJA)
+                isFrozen = true;
         if(Settings.m_FreezeFilter == 1 && !isFrozen)
                 return false;
         if(Settings.m_FreezeFilter == 2 && isFrozen)

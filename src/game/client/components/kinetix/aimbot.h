@@ -52,6 +52,7 @@ public:
                 int m_TargetsFilter = 0; // 0=both 1=only 2=ignore
                 char m_aTargetsFilter[64] = "";
                 int m_FreezeFilter = 0; // 0=both 1=freeze 2=no_freeze
+                bool m_FngFreeze = false; // v1.56.275: FNG Freeze — ninja counts as frozen (FNG does not sync freeze)
                 int m_Priority = 0; // 0=nearest_fov 1=nearest_aim 2=nearest_to_me
                 int m_RandomLatency = 0; // TriggerBot only (ticks)
         };

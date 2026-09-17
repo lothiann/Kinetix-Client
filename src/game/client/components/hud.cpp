@@ -769,7 +769,13 @@ void CHud::RenderAmmoHealthAndArmor(const CNetObj_Character *pCharacter)
 			// v1.56.261: plain RenderQuadContainer ignores the current color — use Ex when tinting.
 			const bool RainbowHudAmmo = g_Config.m_KxRainbowHud != 0;
 			if(RainbowHudAmmo)
-				Graphics()->SetColor(KxVisualRainbowColor(Client()->GlobalTime(), g_Config.m_KxRainbowHudSpeed, 1.0f));
+			{
+				// v1.56.275: rainbow anim or static Color, both with Opacity.
+				if(g_Config.m_KxRainbowHudAnim)
+					Graphics()->SetColor(KxVisualRainbowColor(Client()->GlobalTime(), g_Config.m_KxRainbowHudSpeed, g_Config.m_KxRainbowHudAlpha / 100.0f));
+				else
+					Graphics()->SetColor(KxVisualFixedColor(g_Config.m_KxRainbowHudColor, g_Config.m_KxRainbowHudAlpha));
+			}
 			Graphics()->TextureSet(GameClient()->m_GameSkin.m_aSpriteWeaponProjectiles[CurWeapon]);
 			if(AmmoOffsetY > 0 || RainbowHudAmmo)
 			{
@@ -790,7 +796,13 @@ void CHud::RenderAmmoHealthAndArmor(const CNetObj_Character *pCharacter)
 		// v1.56.261: plain RenderQuadContainer ignores the current color — use Ex when tinting.
 		const bool RainbowHud = g_Config.m_KxRainbowHud != 0;
 		if(RainbowHud)
-			Graphics()->SetColor(KxVisualRainbowColor(Client()->GlobalTime(), g_Config.m_KxRainbowHudSpeed, 1.0f));
+		{
+			// v1.56.275: rainbow anim or static Color, both with Opacity.
+			if(g_Config.m_KxRainbowHudAnim)
+				Graphics()->SetColor(KxVisualRainbowColor(Client()->GlobalTime(), g_Config.m_KxRainbowHudSpeed, g_Config.m_KxRainbowHudAlpha / 100.0f));
+			else
+				Graphics()->SetColor(KxVisualFixedColor(g_Config.m_KxRainbowHudColor, g_Config.m_KxRainbowHudAlpha));
+		}
 		auto RenderHudPips = [&](int Offset, int Num) {
 			if(RainbowHud)
 				Graphics()->RenderQuadContainerEx(m_HudQuadContainerIndex, Offset, Num, 0, 0);
@@ -930,7 +942,13 @@ void CHud::RenderPlayerState(const int ClientId)
                 // render available and used jumps
                 // v1.56.261: rainbow HUD tints the jump icons.
                 if(g_Config.m_KxRainbowHud)
-                        Graphics()->SetColor(KxVisualRainbowColor(Client()->GlobalTime(), g_Config.m_KxRainbowHudSpeed, 1.0f));
+                {
+                        // v1.56.275: rainbow anim or static Color, both with Opacity.
+                        if(g_Config.m_KxRainbowHudAnim)
+                                Graphics()->SetColor(KxVisualRainbowColor(Client()->GlobalTime(), g_Config.m_KxRainbowHudSpeed, g_Config.m_KxRainbowHudAlpha / 100.0f));
+                        else
+                                Graphics()->SetColor(KxVisualFixedColor(g_Config.m_KxRainbowHudColor, g_Config.m_KxRainbowHudAlpha));
+                }
                 int JumpsOffsetY = ((GameClient()->m_GameInfo.m_HudHealthArmor && g_Config.m_ClShowhudHealthAmmo ? 24 : 0) +
                                     (GameClient()->m_GameInfo.m_HudAmmo && g_Config.m_ClShowhudHealthAmmo ? 12 : 0));
                 if(JumpsOffsetY > 0)
@@ -995,7 +1013,13 @@ void CHud::RenderPlayerState(const int ClientId)
 
         // v1.56.261: rainbow HUD tints the capability/status icons below.
         if(g_Config.m_KxRainbowHud)
-                Graphics()->SetColor(KxVisualRainbowColor(Client()->GlobalTime(), g_Config.m_KxRainbowHudSpeed, 1.0f));
+        {
+                // v1.56.275: rainbow anim or static Color, both with Opacity.
+                if(g_Config.m_KxRainbowHudAnim)
+                        Graphics()->SetColor(KxVisualRainbowColor(Client()->GlobalTime(), g_Config.m_KxRainbowHudSpeed, g_Config.m_KxRainbowHudAlpha / 100.0f));
+                else
+                        Graphics()->SetColor(KxVisualFixedColor(g_Config.m_KxRainbowHudColor, g_Config.m_KxRainbowHudAlpha));
+        }
         // render capabilities
         x = 5;
         y += 12;

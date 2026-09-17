@@ -40,7 +40,7 @@ private:
 
 	// v1.56.257: shared filter body — ESP and Hitboxes pass their own config
 	// filter values so both use the exact same logic.
-	bool PassesFiltersImpl(int ClientId, int LocalId, int teamFilter, int friendFilter, int dummyFilter, int clanmateFilter, int targetsFilterMode, const char *pTargetsIds, int freezeFilter) const;
+	bool PassesFiltersImpl(int ClientId, int LocalId, int teamFilter, int ddraceTeamFilter, int ddraceTeamId, int friendFilter, int dummyFilter, int clanmateFilter, int targetsFilterMode, const char *pTargetsIds, int freezeFilter) const;
 
 	// v1.56.113: Style-aware line emission (Line/Arrow/Dotted/DottedArrow).
 	void EmitLine(const vec2 &p0, const vec2 &p1, int playerIndex) const;

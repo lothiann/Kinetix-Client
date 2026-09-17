@@ -618,6 +618,17 @@ inline ColorRGBA KxVisualRainbowColor(float TimeSeconds, int SpeedCvar, float Al
 	return ColorRGBA(r, g, b, Alpha);
 }
 
+// v1.56.275: static color from the per-feature Color/Opacity cvars.
+// ColorCvar stores 0xAARRGGBB (MACRO_CONFIG_COL), AlphaCvar is 0-100.
+inline ColorRGBA KxVisualFixedColor(int ColorCvar, int AlphaCvar, float AlphaMul = 1.0f)
+{
+	return ColorRGBA(
+		((ColorCvar >> 16) & 0xff) / 255.0f,
+		((ColorCvar >> 8) & 0xff) / 255.0f,
+		(ColorCvar & 0xff) / 255.0f,
+		(AlphaCvar / 100.0f) * AlphaMul);
+}
+
 // =========================================================
 // PfBfsFill — multi-source FMM/Eikonal field fill, verbatim the
 // solver the Pathfinder tab uses for its flow field.

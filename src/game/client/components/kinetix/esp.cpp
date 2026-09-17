@@ -21,7 +21,7 @@ void CEsp::OnReset()
 }
 
 // v1.56.257: shared filter body — callers pass their own config filter values.
-bool CEsp::PassesFiltersImpl(int ClientId, int LocalId, int teamFilter, int friendFilter, int dummyFilter, int clanmateFilter, int targetsFilterMode, const char *pTargetsIds, int freezeFilter) const
+bool CEsp::PassesFiltersImpl(int ClientId, int LocalId, int teamFilter, int ddraceTeamFilter, int ddraceTeamId, int friendFilter, int dummyFilter, int clanmateFilter, int targetsFilterMode, const char *pTargetsIds, int freezeFilter) const
 {
 	CGameClient *pGame = GameClient();
 	if(!pGame->m_aClients[ClientId].m_Active)
@@ -32,17 +32,36 @@ bool CEsp::PassesFiltersImpl(int ClientId, int LocalId, int teamFilter, int frie
 	if(ClientId == LocalId)
 		return false;
 
-	// Team filter: 0=both 1=war 2=my
+	// Team filter: 0=both 1=my 2=war 3=blue 4=red (v1.56.275).
+	// "Team" = REAL team (red/blue); My/War compare real team with ours.
+	const int MyRealTeam = pGame->m_aClients[LocalId].m_Team;
 	if(teamFilter == 1)
 	{
-		if(pGame->m_Teams.SameTeam(LocalId, ClientId))
+		if(pGame->m_aClients[ClientId].m_Team != MyRealTeam)
 			return false;
 	}
 	else if(teamFilter == 2)
 	{
-		if(!pGame->m_Teams.SameTeam(LocalId, ClientId))
+		if(pGame->m_aClients[ClientId].m_Team == MyRealTeam)
 			return false;
 	}
+	else if(teamFilter == 3)
+	{
+		if(pGame->m_aClients[ClientId].m_Team != TEAM_BLUE)
+			return false;
+	}
+	else if(teamFilter == 4)
+	{
+		if(pGame->m_aClients[ClientId].m_Team != TEAM_RED)
+			return false;
+	}
+	// DDrace team filter: 0=both 1=my 2=other 3=target id (v1.56.275)
+	if(ddraceTeamFilter == 1 && !pGame->m_Teams.SameTeam(LocalId, ClientId))
+		return false;
+	if(ddraceTeamFilter == 2 && pGame->m_Teams.SameTeam(LocalId, ClientId))
+		return false;
+	if(ddraceTeamFilter == 3 && pGame->m_Teams.Team(ClientId) != ddraceTeamId)
+		return false;
 	// Friend filter: 0=both 1=ignore 2=only
 	if(friendFilter == 1 && pGame->m_aClients[ClientId].m_Friend)
 		return false;
@@ -95,8 +114,13 @@ bool CEsp::PassesFiltersImpl(int ClientId, int LocalId, int teamFilter, int frie
 		if(targetsFilterMode == 2 && anyValid && found)
 			return false;
 	}
-	// Freeze filter: 0=both 1=freeze 2=no_freeze
-	bool isFrozen = pGame->m_aClients[ClientId].m_FreezeEnd != 0;
+	// Freeze filter: 0=both 1=freeze 2=no_freeze (LiveFrozen covers servers
+	// like FNG that hide the unfreeze tick — same check as the freeze flakes)
+	bool isFrozen = pGame->m_aClients[ClientId].m_FreezeEnd != 0 ||
+		pGame->m_aClients[ClientId].m_LiveFrozen;
+	// v1.56.275: FNG Freeze — ninja counts as frozen (FNG does not sync freeze).
+	if(g_Config.m_KxEspFngFreeze && pGame->m_Snap.m_aCharacters[ClientId].m_Cur.m_Weapon == WEAPON_NINJA)
+		isFrozen = true;
 	if(freezeFilter == 1 && !isFrozen)
 		return false;
 	if(freezeFilter == 2 && isFrozen)
@@ -106,12 +130,12 @@ bool CEsp::PassesFiltersImpl(int ClientId, int LocalId, int teamFilter, int frie
 
 bool CEsp::PassesFilters(int ClientId, int LocalId) const
 {
-	return PassesFiltersImpl(ClientId, LocalId, g_Config.m_KxEspTeamFilter, g_Config.m_KxEspFriendFilter, g_Config.m_KxEspDummyFilter, g_Config.m_KxEspClanmateFilter, g_Config.m_KxEspTargetsFilterMode, g_Config.m_KxEspTargetsFilter, g_Config.m_KxEspFreezeFilter);
+	return PassesFiltersImpl(ClientId, LocalId, g_Config.m_KxEspTeamFilter, g_Config.m_KxEspDDraceTeam, g_Config.m_KxEspDDraceTeamId, g_Config.m_KxEspFriendFilter, g_Config.m_KxEspDummyFilter, g_Config.m_KxEspClanmateFilter, g_Config.m_KxEspTargetsFilterMode, g_Config.m_KxEspTargetsFilter, g_Config.m_KxEspFreezeFilter);
 }
 
 bool CEsp::PassesHitboxesFilters(int ClientId, int LocalId) const
 {
-	return PassesFiltersImpl(ClientId, LocalId, g_Config.m_KxHitboxesTeamFilter, g_Config.m_KxHitboxesFriendFilter, g_Config.m_KxHitboxesDummyFilter, g_Config.m_KxHitboxesClanmateFilter, g_Config.m_KxHitboxesTargetsFilterMode, g_Config.m_KxHitboxesTargetsFilter, g_Config.m_KxHitboxesFreezeFilter);
+	return PassesFiltersImpl(ClientId, LocalId, g_Config.m_KxHitboxesTeamFilter, g_Config.m_KxHitboxesDDraceTeam, g_Config.m_KxHitboxesDDraceTeamId, g_Config.m_KxHitboxesFriendFilter, g_Config.m_KxHitboxesDummyFilter, g_Config.m_KxHitboxesClanmateFilter, g_Config.m_KxHitboxesTargetsFilterMode, g_Config.m_KxHitboxesTargetsFilter, g_Config.m_KxHitboxesFreezeFilter);
 }
 
 // v1.56.113: Draw a single solid segment (immediate mode).
