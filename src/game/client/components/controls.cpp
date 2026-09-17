@@ -1294,6 +1294,23 @@ void CControls::OnRender()
 			m_FakeAimRenderOffset = vec2(cosf(Angle), sinf(Angle)) * Radius;
 		}
 
+		// v1.56.276: Smooth Predict — glide the rendered server-side aim marker
+		// between AimBot Smooth mode's per-tick steps (same idea as the Spin
+		// predict above). ApplyAim publishes prev/cur each game tick; here they
+		// are lerped over the intra-tick fraction. A stale tick (target lost,
+		// smooth off) disables the prediction and the marker falls back to the
+		// stepped sent aim.
+		{
+			CAimBot &SmoothAB = GameClient()->m_AimBot;
+			if(SmoothAB.m_SmoothPredictTick == Client()->GameTick(g_Config.m_ClDummy) &&
+				g_Config.m_KxFakeAim && g_Config.m_KxFakeAimShowServerSide && g_Config.m_KxFakeAimShowForMe)
+			{
+				const float Frac = Client()->IntraGameTick(g_Config.m_ClDummy);
+				m_FakeAimRenderActive = true;
+				m_FakeAimRenderOffset = SmoothAB.m_SmoothPredictPrev + (SmoothAB.m_SmoothPredictCurr - SmoothAB.m_SmoothPredictPrev) * Frac;
+			}
+		}
+
         if(Client()->State() != IClient::STATE_ONLINE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
                 return;
 

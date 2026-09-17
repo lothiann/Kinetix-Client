@@ -189,6 +189,8 @@ static SRow g_AimBotChildren[] = {
         {ERowType::Slider, "Radius", nullptr, false, false, 1.0f, 2000.0f, 1.0f, 300.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Show FOV", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Show Radius", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        // v1.56.276: Auto Switch Weapon — switch to this weapon when it has a target in its zone.
+        {ERowType::Toggle, "Auto Switch Weapon", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Use raycast (Show)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Dropdown, "Rules", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABRulesOpts, 3, 0, nullptr, 0},
         {ERowType::Toggle, "Use raycast angle (AB)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
@@ -224,6 +226,8 @@ static SRow g_TriggerBotChildren[] = {
         {ERowType::Slider, "Radius", nullptr, false, false, 1.0f, 2000.0f, 1.0f, 300.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Show FOV", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Show Radius", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        // v1.56.276: Auto Switch Weapon — switch to this weapon when it has a target in its zone.
+        {ERowType::Toggle, "Auto Switch Weapon", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Use raycast (Show)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Dropdown, "Rules", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABRulesOpts, 3, 0, nullptr, 0},
         {ERowType::Slider, "Latency", nullptr, false, false, 0.0f, 10.0f, 1.0f, 0.0f, " ticks", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
@@ -408,8 +412,8 @@ static SRow g_FunctionsRows[] = {
         {ERowType::Expandable, "Dummies", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_DummiesChildren, 9},
         {ERowType::Expandable, "Helpers", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_HelpersChildren, 16},
         // v1.56.83: AimBot + TriggerBot expandables (AimBot: 23 children since v1.56.262)
-        {ERowType::Expandable, "AimBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AimBotChildren, 24},
-        {ERowType::Expandable, "TriggerBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TriggerBotChildren, 20},
+        {ERowType::Expandable, "AimBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AimBotChildren, 25},
+        {ERowType::Expandable, "TriggerBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TriggerBotChildren, 21},
         // v1.56.262: Auto Fire + BalanceBot expandables.
         {ERowType::Expandable, "Auto Fire", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AutoFireChildren, 1},
         {ERowType::Expandable, "BalanceBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BalanceBotChildren, 13},
@@ -3024,6 +3028,8 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                         ch.on = aimbot.m_AimBotShowFov;
                                                 else if(str_comp(ch.pName, "Show Radius") == 0)
                                                         ch.on = aimbot.m_AimBotShowRadius;
+                                                else if(str_comp(ch.pName, "Auto Switch Weapon") == 0)
+                                                        ch.on = s.m_AutoSwitchWeapon != 0;
                                                 else if(str_comp(ch.pName, "Use raycast (Show)") == 0)
                                                         ch.on = s.m_UseRaycastShow;
                                                 else if(str_comp(ch.pName, "Rules") == 0)
@@ -3113,6 +3119,8 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                         ch.on = aimbot.m_TriggerBotShowFov;
                                                 else if(str_comp(ch.pName, "Show Radius") == 0)
                                                         ch.on = aimbot.m_TriggerBotShowRadius;
+                                                else if(str_comp(ch.pName, "Auto Switch Weapon") == 0)
+                                                        ch.on = s.m_AutoSwitchWeapon != 0;
                                                 else if(str_comp(ch.pName, "Use raycast (Show)") == 0)
                                                         ch.on = s.m_UseRaycastShow;
                                                 else if(str_comp(ch.pName, "Rules") == 0)
@@ -4935,6 +4943,8 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                             ab.m_AimBotShowFov = pTarget->on;
                                                         else if(str_comp(pTarget->pName, "Show Radius") == 0)
                                                             ab.m_AimBotShowRadius = pTarget->on;
+                                                        else if(str_comp(pTarget->pName, "Auto Switch Weapon") == 0)
+                                                            s.m_AutoSwitchWeapon = pTarget->on;
                                                         else if(str_comp(pTarget->pName, "Use raycast (Show)") == 0)
                                                             s.m_UseRaycastShow = pTarget->on;
                                                         else if(str_comp(pTarget->pName, "Use raycast angle (AB)") == 0)
@@ -4966,6 +4976,8 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                             tb.m_TriggerBotShowFov = pTarget->on;
                                                         else if(str_comp(pTarget->pName, "Show Radius") == 0)
                                                             tb.m_TriggerBotShowRadius = pTarget->on;
+                                                        else if(str_comp(pTarget->pName, "Auto Switch Weapon") == 0)
+                                                            s.m_AutoSwitchWeapon = pTarget->on;
                                                         else if(str_comp(pTarget->pName, "Use raycast (Show)") == 0)
                                                             s.m_UseRaycastShow = pTarget->on;
                                                 }
