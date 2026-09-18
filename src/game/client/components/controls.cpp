@@ -405,7 +405,15 @@ int CControls::SnapInput(int *pData)
                 // v1.56.262: BalanceBot — keep X distance to the nearest matching
                 // player. Overrides the CURRENT dummy's direction EVERY tick (the
                 // player's own keys pass through only inside the Stand Radius).
-                if(g_Config.m_KxBalanceBot && GameClient()->m_Snap.m_LocalClientId >= 0)
+                // v1.56.277: Off while freeze — pause the BalanceBot while we are
+                // frozen (ninja counts as frozen when BB FNG Freeze is on). Same
+                // freeze check as the target filter below.
+                const int BbSelfId = GameClient()->m_Snap.m_LocalClientId;
+                const bool BbSelfFrozen = BbSelfId >= 0 &&
+                        (GameClient()->m_aClients[BbSelfId].m_FreezeEnd != 0 || GameClient()->m_aClients[BbSelfId].m_LiveFrozen ||
+                                (g_Config.m_KxBbFngFreeze && GameClient()->m_Snap.m_aCharacters[BbSelfId].m_Active &&
+                                        GameClient()->m_Snap.m_aCharacters[BbSelfId].m_Cur.m_Weapon == WEAPON_NINJA));
+                if(g_Config.m_KxBalanceBot && GameClient()->m_Snap.m_LocalClientId >= 0 && !BbSelfFrozen)
                 {
                         CGameClient *pBb = GameClient();
                         const int BbLocal = pBb->m_Snap.m_LocalClientId;
@@ -794,32 +802,32 @@ int CControls::SnapInput(int *pData)
         if(!Send)
                 return 0;
 
-        // v1.56.169 BUG7: BAF.ApplyOverride MUST run before the laserAimActive
-        // check below. BAF silent sets m_LaserUnfreezeAimActive (same channel as
+        // v1.56.169 BUG7: BAF.ApplyOverride MUST run before the silentAimActive
+        // check below. BAF silent sets m_SilentAimActive (same channel as
         // Laser Unfreeze + AimBot). If BAF runs AFTER the check (as it did since
         // v1.56.130), the flag is deferred to next tick — Fake Aim is not blocked
         // in the current tick and overwrites m_TargetX/Y. Moving BAF here makes
         // the flag visible immediately: line 543 reads it, applies BAF's aim, and
-        // line 669 (!laserAimActive) blocks Fake Aim. BAF also modifies
+        // line 669 (!silentAimActive) blocks Fake Aim. BAF also modifies
         // dir/jump/hook directly — those go to server via mem_copy at the end.
         // (AimBot + Laser Unfreeze run in OnUpdate before SnapInput, so their
-        // flags are already set when BAF runs here — BAF checks !m_LaserUnfreezeAimActive
+        // flags are already set when BAF runs here — BAF checks !m_SilentAimActive
         // before overwriting, giving Laser Unfreeze/AimBot priority on the aim channel.)
         GameClient()->m_BasicAvoidFreeze.ApplyOverride();
 
         // Laser unfreeze silent aim — highest priority (consumes flag set by
         // Laser Unfreeze, AimBot, or BAF above).
-        bool laserAimActive = m_LaserUnfreezeAimActive;
-        if(laserAimActive)
+        bool silentAimActive = m_SilentAimActive;
+        if(silentAimActive)
         {
-                m_aInputData[g_Config.m_ClDummy].m_TargetX = (int)m_LaserUnfreezeAimOffset.x;
-                m_aInputData[g_Config.m_ClDummy].m_TargetY = (int)m_LaserUnfreezeAimOffset.y;
-                m_LaserUnfreezeAimActive = false;
+                m_aInputData[g_Config.m_ClDummy].m_TargetX = (int)m_SilentAimOffset.x;
+                m_aInputData[g_Config.m_ClDummy].m_TargetY = (int)m_SilentAimOffset.y;
+                m_SilentAimActive = false;
         }
 
         // v1.56.151: Fly Ride — pilot input override.
         // Blocks normal WASD (direction/jump) and forces hook state from UpdateFlyRide.
-        // Silent aim is already set via m_LaserUnfreezeAimActive (consumed above at line ~543).
+        // Silent aim is already set via m_SilentAimActive (consumed above at line ~543).
         if(g_Config.m_KxFlyRide)
         {
                 m_aInputData[g_Config.m_ClDummy].m_Direction = GameClient()->m_BotNet.m_FlyRidePilotDir;
@@ -919,9 +927,9 @@ int CControls::SnapInput(int *pData)
 
                 // Robot/Lag: remember last real aim.
                 //
-                // SILENT Laser Unfreeze case: when laserAimActive is true,
+                // SILENT Laser Unfreeze case: when silentAimActive is true,
                 // Laser Unfreeze is firing at the BOUNCE position
-                // (m_LaserUnfreezeAimOffset), but in silent mode it did NOT
+                // (m_SilentAimOffset), but in silent mode it did NOT
                 // move the visible crosshair (m_aMousePos). So realAim is
                 // still the player's visible aim, NOT where the laser fired.
                 // Storing realAim here would make Robot/Lag remember the
@@ -930,7 +938,7 @@ int CControls::SnapInput(int *pData)
                 //
                 // Non-silent laser: SetMousePos already moved m_aMousePos to
                 // the bounce before SnapInput, so realAim == bounce and
-                // using realAim is correct (laserAimActive path is skipped
+                // using realAim is correct (silentAimActive path is skipped
                 // via the guard below anyway).
                 if(!s_RobotInit)
                 {
@@ -939,8 +947,8 @@ int CControls::SnapInput(int *pData)
                 }
                 if(willFire || hookPress)
                 {
-                        if(laserAimActive)
-                                s_RobotAim = m_LaserUnfreezeAimOffset;
+                        if(silentAimActive)
+                                s_RobotAim = m_SilentAimOffset;
                         else
                                 s_RobotAim = realAim;
                 }
@@ -952,16 +960,23 @@ int CControls::SnapInput(int *pData)
         // aim running while replaying a take WITHOUT fake aim — conflicting
         // with the replay. Same for the fire-detection, mask-hold and Predict
         // guards below.
-        if(g_Config.m_KxFakeAim && !laserAimActive && !GameClient()->m_Tas.IsRealPlaying())
+        if(g_Config.m_KxFakeAim && !GameClient()->m_Tas.IsRealPlaying())
         {
                 // Decide: real or fake
+                // v1.56.279: no silent-channel bypass — the AimBot's silent aim is
+                // masked by the fake pattern like everything else and released
+                // only on a real shot/hook.
+                // Real (5) never masks — while the silent channel is in action
+                // the silent aim goes through raw and Show Server-Side shows it;
+                // the masking modes (random/robot/lag/spin/chaos) hold the
+                // pattern and release the silent aim only on a real shot/hook.
                 if(willFire || hookPress)
                 {
                         fakeActive = true;
-                        fakeOffset = realAim;
+                        fakeOffset = silentAimActive ? m_SilentAimOffset : realAim;
                         fakeShowForMe = true;
                 }
-                else
+                else if(!(g_Config.m_KxFakeAimMode == 5 && silentAimActive))
                 {
                         int mode = g_Config.m_KxFakeAimMode;
                         int speed = g_Config.m_KxFakeAimSpeed;
@@ -1019,7 +1034,7 @@ int CControls::SnapInput(int *pData)
                         {
                                 // v1.56.247: Real — the "fake" aim is simply the real aim.
                                 // No-op mode: laser unfreeze / aimbot keep full priority (the
-                                // laserAimActive guard above skips fake generation), while the
+                                // silentAimActive guard above skips fake generation), while the
                                 // Distance-from-center slider and Show-for-me still apply.
                                 fakeOffset = realAim;
                         }
@@ -1148,7 +1163,10 @@ int CControls::SnapInput(int *pData)
         if(g_Config.m_KxFakeAim && s_HaveLastFake && !GameClient()->m_Tas.IsRealPlaying())
         {
                 // Figure out whether this tick is a release tick.
-                bool aimOwnedByComponent = laserAimActive;
+                // Real (5) never masks — with the silent channel in action there
+                // is no fake to hold, fall through to the real aim render
+                // (otherwise the last fake pattern would freeze on screen).
+                bool aimOwnedByComponent = silentAimActive && g_Config.m_KxFakeAimMode != 5;
                 bool aimOwnedByPlayerFire = fakeActive && (willFire || hookPress);
                 bool isReleaseTick = aimOwnedByComponent || aimOwnedByPlayerFire;
 
@@ -1164,7 +1182,7 @@ int CControls::SnapInput(int *pData)
         // Only update from genuine fake ticks — not from release ticks where
         // fakeOffset happens to be realAim (willFire/hookPress) — otherwise
         // we'd poison the mask with the real aim and the fix would be useless.
-        if(fakeActive && !laserAimActive && !willFire && !hookPress)
+        if(fakeActive && !willFire && !hookPress)
         {
                 s_LastFakeRenderOffset = fakeOffset;
                 s_HaveLastFake = true;
@@ -1193,7 +1211,7 @@ int CControls::SnapInput(int *pData)
         // the TAS replay are never predicted.
         m_FakeAimPredictMode = 0;
         if(g_Config.m_KxFakeAimPredict != 0 && m_FakeAimRenderActive && !GameClient()->m_Tas.IsRealPlaying() &&
-                fakeActive && !laserAimActive)
+                fakeActive)
         {
                 if(willFire || hookPress || g_Config.m_KxFakeAimMode == 5) // Real
                         m_FakeAimPredictMode = 1;
@@ -1297,15 +1315,21 @@ void CControls::OnRender()
 		// v1.56.276: Smooth Predict — glide the rendered server-side aim marker
 		// between AimBot Smooth mode's per-tick steps (same idea as the Spin
 		// predict above). ApplyAim publishes prev/cur each game tick; here they
-		// are lerped over the intra-tick fraction. A stale tick (target lost,
-		// smooth off) disables the prediction and the marker falls back to the
-		// stepped sent aim.
+		// are lerped over the intra-tick fraction. A publish delayed by one
+		// tick clamps to the reached position (no boundary flicker); a stale
+		// tick (target lost, smooth off) disables the prediction and the
+		// marker falls back to the stepped sent aim.
 		{
 			CAimBot &SmoothAB = GameClient()->m_AimBot;
-			if(SmoothAB.m_SmoothPredictTick == Client()->GameTick(g_Config.m_ClDummy) &&
+			const int MarkerTickDelta = Client()->GameTick(g_Config.m_ClDummy) - SmoothAB.m_SmoothPredictTick;
+			// the fake pattern owns the sent aim between shots (Show
+			// Server-Side shows it).
+			if(MarkerTickDelta >= 0 && MarkerTickDelta <= 1 &&
 				g_Config.m_KxFakeAim && g_Config.m_KxFakeAimShowServerSide && g_Config.m_KxFakeAimShowForMe)
 			{
-				const float Frac = Client()->IntraGameTick(g_Config.m_ClDummy);
+				float Frac = Client()->IntraGameTick(g_Config.m_ClDummy) + MarkerTickDelta;
+				if(Frac > 1.0f)
+					Frac = 1.0f;
 				m_FakeAimRenderActive = true;
 				m_FakeAimRenderOffset = SmoothAB.m_SmoothPredictPrev + (SmoothAB.m_SmoothPredictCurr - SmoothAB.m_SmoothPredictPrev) * Frac;
 			}
@@ -1354,6 +1378,31 @@ void CControls::OnRender()
         else
         {
                 m_aTargetPos[g_Config.m_ClDummy] = m_aMousePos[g_Config.m_ClDummy];
+        }
+
+        // v1.56.278: Smooth Predict — glide the VISIBLE crosshair between the
+        // per-tick Smooth-mode steps. The glide lands once per game tick in
+        // m_aMousePos (that is what made the cursor step at 50 Hz while the
+        // weapon angle is snapshot-interpolated and thus looked smooth). The
+        // cursor now interpolates prev -> cur over the intra-tick fraction
+        // (same trick as the Spin fake-aim predict above); a publish delayed
+        // by one tick clamps to the reached position, so it never jumps.
+        // Non-silent only: Silent Smooth moves the server-side aim, not the
+        // crosshair (that marker is covered by the predict block above).
+        {
+                CAimBot &ab = GameClient()->m_AimBot;
+                const int W = GameClient()->m_Snap.m_pLocalCharacter ? GameClient()->m_Snap.m_pLocalCharacter->m_Weapon : -1;
+                const int TickDelta = Client()->GameTick(g_Config.m_ClDummy) - ab.m_SmoothPredictTick;
+                if(TickDelta >= 0 && TickDelta <= 1 && W >= 0 && W < CAimBot::NUM_WEAPONS_AIM - 1 &&
+                        g_Config.m_KxAimBot && ab.m_AimBotWeapons[W].m_Enabled &&
+                        ab.m_AimBotWeapons[W].m_AimMode == 3 && !ab.m_AimBotWeapons[W].m_Silent)
+                {
+                        float Frac = Client()->IntraGameTick(g_Config.m_ClDummy) + TickDelta;
+                        if(Frac > 1.0f)
+                                Frac = 1.0f;
+                        const vec2 Interp = ab.m_SmoothPredictPrev + (ab.m_SmoothPredictCurr - ab.m_SmoothPredictPrev) * Frac;
+                        m_aTargetPos[g_Config.m_ClDummy] += Interp - m_aMousePos[g_Config.m_ClDummy];
+                }
         }
 }
 

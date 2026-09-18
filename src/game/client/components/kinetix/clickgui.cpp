@@ -176,6 +176,8 @@ static SRow g_BalanceBotChildren[] = {
         {ERowType::Dropdown, "Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "Clanmate", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0},
+        // v1.56.277: Off while freeze — pause the bot while we are frozen.
+        {ERowType::Toggle, "Off while freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         // v1.56.275: FNG Freeze — ninja counts as frozen (FNG does not sync freeze).
         {ERowType::Toggle, "FNG Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Dropdown, "Targets", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0},
@@ -210,6 +212,8 @@ static SRow g_AimBotChildren[] = {
         {ERowType::Dropdown, "Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "Clanmate", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0},
+        // v1.56.277: Off while freeze — pause the bot while we are frozen.
+        {ERowType::Toggle, "Off while freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         // v1.56.275: FNG Freeze — ninja counts as frozen (FNG does not sync freeze).
         {ERowType::Toggle, "FNG Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Dropdown, "Priority", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABPriorityOpts, 3, 0, nullptr, 0},
@@ -237,11 +241,17 @@ static SRow g_TriggerBotChildren[] = {
         {ERowType::Dropdown, "Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "Clanmate", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0},
+        // v1.56.277: Off while freeze — pause the bot while we are frozen.
+        {ERowType::Toggle, "Off while freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         // v1.56.275: FNG Freeze — ninja counts as frozen (FNG does not sync freeze).
         {ERowType::Toggle, "FNG Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Dropdown, "Priority", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABPriorityOpts, 3, 0, nullptr, 0},
         {ERowType::Dropdown, "Targets", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0},
         {ERowType::Input, "Targets IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0},
+        // v1.56.279: Use silent channel AB — while the AimBot's silent aim is
+        // in action, this weapon's zone (and Show FOV/Radius) follows the
+        // silent direction instead of the crosshair.
+        {ERowType::Toggle, "Use silent channel AB", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 // v1.56.90: Dummies expandable — dummy connect/disconnect/switch buttons.
 // MAX_DUMMIES=8 (D1..D7, index 0 = main). Layout: Connect/Disconnect button +
@@ -412,11 +422,11 @@ static SRow g_FunctionsRows[] = {
         {ERowType::Expandable, "Dummies", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_DummiesChildren, 9},
         {ERowType::Expandable, "Helpers", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_HelpersChildren, 16},
         // v1.56.83: AimBot + TriggerBot expandables (AimBot: 23 children since v1.56.262)
-        {ERowType::Expandable, "AimBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AimBotChildren, 25},
-        {ERowType::Expandable, "TriggerBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TriggerBotChildren, 21},
+        {ERowType::Expandable, "AimBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AimBotChildren, 26},
+        {ERowType::Expandable, "TriggerBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TriggerBotChildren, 23},
         // v1.56.262: Auto Fire + BalanceBot expandables.
         {ERowType::Expandable, "Auto Fire", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AutoFireChildren, 1},
-        {ERowType::Expandable, "BalanceBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BalanceBotChildren, 13},
+        {ERowType::Expandable, "BalanceBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BalanceBotChildren, 14},
         // Fly sub-section
         {ERowType::Toggle, "Preserve input", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Expandable, "Custom latency", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CustomLatencyChildren, 1},
@@ -2789,6 +2799,8 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                 child.valueIdx = g_Config.m_KxBbClanmate;
                                         else if(str_comp(child.pName, "Freeze") == 0 && str_comp(row.pName, "BalanceBot") == 0)
                                                 child.valueIdx = g_Config.m_KxBbFreeze;
+                                        else if(str_comp(child.pName, "Off while freeze") == 0 && str_comp(row.pName, "BalanceBot") == 0)
+                                                child.on = g_Config.m_KxBbOffWhileFreeze != 0;
                                         else if(str_comp(child.pName, "FNG Freeze") == 0 && str_comp(row.pName, "BalanceBot") == 0)
                                                 child.on = g_Config.m_KxBbFngFreeze != 0;
                                         else if(str_comp(child.pName, "Targets") == 0 && str_comp(row.pName, "BalanceBot") == 0)
@@ -3073,6 +3085,8 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                         ch.valueIdx = s.m_ClanmateFilter;
                                                 else if(str_comp(ch.pName, "Freeze") == 0)
                                                         ch.valueIdx = s.m_FreezeFilter;
+                                                else if(str_comp(ch.pName, "Off while freeze") == 0)
+                                                        ch.on = s.m_OffWhileFreeze != 0;
                                                 else if(str_comp(ch.pName, "FNG Freeze") == 0)
                                                         ch.on = s.m_FngFreeze != 0;
                                                 else if(str_comp(ch.pName, "Priority") == 0)
@@ -3137,6 +3151,10 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                         ch.valueIdx = s.m_ClanmateFilter;
                                                 else if(str_comp(ch.pName, "Freeze") == 0)
                                                         ch.valueIdx = s.m_FreezeFilter;
+                                                else if(str_comp(ch.pName, "Off while freeze") == 0)
+                                                        ch.on = s.m_OffWhileFreeze != 0;
+                                                else if(str_comp(ch.pName, "Use silent channel AB") == 0)
+                                                        ch.on = s.m_UseSilentChannelAB != 0;
                                                 else if(str_comp(ch.pName, "FNG Freeze") == 0)
                                                         ch.on = s.m_FngFreeze != 0;
                                                 else if(str_comp(ch.pName, "Priority") == 0)
@@ -4869,6 +4887,10 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 g_Config.m_KxHitboxesFngFreeze = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "FNG Freeze") == 0 && str_comp(row.pName, "BalanceBot") == 0)
                                                 g_Config.m_KxBbFngFreeze = pTarget->on ? 1 : 0;
+                                        // no weapons); the AimBot/TriggerBot ones are per weapon
+                                        // in their own child blocks.
+                                        else if(str_comp(pTarget->pName, "Off while freeze") == 0 && str_comp(row.pName, "BalanceBot") == 0)
+                                                g_Config.m_KxBbOffWhileFreeze = pTarget->on ? 1 : 0;
                                         // v1.56.261: Custom color entities master toggle.
                                         else if(str_comp(pTarget->pName, "Custom color entities") == 0)
                                                 g_Config.m_KxRainbowEnt = pTarget->on ? 1 : 0;
@@ -4960,6 +4982,8 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                         }
                                                         else if(str_comp(pTarget->pName, "Center snap") == 0)
                                                             s.m_SmoothCenterSnap = pTarget->on;
+                                                        else if(str_comp(pTarget->pName, "Off while freeze") == 0)
+                                                            s.m_OffWhileFreeze = pTarget->on;
                                                 }
                                         }
                                         // v1.56.83: TriggerBot per-weapon child toggles (parent = "TriggerBot")
@@ -4980,6 +5004,10 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                             s.m_AutoSwitchWeapon = pTarget->on;
                                                         else if(str_comp(pTarget->pName, "Use raycast (Show)") == 0)
                                                             s.m_UseRaycastShow = pTarget->on;
+                                                        else if(str_comp(pTarget->pName, "Use silent channel AB") == 0)
+                                                            s.m_UseSilentChannelAB = pTarget->on;
+                                                        else if(str_comp(pTarget->pName, "Off while freeze") == 0)
+                                                            s.m_OffWhileFreeze = pTarget->on;
                                                 }
                                         }
                                         // v1.56.178: Trajectory per-type child toggles (parent = "Trajectory")

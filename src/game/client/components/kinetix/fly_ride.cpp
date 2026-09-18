@@ -184,8 +184,8 @@ void CBotNet::UpdateFlyRide()
         if(dist >= X)
         {
                 // Pilot: silent aim at dummy (reuses laser-unfreeze channel — highest priority).
-                pGame->m_Controls.m_LaserUnfreezeAimActive = true;
-                pGame->m_Controls.m_LaserUnfreezeAimOffset = nearestDummyPos - pilotPos;
+                pGame->m_Controls.m_SilentAimActive = true;
+                pGame->m_Controls.m_SilentAimOffset = nearestDummyPos - pilotPos;
                 m_FlyRidePilotHook = 1;
         }
         else

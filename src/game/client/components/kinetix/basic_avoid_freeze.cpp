@@ -336,19 +336,19 @@ void CBasicAvoidFreeze::ApplyOverride()
                         if(g_Config.m_KxBafSilent)
                         {
                                 // Silent: use laser unfreeze aim channel (same as aimbot).
-                                // SnapInput reads m_LaserUnfreezeAimActive and applies offset
+                                // SnapInput reads m_SilentAimActive and applies offset
                                 // to m_aInputData.m_TargetX/Y right before sending to server.
                                 // Local prediction keeps the real aim (no visible crosshair move).
-                                // Fake aim is automatically blocked (checks !laserAimActive).
+                                // Fake aim is automatically blocked (checks !silentAimActive).
                                 //
-                                // v1.56.169 BUG7: guard !m_LaserUnfreezeAimActive — Laser Unfreeze
+                                // v1.56.169 BUG7: guard !m_SilentAimActive — Laser Unfreeze
                                 // and AimBot run in OnUpdate (before SnapInput), so if they already
                                 // claimed the channel this tick, don't overwrite their offset.
                                 // BAF still applies dir/jump/hook (those are separate fields).
-                                if(!pGame->m_Controls.m_LaserUnfreezeAimActive)
+                                if(!pGame->m_Controls.m_SilentAimActive)
                                 {
-                                        pGame->m_Controls.m_LaserUnfreezeAimActive = true;
-                                        pGame->m_Controls.m_LaserUnfreezeAimOffset = vec2((float)bestInput.m_TargetX, (float)bestInput.m_TargetY);
+                                        pGame->m_Controls.m_SilentAimActive = true;
+                                        pGame->m_Controls.m_SilentAimOffset = vec2((float)bestInput.m_TargetX, (float)bestInput.m_TargetY);
                                 }
                         }
                         else

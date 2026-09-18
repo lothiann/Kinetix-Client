@@ -54,6 +54,8 @@ public:
                 int m_FreezeFilter = 0; // 0=both 1=freeze 2=no_freeze
                 bool m_FngFreeze = false; // v1.56.275: FNG Freeze — ninja counts as frozen (FNG does not sync freeze)
                 bool m_AutoSwitchWeapon = false; // v1.56.276: Auto Switch Weapon — switch to this weapon when it has a target in its zone and the held one doesn't
+                bool m_UseSilentChannelAB = false; // v1.56.279: TriggerBot — while the AimBot's silent aim is active, this weapon's zone follows the silent direction
+                bool m_OffWhileFreeze = false; // this weapon's bot is paused while we are frozen (ninja counts as frozen when this weapon's FNG Freeze is on)
                 int m_Priority = 0; // 0=nearest_fov 1=nearest_aim 2=nearest_to_me
                 int m_RandomLatency = 0; // TriggerBot only (ticks)
         };
@@ -79,6 +81,8 @@ public:
 	vec2 m_SmoothPredictPrev = vec2(0, 0);
 	vec2 m_SmoothPredictCurr = vec2(0, 0);
 	int m_SmoothPredictTick = -1;
+	// (fake aim releases it only on a real shot/hook; other sources keep
+	// old priority).
 
         SWeaponSettings m_AimBotWeapons[NUM_WEAPONS_AIM];
         SWeaponSettings m_TriggerBotWeapons[NUM_WEAPONS_TRIGGER];

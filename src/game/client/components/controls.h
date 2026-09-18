@@ -43,8 +43,8 @@ public:
         // Laser unfreeze silent aim — when active, SnapInput uses this offset
         // instead of m_aMousePos for m_TargetX/Y. Set by UpdateLaserUnfreeze
         // when silent mode is on. Consumed (reset to false) by SnapInput.
-        bool m_LaserUnfreezeAimActive = false;
-        vec2 m_LaserUnfreezeAimOffset = vec2(0, 0);
+        bool m_SilentAimActive = false;
+        vec2 m_SilentAimOffset = vec2(0, 0);
 
         // Fake Aim render data — set in SnapInput, read in players.cpp.
         bool m_FakeAimRenderActive = false;

@@ -53,6 +53,7 @@ struct KxAbCvars
 	int *pSilent;
 	int *pSmoothSpeed;
 	int *pSmoothCenterSnap;
+	int *pOffWhileFreeze;
 };
 
 static const KxAbCvars s_aAbCvars[] = {
@@ -63,7 +64,7 @@ static const KxAbCvars s_aAbCvars[] = {
 		&g_Config.m_KxAbHammerClanmate, &g_Config.m_KxAbHammerTargetsFilter, g_Config.m_KxAbHammerTargetsIds,
 		&g_Config.m_KxAbHammerFreeze, &g_Config.m_KxAbHammerFngFreeze, &g_Config.m_KxAbHammerAutoSwitch, &g_Config.m_KxAbHammerPriority,
 		&g_Config.m_KxAbHammerSilent, &g_Config.m_KxAbHammerSmoothSpeed,
-		&g_Config.m_KxAbHammerSmoothCenterSnap},
+		&g_Config.m_KxAbHammerSmoothCenterSnap, &g_Config.m_KxAbHammerOffWhileFreeze},
 	{&g_Config.m_KxAbPistolEnabled, &g_Config.m_KxAbPistolFov, &g_Config.m_KxAbPistolRadius,
 		&g_Config.m_KxAbPistolRaycastShow, &g_Config.m_KxAbPistolRules, &g_Config.m_KxAbPistolUseAngle,
 		&g_Config.m_KxAbPistolPredict, &g_Config.m_KxAbPistolJitter, &g_Config.m_KxAbPistolAimMode,
@@ -71,7 +72,7 @@ static const KxAbCvars s_aAbCvars[] = {
 		&g_Config.m_KxAbPistolClanmate, &g_Config.m_KxAbPistolTargetsFilter, g_Config.m_KxAbPistolTargetsIds,
 		&g_Config.m_KxAbPistolFreeze, &g_Config.m_KxAbPistolFngFreeze, &g_Config.m_KxAbPistolAutoSwitch, &g_Config.m_KxAbPistolPriority,
 		&g_Config.m_KxAbPistolSilent, &g_Config.m_KxAbPistolSmoothSpeed,
-		&g_Config.m_KxAbPistolSmoothCenterSnap},
+		&g_Config.m_KxAbPistolSmoothCenterSnap, &g_Config.m_KxAbPistolOffWhileFreeze},
 	{&g_Config.m_KxAbShotgunEnabled, &g_Config.m_KxAbShotgunFov, &g_Config.m_KxAbShotgunRadius,
 		&g_Config.m_KxAbShotgunRaycastShow, &g_Config.m_KxAbShotgunRules, &g_Config.m_KxAbShotgunUseAngle,
 		&g_Config.m_KxAbShotgunPredict, &g_Config.m_KxAbShotgunJitter, &g_Config.m_KxAbShotgunAimMode,
@@ -79,7 +80,7 @@ static const KxAbCvars s_aAbCvars[] = {
 		&g_Config.m_KxAbShotgunClanmate, &g_Config.m_KxAbShotgunTargetsFilter, g_Config.m_KxAbShotgunTargetsIds,
 		&g_Config.m_KxAbShotgunFreeze, &g_Config.m_KxAbShotgunFngFreeze, &g_Config.m_KxAbShotgunAutoSwitch, &g_Config.m_KxAbShotgunPriority,
 		&g_Config.m_KxAbShotgunSilent, &g_Config.m_KxAbShotgunSmoothSpeed,
-		&g_Config.m_KxAbShotgunSmoothCenterSnap},
+		&g_Config.m_KxAbShotgunSmoothCenterSnap, &g_Config.m_KxAbShotgunOffWhileFreeze},
 	{&g_Config.m_KxAbGrenadeEnabled, &g_Config.m_KxAbGrenadeFov, &g_Config.m_KxAbGrenadeRadius,
 		&g_Config.m_KxAbGrenadeRaycastShow, &g_Config.m_KxAbGrenadeRules, &g_Config.m_KxAbGrenadeUseAngle,
 		&g_Config.m_KxAbGrenadePredict, &g_Config.m_KxAbGrenadeJitter, &g_Config.m_KxAbGrenadeAimMode,
@@ -87,7 +88,7 @@ static const KxAbCvars s_aAbCvars[] = {
 		&g_Config.m_KxAbGrenadeClanmate, &g_Config.m_KxAbGrenadeTargetsFilter, g_Config.m_KxAbGrenadeTargetsIds,
 		&g_Config.m_KxAbGrenadeFreeze, &g_Config.m_KxAbGrenadeFngFreeze, &g_Config.m_KxAbGrenadeAutoSwitch, &g_Config.m_KxAbGrenadePriority,
 		&g_Config.m_KxAbGrenadeSilent, &g_Config.m_KxAbGrenadeSmoothSpeed,
-		&g_Config.m_KxAbGrenadeSmoothCenterSnap},
+		&g_Config.m_KxAbGrenadeSmoothCenterSnap, &g_Config.m_KxAbGrenadeOffWhileFreeze},
 	{&g_Config.m_KxAbLaserEnabled, &g_Config.m_KxAbLaserFov, &g_Config.m_KxAbLaserRadius,
 		&g_Config.m_KxAbLaserRaycastShow, &g_Config.m_KxAbLaserRules, &g_Config.m_KxAbLaserUseAngle,
 		&g_Config.m_KxAbLaserPredict, &g_Config.m_KxAbLaserJitter, &g_Config.m_KxAbLaserAimMode,
@@ -95,7 +96,7 @@ static const KxAbCvars s_aAbCvars[] = {
 		&g_Config.m_KxAbLaserClanmate, &g_Config.m_KxAbLaserTargetsFilter, g_Config.m_KxAbLaserTargetsIds,
 		&g_Config.m_KxAbLaserFreeze, &g_Config.m_KxAbLaserFngFreeze, &g_Config.m_KxAbLaserAutoSwitch, &g_Config.m_KxAbLaserPriority,
 		&g_Config.m_KxAbLaserSilent, &g_Config.m_KxAbLaserSmoothSpeed,
-		&g_Config.m_KxAbLaserSmoothCenterSnap},
+		&g_Config.m_KxAbLaserSmoothCenterSnap, &g_Config.m_KxAbLaserOffWhileFreeze},
 	{&g_Config.m_KxAbNinjaEnabled, &g_Config.m_KxAbNinjaFov, &g_Config.m_KxAbNinjaRadius,
 		&g_Config.m_KxAbNinjaRaycastShow, &g_Config.m_KxAbNinjaRules, &g_Config.m_KxAbNinjaUseAngle,
 		&g_Config.m_KxAbNinjaPredict, &g_Config.m_KxAbNinjaJitter, &g_Config.m_KxAbNinjaAimMode,
@@ -103,7 +104,7 @@ static const KxAbCvars s_aAbCvars[] = {
 		&g_Config.m_KxAbNinjaClanmate, &g_Config.m_KxAbNinjaTargetsFilter, g_Config.m_KxAbNinjaTargetsIds,
 		&g_Config.m_KxAbNinjaFreeze, &g_Config.m_KxAbNinjaFngFreeze, &g_Config.m_KxAbNinjaAutoSwitch, &g_Config.m_KxAbNinjaPriority,
 		&g_Config.m_KxAbNinjaSilent, &g_Config.m_KxAbNinjaSmoothSpeed,
-		&g_Config.m_KxAbNinjaSmoothCenterSnap},
+		&g_Config.m_KxAbNinjaSmoothCenterSnap, &g_Config.m_KxAbNinjaOffWhileFreeze},
 	{&g_Config.m_KxAbHookEnabled, &g_Config.m_KxAbHookFov, &g_Config.m_KxAbHookRadius,
 		&g_Config.m_KxAbHookRaycastShow, &g_Config.m_KxAbHookRules, &g_Config.m_KxAbHookUseAngle,
 		&g_Config.m_KxAbHookPredict, &g_Config.m_KxAbHookJitter, &g_Config.m_KxAbHookAimMode,
@@ -111,7 +112,7 @@ static const KxAbCvars s_aAbCvars[] = {
 		&g_Config.m_KxAbHookClanmate, &g_Config.m_KxAbHookTargetsFilter, g_Config.m_KxAbHookTargetsIds,
 		&g_Config.m_KxAbHookFreeze, &g_Config.m_KxAbHookFngFreeze, &g_Config.m_KxAbHookAutoSwitch, &g_Config.m_KxAbHookPriority,
 		&g_Config.m_KxAbHookSilent, &g_Config.m_KxAbHookSmoothSpeed,
-		&g_Config.m_KxAbHookSmoothCenterSnap},
+		&g_Config.m_KxAbHookSmoothCenterSnap, &g_Config.m_KxAbHookOffWhileFreeze},
 };
 
 struct KxTbCvars
@@ -134,6 +135,8 @@ struct KxTbCvars
 	int *pAutoSwitch;
 	int *pPriority;
 	int *pLatency;
+	int *pUseSilentAB;
+	int *pOffWhileFreeze;
 };
 
 static const KxTbCvars s_aTbCvars[] = {
@@ -142,37 +145,37 @@ static const KxTbCvars s_aTbCvars[] = {
 		&g_Config.m_KxTbHammerRaycastShow, &g_Config.m_KxTbHammerRules,
 		&g_Config.m_KxTbHammerTeam, &g_Config.m_KxTbHammerFriend, &g_Config.m_KxTbHammerDummy,
 		&g_Config.m_KxTbHammerClanmate, &g_Config.m_KxTbHammerTargetsFilter, g_Config.m_KxTbHammerTargetsIds,
-		&g_Config.m_KxTbHammerFreeze, &g_Config.m_KxTbHammerFngFreeze, &g_Config.m_KxTbHammerAutoSwitch, &g_Config.m_KxTbHammerPriority, &g_Config.m_KxTbHammerLatency},
+		&g_Config.m_KxTbHammerFreeze, &g_Config.m_KxTbHammerFngFreeze, &g_Config.m_KxTbHammerAutoSwitch, &g_Config.m_KxTbHammerPriority, &g_Config.m_KxTbHammerLatency, &g_Config.m_KxTbHammerUseSilentAB, &g_Config.m_KxTbHammerOffWhileFreeze},
 	{&g_Config.m_KxTbPistolEnabled, &g_Config.m_KxTbPistolTrigger, &g_Config.m_KxTbPistolTriggerMode,
 		&g_Config.m_KxTbPistolFov, &g_Config.m_KxTbPistolRadius,
 		&g_Config.m_KxTbPistolRaycastShow, &g_Config.m_KxTbPistolRules,
 		&g_Config.m_KxTbPistolTeam, &g_Config.m_KxTbPistolFriend, &g_Config.m_KxTbPistolDummy,
 		&g_Config.m_KxTbPistolClanmate, &g_Config.m_KxTbPistolTargetsFilter, g_Config.m_KxTbPistolTargetsIds,
-		&g_Config.m_KxTbPistolFreeze, &g_Config.m_KxTbPistolFngFreeze, &g_Config.m_KxTbPistolAutoSwitch, &g_Config.m_KxTbPistolPriority, &g_Config.m_KxTbPistolLatency},
+		&g_Config.m_KxTbPistolFreeze, &g_Config.m_KxTbPistolFngFreeze, &g_Config.m_KxTbPistolAutoSwitch, &g_Config.m_KxTbPistolPriority, &g_Config.m_KxTbPistolLatency, &g_Config.m_KxTbPistolUseSilentAB, &g_Config.m_KxTbPistolOffWhileFreeze},
 	{&g_Config.m_KxTbShotgunEnabled, &g_Config.m_KxTbShotgunTrigger, &g_Config.m_KxTbShotgunTriggerMode,
 		&g_Config.m_KxTbShotgunFov, &g_Config.m_KxTbShotgunRadius,
 		&g_Config.m_KxTbShotgunRaycastShow, &g_Config.m_KxTbShotgunRules,
 		&g_Config.m_KxTbShotgunTeam, &g_Config.m_KxTbShotgunFriend, &g_Config.m_KxTbShotgunDummy,
 		&g_Config.m_KxTbShotgunClanmate, &g_Config.m_KxTbShotgunTargetsFilter, g_Config.m_KxTbShotgunTargetsIds,
-		&g_Config.m_KxTbShotgunFreeze, &g_Config.m_KxTbShotgunFngFreeze, &g_Config.m_KxTbShotgunAutoSwitch, &g_Config.m_KxTbShotgunPriority, &g_Config.m_KxTbShotgunLatency},
+		&g_Config.m_KxTbShotgunFreeze, &g_Config.m_KxTbShotgunFngFreeze, &g_Config.m_KxTbShotgunAutoSwitch, &g_Config.m_KxTbShotgunPriority, &g_Config.m_KxTbShotgunLatency, &g_Config.m_KxTbShotgunUseSilentAB, &g_Config.m_KxTbShotgunOffWhileFreeze},
 	{&g_Config.m_KxTbGrenadeEnabled, &g_Config.m_KxTbGrenadeTrigger, &g_Config.m_KxTbGrenadeTriggerMode,
 		&g_Config.m_KxTbGrenadeFov, &g_Config.m_KxTbGrenadeRadius,
 		&g_Config.m_KxTbGrenadeRaycastShow, &g_Config.m_KxTbGrenadeRules,
 		&g_Config.m_KxTbGrenadeTeam, &g_Config.m_KxTbGrenadeFriend, &g_Config.m_KxTbGrenadeDummy,
 		&g_Config.m_KxTbGrenadeClanmate, &g_Config.m_KxTbGrenadeTargetsFilter, g_Config.m_KxTbGrenadeTargetsIds,
-		&g_Config.m_KxTbGrenadeFreeze, &g_Config.m_KxTbGrenadeFngFreeze, &g_Config.m_KxTbGrenadeAutoSwitch, &g_Config.m_KxTbGrenadePriority, &g_Config.m_KxTbGrenadeLatency},
+		&g_Config.m_KxTbGrenadeFreeze, &g_Config.m_KxTbGrenadeFngFreeze, &g_Config.m_KxTbGrenadeAutoSwitch, &g_Config.m_KxTbGrenadePriority, &g_Config.m_KxTbGrenadeLatency, &g_Config.m_KxTbGrenadeUseSilentAB, &g_Config.m_KxTbGrenadeOffWhileFreeze},
 	{&g_Config.m_KxTbLaserEnabled, &g_Config.m_KxTbLaserTrigger, &g_Config.m_KxTbLaserTriggerMode,
 		&g_Config.m_KxTbLaserFov, &g_Config.m_KxTbLaserRadius,
 		&g_Config.m_KxTbLaserRaycastShow, &g_Config.m_KxTbLaserRules,
 		&g_Config.m_KxTbLaserTeam, &g_Config.m_KxTbLaserFriend, &g_Config.m_KxTbLaserDummy,
 		&g_Config.m_KxTbLaserClanmate, &g_Config.m_KxTbLaserTargetsFilter, g_Config.m_KxTbLaserTargetsIds,
-		&g_Config.m_KxTbLaserFreeze, &g_Config.m_KxTbLaserFngFreeze, &g_Config.m_KxTbLaserAutoSwitch, &g_Config.m_KxTbLaserPriority, &g_Config.m_KxTbLaserLatency},
+		&g_Config.m_KxTbLaserFreeze, &g_Config.m_KxTbLaserFngFreeze, &g_Config.m_KxTbLaserAutoSwitch, &g_Config.m_KxTbLaserPriority, &g_Config.m_KxTbLaserLatency, &g_Config.m_KxTbLaserUseSilentAB, &g_Config.m_KxTbLaserOffWhileFreeze},
 	{&g_Config.m_KxTbNinjaEnabled, &g_Config.m_KxTbNinjaTrigger, &g_Config.m_KxTbNinjaTriggerMode,
 		&g_Config.m_KxTbNinjaFov, &g_Config.m_KxTbNinjaRadius,
 		&g_Config.m_KxTbNinjaRaycastShow, &g_Config.m_KxTbNinjaRules,
 		&g_Config.m_KxTbNinjaTeam, &g_Config.m_KxTbNinjaFriend, &g_Config.m_KxTbNinjaDummy,
 		&g_Config.m_KxTbNinjaClanmate, &g_Config.m_KxTbNinjaTargetsFilter, g_Config.m_KxTbNinjaTargetsIds,
-		&g_Config.m_KxTbNinjaFreeze, &g_Config.m_KxTbNinjaFngFreeze, &g_Config.m_KxTbNinjaAutoSwitch, &g_Config.m_KxTbNinjaPriority, &g_Config.m_KxTbNinjaLatency},
+		&g_Config.m_KxTbNinjaFreeze, &g_Config.m_KxTbNinjaFngFreeze, &g_Config.m_KxTbNinjaAutoSwitch, &g_Config.m_KxTbNinjaPriority, &g_Config.m_KxTbNinjaLatency, &g_Config.m_KxTbNinjaUseSilentAB, &g_Config.m_KxTbNinjaOffWhileFreeze},
 };
 
 // v1.56.255: per-weapon settings persistence. Pulls the saved cvars into the
@@ -201,6 +204,7 @@ void CAimBot::SyncSavedSettings()
 			s.m_Silent = *c.pSilent != 0;
 			s.m_SmoothSpeed = *c.pSmoothSpeed / 10.0f;
 			s.m_SmoothCenterSnap = *c.pSmoothCenterSnap != 0;
+			s.m_OffWhileFreeze = *c.pOffWhileFreeze != 0;
 			s.m_TeamFilter = *c.pTeam;
 			s.m_FriendFilter = *c.pFriend;
 			s.m_DummyFilter = *c.pDummy;
@@ -234,6 +238,8 @@ void CAimBot::SyncSavedSettings()
 			s.m_AutoSwitchWeapon = *c.pAutoSwitch != 0;
 			s.m_Priority = *c.pPriority;
 			s.m_RandomLatency = *c.pLatency;
+		s.m_UseSilentChannelAB = *c.pUseSilentAB != 0;
+		s.m_OffWhileFreeze = *c.pOffWhileFreeze != 0;
 		}
 		m_AimBotShowFov = g_Config.m_KxAimBotShowFov != 0;
 		m_AimBotShowRadius = g_Config.m_KxAimBotShowRadius != 0;
@@ -259,6 +265,7 @@ void CAimBot::SyncSavedSettings()
 		*c.pSilent = s.m_Silent ? 1 : 0;
 		*c.pSmoothSpeed = (int)(s.m_SmoothSpeed * 10.0f + 0.5f);
 		*c.pSmoothCenterSnap = s.m_SmoothCenterSnap ? 1 : 0;
+		*c.pOffWhileFreeze = s.m_OffWhileFreeze ? 1 : 0;
 		*c.pTeam = s.m_TeamFilter;
 		*c.pFriend = s.m_FriendFilter;
 		*c.pDummy = s.m_DummyFilter;
@@ -292,6 +299,8 @@ void CAimBot::SyncSavedSettings()
 		*c.pAutoSwitch = s.m_AutoSwitchWeapon ? 1 : 0;
 		*c.pPriority = s.m_Priority;
 		*c.pLatency = s.m_RandomLatency;
+		*c.pUseSilentAB = s.m_UseSilentChannelAB ? 1 : 0;
+		*c.pOffWhileFreeze = s.m_OffWhileFreeze ? 1 : 0;
 	}
 	g_Config.m_KxAimBotShowFov = m_AimBotShowFov ? 1 : 0;
 	g_Config.m_KxAimBotShowRadius = m_AimBotShowRadius ? 1 : 0;
@@ -335,7 +344,7 @@ float CAimBot::GetWeaponRadius(int Weapon) const
 void CAimBot::OnUpdate()
 {
 	// AimBot/TriggerBot logic runs in OnUpdate (BEFORE SnapInput) so silent aim
-	// via m_LaserUnfreezeAimActive is applied to m_TargetX/Y in SnapInput.
+	// via m_SilentAimActive is applied to m_TargetX/Y in SnapInput.
 	// v1.56.255: per-weapon settings persistence (pull once / push every tick).
 	SyncSavedSettings();
 	if(g_Config.m_KxAimBot)
@@ -364,6 +373,10 @@ void CAimBot::OnRender()
         // Active weapon from predicted world (snapshot doesn't expose it directly).
         CCharacter *pChar = pGame->m_PredictedWorld.GetCharacterById(LocalId);
         int weapon = pChar ? pChar->GetActiveWeapon() : -1;
+        // Off while freeze (per weapon) — a paused weapon doesn't render its
+        // FOV/Radius either.
+        const bool WeFrozen = pChar && ((pChar->m_FreezeTime > 0) || pChar->Core()->m_DeepFrozen);
+        const bool WeNinja = weapon == WEAPON_NINJA;
         Graphics()->MapScreenToInterface(pGame->m_Camera.m_Center.x, pGame->m_Camera.m_Center.y, pGame->m_Camera.m_Zoom);
 
         float alpha = KxLineAlpha(KX_LINE_AIMBOT); // v1.56.108: per-component
@@ -371,7 +384,8 @@ void CAimBot::OnRender()
         if(g_Config.m_KxAimBot)
         {
                 // Active weapon (0-5)
-                if(weapon >= 0 && weapon < NUM_WEAPONS_AIM - 1 && m_AimBotWeapons[weapon].m_Enabled)
+                if(weapon >= 0 && weapon < NUM_WEAPONS_AIM - 1 && m_AimBotWeapons[weapon].m_Enabled &&
+                        !(m_AimBotWeapons[weapon].m_OffWhileFreeze && (WeFrozen || (m_AimBotWeapons[weapon].m_FngFreeze && WeNinja))))
                 {
                         if(m_AimBotShowFov)
                                 RenderFov(m_AimBotWeapons[weapon], MyPos, AimDir, alpha);
@@ -380,7 +394,8 @@ void CAimBot::OnRender()
                 }
                 // Hook (6) — v1.56.248: show FOV/radius ALWAYS when the hook weapon is
                 // enabled (previously gated on hook held / AimMode=always).
-                if(m_AimBotWeapons[6].m_Enabled)
+                if(m_AimBotWeapons[6].m_Enabled &&
+                        !(m_AimBotWeapons[6].m_OffWhileFreeze && (WeFrozen || (m_AimBotWeapons[6].m_FngFreeze && WeNinja))))
                 {
                         if(m_AimBotShowFov)
                                 RenderFov(m_AimBotWeapons[6], MyPos, AimDir, alpha);
@@ -388,12 +403,22 @@ void CAimBot::OnRender()
                                 RenderRadius(m_AimBotWeapons[6], MyPos, AimDir, alpha);
                 }
         }
-        if(g_Config.m_KxTriggerBot && weapon >= 0 && weapon < NUM_WEAPONS_TRIGGER && m_TriggerBotWeapons[weapon].m_Enabled)
+        if(g_Config.m_KxTriggerBot && weapon >= 0 && weapon < NUM_WEAPONS_TRIGGER && m_TriggerBotWeapons[weapon].m_Enabled &&
+                !(m_TriggerBotWeapons[weapon].m_OffWhileFreeze && (WeFrozen || (m_TriggerBotWeapons[weapon].m_FngFreeze && WeNinja))))
         {
+                vec2 TbAimDir = AimDir;
+                // v1.56.279: Use silent channel AB — while the silent aim is in
+                // action, draw the zone along the SILENT direction.
+                if(m_TriggerBotWeapons[weapon].m_UseSilentChannelAB && pGame->m_Controls.m_SilentAimActive)
+                {
+                        const vec2 SilentAim = pGame->m_Controls.m_SilentAimOffset;
+                        if(length(SilentAim) > 0.001f)
+                                TbAimDir = normalize(SilentAim);
+                }
                 if(m_TriggerBotShowFov)
-                        RenderFov(m_TriggerBotWeapons[weapon], MyPos, AimDir, alpha * 0.7f);
+                        RenderFov(m_TriggerBotWeapons[weapon], MyPos, TbAimDir, alpha * 0.7f);
                 if(m_TriggerBotShowRadius)
-                        RenderRadius(m_TriggerBotWeapons[weapon], MyPos, AimDir, alpha * 0.7f);
+                        RenderRadius(m_TriggerBotWeapons[weapon], MyPos, TbAimDir, alpha * 0.7f);
         }
 
 }
@@ -1067,8 +1092,8 @@ void CAimBot::ApplyAim(int ClientId, const vec2 &MyPos, const SWeaponSettings &S
 
                 if(Settings.m_Silent)
                 {
-                        pGame->m_Controls.m_LaserUnfreezeAimActive = true;
-                        pGame->m_Controls.m_LaserUnfreezeAimOffset = cur;
+                        pGame->m_Controls.m_SilentAimActive = true;
+                        pGame->m_Controls.m_SilentAimOffset = cur;
                 }
                 return;
         }
@@ -1081,8 +1106,8 @@ void CAimBot::ApplyAim(int ClientId, const vec2 &MyPos, const SWeaponSettings &S
                 // player aims). Set the silent aim override flag — SnapInput
                 // (controls.cpp) will use this offset for m_TargetX/Y right before
                 // sending to server. Same channel as Laser Unfreeze silent.
-                pGame->m_Controls.m_LaserUnfreezeAimActive = true;
-                pGame->m_Controls.m_LaserUnfreezeAimOffset = aimOffset;
+                pGame->m_Controls.m_SilentAimActive = true;
+                pGame->m_Controls.m_SilentAimOffset = aimOffset;
                 return;
         }
 
@@ -1143,6 +1168,9 @@ void CAimBot::UpdateAimBot()
         if(length(AimDir) < 0.001f)
                 AimDir = vec2(1, 0);
 
+        // per-weapon pause checks below.
+        const bool WeFrozen = (pChar->m_FreezeTime > 0) || pChar->Core()->m_DeepFrozen;
+
         // v1.56.276: Auto Switch Weapon — if the held weapon's aimbot has no
         // target in its zone, switch to the nearest enabled weapon with Auto
         // Switch on that does have one (hook can't be switched to, so only
@@ -1161,6 +1189,9 @@ void CAimBot::UpdateAimBot()
                         for(int w = 0; w < NUM_WEAPONS_AIM - 1; w++)
                         {
                                 if(!m_AimBotWeapons[w].m_Enabled || !m_AimBotWeapons[w].m_AutoSwitchWeapon)
+                                        continue;
+                                // switch target while we are frozen.
+                                if(m_AimBotWeapons[w].m_OffWhileFreeze && (WeFrozen || (m_AimBotWeapons[w].m_FngFreeze && weapon == WEAPON_NINJA)))
                                         continue;
                                 vec2 pt;
                                 const int t = FindTarget(m_AimBotWeapons[w], w, LocalId, MyPos, AimDir, AimPos, pt);
@@ -1217,9 +1248,12 @@ void CAimBot::UpdateAimBot()
         if(weapon >= 0 && weapon < NUM_WEAPONS_AIM - 1 && m_AimBotWeapons[weapon].m_Enabled)
         {
                 const SWeaponSettings &s = m_AimBotWeapons[weapon];
+                // is paused while we are frozen (ninja counts as frozen when
+                // this weapon's FNG Freeze is on).
+                const bool FreezePaused = s.m_OffWhileFreeze && (WeFrozen || (s.m_FngFreeze && weapon == WEAPON_NINJA));
                 // Mode: Edge/Trigger use willFire; Always/Smooth run every tick.
                 bool trigger = (s.m_AimMode >= 2) ? true : willFire;
-                if(trigger)
+                if(trigger && !FreezePaused)
                 {
                         vec2 aimPt; int t = FindTarget(s, weapon, LocalId, MyPos, AimDir, AimPos, aimPt);
                         if(t >= 0)
@@ -1234,8 +1268,9 @@ void CAimBot::UpdateAimBot()
         if(m_AimBotWeapons[6].m_Enabled)
         {
                 const SWeaponSettings &s = m_AimBotWeapons[6];
+                const bool FreezePaused = s.m_OffWhileFreeze && (WeFrozen || (s.m_FngFreeze && weapon == WEAPON_NINJA));
                 bool trigger = (s.m_AimMode >= 2) ? true : (hook && !m_PrevHook);
-                if(trigger)
+                if(trigger && !FreezePaused)
                 {
                         vec2 aimPt; int t = FindTarget(s, 6, LocalId, MyPos, AimDir, AimPos, aimPt);
                         if(t >= 0)
@@ -1272,6 +1307,9 @@ void CAimBot::UpdateTriggerBot()
         if(length(AimDir) < 0.001f)
                 AimDir = vec2(1, 0);
 
+        // per-weapon pause checks below.
+        const bool WeFrozen = (pChar->m_FreezeTime > 0) || pChar->Core()->m_DeepFrozen;
+
         // v1.56.276: Auto Switch Weapon — if the held weapon's triggerbot has no
         // target in its zone, switch to the nearest enabled weapon with Auto
         // Switch on that does have one. Runs BEFORE the held-weapon gates so it
@@ -1290,6 +1328,9 @@ void CAimBot::UpdateTriggerBot()
                         for(int w = 0; w < NUM_WEAPONS_TRIGGER; w++)
                         {
                                 if(!m_TriggerBotWeapons[w].m_Enabled || !m_TriggerBotWeapons[w].m_AutoSwitchWeapon)
+                                        continue;
+                                // switch target while we are frozen.
+                                if(m_TriggerBotWeapons[w].m_OffWhileFreeze && (WeFrozen || (m_TriggerBotWeapons[w].m_FngFreeze && weapon == WEAPON_NINJA)))
                                         continue;
                                 vec2 pt;
                                 const int t = FindTarget(m_TriggerBotWeapons[w], w, LocalId, MyPos, AimDir, AimPos, pt);
@@ -1313,6 +1354,18 @@ void CAimBot::UpdateTriggerBot()
                 return;
 
         const SWeaponSettings &s = m_TriggerBotWeapons[weapon];
+        // is paused while we are frozen (ninja counts as frozen when this
+        // weapon's FNG Freeze is on).
+        if(s.m_OffWhileFreeze && (WeFrozen || (s.m_FngFreeze && weapon == WEAPON_NINJA)))
+                return;
+        // v1.56.279: Use silent channel AB — while the AimBot's silent aim is
+        // in action, the zone follows the SILENT direction instead of the
+        // player's crosshair (Show FOV/Radius draw it too).
+        if(s.m_UseSilentChannelAB && pGame->m_Controls.m_SilentAimActive && length(pGame->m_Controls.m_SilentAimOffset) > 0.001f)
+        {
+                AimPos = pGame->m_Controls.m_SilentAimOffset;
+                AimDir = normalize(AimPos);
+        }
         vec2 aimPtTb; int target = FindTarget(s, weapon, LocalId, MyPos, AimDir, AimPos, aimPtTb);
         bool targetInZone = (target >= 0);
 

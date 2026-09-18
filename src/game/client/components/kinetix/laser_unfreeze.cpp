@@ -26,7 +26,7 @@
 // PHASE 3 (execute): if best candidate found (score < INT_MAX):
 //   - Switch to laser weapon (m_WantedWeapon = 5)
 //   - Set aim to FIRST BOUNCE POSITION (world coords → screen offset)
-//   - Silent mode: set m_LaserUnfreezeAimActive instead of SetMousePos
+//   - Silent mode: set m_SilentAimActive instead of SetMousePos
 //   - Show attempt: store full laser path for rendering
 //   - Fire (m_Fire parity press)
 
@@ -303,8 +303,8 @@ void CBotNet::UpdateLaserUnfreeze()
         // Silent mode: don't change m_aMousePos (visible crosshair).
         // Set the aim override flag — SnapInput will use this offset
         // for m_TargetX/Y right before sending to server.
-        pGame->m_Controls.m_LaserUnfreezeAimActive = true;
-        pGame->m_Controls.m_LaserUnfreezeAimOffset = aimOffset;
+        pGame->m_Controls.m_SilentAimActive = true;
+        pGame->m_Controls.m_SilentAimOffset = aimOffset;
     }
     else
     {
