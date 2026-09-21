@@ -780,6 +780,14 @@ int CControls::SnapInput(int *pData)
                 Send = Send || m_aInputData[g_Config.m_ClDummy].m_NextWeapon != m_aLastData[g_Config.m_ClDummy].m_NextWeapon;
                 Send = Send || m_aInputData[g_Config.m_ClDummy].m_PrevWeapon != m_aLastData[g_Config.m_ClDummy].m_PrevWeapon;
                 Send = Send || time_get() > m_LastSendTime + time_freq() / 25; // send at least 25 Hz
+
+                // RT Pathfinder playback: the plan input must be applied and sent
+                // EVERY game tick. The send-on-change throttle below skips this
+                // whole tail on unchanged-input ticks — then the hook never runs,
+                // plan inputs get skipped (jump impulses, direction changes) and
+                // the tee runs ahead of the plan (desync).
+                if(GameClient()->m_BotNet.m_RtPfState == 1)
+                        Send = true;
                 Send = Send || (GameClient()->m_Snap.m_pLocalCharacter && GameClient()->m_Snap.m_pLocalCharacter->m_Weapon == WEAPON_NINJA && (m_aInputData[g_Config.m_ClDummy].m_Direction || m_aInputData[g_Config.m_ClDummy].m_Jump || m_aInputData[g_Config.m_ClDummy].m_Hook));
 
                 // force send when botnet is active
@@ -1096,13 +1104,18 @@ int CControls::SnapInput(int *pData)
         // movement/aim/fire win over every other input source.
         GameClient()->m_Tas.ApplyTasRealInput(&m_aInputData[g_Config.m_ClDummy]);
 
+        // RT Pathfinder real-time playback: apply the next planned input to the
+        // live player (same override slot as the TAS real replay; TAS wins when
+        // both are active — ApplyRtPfRealInput bails while TAS replays).
+        GameClient()->m_BotNet.ApplyRtPfRealInput(&m_aInputData[g_Config.m_ClDummy]);
+
         // v1.56.247: Distance from center — applies to EVERY aim sent to the
         // server: the real player aim, the laser unfreeze silent-aim channel and
         // Show-for-me fake aims (the pData-only fake path is rescaled where
         // fakeOffset is generated). Rescales the aim to exactly
         // kx_fake_aim_dist_center units from (0,0), preserving direction.
-        // 0 = off. Skipped during TAS real replay so takes replay as-is.
-        if(g_Config.m_KxFakeAimDistCenter > 0 && !GameClient()->m_Tas.IsRealPlaying())
+        // 0 = off. Skipped during TAS real replay and RT pathfinder playback so both replay as-is.
+        if(g_Config.m_KxFakeAimDistCenter > 0 && !GameClient()->m_Tas.IsRealPlaying() && GameClient()->m_BotNet.m_RtPfState != 1)
         {
                 vec2 SendTarget((float)m_aInputData[g_Config.m_ClDummy].m_TargetX, (float)m_aInputData[g_Config.m_ClDummy].m_TargetY);
                 float SendLen = length(SendTarget);

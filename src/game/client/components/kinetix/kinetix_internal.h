@@ -372,17 +372,19 @@ static inline void PfSimulateChunk(CGameWorld *pWorld, int PredictedCharId, CCha
 // v1.56.108: Per-component line rendering settings.
 // Component indices: 0=AimBot 1=TriggerBot 2=Trajectory
 //                   3=LaserUnfreeze 4=Pathfinder 5=ESP 6=TAS 7=Hitboxes
+// v1.56.280: 8=RT Pathfinder (Real-Time Pathfinder panel).
 enum EKxLineComponent
 {
-        KX_LINE_AIMBOT = 0,
-        KX_LINE_TRIGGERBOT = 1,
-        KX_LINE_TRAJECTORY = 2,
-        KX_LINE_LASER_UNFREEZE = 3,
-        KX_LINE_PATHFINDER = 4,
-        KX_LINE_ESP = 5,
-        KX_LINE_TAS = 6,
-        KX_LINE_HITBOXES = 7,
-        KX_LINE_COUNT = 8,
+	KX_LINE_AIMBOT = 0,
+	KX_LINE_TRIGGERBOT = 1,
+	KX_LINE_TRAJECTORY = 2,
+	KX_LINE_LASER_UNFREEZE = 3,
+	KX_LINE_PATHFINDER = 4,
+	KX_LINE_ESP = 5,
+	KX_LINE_TAS = 6,
+	KX_LINE_HITBOXES = 7,
+	KX_LINE_RT_PATHFINDER = 8,
+	KX_LINE_COUNT = 9,
 };
 
 // =========================================================
@@ -406,10 +408,11 @@ inline void KxLineUpdateRainbow(float dt)
                 case KX_LINE_LASER_UNFREEZE: enabled = g_Config.m_KxLineLaserUnfreezeRainbow != 0; speed = g_Config.m_KxLineLaserUnfreezeRainbowSpeed; break;
                 case KX_LINE_PATHFINDER: enabled = g_Config.m_KxLinePathfinderRainbow != 0; speed = g_Config.m_KxLinePathfinderRainbowSpeed; break;
                 case KX_LINE_ESP: enabled = g_Config.m_KxLineEspRainbow != 0; speed = g_Config.m_KxLineEspRainbowSpeed; break;
-                case KX_LINE_TAS: enabled = g_Config.m_KxLineTasRainbow != 0; speed = g_Config.m_KxLineTasRainbowSpeed; break;
-                case KX_LINE_HITBOXES: enabled = g_Config.m_KxLineHitboxesRainbow != 0; speed = g_Config.m_KxLineHitboxesRainbowSpeed; break;
-                }
-                // v1.56.204: speed is stored as display*10 (display range 0.1-10.0).
+			case KX_LINE_TAS: enabled = g_Config.m_KxLineTasRainbow != 0; speed = g_Config.m_KxLineTasRainbowSpeed; break;
+			case KX_LINE_HITBOXES: enabled = g_Config.m_KxLineHitboxesRainbow != 0; speed = g_Config.m_KxLineHitboxesRainbowSpeed; break;
+			case KX_LINE_RT_PATHFINDER: enabled = g_Config.m_KxLineRtPathfinderRainbow != 0; speed = g_Config.m_KxLineRtPathfinderRainbowSpeed; break;
+		}
+		// v1.56.204: speed is stored as display*10 (display range 0.1-10.0).
                 // To match Rainbow Color: hue += dt * displaySpeed * 60 = dt * (speed/10) * 60 = dt * speed * 6.
                 if(enabled)
                 {
@@ -438,10 +441,11 @@ inline int KxLineSize(EKxLineComponent c)
         case KX_LINE_LASER_UNFREEZE: return g_Config.m_KxLineLaserUnfreezeSize;
         case KX_LINE_PATHFINDER: return g_Config.m_KxLinePathfinderSize;
         case KX_LINE_ESP: return g_Config.m_KxLineEspSize;
-        case KX_LINE_TAS: return g_Config.m_KxLineTasSize;
-        case KX_LINE_HITBOXES: return g_Config.m_KxLineHitboxesSize;
-        }
-        return g_Config.m_KxLineRenderingSize; // fallback
+		case KX_LINE_TAS: return g_Config.m_KxLineTasSize;
+		case KX_LINE_HITBOXES: return g_Config.m_KxLineHitboxesSize;
+		case KX_LINE_RT_PATHFINDER: return g_Config.m_KxLineRtPathfinderSize;
+	}
+	return g_Config.m_KxLineRenderingSize; // fallback
 }
 
 inline unsigned KxLineColor(EKxLineComponent c)
@@ -457,10 +461,11 @@ inline unsigned KxLineColor(EKxLineComponent c)
         case KX_LINE_LASER_UNFREEZE: rainbow = g_Config.m_KxLineLaserUnfreezeRainbow != 0; speed = g_Config.m_KxLineLaserUnfreezeRainbowSpeed; break;
         case KX_LINE_PATHFINDER: rainbow = g_Config.m_KxLinePathfinderRainbow != 0; speed = g_Config.m_KxLinePathfinderRainbowSpeed; break;
         case KX_LINE_ESP: rainbow = g_Config.m_KxLineEspRainbow != 0; speed = g_Config.m_KxLineEspRainbowSpeed; break;
-        case KX_LINE_TAS: rainbow = g_Config.m_KxLineTasRainbow != 0; speed = g_Config.m_KxLineTasRainbowSpeed; break;
-        case KX_LINE_HITBOXES: rainbow = g_Config.m_KxLineHitboxesRainbow != 0; speed = g_Config.m_KxLineHitboxesRainbowSpeed; break;
-        }
-        if(rainbow)
+		case KX_LINE_TAS: rainbow = g_Config.m_KxLineTasRainbow != 0; speed = g_Config.m_KxLineTasRainbowSpeed; break;
+		case KX_LINE_HITBOXES: rainbow = g_Config.m_KxLineHitboxesRainbow != 0; speed = g_Config.m_KxLineHitboxesRainbowSpeed; break;
+		case KX_LINE_RT_PATHFINDER: rainbow = g_Config.m_KxLineRtPathfinderRainbow != 0; speed = g_Config.m_KxLineRtPathfinderRainbowSpeed; break;
+	}
+	if(rainbow)
         {
                 // Convert current hue (0..360) to RGB via HSV with S=1, V=1.
                 float h = g_aLineRainbowHue[c] / 60.0f;
@@ -485,10 +490,11 @@ inline unsigned KxLineColor(EKxLineComponent c)
         case KX_LINE_LASER_UNFREEZE: return g_Config.m_KxLineLaserUnfreezeColor;
         case KX_LINE_PATHFINDER: return g_Config.m_KxLinePathfinderColor;
         case KX_LINE_ESP: return g_Config.m_KxLineEspColor;
-        case KX_LINE_TAS: return g_Config.m_KxLineTasColor;
-        case KX_LINE_HITBOXES: return g_Config.m_KxLineHitboxesColor;
-        }
-        return g_Config.m_KxLineRenderingColor;
+		case KX_LINE_TAS: return g_Config.m_KxLineTasColor;
+		case KX_LINE_HITBOXES: return g_Config.m_KxLineHitboxesColor;
+		case KX_LINE_RT_PATHFINDER: return g_Config.m_KxLineRtPathfinderColor;
+	}
+	return g_Config.m_KxLineRenderingColor;
 }
 
 inline float KxLineAlpha(EKxLineComponent c)
@@ -501,10 +507,11 @@ inline float KxLineAlpha(EKxLineComponent c)
         case KX_LINE_LASER_UNFREEZE: return (float)g_Config.m_KxLineLaserUnfreezeAlpha / 100.0f;
         case KX_LINE_PATHFINDER: return (float)g_Config.m_KxLinePathfinderAlpha / 100.0f;
         case KX_LINE_ESP: return (float)g_Config.m_KxLineEspAlpha / 100.0f;
-        case KX_LINE_TAS: return (float)g_Config.m_KxLineTasAlpha / 100.0f;
-        case KX_LINE_HITBOXES: return (float)g_Config.m_KxLineHitboxesAlpha / 100.0f;
-        }
-        return (float)g_Config.m_KxLineRenderingAlpha / 100.0f;
+		case KX_LINE_TAS: return (float)g_Config.m_KxLineTasAlpha / 100.0f;
+		case KX_LINE_HITBOXES: return (float)g_Config.m_KxLineHitboxesAlpha / 100.0f;
+		case KX_LINE_RT_PATHFINDER: return (float)g_Config.m_KxLineRtPathfinderAlpha / 100.0f;
+	}
+	return (float)g_Config.m_KxLineRenderingAlpha / 100.0f;
 }
 
 // v1.56.210: Per-segment line color for gradient mode.
@@ -556,12 +563,17 @@ inline unsigned KxLineColorAt(EKxLineComponent c, int segment_index)
                 gradient = g_Config.m_KxLineTasGradient != 0;
                 step = g_Config.m_KxLineTasGradientStep;
                 break;
-        case KX_LINE_HITBOXES:
-                rainbow = g_Config.m_KxLineHitboxesRainbow != 0;
-                gradient = g_Config.m_KxLineHitboxesGradient != 0;
-                step = g_Config.m_KxLineHitboxesGradientStep;
-                break;
-        }
+		case KX_LINE_HITBOXES:
+			rainbow = g_Config.m_KxLineHitboxesRainbow != 0;
+			gradient = g_Config.m_KxLineHitboxesGradient != 0;
+			step = g_Config.m_KxLineHitboxesGradientStep;
+			break;
+		case KX_LINE_RT_PATHFINDER:
+			rainbow = g_Config.m_KxLineRtPathfinderRainbow != 0;
+			gradient = g_Config.m_KxLineRtPathfinderGradient != 0;
+			step = g_Config.m_KxLineRtPathfinderGradientStep;
+			break;
+	}
 
         // No rainbow → use the static per-component color (existing path).
         if(!rainbow)

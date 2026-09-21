@@ -1350,3 +1350,1059 @@ bool CBotNet::PfSpectateUpdateCamera(vec2 &outCamPos)
 	outCamPos = m_PfSpecCamPos;
 	return true;
 }
+
+// =========================================================
+// REAL-TIME PATHFINDER — state machine, playback, flow field
+// =========================================================
+// Single-branch ("kinodynamic", no tree) rolling planner: the worker thread
+// in pathfinder.cpp (RtPfThreadWorker) ONLY generates path data (windows of
+// simulated physics). This side — the main thread — owns everything else:
+// the state machine, the live playback (inputs applied through
+// CControls::SnapInput -> ApplyRtPfRealInput), the Reconstruct deviation
+// check, the RT-only flow field and rendering.
+//
+// Thread-safety contract: ALL shared RT variables (m_RtPfInputs /
+// m_RtPfPath / m_RtPfHookSegs / m_RtPfPlayIdx / the reproduced history)
+// are written ONLY by the main thread — UpdateRtPathfinder commits the
+// chunks the worker generated and advances the cursor; ApplyRtPfRealInput
+// only reads. The worker writes exactly one thing: the m_RtPfOut* mailbox
+// (guarded by m_RtPfDataMutex). m_RtPfRebuildPending + payload: main
+// writes, worker consumes, under mutex.
+// =========================================================
+
+// Join the worker + free the sim world. Main thread only.
+void CBotNet::RtPfThreadStop()
+{
+	if(!m_RtPfThread.joinable())
+		return;
+	m_RtPfThreadCancel.store(true);
+	m_RtPfThread.join();
+	m_RtPfThreadRunning.store(false);
+	m_RtPfThreadCancel.store(false);
+	// worker joined — the sim world belongs to the main thread again
+	if(m_RtPfSimWorld)
+	{
+		delete m_RtPfSimWorld;
+		m_RtPfSimWorld = nullptr;
+	}
+}
+
+// Active finish sources: RT custom finish tiles when painted, natural map finish otherwise.
+const std::vector<vec2> &CBotNet::RtPfActiveFinishTiles() const
+{
+	return m_RtPfCustomFinishTiles.empty() ? m_RtPfFinishTiles : m_RtPfCustomFinishTiles;
+}
+
+// Goal test: is the position on an active finish tile? Anywhere in the tile
+// counts (the tee's center crossing the tile) — the RT run must reliably
+// detect arrival, unlike the tab's half-tile PfIsAtFinishPos quirk.
+bool CBotNet::RtPfIsAtFinishPos(const vec2 &Pos) const
+{
+	for(const vec2 &fp : RtPfActiveFinishTiles())
+	{
+		const int tx = (int)floorf(fp.x / 32.0f);
+		const int ty = (int)floorf(fp.y / 32.0f);
+		if((int)floorf(Pos.x / 32.0f) == tx && (int)floorf(Pos.y / 32.0f) == ty)
+			return true;
+	}
+	return false;
+}
+
+void CBotNet::RtPfEnsureEditorGrids()
+{
+	if(!m_MapGridLoaded || m_MapWidth <= 0 || m_MapHeight <= 0)
+		return;
+	const size_t Size = (size_t)m_MapWidth * (size_t)m_MapHeight;
+	if(!m_pRtForbiddenGrid)
+	{
+		m_pRtForbiddenGrid = new unsigned char[Size];
+		mem_zero(m_pRtForbiddenGrid, Size);
+	}
+	if(!m_pRtCustomFinishGrid)
+	{
+		m_pRtCustomFinishGrid = new unsigned char[Size];
+		mem_zero(m_pRtCustomFinishGrid, Size);
+	}
+}
+
+// Editor tiles changed: the field is stale; rebuild + re-anchor when running.
+void CBotNet::RtPfAfterEditorChange()
+{
+	if(m_RtPfFlowField)
+	{
+		delete[] m_RtPfFlowField;
+		m_RtPfFlowField = nullptr;
+	}
+	if(m_RtPfState == 1)
+		RtPfResetRun();
+}
+
+// Start a fresh real-time run from the live player's predicted state.
+void CBotNet::RtPfResetRun()
+{
+	// join any previous worker first — after this point we own all RT state
+	RtPfThreadStop();
+
+	CGameClient *pGame = GameClient();
+	if(!pGame || !pGame->m_Snap.m_pLocalInfo)
+	{
+		dbg_msg("rtpathfinder", "RtPfResetRun: no game or local info");
+		return;
+	}
+	if(!m_MapGridLoaded)
+		LoadMapGrid();
+	if(!m_MapGridLoaded)
+	{
+		dbg_msg("rtpathfinder", "RtPfResetRun: map grid failed to load");
+		return;
+	}
+	const int LocalID = pGame->m_Snap.m_LocalClientId;
+	if(LocalID < 0)
+	{
+		dbg_msg("rtpathfinder", "RtPfResetRun: no local client id");
+		return;
+	}
+	CCharacter *pChar = pGame->m_PredictedWorld.GetCharacterById(LocalID);
+	if(!pChar)
+	{
+		dbg_msg("rtpathfinder", "RtPfResetRun: no predicted character");
+		return;
+	}
+
+	RtPfEnsureEditorGrids();
+	RtPfComputeFlowField();
+	if(RtPfActiveFinishTiles().empty())
+		dbg_msg("rtpathfinder", "RtPfResetRun: no finish tiles (paint custom finish tiles or play a map with finish)");
+
+	// snapshot the predicted world for the worker thread
+	if(m_RtPfBaseWorld)
+		delete m_RtPfBaseWorld;
+	m_RtPfBaseWorld = new CGameWorld();
+	m_RtPfBaseWorld->CopyWorld(&pGame->m_PredictedWorld);
+	m_RtPfLocalID = LocalID;
+
+	// reset the plan + history on the MAIN thread and post the run's root to
+	// the worker (the worker never touches shared RT variables — it only
+	// generates path data)
+	{
+		std::lock_guard<std::mutex> lock(m_RtPfDataMutex);
+		m_RtPfInputs.clear();
+		m_RtPfPath.clear();
+		m_RtPfHookSegs.clear();
+		m_RtPfOutInputs.clear();
+		m_RtPfOutPath.clear();
+		m_RtPfOutSegs.clear();
+		m_RtPfOutValid = false;
+		m_RtPfOutTruncateTo = -1;
+		const CCharacterCore &Core = pChar->GetCore();
+		m_RtPfPath.push_back(Core.m_Pos); // path[0] = plan root
+		m_RtPfRebuildCore.Pos = Core.m_Pos;
+		m_RtPfRebuildCore.Vel = Core.m_Vel;
+		m_RtPfRebuildCore.HookState = Core.m_HookState;
+		m_RtPfRebuildCore.HookPos = Core.m_HookPos;
+		m_RtPfRebuildCore.HookDir = Core.m_HookDir;
+		m_RtPfRebuildCore.HookTick = Core.m_HookTick;
+		m_RtPfRebuildCore.Jumped = Core.m_Jumped;
+		m_RtPfRebuildCore.JumpedTotal = Core.m_JumpedTotal;
+		m_RtPfRebuildFreeze = pChar->m_FreezeTime;
+		m_RtPfAnchorTick = Client()->PredGameTick(g_Config.m_ClDummy);
+		m_RtPfRebuildPending.store(true);
+		m_RtPfPlayIdx = 0;
+	}
+	m_RtPfPassedPath.clear();
+	m_RtPfPassedHookSegs.clear();
+	m_RtPfPrevHookState = 0;
+	m_RtPfLastProcessedTick = -1;
+	m_RtPfReady = false;
+
+	// start the worker
+	m_RtPfThreadCancel.store(false);
+	m_RtPfThreadRunning.store(true);
+	m_RtPfThread = std::thread(&CBotNet::RtPfThreadWorker, this);
+
+	const char *pRtFlowStatus = "unavailable";
+	if(m_RtPfFlowField)
+	{
+		int sTX = pf_clamp((int)(pChar->GetCore().m_Pos.x / 32.0f), 0, m_MapWidth - 1);
+		int sTY = pf_clamp((int)(pChar->GetCore().m_Pos.y / 32.0f), 0, m_MapHeight - 1);
+		pRtFlowStatus = (m_RtPfFlowField[sTY * m_MapWidth + sTX] < 1e17f) ? "reachable" : "grid-unreachable (air-distance fallback)";
+	}
+	dbg_msg("rtpathfinder", "RtPfResetRun: start=(%.0f,%.0f) finishes=%d flow=%s future=%s(%d)",
+		pChar->GetCore().m_Pos.x, pChar->GetCore().m_Pos.y,
+		(int)RtPfActiveFinishTiles().size(), pRtFlowStatus, g_Config.m_KxRtPfFutureLimit ? "limited" : "unlimited", pf_clamp(g_Config.m_KxRtPfFutureTicks, 1, 150));
+}
+
+// Stop: kill the worker and clear all RT state (no FINISHED state — back to IDLE).
+void CBotNet::RtPfStop()
+{
+	RtPfThreadStop();
+	if(m_RtPfBaseWorld)
+	{
+		delete m_RtPfBaseWorld;
+		m_RtPfBaseWorld = nullptr;
+	}
+	m_RtPfLocalID = -1;
+	{
+		std::lock_guard<std::mutex> lock(m_RtPfDataMutex);
+		m_RtPfInputs.clear();
+		m_RtPfPath.clear();
+		m_RtPfHookSegs.clear();
+		m_RtPfOutInputs.clear();
+		m_RtPfOutPath.clear();
+		m_RtPfOutSegs.clear();
+		m_RtPfPlayIdx = 0;
+		m_RtPfRebuildPending.store(false);
+		m_RtPfOutValid = false;
+		m_RtPfOutTruncateTo = -1;
+	}
+	m_RtPfPassedPath.clear();
+	m_RtPfPassedHookSegs.clear();
+	m_RtPfReady = false;
+	m_RtPfState = 0;
+}
+
+// Per-tick MAIN-THREAD update — the only place any shared RT variable is
+// written (the worker only generates path data): commit the chunk the worker
+// produced, record the reproduced history, run the Reconstruct deviation
+// check and advance the plan cursor. Runs once per PREDICTED tick — the same
+// clock SendInput fires on (the snapshot-driven GameTick advances only when
+// a snapshot is applied and skips every second predicted tick).
+void CBotNet::UpdateRtPathfinder()
+{
+	if(m_RtPfState != 1)
+		return;
+	if(!m_MapGridLoaded)
+		LoadMapGrid();
+	CGameClient *pGame = GameClient();
+	if(!pGame || !pGame->m_Snap.m_pLocalInfo)
+		return;
+
+	// commit the ticks the worker generated — the only place the plan grows;
+	// runs every frame so the worker never stalls on the mailbox
+	{
+		std::lock_guard<std::mutex> lock(m_RtPfDataMutex);
+		if(m_RtPfOutValid)
+		{
+			m_RtPfOutValid = false;
+			// worker backtracked: shrink the plan back to the rollback point and
+			// drop the hook segments of the retracted ticks
+			if(m_RtPfOutTruncateTo >= 0)
+			{
+				const int Keep = m_RtPfOutTruncateTo;
+				m_RtPfOutTruncateTo = -1;
+				if(Keep > 0 && Keep < (int)m_RtPfInputs.size())
+				{
+					m_RtPfInputs.resize(Keep);
+					m_RtPfPath.resize(Keep + 1);
+					for(int i = (int)m_RtPfHookSegs.size() - 1; i >= 0; i--)
+					{
+						if(m_RtPfHookSegs[i].tick >= Keep)
+							m_RtPfHookSegs.erase(m_RtPfHookSegs.begin() + i);
+					}
+				}
+			}
+			const int Base = (int)m_RtPfInputs.size();
+			m_RtPfInputs.insert(m_RtPfInputs.end(), m_RtPfOutInputs.begin(), m_RtPfOutInputs.end());
+			m_RtPfPath.insert(m_RtPfPath.end(), m_RtPfOutPath.begin(), m_RtPfOutPath.end());
+			for(const RtPfHookSeg &s : m_RtPfOutSegs)
+				m_RtPfHookSegs.push_back({s.teePos, s.hookPos, Base + s.tick});
+			m_RtPfOutInputs.clear();
+			m_RtPfOutPath.clear();
+			m_RtPfOutSegs.clear();
+		}
+	}
+
+	// per-tick gate (predicted tick)
+	const int Tick = Client()->PredGameTick(g_Config.m_ClDummy);
+	if(Tick == m_RtPfLastProcessedTick)
+		return;
+	m_RtPfLastProcessedTick = Tick;
+
+	CCharacter *pChar = pGame->m_PredictedWorld.GetCharacterById(pGame->m_Snap.m_LocalClientId);
+	if(!pChar)
+		return;
+	const CCharacterCore &Core = pChar->GetCore();
+
+	// ── Finish: the live tee reached a finish tile — the run is complete.
+	if(RtPfIsAtFinishPos(Core.m_Pos))
+	{
+		dbg_msg("rtpathfinder", "finish reached — run complete");
+		RtPfStop();
+		return;
+	}
+
+	// ── (Re)anchoring: playback is resumed by ApplyRtPfRealInput the moment
+	// a plan tick generated from the PREVIOUS tick's state is available (the
+	// anchor-tick freshness check there — a plan rooted any earlier is stale).
+	// Until then the input hook feeds the tee BRAKE inputs (deterministic
+	// standstill, no player drift) and this re-posts the live state as the
+	// plan root every tick, so the fresh plan always starts exactly where
+	// the tee is. No position alignment, no buffering wait.
+	if(!m_RtPfReady)
+	{
+		std::lock_guard<std::mutex> lock(m_RtPfDataMutex);
+		m_RtPfInputs.clear();
+		m_RtPfPath.clear();
+		m_RtPfHookSegs.clear();
+		m_RtPfOutInputs.clear();
+		m_RtPfOutPath.clear();
+		m_RtPfOutSegs.clear();
+		m_RtPfOutValid = false;
+		m_RtPfOutTruncateTo = -1;
+		m_RtPfPath.push_back(Core.m_Pos);
+		m_RtPfPlayIdx = 0;
+		m_RtPfRebuildCore.Pos = Core.m_Pos;
+		m_RtPfRebuildCore.Vel = Core.m_Vel;
+		m_RtPfRebuildCore.HookState = Core.m_HookState;
+		m_RtPfRebuildCore.HookPos = Core.m_HookPos;
+		m_RtPfRebuildCore.HookDir = Core.m_HookDir;
+		m_RtPfRebuildCore.HookTick = Core.m_HookTick;
+		m_RtPfRebuildCore.Jumped = Core.m_Jumped;
+		m_RtPfRebuildCore.JumpedTotal = Core.m_JumpedTotal;
+		m_RtPfRebuildFreeze = pChar->m_FreezeTime;
+		m_RtPfAnchorTick = Tick;
+		m_RtPfRebuildPending.store(true);
+		return;
+	}
+
+	// bookkeeping for the plan input of THIS tick (the input hook only READS
+	// inputs[m_RtPfPlayIdx] — the cursor is advanced here)
+	if(m_RtPfPlayIdx >= (int)m_RtPfInputs.size())
+	{
+		m_RtPfReady = false; // plan exhausted mid-run — brake + re-anchor
+		return;
+	}
+
+	// history — the already reproduced path (Show Previous Path)
+	if(m_RtPfPassedPath.empty() || distance(m_RtPfPassedPath.back(), Core.m_Pos) > 0.001f)
+		m_RtPfPassedPath.push_back(Core.m_Pos);
+	if(Core.m_HookState == HOOK_GRABBED && m_RtPfPrevHookState != HOOK_GRABBED)
+		m_RtPfPassedHookSegs.push_back({Core.m_Pos, Core.m_HookPos, Tick});
+	m_RtPfPrevHookState = Core.m_HookState;
+
+	// Reconstruct: planned position after this tick vs the real one — clear
+	// the plan and post the live state as the new root; the worker refills it
+	// and the input hook resumes playback in sync (anchor-freshness check).
+	if(g_Config.m_KxRtPfReconstruct &&
+		m_RtPfPlayIdx + 1 < (int)m_RtPfPath.size() &&
+		distance(Core.m_Pos, m_RtPfPath[m_RtPfPlayIdx + 1]) >= (float)g_Config.m_KxRtPfTrigger)
+	{
+		dbg_msg("rtpathfinder", "reconstruct: deviation >= %d — re-anchoring from the live position", g_Config.m_KxRtPfTrigger);
+		std::lock_guard<std::mutex> lock(m_RtPfDataMutex);
+			m_RtPfInputs.clear();
+			m_RtPfPath.clear();
+			m_RtPfHookSegs.clear();
+			m_RtPfOutInputs.clear();
+			m_RtPfOutPath.clear();
+			m_RtPfOutSegs.clear();
+			m_RtPfPath.push_back(Core.m_Pos);
+			m_RtPfPlayIdx = 0;
+			m_RtPfOutValid = false;
+			m_RtPfOutTruncateTo = -1;
+			m_RtPfReady = false; // brake + re-anchor; the hook resumes on a fresh plan
+			m_RtPfAnchorTick = Tick;
+		m_RtPfRebuildCore.Pos = Core.m_Pos;
+		m_RtPfRebuildCore.Vel = Core.m_Vel;
+		m_RtPfRebuildCore.HookState = Core.m_HookState;
+		m_RtPfRebuildCore.HookPos = Core.m_HookPos;
+		m_RtPfRebuildCore.HookDir = Core.m_HookDir;
+		m_RtPfRebuildCore.HookTick = Core.m_HookTick;
+		m_RtPfRebuildCore.Jumped = Core.m_Jumped;
+		m_RtPfRebuildCore.JumpedTotal = Core.m_JumpedTotal;
+		m_RtPfRebuildFreeze = pChar->m_FreezeTime;
+		m_RtPfRebuildPending.store(true);
+		return; // cursor stays at 0 — the fresh plan starts at the live position
+	}
+	m_RtPfPlayIdx++;
+}
+
+// Live playback: apply the planned input of the CURRENT tick to the real
+// player. Called from CControls::SnapInput for every sent input (the engine
+// force-sends while a run is active). While the plan is being (re)anchored
+// (!m_RtPfReady) this feeds BRAKE inputs — a deterministic standstill the
+// worker re-anchors from every tick — and resumes the moment a tick built
+// from the PREVIOUS tick's state is available (anchor-freshness check; a
+// stale plan gets re-anchored by UpdateRtPathfinder instead of replaying
+// out of sync). Fresh worker ticks are pulled straight from the mailbox so
+// the resume never waits for the next UpdateRtPathfinder commit.
+bool CBotNet::ApplyRtPfRealInput(CNetObj_PlayerInput *pInput)
+{
+	if(m_RtPfState != 1 || !pInput)
+		return false;
+	if(GameClient()->m_Tas.IsRealPlaying())
+		return false; // TAS real replay owns the input
+
+	const int Tick = Client()->PredGameTick(g_Config.m_ClDummy);
+	std::lock_guard<std::mutex> lock(m_RtPfDataMutex);
+
+	// pull freshly generated ticks straight from the worker mailbox — the
+	// UpdateRtPathfinder commit may not have run since the worker published
+	// and the resume must not wait for it
+	if(m_RtPfPlayIdx >= (int)m_RtPfInputs.size() && m_RtPfOutTruncateTo < 0 &&
+		!m_RtPfOutInputs.empty() && !m_RtPfRebuildPending.load(std::memory_order_relaxed))
+	{
+		const int Base = (int)m_RtPfInputs.size();
+		m_RtPfInputs.insert(m_RtPfInputs.end(), m_RtPfOutInputs.begin(), m_RtPfOutInputs.end());
+		m_RtPfPath.insert(m_RtPfPath.end(), m_RtPfOutPath.begin(), m_RtPfOutPath.end());
+		for(const RtPfHookSeg &s : m_RtPfOutSegs)
+			m_RtPfHookSegs.push_back({s.teePos, s.hookPos, Base + s.tick});
+		m_RtPfOutInputs.clear();
+		m_RtPfOutPath.clear();
+		m_RtPfOutSegs.clear();
+		m_RtPfOutValid = false;
+	}
+
+	const CNetObj_PlayerInput *pSrc = nullptr;
+	if(m_RtPfReady)
+	{
+		if(m_RtPfPlayIdx >= 0 && m_RtPfPlayIdx < (int)m_RtPfInputs.size())
+			pSrc = &m_RtPfInputs[m_RtPfPlayIdx];
+		else
+			m_RtPfReady = false; // plan exhausted mid-run — brake + re-anchor
+	}
+	else if(m_RtPfPlayIdx == 0 && (int)m_RtPfInputs.size() > 0 &&
+		Tick == m_RtPfAnchorTick + 1 && !m_RtPfRebuildPending.load(std::memory_order_relaxed))
+	{
+		// fresh plan: rooted at the state of the PREVIOUS tick, so its first
+		// input belongs to THIS tick — start playback exactly in sync
+		m_RtPfReady = true;
+		pSrc = &m_RtPfInputs[0];
+	}
+
+	if(pSrc)
+	{
+		pInput->m_Direction = pSrc->m_Direction;
+		pInput->m_Jump = pSrc->m_Jump;
+		pInput->m_Hook = pSrc->m_Hook;
+		pInput->m_Fire = 0; // plans never fire — the player's fire key must not leak in
+		pInput->m_TargetX = pSrc->m_TargetX;
+		pInput->m_TargetY = pSrc->m_TargetY;
+		return true;
+	}
+
+	// braking while the worker (re)anchors — deterministic standstill
+	pInput->m_Direction = 0;
+	pInput->m_Jump = 0;
+	pInput->m_Hook = 0;
+	pInput->m_Fire = 0;
+	pInput->m_TargetX = 0;
+	pInput->m_TargetY = -1; // aim up, avoid the (0,0) target
+	return true;
+}
+
+// RT flow field: multi-source FMM to the RT finish tiles (own storage,
+// separate from the Pathfinder tab's m_PfFlowField). Honors the RT editor's
+// forbidden zones and the shared Freedom Path / Freeze Support settings.
+void CBotNet::RtPfComputeFlowField()
+{
+	if(!m_MapGridLoaded || m_MapWidth <= 0 || m_MapHeight <= 0)
+		return;
+
+	const int Size = m_MapWidth * m_MapHeight;
+	if(!m_RtPfFlowField)
+		m_RtPfFlowField = new float[Size];
+
+	// (re)collect the natural finish tile centers
+	m_RtPfFinishTiles.clear();
+	for(int ty = 0; ty < m_MapHeight; ty++)
+	{
+		for(int tx = 0; tx < m_MapWidth; tx++)
+		{
+			const int idx = ty * m_MapWidth + tx;
+			if(m_pMapGrid[idx] == TILE_FINISH || m_pFrontGrid[idx] == TILE_FINISH)
+				m_RtPfFinishTiles.push_back(vec2(tx * 32.0f + 16.0f, ty * 32.0f + 16.0f));
+		}
+	}
+
+	const std::vector<vec2> &vSources = RtPfActiveFinishTiles();
+	if(vSources.empty())
+	{
+		for(int i = 0; i < Size; i++)
+			m_RtPfFlowField[i] = 1e18f;
+		return;
+	}
+
+	auto fnTileWalk = [this](int tx, int ty) -> bool {
+		if(tx < 0 || ty < 0 || tx >= m_MapWidth || ty >= m_MapHeight)
+			return false;
+		if(m_pRtForbiddenGrid && m_pRtForbiddenGrid[ty * m_MapWidth + tx])
+			return false;
+		return IsTileWalkable(tx, ty);
+	};
+	auto fnTileFreeze = [this](int tx, int ty) -> bool {
+		if(tx < 0 || ty < 0 || tx >= m_MapWidth || ty >= m_MapHeight)
+			return false;
+		const int idx = ty * m_MapWidth + tx;
+		return m_pMapGrid[idx] == TILE_FREEZE || m_pMapGrid[idx] == TILE_DFREEZE ||
+		       m_pFrontGrid[idx] == TILE_FREEZE || m_pFrontGrid[idx] == TILE_DFREEZE;
+	};
+
+	std::vector<std::pair<int, int>> vSrcTiles;
+	for(const vec2 &fp : vSources)
+	{
+		const int tx = (int)(fp.x / 32.0f);
+		const int ty = (int)(fp.y / 32.0f);
+		if(tx < 0 || ty < 0 || tx >= m_MapWidth || ty >= m_MapHeight)
+			continue;
+		vSrcTiles.emplace_back(tx, ty);
+	}
+
+	// Freedom Path (shared Pathfinder setting): tiles far from any non-air
+	// tile are cheaper, so the plan prefers open space. Uses the RT forbidden
+	// grid — the RT editor is separate from the Pathfinder editor.
+	const float freedomRatio = (g_Config.m_KxPfFreedom != 0) ? (float)g_Config.m_KxPfFreedomRatio / 10.0f : 0.0f;
+	std::vector<float> vHop;
+	if(freedomRatio > 0.0f)
+	{
+		std::vector<int> vClear(Size, -1);
+		std::vector<std::pair<int, int>> vBfs;
+		vBfs.reserve(Size);
+		for(int ty = 0; ty < m_MapHeight; ty++)
+		{
+			for(int tx = 0; tx < m_MapWidth; tx++)
+			{
+				const int idx = ty * m_MapWidth + tx;
+				if(m_pMapGrid[idx] != TILE_AIR || m_pFrontGrid[idx] != TILE_AIR ||
+					(m_pRtForbiddenGrid && m_pRtForbiddenGrid[idx]))
+				{
+					vClear[idx] = 0;
+					vBfs.push_back(std::make_pair(tx, ty));
+				}
+			}
+		}
+		static const int s_hopDr[] = {-1, 1, 0, 0};
+		static const int s_hopDc[] = {0, 0, -1, 1};
+		for(size_t qi = 0; qi < vBfs.size(); qi++)
+		{
+			const int x = vBfs[qi].first, y = vBfs[qi].second;
+			const int d = vClear[y * m_MapWidth + x];
+			for(int k = 0; k < 4; k++)
+			{
+				const int nx = x + s_hopDc[k], ny = y + s_hopDr[k];
+				if(nx < 0 || ny < 0 || nx >= m_MapWidth || ny >= m_MapHeight)
+					continue;
+				const int nIdx = ny * m_MapWidth + nx;
+				if(vClear[nIdx] >= 0)
+					continue;
+				vClear[nIdx] = d + 1;
+				vBfs.push_back(std::make_pair(nx, ny));
+			}
+		}
+		vHop.resize(Size);
+		for(int i = 0; i < Size; i++)
+		{
+			const float speed = 1.0f + freedomRatio * (float)vClear[i];
+			vHop[i] = 1.0f / (speed * speed);
+		}
+	}
+	const float *pHop = vHop.empty() ? nullptr : vHop.data();
+
+	// Phase 1: freeze impassable
+	PfBfsFill(m_RtPfFlowField, m_MapWidth, m_MapHeight, vSrcTiles, fnTileWalk, fnTileFreeze, false, pHop);
+
+	// Phase 2 (shared Freeze Support setting): only if phase 1 cannot reach
+	// the live position — the only route crosses freeze.
+	if(g_Config.m_KxPfFreezeSupport != 0)
+	{
+		CGameClient *pGame = GameClient();
+		if(pGame && pGame->m_Snap.m_pLocalInfo)
+		{
+			CCharacter *pChar = pGame->m_PredictedWorld.GetCharacterById(pGame->m_Snap.m_LocalClientId);
+			if(pChar)
+			{
+				const vec2 pos = pChar->GetCore().m_Pos;
+				const int sTX = pf_clamp((int)(pos.x / 32.0f), 0, m_MapWidth - 1);
+				const int sTY = pf_clamp((int)(pos.y / 32.0f), 0, m_MapHeight - 1);
+				if(m_RtPfFlowField[sTY * m_MapWidth + sTX] >= 1e17f)
+					PfBfsFill(m_RtPfFlowField, m_MapWidth, m_MapHeight, vSrcTiles, fnTileWalk, fnTileFreeze, true, pHop);
+			}
+		}
+	}
+}
+
+// =========================================================
+// RT TILE EDITOR — separate forbidden zones + custom finish
+// (RT Pathfinder and Pathfinder editors share NOTHING: mode,
+// tile lists and collision grids are all RT-owned.)
+// =========================================================
+
+bool CBotNet::RtPfTileCanBeCustomFinish(int tx, int ty)
+{
+	// Same tile rules as the Pathfinder editor (map-only check).
+	return PfTileCanBeCustomFinish(tx, ty);
+}
+
+void CBotNet::RtPfAddForbiddenTile(int tx, int ty)
+{
+	if(tx < 0 || ty < 0 || tx >= m_MapWidth || ty >= m_MapHeight || !m_pRtForbiddenGrid)
+		return;
+	const int idx = ty * m_MapWidth + tx;
+	if(m_pRtForbiddenGrid[idx])
+		return;
+	if(m_pRtCustomFinishGrid && m_pRtCustomFinishGrid[idx])
+	{
+		// mutual exclusion with the RT custom finish (inlined: no double re-anchor)
+		m_pRtCustomFinishGrid[idx] = 0;
+		vec2 c(tx * 32.0f + 16.0f, ty * 32.0f + 16.0f);
+		for(size_t i = 0; i < m_RtPfCustomFinishTiles.size(); i++)
+		{
+			if(m_RtPfCustomFinishTiles[i].x == c.x && m_RtPfCustomFinishTiles[i].y == c.y)
+			{
+				m_RtPfCustomFinishTiles.erase(m_RtPfCustomFinishTiles.begin() + i);
+				break;
+			}
+		}
+	}
+	m_pRtForbiddenGrid[idx] = 1;
+	m_RtPfForbiddenTiles.push_back(vec2(tx * 32.0f + 16.0f, ty * 32.0f + 16.0f));
+	RtPfAfterEditorChange();
+}
+
+void CBotNet::RtPfRemoveForbiddenTile(int tx, int ty)
+{
+	if(tx < 0 || ty < 0 || tx >= m_MapWidth || ty >= m_MapHeight || !m_pRtForbiddenGrid)
+		return;
+	const int idx = ty * m_MapWidth + tx;
+	if(!m_pRtForbiddenGrid[idx])
+		return;
+	m_pRtForbiddenGrid[idx] = 0;
+	vec2 c(tx * 32.0f + 16.0f, ty * 32.0f + 16.0f);
+	for(size_t i = 0; i < m_RtPfForbiddenTiles.size(); i++)
+	{
+		if(m_RtPfForbiddenTiles[i].x == c.x && m_RtPfForbiddenTiles[i].y == c.y)
+		{
+			m_RtPfForbiddenTiles.erase(m_RtPfForbiddenTiles.begin() + i);
+			break;
+		}
+	}
+	RtPfAfterEditorChange();
+}
+
+void CBotNet::RtPfAddCustomFinishTile(int tx, int ty)
+{
+	if(tx < 0 || ty < 0 || tx >= m_MapWidth || ty >= m_MapHeight || !m_pRtCustomFinishGrid)
+		return;
+	const int idx = ty * m_MapWidth + tx;
+	if(m_pRtCustomFinishGrid[idx])
+		return;
+	if(m_pRtForbiddenGrid && m_pRtForbiddenGrid[idx])
+	{
+		// mutual exclusion with the RT forbidden zone (inlined: no double re-anchor)
+		m_pRtForbiddenGrid[idx] = 0;
+		vec2 c(tx * 32.0f + 16.0f, ty * 32.0f + 16.0f);
+		for(size_t i = 0; i < m_RtPfForbiddenTiles.size(); i++)
+		{
+			if(m_RtPfForbiddenTiles[i].x == c.x && m_RtPfForbiddenTiles[i].y == c.y)
+			{
+				m_RtPfForbiddenTiles.erase(m_RtPfForbiddenTiles.begin() + i);
+				break;
+			}
+		}
+	}
+	m_pRtCustomFinishGrid[idx] = 1;
+	m_RtPfCustomFinishTiles.push_back(vec2(tx * 32.0f + 16.0f, ty * 32.0f + 16.0f));
+	RtPfAfterEditorChange();
+}
+
+void CBotNet::RtPfRemoveCustomFinishTile(int tx, int ty)
+{
+	if(tx < 0 || ty < 0 || tx >= m_MapWidth || ty >= m_MapHeight || !m_pRtCustomFinishGrid)
+		return;
+	const int idx = ty * m_MapWidth + tx;
+	if(!m_pRtCustomFinishGrid[idx])
+		return;
+	m_pRtCustomFinishGrid[idx] = 0;
+	vec2 c(tx * 32.0f + 16.0f, ty * 32.0f + 16.0f);
+	for(size_t i = 0; i < m_RtPfCustomFinishTiles.size(); i++)
+	{
+		if(m_RtPfCustomFinishTiles[i].x == c.x && m_RtPfCustomFinishTiles[i].y == c.y)
+		{
+			m_RtPfCustomFinishTiles.erase(m_RtPfCustomFinishTiles.begin() + i);
+			break;
+		}
+	}
+	RtPfAfterEditorChange();
+}
+
+void CBotNet::RtPfClearForbiddenTiles()
+{
+	if(m_RtPfForbiddenTiles.empty() || !m_pRtForbiddenGrid)
+		return;
+	mem_zero(m_pRtForbiddenGrid, (size_t)m_MapWidth * m_MapHeight);
+	m_RtPfForbiddenTiles.clear();
+	RtPfAfterEditorChange();
+}
+
+void CBotNet::RtPfClearCustomFinishTiles()
+{
+	if(m_RtPfCustomFinishTiles.empty() || !m_pRtCustomFinishGrid)
+		return;
+	mem_zero(m_pRtCustomFinishGrid, (size_t)m_MapWidth * m_MapHeight);
+	m_RtPfCustomFinishTiles.clear();
+	RtPfAfterEditorChange();
+}
+
+// RT editor input loop — mirrors UpdatePfTileEditor, RT-owned state.
+void CBotNet::UpdateRtPfTileEditor()
+{
+	if(m_RtPfEditorMode == 0)
+	{
+		m_RtPfEditCleaned = false;
+		return;
+	}
+	CGameClient *pGame = GameClient();
+	if(pGame && !m_RtPfEditCleaned)
+	{
+		CNetObj_PlayerInput &In = pGame->m_Controls.m_aInputData[g_Config.m_ClDummy];
+		In.m_Fire &= ~1;
+		In.m_Hook = 0;
+		m_RtPfEditCleaned = true;
+	}
+	if(g_Config.m_ClClickGui != 0)
+		return;
+	if(!pGame || pGame->m_Menus.IsActive())
+		return;
+	bool lmb = Input()->KeyIsPressed(KEY_MOUSE_1) || m_RtPfEditFireHeld;
+	bool rmb = Input()->KeyIsPressed(KEY_MOUSE_2) || m_RtPfEditHookHeld;
+	if(!m_MapGridLoaded)
+		LoadMapGrid();
+	if(!m_MapGridLoaded || !m_pRtForbiddenGrid || !m_pRtCustomFinishGrid)
+		return;
+	vec2 cam = pGame->m_Camera.m_Center;
+	vec2 aim = cam + (pGame->m_Controls.m_aTargetPos[g_Config.m_ClDummy] - cam) * pGame->m_Camera.m_Zoom;
+	int tx = (int)floorf(aim.x / 32.0f);
+	int ty = (int)floorf(aim.y / 32.0f);
+	if(tx < 0 || ty < 0 || tx >= m_MapWidth || ty >= m_MapHeight)
+		return;
+	if(m_RtPfEditorMode == 1)
+	{
+		if(lmb && !rmb)
+			RtPfAddForbiddenTile(tx, ty);
+		else if(rmb && !lmb)
+			RtPfRemoveForbiddenTile(tx, ty);
+	}
+	else if(m_RtPfEditorMode == 2)
+	{
+		if(rmb && !lmb)
+			RtPfRemoveCustomFinishTile(tx, ty);
+		else if(lmb && !rmb && RtPfTileCanBeCustomFinish(tx, ty))
+			RtPfAddCustomFinishTile(tx, ty);
+	}
+}
+
+void CBotNet::RenderRtPfTileEditor()
+{
+	if(!m_MapGridLoaded)
+		return;
+	if(m_RtPfEditorMode == 0 && m_RtPfForbiddenTiles.empty() && m_RtPfCustomFinishTiles.empty())
+		return;
+	CGameClient *pGame = GameClient();
+	if(!pGame)
+		return;
+	Graphics()->MapScreenToInterface(pGame->m_Camera.m_Center.x, pGame->m_Camera.m_Center.y, pGame->m_Camera.m_Zoom);
+	float alpha = KxLineAlpha(KX_LINE_RT_PATHFINDER);
+	int lineSize = KxLineSize(KX_LINE_RT_PATHFINDER);
+	float halfWidth = 0.5f + (float)(lineSize - 1) * 0.25f;
+	vec2 cam = pGame->m_Camera.m_Center;
+	float zoom = pGame->m_Camera.m_Zoom;
+	float viewHalfW = zoom * (float)Graphics()->ScreenWidth() * 0.5f + 64.0f;
+	float viewHalfH = zoom * (float)Graphics()->ScreenHeight() * 0.5f + 64.0f;
+	Graphics()->TextureClear();
+	Graphics()->QuadsBegin();
+	Graphics()->SetColor(0.85f, 0.15f, 0.15f, alpha * 0.5f);
+	for(const vec2 &t : m_RtPfForbiddenTiles)
+	{
+		if(t.x < cam.x - viewHalfW || t.x > cam.x + viewHalfW || t.y < cam.y - viewHalfH || t.y > cam.y + viewHalfH)
+			continue;
+		IGraphics::CFreeformItem Quad(
+			t.x - 16.0f, t.y - 16.0f, t.x + 16.0f, t.y - 16.0f,
+			t.x - 16.0f, t.y + 16.0f, t.x + 16.0f, t.y + 16.0f);
+		Graphics()->QuadsDrawFreeform(&Quad, 1);
+	}
+	Graphics()->SetColor(0.20f, 0.85f, 0.30f, alpha * 0.5f);
+	for(const vec2 &t : m_RtPfCustomFinishTiles)
+	{
+		if(t.x < cam.x - viewHalfW || t.x > cam.x + viewHalfW || t.y < cam.y - viewHalfH || t.y > cam.y + viewHalfH)
+			continue;
+		IGraphics::CFreeformItem Quad(
+			t.x - 16.0f, t.y - 16.0f, t.x + 16.0f, t.y - 16.0f,
+			t.x - 16.0f, t.y + 16.0f, t.x + 16.0f, t.y + 16.0f);
+		Graphics()->QuadsDrawFreeform(&Quad, 1);
+	}
+	Graphics()->QuadsEnd();
+	if(m_RtPfEditorMode != 0)
+	{
+		vec2 aim = cam + (pGame->m_Controls.m_aTargetPos[g_Config.m_ClDummy] - cam) * zoom;
+		int tx = (int)floorf(aim.x / 32.0f);
+		int ty = (int)floorf(aim.y / 32.0f);
+		if(tx >= 0 && ty >= 0 && tx < m_MapWidth && ty < m_MapHeight &&
+			(m_RtPfEditorMode == 1 || RtPfTileCanBeCustomFinish(tx, ty)))
+		{
+			float x0 = tx * 32.0f;
+			float y0 = ty * 32.0f;
+			float x1 = x0 + 32.0f;
+			float y1 = y0 + 32.0f;
+			float r = (m_RtPfEditorMode == 1) ? 0.95f : 0.25f;
+			float g = (m_RtPfEditorMode == 1) ? 0.20f : 0.95f;
+			float b = (m_RtPfEditorMode == 1) ? 0.20f : 0.35f;
+			if(lineSize > 0)
+			{
+				Graphics()->QuadsBegin();
+				Graphics()->SetColor(r, g, b, alpha);
+				IGraphics::CFreeformItem E0(x0 - halfWidth, y0 - halfWidth, x1 + halfWidth, y0 - halfWidth, x0 - halfWidth, y0 + halfWidth, x1 + halfWidth, y0 + halfWidth);
+				Graphics()->QuadsDrawFreeform(&E0, 1);
+				IGraphics::CFreeformItem E1(x0 - halfWidth, y1 - halfWidth, x1 + halfWidth, y1 - halfWidth, x0 - halfWidth, y1 + halfWidth, x1 + halfWidth, y1 + halfWidth);
+				Graphics()->QuadsDrawFreeform(&E1, 1);
+				IGraphics::CFreeformItem E2(x0 - halfWidth, y0 - halfWidth, x0 + halfWidth, y0 - halfWidth, x0 - halfWidth, y1 + halfWidth, x0 + halfWidth, y1 + halfWidth);
+				Graphics()->QuadsDrawFreeform(&E2, 1);
+				IGraphics::CFreeformItem E3(x1 - halfWidth, y0 - halfWidth, x1 + halfWidth, y0 - halfWidth, x1 - halfWidth, y1 + halfWidth, x1 + halfWidth, y1 + halfWidth);
+				Graphics()->QuadsDrawFreeform(&E3, 1);
+				Graphics()->QuadsEnd();
+			}
+			else
+			{
+				Graphics()->LinesBegin();
+				Graphics()->SetColor(r, g, b, alpha);
+				IGraphics::CLineItem L0(x0, y0, x1, y0);
+				IGraphics::CLineItem L1(x1, y0, x1, y1);
+				IGraphics::CLineItem L2(x1, y1, x0, y1);
+				IGraphics::CLineItem L3(x0, y1, x0, y0);
+				Graphics()->LinesDraw(&L0, 1);
+				Graphics()->LinesDraw(&L1, 1);
+				Graphics()->LinesDraw(&L2, 1);
+				Graphics()->LinesDraw(&L3, 1);
+				Graphics()->LinesEnd();
+			}
+		}
+	}
+}
+
+// =========================================================
+// RT PATH RENDERING
+// =========================================================
+void CBotNet::RenderRtPathfinderPath()
+{
+	if(m_RtPfState != 1)
+		return;
+	CGameClient *pGame = GameClient();
+	if(!pGame)
+		return;
+
+	// snapshot the plan (the worker mutates it concurrently)
+	std::vector<vec2> vPath;
+	std::vector<RtPfHookSeg> vSegs;
+	int playIdx = 0;
+	{
+		std::lock_guard<std::mutex> lock(m_RtPfDataMutex);
+		vPath = m_RtPfPath;
+		vSegs = m_RtPfHookSegs;
+		playIdx = m_RtPfPlayIdx;
+	}
+	if(playIdx < 0)
+		playIdx = 0;
+
+	Graphics()->MapScreenToInterface(pGame->m_Camera.m_Center.x, pGame->m_Camera.m_Center.y, pGame->m_Camera.m_Zoom);
+	Graphics()->TextureClear();
+
+	ColorRGBA BaseColor = ColorRGBA(KxLineColor(KX_LINE_RT_PATHFINDER), true);
+	float ConfigAlpha = KxLineAlpha(KX_LINE_RT_PATHFINDER);
+	int LineSize = KxLineSize(KX_LINE_RT_PATHFINDER);
+	float HalfWidth = 0.5f + (float)(LineSize - 1) * 0.25f;
+
+	// Show Speed affects BOTH Show Path and Show Previous Path.
+	auto fnSpeedColor = [](float speed) -> ColorRGBA {
+		const float MAX_SPEED = 30.0f;
+		float t = std::clamp(speed / MAX_SPEED, 0.0f, 1.0f);
+		float hue = t * 300.0f;
+		return color_cast<ColorRGBA>(ColorHSLA(hue / 360.0f, 1.0f, 0.5f, true));
+	};
+	auto fnSegColor = [&](float speed, int segIdx) -> ColorRGBA {
+		if(g_Config.m_KxRtPfShowSpeed)
+			return fnSpeedColor(speed);
+		return ColorRGBA(KxLineColorAt(KX_LINE_RT_PATHFINDER, segIdx), true);
+	};
+
+	// ── Show Field — own flow field (same arrows as the Pathfinder tab) ──
+	if(g_Config.m_KxRtPfShowField && m_RtPfFlowField && m_MapWidth > 0 && m_MapHeight > 0)
+	{
+		float halfTilesW = pGame->m_Camera.m_Zoom * (float)Graphics()->ScreenWidth() / 64.0f + 1.0f;
+		float halfTilesH = pGame->m_Camera.m_Zoom * (float)Graphics()->ScreenHeight() / 64.0f + 1.0f;
+		int camTX = (int)(pGame->m_Camera.m_Center.x / 32.0f);
+		int camTY = (int)(pGame->m_Camera.m_Center.y / 32.0f);
+		int tx0 = pf_clamp(camTX - (int)halfTilesW, 0, m_MapWidth - 1);
+		int ty0 = pf_clamp(camTY - (int)halfTilesH, 0, m_MapHeight - 1);
+		int tx1 = pf_clamp(camTX + (int)halfTilesW, 0, m_MapWidth - 1);
+		int ty1 = pf_clamp(camTY + (int)halfTilesH, 0, m_MapHeight - 1);
+		Graphics()->LinesBegin();
+		Graphics()->SetColor(BaseColor.r, BaseColor.g, BaseColor.b, ConfigAlpha * 0.3f);
+		for(int ty = ty0; ty <= ty1; ty++)
+		{
+			for(int tx = tx0; tx <= tx1; tx++)
+			{
+				float fd = m_RtPfFlowField[ty * m_MapWidth + tx];
+				if(fd >= 1e17f || fd == 0.0f)
+					continue;
+				float fdx_m = (tx > 0) ? m_RtPfFlowField[ty * m_MapWidth + (tx - 1)] : fd;
+				float fdx_p = (tx < m_MapWidth - 1) ? m_RtPfFlowField[ty * m_MapWidth + (tx + 1)] : fd;
+				float fdy_m = (ty > 0) ? m_RtPfFlowField[(ty - 1) * m_MapWidth + tx] : fd;
+				float fdy_p = (ty < m_MapHeight - 1) ? m_RtPfFlowField[(ty + 1) * m_MapWidth + tx] : fd;
+				if(fdx_m >= 1e17f) fdx_m = fd;
+				if(fdx_p >= 1e17f) fdx_p = fd;
+				if(fdy_m >= 1e17f) fdy_m = fd;
+				if(fdy_p >= 1e17f) fdy_p = fd;
+				float gx = fdx_m - fdx_p;
+				float gy = fdy_m - fdy_p;
+				float glen = sqrtf(gx * gx + gy * gy);
+				if(glen < 0.001f)
+					continue;
+				vec2 dir = vec2(gx / glen, gy / glen);
+				float cx = tx * 32.0f + 16.0f;
+				float cy = ty * 32.0f + 16.0f;
+				float half = 6.0f;
+				vec2 start = vec2(cx, cy) - dir * half;
+				vec2 end = vec2(cx, cy) + dir * half;
+				vec2 perp = vec2(-dir.y, dir.x) * 4.0f;
+				vec2 arrowBack = end - dir * 5.0f;
+				IGraphics::CLineItem Main(start.x, start.y, end.x, end.y);
+				Graphics()->LinesDraw(&Main, 1);
+				IGraphics::CLineItem A1(end.x, end.y, arrowBack.x + perp.x, arrowBack.y + perp.y);
+				Graphics()->LinesDraw(&A1, 1);
+				IGraphics::CLineItem A2(end.x, end.y, arrowBack.x - perp.x, arrowBack.y - perp.y);
+				Graphics()->LinesDraw(&A2, 1);
+			}
+		}
+		Graphics()->LinesEnd();
+	}
+
+	// ── Show Hooks — future planned segs full alpha, reproduced segs half ──
+	if(g_Config.m_KxRtPfShowHooks)
+	{
+		auto fnHookQuad = [&](const RtPfHookSeg &seg, float a) {
+			vec2 p0 = seg.teePos;
+			vec2 p1 = seg.hookPos;
+			vec2 d = p1 - p0;
+			float len = length(d);
+			if(len < 0.001f)
+				return;
+			vec2 Dir = d / len;
+			vec2 Perp = vec2(Dir.y, -Dir.x) * HalfWidth;
+			IGraphics::CFreeformItem Quad(
+				p0.x - Perp.x, p0.y - Perp.y,
+				p0.x + Perp.x, p0.y + Perp.y,
+				p1.x - Perp.x, p1.y - Perp.y,
+				p1.x + Perp.x, p1.y + Perp.y);
+			Graphics()->SetColor(0.2f, 0.4f, 1.0f, a);
+			Graphics()->QuadsDrawFreeform(&Quad, 1);
+		};
+		auto fnHookLine = [&](const RtPfHookSeg &seg, float a) {
+			Graphics()->SetColor(0.2f, 0.4f, 1.0f, a);
+			IGraphics::CLineItem Line(seg.teePos, seg.hookPos);
+			Graphics()->LinesDraw(&Line, 1);
+		};
+		if(LineSize > 0)
+		{
+			Graphics()->QuadsBegin();
+			for(const RtPfHookSeg &seg : vSegs)
+				if(seg.tick >= playIdx)
+					fnHookQuad(seg, ConfigAlpha);
+			for(const RtPfHookSeg &seg : vSegs)
+				if(seg.tick < playIdx)
+					fnHookQuad(seg, ConfigAlpha * 0.5f);
+			for(const RtPfHookSeg &seg : m_RtPfPassedHookSegs)
+				fnHookQuad(seg, ConfigAlpha * 0.5f);
+			Graphics()->QuadsEnd();
+		}
+		else
+		{
+			Graphics()->LinesBegin();
+			for(const RtPfHookSeg &seg : vSegs)
+				if(seg.tick >= playIdx)
+					fnHookLine(seg, ConfigAlpha);
+			for(const RtPfHookSeg &seg : vSegs)
+				if(seg.tick < playIdx)
+					fnHookLine(seg, ConfigAlpha * 0.5f);
+			for(const RtPfHookSeg &seg : m_RtPfPassedHookSegs)
+				fnHookLine(seg, ConfigAlpha * 0.5f);
+			Graphics()->LinesEnd();
+		}
+	}
+
+	// ── Show Previous Path — already reproduced path, alpha/2 ──
+	if(g_Config.m_KxRtPfShowPrevPath && m_RtPfPassedPath.size() >= 2)
+	{
+		const float PrevAlpha = ConfigAlpha * 0.5f;
+		if(LineSize > 0)
+		{
+			Graphics()->QuadsBegin();
+			for(size_t i = 1; i < m_RtPfPassedPath.size(); i++)
+			{
+				vec2 p0 = m_RtPfPassedPath[i - 1];
+				vec2 p1 = m_RtPfPassedPath[i];
+				vec2 Dir = normalize(p1 - p0);
+				vec2 Perp = vec2(Dir.y, -Dir.x) * HalfWidth;
+				IGraphics::CFreeformItem Quad(
+					p0.x - Perp.x, p0.y - Perp.y,
+					p0.x + Perp.x, p0.y + Perp.y,
+					p1.x - Perp.x, p1.y - Perp.y,
+					p1.x + Perp.x, p1.y + Perp.y);
+				ColorRGBA c = fnSegColor(distance(p0, p1), (int)i - 1);
+				Graphics()->SetColor(c.r, c.g, c.b, PrevAlpha);
+				Graphics()->QuadsDrawFreeform(&Quad, 1);
+			}
+			Graphics()->QuadsEnd();
+		}
+		else
+		{
+			Graphics()->LinesBegin();
+			for(size_t i = 1; i < m_RtPfPassedPath.size(); i++)
+			{
+				vec2 p0 = m_RtPfPassedPath[i - 1];
+				vec2 p1 = m_RtPfPassedPath[i];
+				ColorRGBA c = fnSegColor(distance(p0, p1), (int)i - 1);
+				Graphics()->SetColor(c.r, c.g, c.b, PrevAlpha);
+				IGraphics::CLineItem Line(p0, p1);
+				Graphics()->LinesDraw(&Line, 1);
+			}
+			Graphics()->LinesEnd();
+		}
+	}
+
+	// ── Show Path — the FUTURE portion of the plan (passed part trimmed) ──
+	if(g_Config.m_KxRtPfShowPath && playIdx + 1 < (int)vPath.size())
+	{
+		if(LineSize > 0)
+		{
+			Graphics()->QuadsBegin();
+			for(int t = playIdx + 1; t < (int)vPath.size(); t++)
+			{
+				vec2 p0 = vPath[t - 1];
+				vec2 p1 = vPath[t];
+				vec2 Dir = normalize(p1 - p0);
+				vec2 Perp = vec2(Dir.y, -Dir.x) * HalfWidth;
+				IGraphics::CFreeformItem Quad(
+					p0.x - Perp.x, p0.y - Perp.y,
+					p0.x + Perp.x, p0.y + Perp.y,
+					p1.x - Perp.x, p1.y - Perp.y,
+					p1.x + Perp.x, p1.y + Perp.y);
+				ColorRGBA c = fnSegColor(distance(p0, p1), t - 1);
+				Graphics()->SetColor(c.r, c.g, c.b, ConfigAlpha);
+				Graphics()->QuadsDrawFreeform(&Quad, 1);
+			}
+			Graphics()->QuadsEnd();
+		}
+		else
+		{
+			Graphics()->LinesBegin();
+			for(int t = playIdx + 1; t < (int)vPath.size(); t++)
+			{
+				vec2 p0 = vPath[t - 1];
+				vec2 p1 = vPath[t];
+				ColorRGBA c = fnSegColor(distance(p0, p1), t - 1);
+				Graphics()->SetColor(c.r, c.g, c.b, ConfigAlpha);
+				IGraphics::CLineItem Line(p0, p1);
+				Graphics()->LinesDraw(&Line, 1);
+			}
+			Graphics()->LinesEnd();
+		}
+	}
+}

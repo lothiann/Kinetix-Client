@@ -382,6 +382,13 @@ MACRO_CONFIG_INT(KxLinePathfinderRainbow, kx_line_pathfinder_rainbow, 0, 0, 1, C
 MACRO_CONFIG_INT(KxLinePathfinderRainbowSpeed, kx_line_pathfinder_rainbow_speed, 10, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder line rainbow speed (display = value/10)")
 MACRO_CONFIG_INT(KxLinePathfinderGradient, kx_line_pathfinder_gradient, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder line gradient (visible only with Rainbow, overridden by Show Speed)")
 MACRO_CONFIG_INT(KxLinePathfinderGradientStep, kx_line_pathfinder_gradient_step, 15, 1, 180, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder line gradient hue step per segment")
+MACRO_CONFIG_INT(KxLineRtPathfinderSize, kx_line_rtpathfinder_size, 6, 0, 20, CFGFLAG_CLIENT | CFGFLAG_SAVE, "RT Pathfinder line width")
+MACRO_CONFIG_COL(KxLineRtPathfinderColor, kx_line_rtpathfinder_color, 4294967295, CFGFLAG_CLIENT | CFGFLAG_SAVE, "RT Pathfinder line color")
+MACRO_CONFIG_INT(KxLineRtPathfinderAlpha, kx_line_rtpathfinder_alpha, 80, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "RT Pathfinder line opacity")
+MACRO_CONFIG_INT(KxLineRtPathfinderRainbow, kx_line_rtpathfinder_rainbow, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "RT Pathfinder line rainbow mode")
+MACRO_CONFIG_INT(KxLineRtPathfinderRainbowSpeed, kx_line_rtpathfinder_rainbow_speed, 10, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "RT Pathfinder line rainbow speed (display = value/10)")
+MACRO_CONFIG_INT(KxLineRtPathfinderGradient, kx_line_rtpathfinder_gradient, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "RT Pathfinder line gradient (visible only with Rainbow, overridden by Show Speed)")
+MACRO_CONFIG_INT(KxLineRtPathfinderGradientStep, kx_line_rtpathfinder_gradient_step, 15, 1, 180, CFGFLAG_CLIENT | CFGFLAG_SAVE, "RT Pathfinder line gradient hue step per segment")
 MACRO_CONFIG_INT(KxLineEspRainbow, kx_line_esp_rainbow, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ESP line rainbow mode")
 MACRO_CONFIG_INT(KxLineEspRainbowSpeed, kx_line_esp_rainbow_speed, 10, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ESP line rainbow speed (display = value/10)")
 MACRO_CONFIG_INT(KxLineEspGradient, kx_line_esp_gradient, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ESP line gradient (visible only with Rainbow)")
@@ -563,6 +570,20 @@ MACRO_CONFIG_INT(KxPfShowField, kx_pf_show_field, 0, 0, 1, CFGFLAG_CLIENT | CFGF
 MACRO_CONFIG_INT(KxPfShowHooks, kx_pf_show_hooks, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: show hook lines (blue)")
 MACRO_CONFIG_INT(KxPfShowBranches, kx_pf_show_branches, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: show other branches (semi-transparent)")
 MACRO_CONFIG_INT(KxPfShowSpeed, kx_pf_show_speed, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: show speed gradient (red=slow, blue=fast)")
+
+// Real-Time Pathfinder (RT Pathfinder tab): single-branch greedy planner on a
+// worker thread that is reproduced on the live player in real time.
+MACRO_CONFIG_INT(KxRtPfReconstruct, kx_rt_pf_reconstruct, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "RT Pathfinder: reconstruct the path when the real position deviates from the plan")
+MACRO_CONFIG_INT(KxRtPfTrigger, kx_rt_pf_trigger, 8, 1, 32, CFGFLAG_CLIENT | CFGFLAG_SAVE, "RT Pathfinder: reconstruct trigger in units (1-32)")
+MACRO_CONFIG_INT(KxRtPfFutureLimit, kx_rt_pf_future_limit, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "RT Pathfinder: enable the future ticks limit (off = the worker plans as far ahead as the solver needs)")
+MACRO_CONFIG_INT(KxRtPfFutureTicks, kx_rt_pf_future_ticks, 50, 1, 150, CFGFLAG_CLIENT | CFGFLAG_SAVE, "RT Pathfinder: future ticks limit (the worker keeps this many unreproduced ticks planned)")
+
+// Visuals (RT Pathfinder tab). Show Speed affects BOTH Show Path and Show Previous Path.
+MACRO_CONFIG_INT(KxRtPfShowPath, kx_rt_pf_show_path, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "RT Pathfinder visuals: show generated path (already passed part is trimmed)")
+MACRO_CONFIG_INT(KxRtPfShowHooks, kx_rt_pf_show_hooks, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "RT Pathfinder visuals: show hook lines (blue)")
+MACRO_CONFIG_INT(KxRtPfShowField, kx_rt_pf_show_field, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "RT Pathfinder visuals: show flow field")
+MACRO_CONFIG_INT(KxRtPfShowPrevPath, kx_rt_pf_show_prev_path, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "RT Pathfinder visuals: show already reproduced path (half opacity)")
+MACRO_CONFIG_INT(KxRtPfShowSpeed, kx_rt_pf_show_speed, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "RT Pathfinder visuals: speed gradient (affects Show Path and Show Previous Path)")
 
 // IRC (emote-based communication)
 MACRO_CONFIG_INT(KxIrcEnabled, kx_irc_enabled, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Enable IRC emote communication and decoding")

@@ -1,6 +1,9 @@
 #include <game/client/components/kinetix/kinetix.h>
 #include <game/client/components/kinetix/kinetix_internal.h>
 
+#include <chrono>
+#include <thread>
+
 // =========================================================
 // HELPERS PATHFINDER — the whole movement stack, one module
 // =========================================================
@@ -894,4 +897,738 @@ void CBotNet::RenderVectorField()
 	}
 
 	Graphics()->LinesEnd();
+}
+
+// =========================================================
+// REAL-TIME PATHFINDER — worker-thread DFS planner (always finds)
+// =========================================================
+// Single-branch rolling planner with real backtracking. Every plan tick is
+// one DFS node: candidates are simulated over a short fixed lookahead and
+// ranked by progress along the RT flow field. Death and forbidden zones
+// reject a candidate outright; freeze contact and leaving the field are
+// allowed as a last resort (huge penalty) — so a route exists on freeze-
+// heavy maps too, even if it is slow. Zero/negative-progress moves commit
+// while the stall counter is low (setup moves, lateral crawls around walls;
+// net movement away from the stall anchor resets the counter); a long stall
+// turns "no progress" into a dead end and the DFS pops committed ticks back
+// to the last choice, bans the input chosen there and searches other
+// branches. Unpublished tail ticks pop worker-locally; published ones are
+// retracted through the mailbox (out-box pop, or one TruncateTo when the
+// main thread already merged them — never touching played/playing ticks).
+// Generated ticks go into the m_RtPfOut* mailbox and the MAIN thread
+// commits them (UpdateRtPathfinder); the chain rolls continuously and
+// re-anchors on demand.
+// =========================================================
+
+// Clone the base world and strip everything except the local character
+// (same as the Pathfinder tab's setup: other players/entities removed so
+// the plan stays deterministic).
+static void RtPfSetupWorld(CGameWorld *pWorld, CGameWorld *pSrc, int LocalID)
+{
+	pWorld->CopyWorld(pSrc);
+	for(int Type = 0; Type < CGameWorld::NUM_ENTTYPES; Type++)
+	{
+		if(Type == CGameWorld::ENTTYPE_CHARACTER)
+			continue;
+		std::vector<CEntity *> vRemove;
+		for(CEntity *pEnt = pWorld->FindLast(Type); pEnt; pEnt = pEnt->TypePrev())
+			vRemove.push_back(pEnt);
+		for(CEntity *pEnt : vRemove)
+			pWorld->RemoveEntity(pEnt);
+	}
+	for(int i = 0; i < MAX_CLIENTS; i++)
+	{
+		if(i == LocalID)
+			continue;
+		if(CCharacter *pChar = pWorld->GetCharacterById(i))
+			pWorld->RemoveEntity(pChar);
+	}
+}
+
+// (Re)spawn the sim bot at cur state. Mirrors the tab's PfSimWorldBot:
+// a dead character is replaced with a copy of the base one so the sim can
+// continue after deaths in the planning world.
+static CCharacter *RtPfEnsureBot(CGameWorld *pSim, CGameWorld *pBaseWorld, int LocalID)
+{
+	if(CCharacter *pBot = pSim->GetCharacterById(LocalID))
+		return pBot;
+	CCharacter *pBaseChar = pBaseWorld->GetCharacterById(LocalID);
+	if(!pBaseChar)
+		return nullptr;
+	if(CCharacter *pDead = (CCharacter *)pSim->FindFirst(CGameWorld::ENTTYPE_CHARACTER))
+		delete pDead;
+	CCharacter *pCopy = new CCharacter(*pBaseChar);
+	pCopy->m_pParent = pBaseChar;
+	pBaseChar->m_pChild = pCopy;
+	pSim->InsertEntity(pCopy);
+	return pCopy;
+}
+
+// Write the planner state into the sim bot (mirror PfSpawnSimBot + JumpedTotal).
+static CCharacter *RtPfPlaceBot(CGameWorld *pSim, CGameWorld *pBase, int LocalID,
+	const CBotNet::PfAState &cur, int curFreeze, int Tick)
+{
+	CCharacter *pBot = RtPfEnsureBot(pSim, pBase, LocalID);
+	if(!pBot)
+		return nullptr;
+	pBot = PfSpawnSimBot(pSim, LocalID, cur.Pos, cur.Vel,
+		cur.HookState, cur.HookPos, cur.HookDir, cur.HookTick, curFreeze, cur.Jumped);
+	if(!pBot)
+		return nullptr;
+	CCharacterCore c = pBot->GetCore();
+	c.m_JumpedTotal = cur.JumpedTotal;
+	pBot->SetCore(c);
+	pSim->m_GameTick = Tick;
+	return pBot;
+}
+
+// One committed plan tick, kept for backtracking. The chain is a stack:
+// committing a tick pushes its step, a dead end pops steps down to the last
+// CHOICE step, restores the state from it and bans the input chosen there
+// (Tried) — the DFS escape from dead ends. Burn steps (freeze fast-forward
+// ticks) are deterministic and carry no choice: a dead end pops straight
+// through them to the choice below.
+struct RtPfChainStep
+{
+	CBotNet::PfAState Prev;
+	int PrevFreeze;
+	int PrevStall;
+	vec2 PrevStallAnchor;
+	bool Burn;
+	std::vector<CNetObj_PlayerInput> Tried;
+};
+
+// Tail hook segment: the chunk-relative index is resolved on publish.
+struct RtPfTailSeg
+{
+	vec2 TeePos;
+	vec2 HookPos;
+	int Idx;
+};
+
+void CBotNet::RtPfThreadWorker()
+{
+	int LocalID = m_RtPfLocalID;
+	if(!m_RtPfBaseWorld || LocalID < 0)
+	{
+		m_RtPfThreadRunning.store(false);
+		return;
+	}
+
+	// Worker owns the sim world for the whole run; RtPfThreadStop joins the
+	// thread on the main thread BEFORE deleting it, so plain new/delete is safe.
+	delete m_RtPfSimWorld;
+	m_RtPfSimWorld = new CGameWorld();
+	RtPfSetupWorld(m_RtPfSimWorld, m_RtPfBaseWorld, LocalID);
+	if(!m_RtPfSimWorld->Collision())
+	{
+		dbg_msg("rtpathfinder", "worker: no collision in sim world");
+		m_RtPfThreadRunning.store(false);
+		return;
+	}
+
+	const std::vector<vec2> *pFinishes = &RtPfActiveFinishTiles();
+	if(pFinishes->empty())
+	{
+		dbg_msg("rtpathfinder", "worker: no finish tiles");
+		m_RtPfThreadRunning.store(false);
+		return;
+	}
+
+	CCollision *pColl = m_RtPfSimWorld->Collision();
+	float hookLength = 380.0f;
+	if(CCharacter *pBaseChar = m_RtPfBaseWorld->GetCharacterById(LocalID))
+	{
+		float hl = pBaseChar->GetCore().m_Tuning.m_HookLength;
+		if(hl > 1.0f && hl < 10000.0f)
+			hookLength = hl;
+	}
+
+	// Planner state at the plan's end. The worker NEVER writes the shared
+	// plan/playback variables — it only GENERATES path data into the
+	// m_RtPfOut* mailbox; the main thread commits it (UpdateRtPathfinder).
+	PfAState cur;
+	mem_zero(&cur, sizeof(cur));
+	int curFreeze = 0;
+	int simTick = m_RtPfBaseWorld->GameTick();
+	bool stateValid = false;
+	std::vector<RtPfChainStep> vChain; // committed ticks, for backtracking
+	std::vector<CNetObj_PlayerInput> vTried; // inputs already tried at the tick being generated
+	std::vector<CNetObj_PlayerInput> vTail; // committed but not yet published ticks
+	std::vector<vec2> vTailPath;
+	std::vector<RtPfTailSeg> vTailSegs;
+	int stallStreak = 0; // consecutive committed ticks without progress
+	vec2 stallAnchor(0, 0); // where the current stall began
+
+	// Planner tuning
+	const int Lookahead = 12;  // sim depth per candidate
+	const int TailMax = 48;    // stalled ticks held unpublished before the tail flushes
+	const int StallLimit = 24; // stalled ticks tolerated before the DFS escape kicks in
+	const int ChainMax = 512;  // rollback stack cap (only the back is ever popped)
+
+	// guidance mode for the current plan (recomputed at every re-anchor):
+	// when the tile field cannot see the anchor — the tab's grid-unreachable
+	// case (A* falls back to the air-distance heuristic; hook-only routes and
+	// freeze separators blind the tile BFS) — scoring falls back to
+	// straight-line air distance so the planner still drives to the finish
+	// like the tab does.
+	bool guideAir = false;
+
+	// distance guidance for scoring: the RT flow field (field mode) or
+	// straight-line distance to the nearest finish scaled like the tab's air
+	// heuristic (air mode).
+	auto fieldDist = [&](const vec2 &pos) -> float {
+		if(guideAir)
+		{
+			float bestAir = 1e18f;
+			for(const vec2 &fp : *pFinishes)
+			{
+				float dx = pos.x - fp.x;
+				float dy = pos.y - fp.y;
+				float d = sqrtf(dx * dx + dy * dy);
+				if(d < bestAir)
+					bestAir = d;
+			}
+			return (bestAir < 1e18f) ? bestAir / 16.0f : 1e18f;
+		}
+		if(!m_RtPfFlowField || m_MapWidth <= 0 || m_MapHeight <= 0)
+			return 0.0f;
+		int tx = pf_clamp((int)(pos.x / 32.0f), 0, m_MapWidth - 1);
+		int ty = pf_clamp((int)(pos.y / 32.0f), 0, m_MapHeight - 1);
+		return m_RtPfFlowField[ty * m_MapWidth + tx];
+	};
+
+	// Flush the unpublished tail into the mailbox. Dropped silently when a
+	// re-anchor arrived meanwhile — the fresh root rebuilds everything.
+	auto fnFlushTail = [&]() {
+		if(vTail.empty())
+			return;
+		{
+			std::lock_guard<std::mutex> lock(m_RtPfDataMutex);
+			if(!m_RtPfRebuildPending.load(std::memory_order_relaxed))
+			{
+				const int Base = (int)m_RtPfOutInputs.size();
+				m_RtPfOutInputs.insert(m_RtPfOutInputs.end(), vTail.begin(), vTail.end());
+				m_RtPfOutPath.insert(m_RtPfOutPath.end(), vTailPath.begin(), vTailPath.end());
+				for(const RtPfTailSeg &Seg : vTailSegs)
+					m_RtPfOutSegs.push_back({Seg.TeePos, Seg.HookPos, Base + Seg.Idx});
+				m_RtPfOutValid = true;
+			}
+		}
+		vTail.clear();
+		vTailPath.clear();
+		vTailSegs.clear();
+	};
+
+	// DFS escape from a dead end: undo committed ticks down to the last
+	// choice step, restore the state from it and return (vTried then bans
+	// the input that was chosen there). Tail ticks pop worker-locally;
+	// published ones are retracted under the mutex — an out-box pop, or one
+	// TruncateTo when the main thread already merged them into the plan
+	// (never touching played/playing ticks). False = nothing left to undo.
+	auto fnDeadEnd = [&]() -> bool {
+		while(!vTail.empty())
+		{
+			RtPfChainStep Step = std::move(vChain.back());
+			vChain.pop_back();
+			vTail.pop_back();
+			vTailPath.pop_back();
+			if(!vTailSegs.empty() && vTailSegs.back().Idx == (int)vTail.size())
+				vTailSegs.pop_back();
+			simTick--;
+			if(!Step.Burn)
+			{
+				cur = Step.Prev;
+				curFreeze = Step.PrevFreeze;
+				stallStreak = Step.PrevStall;
+				stallAnchor = Step.PrevStallAnchor;
+				vTried = std::move(Step.Tried);
+				return true;
+			}
+		}
+		std::lock_guard<std::mutex> lock(m_RtPfDataMutex);
+		if(!vChain.empty())
+		{
+			int Run = 0; // trailing deterministic burn steps under the choice
+			while(Run < (int)vChain.size() && vChain[vChain.size() - 1 - Run].Burn)
+				Run++;
+			if(Run >= (int)vChain.size())
+				return false; // only burn steps left — no choice to restore
+			const int Retract = Run + 1; // burns + the choice tick
+			const int OutSize = (int)m_RtPfOutInputs.size();
+			if(OutSize >= Retract)
+			{
+				// the whole run is still pending in the out-box: shrink it here
+				m_RtPfOutInputs.resize(OutSize - Retract);
+				m_RtPfOutPath.resize((int)m_RtPfOutPath.size() - Retract);
+				for(int i = (int)m_RtPfOutSegs.size() - 1; i >= 0; i--)
+				{
+					if(m_RtPfOutSegs[i].tick >= OutSize - Retract)
+						m_RtPfOutSegs.erase(m_RtPfOutSegs.begin() + i);
+				}
+				m_RtPfOutValid = true;
+			}
+			else
+			{
+				// part (or all) of the run is already merged into the plan:
+				// retract the merged part with one truncation
+				const int Keep = (int)m_RtPfInputs.size() - (Retract - OutSize);
+				if(m_RtPfOutTruncateTo >= 0 || Keep < m_RtPfPlayIdx + 2)
+					return false; // the tick is playing/played — cannot undo
+				if(OutSize > 0)
+				{
+					// every pending tick belongs to the run — drop them all
+					m_RtPfOutInputs.clear();
+					m_RtPfOutPath.clear();
+					m_RtPfOutSegs.clear();
+				}
+				m_RtPfOutTruncateTo = Keep;
+				m_RtPfOutValid = true;
+			}
+			RtPfChainStep Step = std::move(vChain[vChain.size() - 1 - Run]);
+			vChain.resize((int)vChain.size() - Retract);
+			simTick -= Retract;
+			cur = Step.Prev;
+			curFreeze = Step.PrevFreeze;
+			stallStreak = Step.PrevStall;
+			stallAnchor = Step.PrevStallAnchor;
+			vTried = std::move(Step.Tried);
+			return true;
+		}
+		return false;
+	};
+
+	while(!m_RtPfThreadCancel.load(std::memory_order_relaxed))
+	{
+		int futureTicks = g_Config.m_KxRtPfFutureLimit ? pf_clamp(g_Config.m_KxRtPfFutureTicks, 1, 150) : 4096; // limit off: effectively unbounded (the solver caps itself)
+		bool reanchor = false;
+		int unplayed = 0;
+		{
+			std::lock_guard<std::mutex> lock(m_RtPfDataMutex);
+			if(m_RtPfRebuildPending.load(std::memory_order_relaxed))
+			{
+				m_RtPfRebuildPending.store(false, std::memory_order_relaxed);
+				reanchor = true;
+				cur = m_RtPfRebuildCore;
+				curFreeze = m_RtPfRebuildFreeze;
+				simTick = m_RtPfAnchorTick; // keep the sim's absolute tick aligned with the live one
+			}
+			unplayed = (int)m_RtPfInputs.size() - m_RtPfPlayIdx + (int)m_RtPfOutInputs.size();
+		}
+		if(unplayed < 0)
+			unplayed = 0;
+
+		// ── Re-anchor at a new root (run start / reconstruct): the main
+		// thread already cleared the plan. Reset the chain and, when the
+		// tee is frozen, burn the freeze with empty inputs (same trick as
+		// the A* frozen-node expansion) and hand those ticks over first.
+		if(reanchor)
+		{
+			stateValid = true;
+			vChain.clear();
+			vTried.clear();
+			vTail.clear();
+			vTailPath.clear();
+			vTailSegs.clear();
+			stallStreak = 0;
+			stallAnchor = cur.Pos;
+			// guidance mode for this plan: air-distance fallback when the tile
+			// field cannot see the anchor (the tab's grid-unreachable case)
+			if(m_RtPfFlowField && m_MapWidth > 0 && m_MapHeight > 0)
+			{
+				int gx = pf_clamp((int)(cur.Pos.x / 32.0f), 0, m_MapWidth - 1);
+				int gy = pf_clamp((int)(cur.Pos.y / 32.0f), 0, m_MapHeight - 1);
+				guideAir = m_RtPfFlowField[gy * m_MapWidth + gx] >= 1e17f;
+			}
+			else
+				guideAir = true;
+			std::vector<CNetObj_PlayerInput> vFF;
+			std::vector<vec2> vFFPath;
+			if(curFreeze > 0)
+			{
+				CCharacter *pBot = RtPfPlaceBot(m_RtPfSimWorld, m_RtPfBaseWorld, LocalID, cur, curFreeze, simTick);
+				if(!pBot)
+				{
+					stateValid = false;
+				}
+				else
+				{
+					// Tick-by-tick sim (like ComputeHelpersPath) — freeze countdown
+					// with a clear hook state; death inside freeze just ends the FF.
+					vec2 prevPos = cur.Pos;
+					int used = 0;
+					for(int t = 0; t < curFreeze; t++)
+					{
+						CNetObj_PlayerInput ff;
+						mem_zero(&ff, sizeof(CNetObj_PlayerInput));
+						ff.m_TargetY = -1;
+						pBot->OnDirectInput(&ff);
+						m_RtPfSimWorld->m_GameTick = simTick + t + 1;
+						pBot->OnPredictedInput(&ff);
+						m_RtPfSimWorld->Tick();
+						if(!m_RtPfSimWorld->GetCharacterById(LocalID))
+							break;
+						if(pBot->m_FreezeTime <= 0)
+							PfCheckFreeze(m_RtPfSimWorld, pBot, prevPos, pBot->m_Pos);
+						prevPos = pBot->m_Pos;
+						vFF.push_back(ff);
+						vFFPath.push_back(pBot->m_Pos);
+						used++;
+						if(pBot->m_FreezeTime <= 0)
+							break; // unfrozen — plan from here
+					}
+					if(m_RtPfSimWorld->GetCharacterById(LocalID) && used > 0)
+					{
+						CCharacterCore c = pBot->GetCore();
+						cur.Pos = c.m_Pos;
+						cur.Vel = c.m_Vel;
+						cur.HookState = c.m_HookState;
+						cur.HookPos = c.m_HookPos;
+						cur.HookDir = c.m_HookDir;
+						cur.HookTick = c.m_HookTick;
+						cur.Jumped = c.m_Jumped;
+						cur.JumpedTotal = c.m_JumpedTotal;
+						curFreeze = pBot->m_FreezeTime;
+						simTick += used;
+					}
+				}
+			}
+			if(stateValid && !vFF.empty())
+			{
+				std::lock_guard<std::mutex> lock(m_RtPfDataMutex);
+				if(!m_RtPfRebuildPending.load(std::memory_order_relaxed))
+				{
+					m_RtPfOutInputs.insert(m_RtPfOutInputs.end(), vFF.begin(), vFF.end());
+					m_RtPfOutPath.insert(m_RtPfOutPath.end(), vFFPath.begin(), vFFPath.end());
+					m_RtPfOutValid = true;
+				}
+			}
+			continue; // resample the pacing state before generating the next tick
+		}
+
+		if(!stateValid)
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(5));
+			continue;
+		}
+
+		// ── Keep the unplayed tail at Future-Ticks length.
+		if(unplayed >= futureTicks)
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(2));
+			continue;
+		}
+
+		// ── Goal: the plan reached a finish tile — nothing left to generate.
+		// The committed tail still plays out; the main thread stops the run
+		// when the LIVE tee arrives at a finish.
+		if(RtPfIsAtFinishPos(cur.Pos))
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(50));
+			continue;
+		}
+
+		// ── Frozen: burn the freeze with deterministic empty-input ticks ──
+		// One burn tick per iteration; the tail flushes eagerly so the frozen
+		// tee keeps ticking. Death inside freeze stops the plan — the main
+		// thread's reconstruct re-anchors after the respawn.
+		if(curFreeze > 0)
+		{
+			CCharacter *pBot = RtPfPlaceBot(m_RtPfSimWorld, m_RtPfBaseWorld, LocalID, cur, curFreeze, simTick);
+			if(!pBot)
+			{
+				stateValid = false;
+				std::this_thread::sleep_for(std::chrono::milliseconds(5));
+				continue;
+			}
+			CNetObj_PlayerInput ff;
+			mem_zero(&ff, sizeof(CNetObj_PlayerInput));
+			ff.m_TargetY = -1;
+			pBot->OnDirectInput(&ff);
+			m_RtPfSimWorld->m_GameTick = simTick + 1;
+			pBot->OnPredictedInput(&ff);
+			m_RtPfSimWorld->Tick();
+			if(!m_RtPfSimWorld->GetCharacterById(LocalID))
+			{
+				stateValid = false;
+				std::this_thread::sleep_for(std::chrono::milliseconds(20));
+				continue;
+			}
+			RtPfChainStep Step;
+			Step.Prev = cur;
+			Step.PrevFreeze = curFreeze;
+			Step.PrevStall = stallStreak;
+			Step.PrevStallAnchor = stallAnchor;
+			Step.Burn = true;
+			Step.Tried.push_back(ff);
+			CCharacterCore c = pBot->GetCore();
+			cur.Pos = c.m_Pos;
+			cur.Vel = c.m_Vel;
+			cur.HookState = c.m_HookState;
+			cur.HookPos = c.m_HookPos;
+			cur.HookDir = c.m_HookDir;
+			cur.HookTick = c.m_HookTick;
+			cur.Jumped = c.m_Jumped;
+			cur.JumpedTotal = c.m_JumpedTotal;
+			curFreeze = pBot->m_FreezeTime;
+			if(curFreeze <= 0)
+			{
+				stallStreak = 0; // freeze is dead time — do not let the old stall cascade
+				stallAnchor = cur.Pos;
+			}
+			simTick++;
+			vTail.push_back(ff);
+			vTailPath.push_back(cur.Pos);
+			vChain.push_back(std::move(Step));
+			if((int)vChain.size() > ChainMax)
+				vChain.erase(vChain.begin());
+			fnFlushTail(); // burn ticks stream at once — the frozen tee must keep ticking
+			continue;
+		}
+
+		// ── Choose the next plan tick: evaluate every candidate over the fixed
+		// lookahead and take the best-ranked survivor. Death and forbidden
+		// zones reject outright; freeze contact and leaving the field are
+		// allowed as a last resort (huge penalties), so a route exists even on
+		// freeze-heavy maps. Clean candidates need no progress while the stall
+		// counter is low (setup moves, lateral crawls — net movement away from
+		// the stall anchor resets it); a stalled-out tick is a dead end and the
+		// DFS backtrack explores other branches.
+		CCharacter *pBot = RtPfPlaceBot(m_RtPfSimWorld, m_RtPfBaseWorld, LocalID, cur, curFreeze, simTick);
+		if(!pBot)
+		{
+			stateValid = false;
+			std::this_thread::sleep_for(std::chrono::milliseconds(5));
+			continue;
+		}
+
+		int HookAngles = PfEffortHookAngles();
+		CNetObj_PlayerInput aCands[128];
+		int nCands = 0;
+		{
+			// KHelpersBuildCandidates works on the Helpers planner snapshot; the RT
+			// worker keeps its state as PfAState - same fields, convert explicitly.
+			KHelpersState curK;
+			curK.Pos = cur.Pos;
+			curK.Vel = cur.Vel;
+			curK.HookPos = cur.HookPos;
+			curK.HookDir = cur.HookDir;
+			curK.HookState = cur.HookState;
+			curK.HookTick = cur.HookTick;
+			curK.Jumped = cur.Jumped;
+			curK.JumpedTotal = cur.JumpedTotal;
+			nCands = KHelpersBuildCandidates(curK, m_RtPfSimWorld, pBot, pColl, hookLength, HookAngles, aCands);
+		}
+
+		float lastDist = fieldDist(cur.Pos);
+
+		float bestScore = -1e9f;
+		int best = -1;
+		CNetObj_PlayerInput bestIn;
+		vec2 bestPos = cur.Pos;
+		PfAState bestEnd = cur;
+		int bestEndFreeze = curFreeze;
+		bool haveSeg = false;
+		PfHookSeg bestSeg = {};
+		bool bestProgress = false;
+
+		for(int ci = 0; ci < nCands; ci++)
+		{
+			// backtrack bans: this input already dead-ended from this tick —
+			// skip it without re-simulating
+			bool banned = false;
+			for(const CNetObj_PlayerInput &t : vTried)
+			{
+				if(t.m_Direction == aCands[ci].m_Direction && t.m_Jump == aCands[ci].m_Jump &&
+					t.m_Hook == aCands[ci].m_Hook && t.m_TargetX == aCands[ci].m_TargetX &&
+					t.m_TargetY == aCands[ci].m_TargetY)
+				{
+					banned = true;
+					break;
+				}
+			}
+			if(banned)
+				continue;
+			pBot = RtPfPlaceBot(m_RtPfSimWorld, m_RtPfBaseWorld, LocalID, cur, curFreeze, simTick);
+			if(!pBot)
+				break;
+			vec2 prevPos = cur.Pos;
+			int prevHookState = cur.HookState;
+			float adjPenalty = 0.0f;
+			bool died = false;
+			int freezeTicks = 0;
+			CCharacterCore firstCore = pBot->GetCore();
+			int firstFreeze = curFreeze;
+			vec2 firstPos = cur.Pos;
+			bool firstGrab = false;
+			vec2 firstGrabPos = cur.Pos;
+
+			// fixed lookahead: repeat the candidate's input and score the total
+			// progress — like the Pathfinder planner's windows — then commit
+			// ONLY this candidate's first tick
+			for(int t = 0; t < Lookahead; t++)
+			{
+				CNetObj_PlayerInput in = aCands[ci];
+				if(in.m_Jump && t > 0)
+					in.m_Jump = 0; // single jump impulse, like the Pathfinder windows
+
+				pBot->OnDirectInput(&in);
+				m_RtPfSimWorld->m_GameTick = simTick + t + 1;
+				pBot->OnPredictedInput(&in);
+				m_RtPfSimWorld->Tick();
+				if(!m_RtPfSimWorld->GetCharacterById(LocalID))
+				{
+					died = true; // death rejects the candidate outright
+					break;
+				}
+
+				// Tab-exact anti-skip freeze check after the engine tick.
+				if(pBot->m_FreezeTime <= 0)
+					PfCheckFreeze(m_RtPfSimWorld, pBot, prevPos, pBot->m_Pos);
+
+				// RT forbidden zones are absolute walls for the planner.
+				if(PfLineTouchesForbidden(m_pRtForbiddenGrid, m_MapWidth, m_MapHeight, prevPos, pBot->m_Pos))
+				{
+					died = true;
+					break;
+				}
+
+				if(t == 0)
+				{
+					// capture the committed tick's end state BEFORE the soft
+					// freeze exit — a first-tick freeze is a valid (slow) move
+					firstCore = pBot->GetCore();
+					firstFreeze = pBot->m_FreezeTime;
+					firstPos = pBot->m_Pos;
+					firstGrab = firstCore.m_HookState == HOOK_GRABBED && prevHookState != HOOK_GRABBED;
+					firstGrabPos = firstPos;
+				}
+
+				if(pBot->m_FreezeTime > 0)
+				{
+					if(g_Config.m_KxPfFreezeSupport == 0)
+					{
+						died = true; // freeze support off — freeze contact rejects the candidate outright
+						break;
+					}
+					freezeTicks++; // ranks below every clean candidate
+					break;
+				}
+
+				// soft margin — discourage hugging freeze
+				int ptx = pf_clamp((int)(pBot->m_Pos.x / 32.0f), 0, m_MapWidth - 1);
+				int pty = pf_clamp((int)(pBot->m_Pos.y / 32.0f), 0, m_MapHeight - 1);
+				bool adj = false;
+				for(int oy = -1; oy <= 1 && !adj; oy++)
+					for(int ox = -1; ox <= 1 && !adj; ox++)
+						if(IsTileFreeze(pf_clamp(ptx + ox, 0, m_MapWidth - 1), pf_clamp(pty + oy, 0, m_MapHeight - 1)))
+							adj = true;
+				if(adj)
+					adjPenalty += 0.05f;
+
+				prevPos = pBot->m_Pos;
+			}
+			if(died)
+				continue;
+
+			float endDist = fieldDist(pBot->m_Pos);
+			bool offRoute = endDist >= 1e17f;
+			float progress = offRoute ? 0.0f : (lastDist - endDist);
+			float score = progress - adjPenalty;
+			if(freezeTicks > 0)
+				score -= 10000.0f * freezeTicks;
+			if(offRoute)
+				score -= 5000.0f;
+
+			if(score > bestScore)
+			{
+				bestScore = score;
+				best = ci;
+				bestIn = aCands[ci];
+				bestPos = firstPos;
+				bestEnd.Pos = firstCore.m_Pos;
+				bestEnd.Vel = firstCore.m_Vel;
+				bestEnd.HookState = firstCore.m_HookState;
+				bestEnd.HookPos = firstCore.m_HookPos;
+				bestEnd.HookDir = firstCore.m_HookDir;
+				bestEnd.HookTick = firstCore.m_HookTick;
+				bestEnd.Jumped = firstCore.m_Jumped;
+				bestEnd.JumpedTotal = firstCore.m_JumpedTotal;
+				bestEndFreeze = firstFreeze;
+				haveSeg = firstGrab;
+				if(haveSeg)
+					bestSeg = {firstGrabPos, firstCore.m_HookPos};
+				bestProgress = !offRoute && freezeTicks == 0 && progress > 0.01f;
+			}
+		}
+
+		// Commit the winner, or backtrack. Clean progress commits freely;
+		// non-progress moves commit while the stall counter allows them (net
+		// movement away from the stall anchor also resets it — lateral crawls
+		// around walls stay legal); a stalled-out tick is a dead end.
+		bool committed = false;
+		if(best >= 0 && (bestProgress || stallStreak < StallLimit))
+		{
+			RtPfChainStep Step;
+			Step.Prev = cur;
+			Step.PrevFreeze = curFreeze;
+			Step.PrevStall = stallStreak;
+			Step.PrevStallAnchor = stallAnchor;
+			Step.Burn = false;
+			Step.Tried = vTried;
+			Step.Tried.push_back(bestIn);
+			if(bestProgress)
+			{
+				stallStreak = 0;
+				stallAnchor = bestEnd.Pos;
+			}
+			else
+			{
+				if(stallStreak == 0)
+					stallAnchor = cur.Pos;
+				stallStreak++;
+				const float dxs = bestEnd.Pos.x - stallAnchor.x;
+				const float dys = bestEnd.Pos.y - stallAnchor.y;
+				if(dxs * dxs + dys * dys > 64.0f * 64.0f)
+				{
+					// net movement breaks the stall — lateral crawls stay legal
+					stallStreak = 0;
+					stallAnchor = bestEnd.Pos;
+				}
+			}
+			const int TailIdx = (int)vTail.size();
+			vTail.push_back(bestIn);
+			vTailPath.push_back(bestPos);
+			if(haveSeg)
+				vTailSegs.push_back({bestSeg.teePos, bestSeg.hookPos, TailIdx});
+			vChain.push_back(std::move(Step));
+			if((int)vChain.size() > ChainMax)
+				vChain.erase(vChain.begin()); // rollback stack cap
+			cur = bestEnd;
+			curFreeze = bestEndFreeze;
+			simTick++;
+			vTried.clear();
+			committed = true;
+		}
+
+		if(!committed)
+		{
+			// Nothing survived (everything dies / hits forbidden zones / was
+			// banned / stalled out) — the DFS pops back to the last choice
+			// and tries another branch. With nothing left to undo the plan
+			// stops growing: the main thread exhausts it and re-anchors via
+			// reconstruct.
+			if(!fnDeadEnd())
+				std::this_thread::sleep_for(std::chrono::milliseconds(20));
+			continue;
+		}
+
+		// Publish: progress ticks and freeze burns stream at once; stalled
+		// segments are held worker-locally so backtracking inside them costs
+		// nothing, until they resolve or fill the tail.
+		if(bestProgress || curFreeze > 0 || (int)vTail.size() >= TailMax)
+			fnFlushTail();
+	}
+
+	m_RtPfThreadRunning.store(false);
 }

@@ -63,6 +63,16 @@ struct PfHookSeg
         vec2 hookPos;
 };
 
+// v1.56.280: RT Pathfinder hook segment — same as PfHookSeg plus the absolute
+// plan tick index it was captured at (used to split future/past hook lines in
+// the renderer: segments with tick > playback cursor are still future).
+struct RtPfHookSeg
+{
+        vec2 teePos;
+        vec2 hookPos;
+        int tick;
+};
+
 // =========================================================
 // Pathfinder backtracking buffer
 // =========================================================
@@ -380,6 +390,63 @@ public:
 	bool m_PfSpecWasInSpec = false;
 	bool m_PfSpecCamInit = false;
 	vec2 m_PfSpecCamPos = vec2(0.0f, 0.0f);
+
+	// =========================================================
+	// ── Real-Time Pathfinder (v1.56.280) ──
+	// Single-branch greedy planner ("kinodynamic" style, no tree) that builds
+	// a rolling Future-Ticks plan on a WORKER THREAD and reproduces it on the
+	// live player in real time through CControls::SnapInput. Reconstruct: when
+	// the real position deviates from the planned one by >= trigger (units),
+	// the plan is cleared and rebuilt from the current position on the fly
+	// (Anti-TAS chaos: tunings get randomized in tiny values so a long static
+	// plan desyncs constantly).
+	// =========================================================
+	int m_RtPfState = 0; // 0 = idle, 1 = running (no FINISHED state)
+	// Worker thread (own world snapshot + sim world, like the A* worker).
+	CGameWorld *m_RtPfBaseWorld = nullptr; // snapshot taken on the main thread
+	CGameWorld *m_RtPfSimWorld = nullptr;  // worker-owned planning world
+	int m_RtPfLocalID = -1;
+	std::thread m_RtPfThread;
+	std::atomic<bool> m_RtPfThreadRunning{false};
+	std::atomic<bool> m_RtPfThreadCancel{false};
+	std::atomic<bool> m_RtPfRebuildPending{false}; // root request: main posts the live state, worker re-anchors its chain
+	std::mutex m_RtPfDataMutex; // guards the plan + the worker-to-main mailbox
+	// The plan — written ONLY by the main thread (UpdateRtPathfinder commits
+	// the chunks the worker generates).
+	std::vector<CNetObj_PlayerInput> m_RtPfInputs; // inputs[m] applied at plan tick m
+	std::vector<vec2> m_RtPfPath;                  // path[0] = plan start pos, path[m+1] = pos after tick m
+	std::vector<RtPfHookSeg> m_RtPfHookSegs;       // planned hook segments (future, absolute tick idx)
+	int m_RtPfPlayIdx = 0;                         // playback cursor (advanced by UpdateRtPathfinder, once per predicted tick)
+	bool m_RtPfReady = false;                      // playback gate: the tail is buffered to Future Ticks before (re)starting
+	int m_RtPfAnchorTick = -1;                     // tick whose state the posted plan root describes — playback resumes at AnchorTick+1 only (freshness check)
+	// Root request payload (main thread fills, worker consumes).
+	PfAState m_RtPfRebuildCore;
+	int m_RtPfRebuildFreeze = 0;
+	// Worker-to-main mailbox: the generated path data (the worker writes
+	// ONLY this; the main thread commits it to the plan).
+	bool m_RtPfOutValid = false;
+	std::vector<CNetObj_PlayerInput> m_RtPfOutInputs;
+	std::vector<vec2> m_RtPfOutPath;
+	std::vector<RtPfHookSeg> m_RtPfOutSegs;
+	int m_RtPfOutTruncateTo = -1; // backtrack: worker asks the main to shrink the plan to this size
+	int m_RtPfLastProcessedTick = -1; // per-tick gate for OnUpdate processing
+	// Already reproduced history (rendered by Show Previous Path with alpha/2).
+	std::vector<vec2> m_RtPfPassedPath;
+	std::vector<RtPfHookSeg> m_RtPfPassedHookSegs;
+	int m_RtPfPrevHookState = 0; // hook grab transition detection during playback
+	// Own flow field (separate from the Pathfinder tab's m_PfFlowField).
+	float *m_RtPfFlowField = nullptr;
+	std::vector<vec2> m_RtPfFinishTiles; // natural finish tile centers
+	// SEPARATE tile editor (forbidden zones + custom finish) for RT Pathfinder.
+	std::vector<vec2> m_RtPfForbiddenTiles;
+	std::vector<vec2> m_RtPfCustomFinishTiles;
+	unsigned char *m_pRtForbiddenGrid = nullptr;
+	unsigned char *m_pRtCustomFinishGrid = nullptr;
+	int m_RtPfEditorMode = 0; // 0 = off, 1 = forbidden editor, 2 = finish editor
+	bool m_RtPfEditFireHeld = false;
+	bool m_RtPfEditHookHeld = false;
+	bool m_RtPfEditCleaned = false;
+
         std::vector<vec2> m_PfForbiddenTiles;
         std::vector<vec2> m_PfCustomFinishTiles;
         unsigned char *m_pForbiddenGrid = nullptr;
@@ -537,6 +604,31 @@ public:
 	void PfSpectateStop();
 	void PfSpectateReset();
 	bool PfSpectateUpdateCamera(vec2 &outCamPos);
+
+	// --- Real-Time Pathfinder (v1.56.280) ---
+	void RtPfResetRun();                    // start: snapshot world, build field, start worker
+	void RtPfStop();                        // stop: kill worker + clear all RT state
+	void UpdateRtPathfinder();              // per-tick playback + reconstruct (OnUpdate)
+	void RenderRtPathfinderPath();          // OnRender visuals (path/hooks/field/prev path)
+	void RtPfThreadWorker();                // planner loop (worker thread)
+	void RtPfComputeFlowField();            // own flow field into m_RtPfFlowField
+	const std::vector<vec2> &RtPfActiveFinishTiles() const;
+	bool RtPfIsAtFinishPos(const vec2 &Pos) const; // goal test: position on an active finish tile
+	void RtPfEnsureEditorGrids();
+	void RtPfThreadStop();                  // join the worker + free the sim world
+	void RtPfAfterEditorChange();           // invalidate the field, re-anchor if running
+	// Live playback: apply the next planned input to the real player.
+	// Called from CControls::SnapInput (same slot as the TAS real replay).
+	bool ApplyRtPfRealInput(CNetObj_PlayerInput *pInput);
+	void UpdateRtPfTileEditor();            // separate RT tile editor (forbidden + finish)
+	void RenderRtPfTileEditor();
+	bool RtPfTileCanBeCustomFinish(int tx, int ty);
+	void RtPfAddForbiddenTile(int tx, int ty);
+	void RtPfRemoveForbiddenTile(int tx, int ty);
+	void RtPfAddCustomFinishTile(int tx, int ty);
+	void RtPfRemoveCustomFinishTile(int tx, int ty);
+	void RtPfClearForbiddenTiles();
+	void RtPfClearCustomFinishTiles();
 
         // --- Console commands ---
         static void ConCopyMoves(IConsole::IResult *pResult, void *pUserData);

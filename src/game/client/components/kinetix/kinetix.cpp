@@ -64,6 +64,18 @@ CBotNet::CBotNet()
         m_pForbiddenGrid = nullptr;
         m_pCustomFinishGrid = nullptr;
 
+        // Real-Time Pathfinder
+        m_RtPfState = 0;
+        m_RtPfEditorMode = 0;
+        m_RtPfLocalID = -1;
+        m_RtPfPlayIdx = 0;
+        m_RtPfLastProcessedTick = -1;
+        m_RtPfPrevHookState = 0;
+        m_RtPfFlowField = nullptr;
+        m_pRtForbiddenGrid = nullptr;
+        m_pRtCustomFinishGrid = nullptr;
+        m_RtPfRebuildFreeze = 0;
+
         // Per-dummy state is auto-initialized by CBotNetDummy constructor
 }
 
@@ -79,11 +91,17 @@ CBotNet::~CBotNet()
 	if(m_PfScoreField) delete[] m_PfScoreField;
 	if(m_pForbiddenGrid) delete[] m_pForbiddenGrid;
 	if(m_pCustomFinishGrid) delete[] m_pCustomFinishGrid;
+
+	// Real-Time Pathfinder: join the worker + free all RT-owned buffers
+	RtPfStop();
+	if(m_RtPfFlowField) { delete[] m_RtPfFlowField; m_RtPfFlowField = nullptr; }
+	if(m_pRtForbiddenGrid) { delete[] m_pRtForbiddenGrid; m_pRtForbiddenGrid = nullptr; }
+	if(m_pRtCustomFinishGrid) { delete[] m_pRtCustomFinishGrid; m_pRtCustomFinishGrid = nullptr; }
 }
 
 bool CBotNet::OnInput(const IInput::CEvent &Event)
 {
-	if(m_PfEditorMode == 0)
+	if(m_PfEditorMode == 0 && m_RtPfEditorMode == 0)
 		return false;
 	if(g_Config.m_ClClickGui != 0)
 		return false;
@@ -247,6 +265,18 @@ void CBotNet::OnMapLoad()
         m_TripleFlyWasActive = false;
         m_TripleFlyDummy = -1;
 
+        // RT Pathfinder: abort the run, drop the editor grids + field
+        // (the map changed — all RT tile references are stale).
+        m_RtPfState = 0;
+        m_RtPfEditorMode = 0;
+        RtPfStop();
+        if(m_RtPfFlowField) { delete[] m_RtPfFlowField; m_RtPfFlowField = nullptr; }
+        if(m_pRtForbiddenGrid) { delete[] m_pRtForbiddenGrid; m_pRtForbiddenGrid = nullptr; }
+        if(m_pRtCustomFinishGrid) { delete[] m_pRtCustomFinishGrid; m_pRtCustomFinishGrid = nullptr; }
+        m_RtPfForbiddenTiles.clear();
+        m_RtPfCustomFinishTiles.clear();
+        m_RtPfFinishTiles.clear();
+
         CGameClient *pGame = GameClient();
         if(pGame)
         {
@@ -303,6 +333,10 @@ void CBotNet::OnUpdate()
         UpdateAdminAlarm();
 
         UpdatePfTileEditor();
+
+        // RT Pathfinder: separate tile editor + per-tick playback bookkeeping
+        UpdateRtPfTileEditor();
+        UpdateRtPathfinder();
 
         CGameClient *pGame = GameClient();
         if(!pGame->m_Snap.m_pLocalInfo)
@@ -403,6 +437,11 @@ void CBotNet::OnRender()
 
         if(m_PfState != PF_STATE_IDLE)
                 RenderPathfinderPath();
+
+        // RT Pathfinder: separate editor overlay + path rendering
+        RenderRtPfTileEditor();
+        if(m_RtPfState != 0)
+                RenderRtPathfinderPath();
 
         // Laser unfreeze: render successful laser path (Show attempt)
         RenderLaserUnfreezePath();

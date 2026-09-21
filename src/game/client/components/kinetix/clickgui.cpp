@@ -41,7 +41,7 @@
 namespace {
 // Total number of ClickGUI panels. Must match CClickGui::NUM_PANELS in .h.
 // v1.56.177: was stale at 5 — caused "too many initializers" on g_Panels[6].
-constexpr int NUM_PANELS = 8;
+constexpr int NUM_PANELS = 9; // v1.56.280: + Real-Time Pathfinder (last panel)
 } // namespace
 
 // ============================================================================
@@ -492,9 +492,9 @@ static SRow g_RainbowChildren[] = {
 // v1.56.210: Added Gradient toggle + Step slider per-component. Both visible
 // only when Rainbow is ON (gradient has no effect without rainbow). Speed
 // slider min lowered from 0.1 to 0 (frozen rainbow is now possible).
-static const char *const g_LineComponentOpts[] = {"AimBot", "TriggerBot", "Trajectory", "Laser Unfreeze", "Pathfinder", "ESP", "TAS", "Hitboxes"};
+static const char *const g_LineComponentOpts[] = {"AimBot", "TriggerBot", "Trajectory", "Laser Unfreeze", "Pathfinder", "ESP", "TAS", "Hitboxes", "RT Pathfinder"};
 static SRow g_LineRenderingChildren[] = {
-        {ERowType::Dropdown, "Component", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_LineComponentOpts, 8, 0, nullptr, 0},
+        {ERowType::Dropdown, "Component", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_LineComponentOpts, 9, 0, nullptr, 0},
         {ERowType::Input, "Line color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ffbf00", "hex...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Line size", nullptr, false, false, 0.0f, 20.0f, 1.0f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Line opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 80.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
@@ -730,7 +730,40 @@ static SRow g_TasRows[] = {
         {ERowType::Expandable, "Visuals", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TasVisualsChildren, 4},
         {ERowType::Button, "Forward", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Button, "Rewind", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Label, g_TasDyn_Status, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+	{ERowType::Label, g_TasDyn_Status, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
+
+// ---------- Real-Time Pathfinder panel (9, v1.56.280) ----------
+// Single-branch real-time planner on a worker thread, reproduced on the live
+// player. Reconstruct re-anchors the plan from the live position when the
+// deviation from the planned path exceeds the trigger (Anti-TAS chaos).
+// The tile editors are SEPARATE from the Pathfinder tab (own mode/tiles/grids).
+static SRow g_RtVisualsChildren[] = {
+        {ERowType::Toggle, "Show Path", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Show Hooks", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Show Field", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Show Previous Path", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        // Visible only when Show Path or Show Previous Path is on (TasVisualsChildVisible).
+        {ERowType::Toggle, "Show Speed", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
+// v1.56.281: "Reconstruct" expandable — the header checkbox is the master
+// toggle (kx_rt_pf_reconstruct); the trigger slider lives inside it.
+static SRow g_RtReconstructChildren[] = {
+        {ERowType::Slider, "Reconstruct Trigger", nullptr, false, false, 1.0f, 32.0f, 1.0f, 8.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
+// v1.56.281: "Future Limit" expandable — the header checkbox is the master
+// toggle (kx_rt_pf_future_limit); the Future Ticks slider lives inside it.
+static SRow g_RtFutureLimitChildren[] = {
+        {ERowType::Slider, "Future Ticks", nullptr, false, false, 1.0f, 150.0f, 1.0f, 50.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
+static SRow g_RtPathfinderRows[] = {
+        {ERowType::Expandable, "Reconstruct", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RtReconstructChildren, 1},
+        {ERowType::Expandable, "Future Limit", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RtFutureLimitChildren, 1},
+        {ERowType::Expandable, "Visuals", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RtVisualsChildren, 5},
+        // Label toggles Pathfinding (green) / Stop (red) via m_RtPfState (no Finish state).
+        {ERowType::Button, "RT Pathfinding", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::DoubleButton, "RT Editor Forbidden Tiles", "Clear Forbidden Tiles", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::DoubleButton, "RT Editor Finish Tiles", "Clear Finish Tiles", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 
 // ---------- Visuals panel (v1.56.260) ----------
@@ -830,6 +863,8 @@ static SPanel g_Panels[NUM_PANELS] = {
         {"Info", g_InfoRows, sizeof(g_InfoRows) / sizeof(g_InfoRows[0])},
         {"Code Execution (Lua)", g_CodeExecRows, sizeof(g_CodeExecRows) / sizeof(g_CodeExecRows[0])},
         {"TAS", g_TasRows, sizeof(g_TasRows) / sizeof(g_TasRows[0])},
+        // v1.56.280: Real-Time Pathfinder — placed AFTER all other panels.
+        {"Real-Time Pathfinder", g_RtPathfinderRows, sizeof(g_RtPathfinderRows) / sizeof(g_RtPathfinderRows[0])},
 };
 
 // Conditional visibility for Functions panel top-level rows.
@@ -938,9 +973,18 @@ static bool TasVisualsChildVisible(const SRow *pChildren, int childCount, int id
         }
         if(str_comp(row.pName, "Show Speed") == 0)
         {
+                // v1.56.280: RT Pathfinder "Show Speed" is visible when Show Path
+                // OR Show Previous Path is on (TAS has no Show Previous Path child —
+                // its behavior is unchanged).
+                bool showAnyPath = false;
                 for(int i = 0; i < childCount; ++i)
-                        if(str_comp(pChildren[i].pName, "Show Path") == 0)
-                                return pChildren[i].on != 0;
+                {
+                        if(str_comp(pChildren[i].pName, "Show Path") == 0 && pChildren[i].on)
+                                showAnyPath = true;
+                        if(str_comp(pChildren[i].pName, "Show Previous Path") == 0 && pChildren[i].on)
+                                showAnyPath = true;
+                }
+                return showAnyPath;
         }
         return true;
 }
@@ -2587,6 +2631,20 @@ void CClickGui::OnRender()
                                         row.on = g_Config.m_KxPfFreedom != 0;
                                 else if(str_comp(row.pName, "Tunnel size") == 0)
                                         row.value = (float)g_Config.m_KxPfTunnelSize;
+                                // v1.56.280: Real-Time Pathfinder top-level rows.
+                                // v1.56.281: "Reconstruct" expandable header checkbox is the
+                                // master toggle (kx_rt_pf_reconstruct); the trigger slider
+                                // lives inside it. "Future Limit" is also a master toggle (kx_rt_pf_future_limit).
+                                else if(str_comp(row.pName, "Reconstruct") == 0)
+                                {
+                                        row.on = g_Config.m_KxRtPfReconstruct != 0;
+                                        row.pChildren[0].value = (float)g_Config.m_KxRtPfTrigger;
+                                }
+                                else if(str_comp(row.pName, "Future Limit") == 0)
+                                {
+                                        row.on = g_Config.m_KxRtPfFutureLimit != 0;
+                                        row.pChildren[0].value = (float)g_Config.m_KxRtPfFutureTicks;
+                                }
                                 // Settings → IRC/Spoofer top-level expandables are master toggles.
                                 else if(str_comp(row.pName, "IRC") == 0)
                                         row.on = g_Config.m_KxIrcEnabled != 0;
@@ -2998,6 +3056,21 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                 child.on = g_Config.m_KxPfShowBranches != 0;
                                         else if(str_comp(child.pName, "Show speed") == 0)
                                                 child.on = g_Config.m_KxPfShowSpeed != 0;
+                                        // v1.56.280: Real-Time Pathfinder Visuals children
+                                        // (panel-gated: TAS/Pathfinder use overlapping child labels)
+                                        else if(str_comp(row.pName, "Visuals") == 0 && str_comp(g_Panels[p].pTitle, "Real-Time Pathfinder") == 0)
+                                        {
+                                                if(str_comp(child.pName, "Show Path") == 0)
+                                                        child.on = g_Config.m_KxRtPfShowPath != 0;
+                                                else if(str_comp(child.pName, "Show Hooks") == 0)
+                                                        child.on = g_Config.m_KxRtPfShowHooks != 0;
+                                                else if(str_comp(child.pName, "Show Field") == 0)
+                                                        child.on = g_Config.m_KxRtPfShowField != 0;
+                                                else if(str_comp(child.pName, "Show Previous Path") == 0)
+                                                        child.on = g_Config.m_KxRtPfShowPrevPath != 0;
+                                                else if(str_comp(child.pName, "Show Speed") == 0)
+                                                        child.on = g_Config.m_KxRtPfShowSpeed != 0;
+                                        }
                                 }
                         }
                 }
@@ -3839,6 +3912,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                 case KX_LINE_ESP: child.on = g_Config.m_KxLineEspRainbow != 0; break;
                                                 case KX_LINE_TAS: child.on = g_Config.m_KxLineTasRainbow != 0; break;
                                                 case KX_LINE_HITBOXES: child.on = g_Config.m_KxLineHitboxesRainbow != 0; break;
+                                                case KX_LINE_RT_PATHFINDER: child.on = g_Config.m_KxLineRtPathfinderRainbow != 0; break;
                                                 }
                                         }
                                         else if(str_comp(child.pName, "Speed") == 0)
@@ -3852,7 +3926,8 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                 case KX_LINE_PATHFINDER: child.value = (float)g_Config.m_KxLinePathfinderRainbowSpeed / 10.0f; break;
                                                 case KX_LINE_ESP: child.value = (float)g_Config.m_KxLineEspRainbowSpeed / 10.0f; break;
                                                 case KX_LINE_TAS: child.value = (float)g_Config.m_KxLineTasRainbowSpeed / 10.0f; break;
-                                                case KX_LINE_HITBOXES: child.value = (float)g_Config.m_KxLineHitboxesRainbowSpeed / 10.0f; break;
+									case KX_LINE_HITBOXES: child.value = (float)g_Config.m_KxLineHitboxesRainbowSpeed / 10.0f; break;
+									case KX_LINE_RT_PATHFINDER: child.value = (float)g_Config.m_KxLineRtPathfinderRainbowSpeed / 10.0f; break;
                                                 }
                                         }
                                         // v1.56.210: Gradient toggle per-component
@@ -3867,7 +3942,8 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                 case KX_LINE_PATHFINDER: child.on = g_Config.m_KxLinePathfinderGradient != 0; break;
                                                 case KX_LINE_ESP: child.on = g_Config.m_KxLineEspGradient != 0; break;
                                                 case KX_LINE_TAS: child.on = g_Config.m_KxLineTasGradient != 0; break;
-                                                case KX_LINE_HITBOXES: child.on = g_Config.m_KxLineHitboxesGradient != 0; break;
+									case KX_LINE_HITBOXES: child.on = g_Config.m_KxLineHitboxesGradient != 0; break;
+									case KX_LINE_RT_PATHFINDER: child.on = g_Config.m_KxLineRtPathfinderGradient != 0; break;
                                                 }
                                         }
                                         // v1.56.210: Step slider per-component (hue increment per segment)
@@ -3883,6 +3959,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                 case KX_LINE_ESP: child.value = (float)g_Config.m_KxLineEspGradientStep; break;
                                                 case KX_LINE_TAS: child.value = (float)g_Config.m_KxLineTasGradientStep; break;
                                                 case KX_LINE_HITBOXES: child.value = (float)g_Config.m_KxLineHitboxesGradientStep; break;
+                                                case KX_LINE_RT_PATHFINDER: child.value = (float)g_Config.m_KxLineRtPathfinderGradientStep; break;
                                                 }
                                         }
                                         else if(str_comp(child.pName, "Layer") == 0)
@@ -4060,7 +4137,8 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 case KX_LINE_TRIGGERBOT: g_Config.m_KxLineTriggerBotRainbowSpeed = rawVal; break;
                                 case KX_LINE_TRAJECTORY: g_Config.m_KxLineTrajectoryRainbowSpeed = rawVal; break;
                                 case KX_LINE_LASER_UNFREEZE: g_Config.m_KxLineLaserUnfreezeRainbowSpeed = rawVal; break;
-                                case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderRainbowSpeed = rawVal; break;
+								case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderRainbowSpeed = rawVal; break;
+								case KX_LINE_RT_PATHFINDER: g_Config.m_KxLineRtPathfinderRainbowSpeed = rawVal; break;
                                 case KX_LINE_ESP: g_Config.m_KxLineEspRainbowSpeed = rawVal; break;
                                 case KX_LINE_TAS: g_Config.m_KxLineTasRainbowSpeed = rawVal; break;
                                  case KX_LINE_HITBOXES: g_Config.m_KxLineHitboxesRainbowSpeed = rawVal; break;
@@ -4078,7 +4156,8 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 case KX_LINE_TRIGGERBOT: g_Config.m_KxLineTriggerBotGradientStep = rawVal; break;
                                 case KX_LINE_TRAJECTORY: g_Config.m_KxLineTrajectoryGradientStep = rawVal; break;
                                 case KX_LINE_LASER_UNFREEZE: g_Config.m_KxLineLaserUnfreezeGradientStep = rawVal; break;
-                                case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderGradientStep = rawVal; break;
+								case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderGradientStep = rawVal; break;
+								case KX_LINE_RT_PATHFINDER: g_Config.m_KxLineRtPathfinderGradientStep = rawVal; break;
                                 case KX_LINE_ESP: g_Config.m_KxLineEspGradientStep = rawVal; break;
                                 case KX_LINE_TAS: g_Config.m_KxLineTasGradientStep = rawVal; break;
                                  case KX_LINE_HITBOXES: g_Config.m_KxLineHitboxesGradientStep = rawVal; break;
@@ -4133,6 +4212,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                         case KX_LINE_TRAJECTORY: g_Config.m_KxLineTrajectorySize = (int)pTarget->value; break;
                                         case KX_LINE_LASER_UNFREEZE: g_Config.m_KxLineLaserUnfreezeSize = (int)pTarget->value; break;
                                         case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderSize = (int)pTarget->value; break;
+                                        case KX_LINE_RT_PATHFINDER: g_Config.m_KxLineRtPathfinderSize = (int)pTarget->value; break;
                                         case KX_LINE_ESP: g_Config.m_KxLineEspSize = (int)pTarget->value; break;
                                         case KX_LINE_TAS: g_Config.m_KxLineTasSize = (int)pTarget->value; break;
                                          case KX_LINE_HITBOXES: g_Config.m_KxLineHitboxesSize = (int)pTarget->value; break;
@@ -4147,6 +4227,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                         case KX_LINE_TRAJECTORY: g_Config.m_KxLineTrajectoryAlpha = (int)pTarget->value; break;
                                         case KX_LINE_LASER_UNFREEZE: g_Config.m_KxLineLaserUnfreezeAlpha = (int)pTarget->value; break;
                                         case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderAlpha = (int)pTarget->value; break;
+                                        case KX_LINE_RT_PATHFINDER: g_Config.m_KxLineRtPathfinderAlpha = (int)pTarget->value; break;
                                         case KX_LINE_ESP: g_Config.m_KxLineEspAlpha = (int)pTarget->value; break;
                                         case KX_LINE_TAS: g_Config.m_KxLineTasAlpha = (int)pTarget->value; break;
                                          case KX_LINE_HITBOXES: g_Config.m_KxLineHitboxesAlpha = (int)pTarget->value; break;
@@ -4317,6 +4398,11 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 g_Config.m_KxPfPerf = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Tunnel size") == 0)
                                 g_Config.m_KxPfTunnelSize = (int)pTarget->value;
+                        // v1.56.280: RT Pathfinder sliders (live while dragging)
+                        else if(str_comp(pTarget->pName, "Reconstruct Trigger") == 0)
+                                g_Config.m_KxRtPfTrigger = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Future Ticks") == 0)
+                                g_Config.m_KxRtPfFutureTicks = (int)pTarget->value;
                         // v1.56.83: AimBot/TriggerBot per-weapon sliders (disambiguate by parent expandable)
                         else if(m_DragSliderChild >= 0 && m_DragSliderPanel >= 0)
                         {
@@ -4813,6 +4899,7 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         (str_comp(pTarget->pName, "Visuals") == 0 ||
                                          str_comp(pTarget->pName, "Line rendering") == 0 ||
                                          str_comp(pTarget->pName, "TAS") == 0);
+                                         // v1.56.281: Future Limit is a master toggle now (click dispatch below).
                                 // Click on check area or name area → toggle on/off (or expand for visual).
                                 const float toggleEndX = rx + rw - (pTarget->type == ERowType::Expandable ? ARROW_W + 4.0f : (pTarget->type == ERowType::ToggleDropdown ? DROPDOWN_W + 4.0f : 0.0f));
                                 if(mousePos.x < toggleEndX)
@@ -5126,6 +5213,26 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 g_Config.m_KxPfFreezeSupport = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Freedom Path") == 0)
                                                 g_Config.m_KxPfFreedom = pTarget->on ? 1 : 0;
+                                        // v1.56.280: RT Pathfinder top-level toggle
+                                        else if(str_comp(pTarget->pName, "Reconstruct") == 0)
+                                                g_Config.m_KxRtPfReconstruct = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Future Limit") == 0)
+                                                g_Config.m_KxRtPfFutureLimit = pTarget->on ? 1 : 0;
+                                        // RT Pathfinder Visuals children (panel-gated: TAS/Pathfinder
+                                        // use overlapping child labels — generic names are safe here).
+                                        else if(str_comp(row.pName, "Visuals") == 0 && str_comp(panel.pTitle, "Real-Time Pathfinder") == 0)
+                                        {
+                                                if(str_comp(pTarget->pName, "Show Path") == 0)
+                                                        g_Config.m_KxRtPfShowPath = pTarget->on ? 1 : 0;
+                                                else if(str_comp(pTarget->pName, "Show Hooks") == 0)
+                                                        g_Config.m_KxRtPfShowHooks = pTarget->on ? 1 : 0;
+                                                else if(str_comp(pTarget->pName, "Show Field") == 0)
+                                                        g_Config.m_KxRtPfShowField = pTarget->on ? 1 : 0;
+                                                else if(str_comp(pTarget->pName, "Show Previous Path") == 0)
+                                                        g_Config.m_KxRtPfShowPrevPath = pTarget->on ? 1 : 0;
+                                                else if(str_comp(pTarget->pName, "Show Speed") == 0)
+                                                        g_Config.m_KxRtPfShowSpeed = pTarget->on ? 1 : 0;
+                                        }
                                         // Settings → IRC/Spoofer expandables are master toggles.
                                         else if(str_comp(pTarget->pName, "IRC") == 0)
                                                 g_Config.m_KxIrcEnabled = pTarget->on ? 1 : 0;
@@ -5171,7 +5278,8 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 case KX_LINE_TRIGGERBOT: g_Config.m_KxLineTriggerBotRainbow = pTarget->on ? 1 : 0; break;
                                                 case KX_LINE_TRAJECTORY: g_Config.m_KxLineTrajectoryRainbow = pTarget->on ? 1 : 0; break;
                                                 case KX_LINE_LASER_UNFREEZE: g_Config.m_KxLineLaserUnfreezeRainbow = pTarget->on ? 1 : 0; break;
-                                                case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderRainbow = pTarget->on ? 1 : 0; break;
+												case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderRainbow = pTarget->on ? 1 : 0; break;
+												case KX_LINE_RT_PATHFINDER: g_Config.m_KxLineRtPathfinderRainbow = pTarget->on ? 1 : 0; break;
                                                 case KX_LINE_ESP: g_Config.m_KxLineEspRainbow = pTarget->on ? 1 : 0; break;
                                                 case KX_LINE_TAS: g_Config.m_KxLineTasRainbow = pTarget->on ? 1 : 0; break;
                                                  case KX_LINE_HITBOXES: g_Config.m_KxLineHitboxesRainbow = pTarget->on ? 1 : 0; break;
@@ -5188,7 +5296,8 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 case KX_LINE_TRIGGERBOT: g_Config.m_KxLineTriggerBotGradient = pTarget->on ? 1 : 0; break;
                                                 case KX_LINE_TRAJECTORY: g_Config.m_KxLineTrajectoryGradient = pTarget->on ? 1 : 0; break;
                                                 case KX_LINE_LASER_UNFREEZE: g_Config.m_KxLineLaserUnfreezeGradient = pTarget->on ? 1 : 0; break;
-                                                case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderGradient = pTarget->on ? 1 : 0; break;
+												case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderGradient = pTarget->on ? 1 : 0; break;
+												case KX_LINE_RT_PATHFINDER: g_Config.m_KxLineRtPathfinderGradient = pTarget->on ? 1 : 0; break;
                                                 case KX_LINE_ESP: g_Config.m_KxLineEspGradient = pTarget->on ? 1 : 0; break;
                                                 case KX_LINE_TAS: g_Config.m_KxLineTasGradient = pTarget->on ? 1 : 0; break;
                                                  case KX_LINE_HITBOXES: g_Config.m_KxLineHitboxesGradient = pTarget->on ? 1 : 0; break;
@@ -5323,6 +5432,47 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 else if(str_comp(pTarget->pName, "Generate tunnel") == 0 && pTarget->type == ERowType::Button)
                                 {
                                         GameClient()->m_BotNet.PfGenerateTunnel();
+                                }
+                                // v1.56.280: RT Pathfinding button — IDLE <-> RUNNING (no FINISHED state).
+                                else if(str_comp(pTarget->pName, "RT Pathfinding") == 0 && pTarget->type == ERowType::Button)
+                                {
+                                        CBotNet &BN = GameClient()->m_BotNet;
+                                        if(BN.m_RtPfState == 0)
+                                        {
+                                                BN.m_RtPfState = 1;
+                                                BN.RtPfResetRun();
+                                        }
+                                        else
+                                        {
+                                                BN.RtPfStop();
+                                        }
+                                }
+                                // RT tile editors — SEPARATE storage from the Pathfinder editors.
+                                else if(str_comp(pTarget->pName, "RT Editor Forbidden Tiles") == 0 && pTarget->type == ERowType::DoubleButton)
+                                {
+                                        CBotNet &BN = GameClient()->m_BotNet;
+                                        const float btnW = (rw - 6.0f) * 0.5f;
+                                        if(!BN.m_RtPfForbiddenTiles.empty() && mousePos.x >= rx + 2.0f + btnW)
+                                                BN.RtPfClearForbiddenTiles();
+                                        else
+                                        {
+                                                BN.m_RtPfEditorMode = (BN.m_RtPfEditorMode == 1) ? 0 : 1;
+                                                if(BN.m_RtPfEditorMode != 0 && !BN.m_MapGridLoaded)
+                                                        BN.LoadMapGrid();
+                                        }
+                                }
+                                else if(str_comp(pTarget->pName, "RT Editor Finish Tiles") == 0 && pTarget->type == ERowType::DoubleButton)
+                                {
+                                        CBotNet &BN = GameClient()->m_BotNet;
+                                        const float btnW = (rw - 6.0f) * 0.5f;
+                                        if(!BN.m_RtPfCustomFinishTiles.empty() && mousePos.x >= rx + 2.0f + btnW)
+                                                BN.RtPfClearCustomFinishTiles();
+                                        else
+                                        {
+                                                BN.m_RtPfEditorMode = (BN.m_RtPfEditorMode == 2) ? 0 : 2;
+                                                if(BN.m_RtPfEditorMode != 0 && !BN.m_MapGridLoaded)
+                                                        BN.LoadMapGrid();
+                                        }
                                 }
                                 // TAS panel buttons.
                                 else if(pTarget->pName == g_TasDyn_Action)
@@ -5560,7 +5710,8 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 case KX_LINE_TRIGGERBOT: g_Config.m_KxLineTriggerBotSize = (int)pTarget->value; break;
                                                 case KX_LINE_TRAJECTORY: g_Config.m_KxLineTrajectorySize = (int)pTarget->value; break;
                                                 case KX_LINE_LASER_UNFREEZE: g_Config.m_KxLineLaserUnfreezeSize = (int)pTarget->value; break;
-                                                case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderSize = (int)pTarget->value; break;
+										case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderSize = (int)pTarget->value; break;
+								case KX_LINE_RT_PATHFINDER: g_Config.m_KxLineRtPathfinderSize = (int)pTarget->value; break;
                                                 case KX_LINE_ESP: g_Config.m_KxLineEspSize = (int)pTarget->value; break;
                                                 case KX_LINE_TAS: g_Config.m_KxLineTasSize = (int)pTarget->value; break;
                                          case KX_LINE_HITBOXES: g_Config.m_KxLineHitboxesSize = (int)pTarget->value; break;
@@ -5574,7 +5725,8 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 case KX_LINE_TRIGGERBOT: g_Config.m_KxLineTriggerBotAlpha = (int)pTarget->value; break;
                                                 case KX_LINE_TRAJECTORY: g_Config.m_KxLineTrajectoryAlpha = (int)pTarget->value; break;
                                                 case KX_LINE_LASER_UNFREEZE: g_Config.m_KxLineLaserUnfreezeAlpha = (int)pTarget->value; break;
-                                                case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderAlpha = (int)pTarget->value; break;
+										case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderAlpha = (int)pTarget->value; break;
+								case KX_LINE_RT_PATHFINDER: g_Config.m_KxLineRtPathfinderAlpha = (int)pTarget->value; break;
                                                 case KX_LINE_ESP: g_Config.m_KxLineEspAlpha = (int)pTarget->value; break;
                                                 case KX_LINE_TAS: g_Config.m_KxLineTasAlpha = (int)pTarget->value; break;
                                          case KX_LINE_HITBOXES: g_Config.m_KxLineHitboxesAlpha = (int)pTarget->value; break;
@@ -5624,6 +5776,11 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         g_Config.m_KxPfPerf = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Tunnel size") == 0)
                                         g_Config.m_KxPfTunnelSize = (int)pTarget->value;
+                                // v1.56.280: RT Pathfinder sliders (commit on click)
+                                else if(str_comp(pTarget->pName, "Reconstruct Trigger") == 0)
+                                        g_Config.m_KxRtPfTrigger = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Future Ticks") == 0)
+                                        g_Config.m_KxRtPfFutureTicks = (int)pTarget->value;
                                 return;
                         }
                         if(pTarget->type == ERowType::Dropdown || pTarget->type == ERowType::ToggleDropdown)
@@ -6577,6 +6734,7 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
                         case KX_LINE_TRAJECTORY: g_Config.m_KxLineTrajectoryColor = 0xff000000u | (hex & 0xffffff); break;
                         case KX_LINE_LASER_UNFREEZE: g_Config.m_KxLineLaserUnfreezeColor = 0xff000000u | (hex & 0xffffff); break;
                         case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderColor = 0xff000000u | (hex & 0xffffff); break;
+                        case KX_LINE_RT_PATHFINDER: g_Config.m_KxLineRtPathfinderColor = 0xff000000u | (hex & 0xffffff); break;
                         case KX_LINE_ESP: g_Config.m_KxLineEspColor = 0xff000000u | (hex & 0xffffff); break;
                         case KX_LINE_TAS: g_Config.m_KxLineTasColor = 0xff000000u | (hex & 0xffffff); break;
                         case KX_LINE_HITBOXES: g_Config.m_KxLineHitboxesColor = 0xff000000u | (hex & 0xffffff); break;
@@ -7354,6 +7512,21 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                         pLabel = "Finish";
                                 }
                         }
+                        // v1.56.280: RT Pathfinding - green (IDLE) / red (RUNNING), no Finish state.
+                        if(str_comp(row.pName, "RT Pathfinding") == 0)
+                        {
+                                CBotNet &BN = GameClient()->m_BotNet;
+                                if(BN.m_RtPfState == 0)
+                                {
+                                        btnCol = ColorRGBA(0xff3da35a, true).WithAlpha(alpha); // green
+                                        pLabel = "Pathfinding";
+                                }
+                                else
+                                {
+                                        btnCol = ColorRGBA(0xffc43d3d, true).WithAlpha(alpha); // red
+                                        pLabel = "Stop";
+                                }
+                        }
                         if(row.pName == g_ExecDyn_Btn)
                         {
                                 CCodeExec &CE = GameClient()->m_CodeExec;
@@ -7467,6 +7640,41 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                 IGraphics::CORNER_ALL, rightCol);
                                         const float rw2 = TextRender()->TextWidth(14.0f, pRightLabel);
                                         DrawText(rx2 + (btnW - rw2) * 0.5f, ry + 8.0f, 14.0f, pRightLabel,
+                                                ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                                }
+                        }
+                        else if(str_comp(row.pName, "RT Editor Forbidden Tiles") == 0 || str_comp(row.pName, "RT Editor Finish Tiles") == 0)
+                        {
+                                CBotNet &BN = GameClient()->m_BotNet;
+                                const bool isForbidden = (str_comp(row.pName, "RT Editor Forbidden Tiles") == 0);
+                                const bool editorActive = isForbidden ? (BN.m_RtPfEditorMode == 1) : (BN.m_RtPfEditorMode == 2);
+                                const bool clearVisible = isForbidden ? !BN.m_RtPfForbiddenTiles.empty() : !BN.m_RtPfCustomFinishTiles.empty();
+                                ColorRGBA leftCol = editorActive
+                                        ? ColorRGBA(0xffc43d3d, true).WithAlpha(alpha)
+                                        : ColorRGBA(0xff3da35a, true).WithAlpha(alpha);
+                                const char *pLeftLabel = editorActive ? "Exit Editor" : row.pName;
+                                if(!clearVisible)
+                                {
+                                        DrawRoundedRect(rx + 2.0f, ry + 2.0f, rw - 4.0f, rh - 4.0f, 4.0f,
+                                                IGraphics::CORNER_ALL, leftCol);
+                                        const float lw = TextRender()->TextWidth(13.0f, pLeftLabel);
+                                        DrawText(rx + (rw - lw) * 0.5f, ry + 8.0f, 13.0f, pLeftLabel,
+                                                ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                                }
+                                else
+                                {
+                                        const float btnW = (rw - 6.0f) * 0.5f;
+                                        DrawRoundedRect(rx + 2.0f, ry + 2.0f, btnW, rh - 4.0f, 4.0f,
+                                                IGraphics::CORNER_ALL, leftCol);
+                                        const float lw = TextRender()->TextWidth(11.0f, pLeftLabel);
+                                        DrawText(rx + 2.0f + (btnW - lw) * 0.5f, ry + 8.0f, 11.0f, pLeftLabel,
+                                                ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                                        const float rx2 = rx + 2.0f + btnW + 2.0f;
+                                        DrawRoundedRect(rx2, ry + 2.0f, btnW, rh - 4.0f, 4.0f,
+                                                IGraphics::CORNER_ALL, ColorRGBA(0xffc43d3d, true).WithAlpha(alpha));
+                                        const char *pClearLabel = "Clear";
+                                        const float cw = TextRender()->TextWidth(11.0f, pClearLabel);
+                                        DrawText(rx2 + (btnW - cw) * 0.5f, ry + 8.0f, 11.0f, pClearLabel,
                                                 ColorRGBA(0xffffffff, true).WithAlpha(alpha));
                                 }
                         }

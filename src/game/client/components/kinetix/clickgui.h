@@ -49,7 +49,7 @@ public:
         bool OnCursorMove(float x, float y, IInput::ECursorType CursorType) override;
         bool OnTouchState(const std::vector<IInput::CTouchFingerState> &vTouchFingerStates) override;
 
-        static constexpr int NUM_PANELS = 8;
+        static constexpr int NUM_PANELS = 9; // v1.56.280: + Real-Time Pathfinder (last panel)
 
 private:
         // Animation state: 0.0 = fully closed, 1.0 = fully open.
@@ -98,7 +98,7 @@ private:
         // that slot. Default identity {0,1,2,3,4,5}. Dragging a panel over another
         // panel's slot swaps them in this array; the swapped-out panel glides to
         // the dragged panel's old slot. Slot positions come from SlotHomePos().
-        int m_aPanelOrder[NUM_PANELS] = {0, 1, 2, 3, 4, 5, 6, 7};
+        int m_aPanelOrder[NUM_PANELS] = {0, 1, 2, 3, 4, 5, 6, 7, 8};
 
         // v1.56.176: per-panel current rendered height (HEADER_HEIGHT + visible body).
         // Updated each frame in RenderPanel. Used by SlotHomePos to stack the Info
@@ -203,7 +203,7 @@ private:
                 unsigned signature = 0;
         };
         SLayoutCache m_aLayoutCache[NUM_PANELS];
-        bool m_aLayoutCacheDirty[NUM_PANELS] = {true, true, true, true, true, true, true, true}; // v1.56.176: 8 panels
+        bool m_aLayoutCacheDirty[NUM_PANELS] = {true, true, true, true, true, true, true, true, true}; // v1.56.176: 9 panels (v1.56.280: + RT Pathfinder)
 
         // v1.56.90: Dummies Send toggle state (per-dummy, ClickGUI-local).
         bool m_aDummySendEnabled[8] = {};
