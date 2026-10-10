@@ -25,7 +25,7 @@
 #include <game/collision.h>
 
 // bot_control integration
-#include <game/client/components/kinetix/basic_avoid_freeze.h>
+#include <game/client/components/kinetix/avoid_freeze.h>
 #include <game/client/components/kinetix/bot_control.h>
 #include <game/client/components/kinetix/kinetix.h>
 #include <game/client/components/kinetix/tas.h>
@@ -807,24 +807,32 @@ int CControls::SnapInput(int *pData)
         // copy and return size
         m_aLastData[g_Config.m_ClDummy] = m_aInputData[g_Config.m_ClDummy];
 
+        // v1.57: AF runs on EVERY input production call — AFTER the
+        // m_aLastData snapshot above (an unchanged raw input after an AF
+        // override then never re-triggers sends: the server keeps applying
+        // the last sent override exactly like it keeps a held key) and
+        // BEFORE the Send gate + the silentAimActive check below (the
+        // v1.56.169 BUG7 ordering). With nothing pressed the raw input is
+        // byte-identical call after call, so the change throttle + the
+        // 25 Hz keepalive used to skip this whole tail — AF included — for
+        // up to a whole keepalive period: the last-moment window (~10
+        // ticks) slipped by and the escape fired late or not at all. AF's
+        // own edits are folded into the Send decision right below, so the
+        // chosen escape transmits on this very call. AF evaluates once per
+        // predicted tick (its own guard) and skips menu/chat (frozen input).
+        if(m_aInputData[g_Config.m_ClDummy].m_PlayerFlags & PLAYERFLAG_PLAYING)
+        {
+                CNetObj_PlayerInput InputBeforeAF = m_aInputData[g_Config.m_ClDummy];
+                GameClient()->m_AvoidFreeze.ApplyOverride();
+                if(mem_comp(&m_aInputData[g_Config.m_ClDummy], &InputBeforeAF, sizeof(InputBeforeAF)))
+                        Send = true;
+        }
+
         if(!Send)
                 return 0;
 
-        // v1.56.169 BUG7: BAF.ApplyOverride MUST run before the silentAimActive
-        // check below. BAF silent sets m_SilentAimActive (same channel as
-        // Laser Unfreeze + AimBot). If BAF runs AFTER the check (as it did since
-        // v1.56.130), the flag is deferred to next tick — Fake Aim is not blocked
-        // in the current tick and overwrites m_TargetX/Y. Moving BAF here makes
-        // the flag visible immediately: line 543 reads it, applies BAF's aim, and
-        // line 669 (!silentAimActive) blocks Fake Aim. BAF also modifies
-        // dir/jump/hook directly — those go to server via mem_copy at the end.
-        // (AimBot + Laser Unfreeze run in OnUpdate before SnapInput, so their
-        // flags are already set when BAF runs here — BAF checks !m_SilentAimActive
-        // before overwriting, giving Laser Unfreeze/AimBot priority on the aim channel.)
-        GameClient()->m_BasicAvoidFreeze.ApplyOverride();
-
         // Laser unfreeze silent aim — highest priority (consumes flag set by
-        // Laser Unfreeze, AimBot, or BAF above).
+        // Laser Unfreeze, AimBot, or AF above).
         bool silentAimActive = m_SilentAimActive;
         if(silentAimActive)
         {

@@ -14,6 +14,7 @@
 #include <engine/client/friends.h>
 #include <engine/client/ghost.h>
 #include <engine/client/serverbrowser.h>
+#include <game/client/components/kinetix/socks5_proxy.h>
 #include <engine/client/updater.h>
 #include <engine/editor.h>
 #include <engine/graphics.h>
@@ -194,6 +195,13 @@ class CClient : public IClient, public CDemoPlayer::IListener
         bool m_aDummyReconnectOnReload[MAX_DUMMIES] = {};
         bool m_aDummyDeactivateOnReconnect[MAX_DUMMIES] = {};
 
+        // Kinetix Dummy Manager (v1.56.282): per-dummy SOCKS5 proxies + limit.
+        // Slot 0 = main connection, 1..MAX_DUMMIES-1 = dummies.
+        CSocks5Proxy m_aDummySocks5[MAX_DUMMIES];
+        NETSOCKET m_aConnProxySockets[MAX_DUMMIES] = {}; // routing: conn socket -> slot
+        int m_DummyLimit = 8; // active dummy limit incl. main (1..MAX_DUMMIES)
+        static CClient *m_pSocks5Route; // instance used by the net.cpp SOCKS5 hooks
+
         // graphs
         std::vector<CGraph> m_aInputtimeMarginGraphs;
         std::vector<CGraph> m_aGametimeMarginGraphs;
@@ -353,6 +361,11 @@ public:
         int DummyCount() const override;
         int LastDummy() const override { return m_LastDummy; }
 
+        // Kinetix Dummy Manager (v1.56.282)
+        void SetDummyProxy(int Dummy, int On, const char *pProxy) override;
+        void SetDummyLimit(int Limit) override;
+        int DummyLimit() const override { return m_DummyLimit; }
+
         void GetServerInfo(CServerInfo *pServerInfo) const override;
         void ServerInfoRequest();
         void SetCurrentServerInfo(const CServerInfo &ServerInfo);
@@ -432,6 +445,10 @@ public:
         static void Con_DummyConnect(IConsole::IResult *pResult, void *pUserData);
         static void Con_DummyDisconnect(IConsole::IResult *pResult, void *pUserData);
         static void Con_DummyResetInput(IConsole::IResult *pResult, void *pUserData);
+
+        // Kinetix Dummy Manager: net.cpp SOCKS5 routing (connection socket -> slot).
+        static int Socks5RouteSend(NETSOCKET sock, const NETADDR *pDst, const void *pData, int Size);
+        static int Socks5RouteRecv(NETSOCKET sock, NETADDR *pSrc, unsigned char **ppData);
 
         static void Con_Quit(IConsole::IResult *pResult, void *pUserData);
         static void Con_Restart(IConsole::IResult *pResult, void *pUserData);

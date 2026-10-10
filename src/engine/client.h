@@ -206,6 +206,12 @@ public:
         virtual int DummyCount() const = 0;
         virtual int LastDummy() const = 0;
 
+        // Kinetix Dummy Manager (v1.56.282): per-dummy SOCKS5 proxy + dummy limit.
+        // Dummy index includes main: 0 = main, 1..MAX_DUMMIES-1 = dummies.
+        virtual void SetDummyProxy(int Dummy, int On, const char *pProxy) = 0;
+        virtual void SetDummyLimit(int Limit) = 0;
+        virtual int DummyLimit() const = 0;
+
         virtual void Restart() = 0;
         virtual void Quit() = 0;
         virtual const char *DemoPlayer_Play(const char *pFilename, int StorageType) = 0;

@@ -104,6 +104,8 @@ CSnapshotDelta *CClient::SnapshotDelta()
         return &*m_pSnapshotDelta;
 }
 
+CClient *CClient::m_pSocks5Route = nullptr;
+
 CClient::CClient() :
         m_pSnapshotDelta(CSnapshotDelta_New()),
         m_pSnapshotDeltaSixup(CSnapshotDelta_New()),
@@ -136,6 +138,14 @@ CClient::CClient() :
                 PredTime.Init(0);
 
         m_Sixup = false;
+
+        // Kinetix Dummy Manager: install the net.cpp SOCKS5 routing hooks once.
+        // The routing functions decide per connection socket whether traffic is
+        // proxied (registered socket + enabled proxy) or goes direct.
+        m_pSocks5Route = this;
+        net_set_socks5_hooks(
+                [](NETSOCKET sock, const NETADDR *pDst, const void *pData, int Size) -> int { return CClient::Socks5RouteSend(sock, pDst, pData, Size); },
+                [](NETSOCKET sock, NETADDR *pSrc, unsigned char **ppData) -> int { return CClient::Socks5RouteRecv(sock, pSrc, ppData); });
 }
 
 // ----- send functions -----
@@ -978,6 +988,11 @@ void CClient::DummyConnect(int Dummy)
                 log_info("client", "Invalid dummy index %d (must be 1-%d).", Dummy, MAX_DUMMIES - 1);
                 return;
         }
+        if(Dummy >= m_DummyLimit)
+        {
+                log_info("client", "Dummy %d is above the dummy limit (%d).", Dummy, m_DummyLimit);
+                return;
+        }
         if(m_aNetClient[CONN_MAIN].State() != NETSTATE_ONLINE)
         {
                 log_info("client", "Not online.");
@@ -1063,6 +1078,67 @@ void CClient::DummyDisconnect(int Dummy, const char *pReason)
 bool CClient::DummyAllowed() const
 {
         return m_ServerCapabilities.m_AllowDummy;
+}
+
+// ----- Kinetix Dummy Manager -----
+
+void CClient::SetDummyProxy(int Dummy, int On, const char *pProxy)
+{
+        if(Dummy < 0 || Dummy >= MAX_DUMMIES)
+                return;
+        if(!On || !pProxy || !pProxy[0])
+        {
+                m_aDummySocks5[Dummy].Disable();
+                return;
+        }
+        m_aDummySocks5[Dummy].Enable(pProxy);
+}
+
+void CClient::SetDummyLimit(int Limit)
+{
+        if(Limit < 1)
+                Limit = 1;
+        if(Limit > MAX_DUMMIES)
+                Limit = MAX_DUMMIES;
+        m_DummyLimit = Limit;
+}
+
+int CClient::Socks5RouteSend(NETSOCKET sock, const NETADDR *pDst, const void *pData, int Size)
+{
+        CClient *p = m_pSocks5Route;
+        if(p)
+        {
+                for(int i = 0; i < MAX_DUMMIES; i++)
+                {
+                        if(p->m_aConnProxySockets[i] && p->m_aConnProxySockets[i] == sock)
+                        {
+                                // Registered connection: proxy when enabled (packets are
+                                // dropped until the relay is READY), otherwise direct.
+                                if(p->m_aDummySocks5[i].State() != CSocks5Proxy::EState::DISABLED)
+                                        return p->m_aDummySocks5[i].UdpSend(pDst, pData, Size);
+                                break;
+                        }
+                }
+        }
+        return net_udp_send_direct(sock, pDst, pData, Size);
+}
+
+int CClient::Socks5RouteRecv(NETSOCKET sock, NETADDR *pSrc, unsigned char **ppData)
+{
+        CClient *p = m_pSocks5Route;
+        if(p)
+        {
+                for(int i = 0; i < MAX_DUMMIES; i++)
+                {
+                        if(p->m_aConnProxySockets[i] && p->m_aConnProxySockets[i] == sock)
+                        {
+                                if(p->m_aDummySocks5[i].State() != CSocks5Proxy::EState::DISABLED)
+                                        return p->m_aDummySocks5[i].UdpRecv(pSrc, ppData);
+                                break;
+                        }
+                }
+        }
+        return net_udp_recv_direct(sock, pSrc, ppData);
 }
 
 void CClient::GetServerInfo(CServerInfo *pServerInfo) const
@@ -3023,6 +3099,13 @@ void CClient::UpdateDemoIntraTimers()
 
 void CClient::Update()
 {
+        // Kinetix Dummy Manager: drive per-slot SOCKS5 handshakes/keepalives.
+        for(int i = 0; i < MAX_DUMMIES; i++)
+        {
+                if(m_aDummySocks5[i].State() != CSocks5Proxy::EState::DISABLED)
+                        m_aDummySocks5[i].Update();
+        }
+
         PumpNetwork();
 
         if(State() == IClient::STATE_DEMOPLAYBACK)
@@ -3878,6 +3961,16 @@ bool CClient::InitNetworkClientImpl(NETADDR BindAddr, int Conn, char *pError, si
                 if(BindAddr.port != 0)
                         BindAddr.port = 0;
         }
+
+        // Kinetix Dummy Manager: register the connection's socket for SOCKS5
+        // routing (slot 0 = main, 1..MAX_DUMMIES-1 = dummies).
+        int ProxySlot = -1;
+        if(Conn == CONN_MAIN)
+                ProxySlot = 0;
+        else if(Conn >= CONN_DUMMY_START && Conn < MAX_DUMMIES)
+                ProxySlot = Conn - CONN_DUMMY_START + 1;
+        if(ProxySlot >= 0)
+                m_aConnProxySockets[ProxySlot] = m_aNetClient[Conn].m_Socket;
         return true;
 }
 

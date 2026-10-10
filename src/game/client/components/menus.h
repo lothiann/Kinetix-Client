@@ -734,6 +734,36 @@ public:
         void DemoSeekTick(IDemoPlayer::ETickOffset TickOffset);
         bool m_Dummy;
 
+        // Kinetix Dummy Manager (v1.56.282): dummy profile/tee edit session.
+        // While active, the "Player" settings subtab renames to "Dummy N"
+        // (localized) and its fields edit that dummy's profile (or the scratch
+        // profile for All/Targets scopes); the session ends — the tab reverts
+        // to "Player" — when the user finishes editing (clicks the tab again,
+        // leaves the tab or closes the menus). Dummy 0 = main: vanilla
+        // player_* config, the tab simply stays "Player".
+        int m_DummyEditSlot = -1; // -1 = off, 0 = main, 1..MAX_DUMMIES-1 = dummy N
+        int m_DummyEditScope = 0; // 0 = single dummy, 1 = all dummies, 2 = targets
+        bool m_DummyEditIsTee = false; // session opened from Dummy Tee
+        bool m_aDummyEditTargets[MAX_DUMMIES] = {};
+        // Scratch profile for All/Targets sessions (applied to every target on
+        // save; prefilled from the first target when the session starts).
+        char m_aDummyEditScratchName[16] = "";
+        char m_aDummyEditScratchClan[12] = "";
+        int m_DummyEditScratchCountry = -1;
+        char m_aDummyEditScratchSkin[24] = "";
+        int m_DummyEditScratchUseCustomColor = 0;
+        unsigned m_aDummyEditScratchColorBody = 65408;
+        unsigned m_aDummyEditScratchColorFeet = 65408;
+        int m_DummyEditScratchEyes = 0;
+        int m_NeedSendDummySlot = 1; // which dummy m_NeedSendDummyinfo is for
+        void BeginDummyEdit(int Slot, int Scope, bool Tee, const bool *pTargets);
+        void EndDummyEdit();
+        // v1.56.282: open the settings at the Player/Tee tab (Dummy Manager
+        // buttons). Sets the menu page (main + in-game) and the settings
+        // sub-tab from the Tee flag, then activates the menus. Public wrapper —
+        // m_MenuPage/m_GamePage are protected (the ClickGUI calls this).
+        void OpenDummySettingsPage(bool Tee);
+
         const char *GetCurrentDemoFolder() const { return m_aCurrentDemoFolder; }
 
         // Ghost

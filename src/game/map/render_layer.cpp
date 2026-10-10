@@ -1473,8 +1473,13 @@ bool CRenderLayerEntityBase::DoRender(const CRenderLayerParams &Params)
 // =========================================================
 static bool KxEntRainbowActive()
 {
-	// v1.56.275: unified master checkbox (Anim=0 -> static Color mode).
-	return g_Config.m_KxRainbowEnt != 0;
+	// v1.56.284: Custom colors master gate + per-category enables
+	// (the unified kx_rainbow_ent cvar is no longer written by the UI).
+	if(g_Config.m_KxCustomColors == 0)
+		return false;
+	return g_Config.m_KxRainbowEntHookable != 0 || g_Config.m_KxRainbowEntUnhookable != 0 ||
+	       g_Config.m_KxRainbowEntFreeze != 0 || g_Config.m_KxRainbowEntDeath != 0 ||
+	       g_Config.m_KxRainbowEntOthers != 0;
 }
 
 static ColorRGBA KxEntRainbowColor(float Seconds, int SpeedCvar)
@@ -1497,22 +1502,38 @@ void CRenderLayerEntityBase::KxRenderRainbow(const CRenderLayerParams &Params)
 	const ColorRGBA Color = GetRenderColor(Params);
 
 	RenderMap()->m_TileRainbowEnt = true;
-	// v1.56.275: unified "Rainbow entities" — no per-category toggles, all
-	// categories recolor with the shared Color/Opacity/Rainbow/Speed.
-	RenderMap()->m_TileRainbowEntMask = 31u;
+	// v1.56.284: per-category mask; every enabled category recolors with
+	// its own Color/Opacity/Rainbow/Speed from the Custom colors selection.
+	RenderMap()->m_TileRainbowEntMask =
+		(g_Config.m_KxRainbowEntHookable ? 1u : 0u) |
+		(g_Config.m_KxRainbowEntUnhookable ? 2u : 0u) |
+		(g_Config.m_KxRainbowEntFreeze ? 4u : 0u) |
+		(g_Config.m_KxRainbowEntDeath ? 8u : 0u) |
+		(g_Config.m_KxRainbowEntOthers ? 16u : 0u);
 	const float Seconds = time_get() / (float)time_freq();
-	ColorRGBA RainbowColor;
-	if(g_Config.m_KxRainbowEntAnim)
-		RainbowColor = KxEntRainbowColor(Seconds, g_Config.m_KxRainbowEntSpeed);
-	else
-		RainbowColor = ColorRGBA(
-			((g_Config.m_KxRainbowEntColor >> 16) & 0xff) / 255.0f,
-			((g_Config.m_KxRainbowEntColor >> 8) & 0xff) / 255.0f,
-			(g_Config.m_KxRainbowEntColor & 0xff) / 255.0f,
-			1.0f);
-	RainbowColor.a = g_Config.m_KxRainbowEntAlpha / 100.0f;
 	for(int i = 0; i < 5; ++i)
-		RenderMap()->m_aTileRainbowEntColor[i] = RainbowColor;
+	{
+		int ColorCvar, AlphaCvar, AnimCvar, SpeedCvar;
+		switch(i)
+		{
+		case 0: ColorCvar = g_Config.m_KxRainbowEntHookableColor; AlphaCvar = g_Config.m_KxRainbowEntHookableAlpha; AnimCvar = g_Config.m_KxRainbowEntHookableAnim; SpeedCvar = g_Config.m_KxRainbowEntHookableSpeed; break;
+		case 1: ColorCvar = g_Config.m_KxRainbowEntUnhookableColor; AlphaCvar = g_Config.m_KxRainbowEntUnhookableAlpha; AnimCvar = g_Config.m_KxRainbowEntUnhookableAnim; SpeedCvar = g_Config.m_KxRainbowEntUnhookableSpeed; break;
+		case 2: ColorCvar = g_Config.m_KxRainbowEntFreezeColor; AlphaCvar = g_Config.m_KxRainbowEntFreezeAlpha; AnimCvar = g_Config.m_KxRainbowEntFreezeAnim; SpeedCvar = g_Config.m_KxRainbowEntFreezeSpeed; break;
+		case 3: ColorCvar = g_Config.m_KxRainbowEntDeathColor; AlphaCvar = g_Config.m_KxRainbowEntDeathAlpha; AnimCvar = g_Config.m_KxRainbowEntDeathAnim; SpeedCvar = g_Config.m_KxRainbowEntDeathSpeed; break;
+		default: ColorCvar = g_Config.m_KxRainbowEntOthersColor; AlphaCvar = g_Config.m_KxRainbowEntOthersAlpha; AnimCvar = g_Config.m_KxRainbowEntOthersAnim; SpeedCvar = g_Config.m_KxRainbowEntOthersSpeed; break;
+		}
+		ColorRGBA CategoryColor;
+		if(AnimCvar)
+			CategoryColor = KxEntRainbowColor(Seconds, SpeedCvar);
+		else
+			CategoryColor = ColorRGBA(
+				((ColorCvar >> 16) & 0xff) / 255.0f,
+				((ColorCvar >> 8) & 0xff) / 255.0f,
+				(ColorCvar & 0xff) / 255.0f,
+				1.0f);
+		CategoryColor.a = AlphaCvar / 100.0f;
+		RenderMap()->m_aTileRainbowEntColor[i] = CategoryColor;
+	}
 
 	// virtual — Game's override also draws the kill-tile border,
 	// Front falls back to the base implementation.

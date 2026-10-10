@@ -33,6 +33,8 @@
 
 #include <yoga/Yoga.h>
 
+#include <engine/client/enums.h> // MAX_DUMMIES (v1.56.282: Dummy Manager per-dummy state)
+
 #include <game/client/component.h>
 
 class CClickGui : public CComponent
@@ -49,7 +51,7 @@ public:
         bool OnCursorMove(float x, float y, IInput::ECursorType CursorType) override;
         bool OnTouchState(const std::vector<IInput::CTouchFingerState> &vTouchFingerStates) override;
 
-        static constexpr int NUM_PANELS = 9; // v1.56.280: + Real-Time Pathfinder (last panel)
+        static constexpr int NUM_PANELS = 11; // v1.56.286: + Search (last panel)
 
 private:
         // Animation state: 0.0 = fully closed, 1.0 = fully open.
@@ -98,7 +100,7 @@ private:
         // that slot. Default identity {0,1,2,3,4,5}. Dragging a panel over another
         // panel's slot swaps them in this array; the swapped-out panel glides to
         // the dragged panel's old slot. Slot positions come from SlotHomePos().
-        int m_aPanelOrder[NUM_PANELS] = {0, 1, 2, 3, 4, 5, 6, 7, 8};
+        int m_aPanelOrder[NUM_PANELS] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
 
         // v1.56.176: per-panel current rendered height (HEADER_HEIGHT + visible body).
         // Updated each frame in RenderPanel. Used by SlotHomePos to stack the Info
@@ -122,6 +124,14 @@ private:
         int m_DragSliderRow = -1;
         int m_DragSliderChild = -1; // -1 = top-level row, >=0 = child index within expandable
 
+        // v1.56.284: panel edge resize (Dynamic scale). Dragging the right /
+        // bottom edge of a panel live-updates KxPanelsWidth / KxPanelsHeight.
+        int m_ResizePanel = -1;
+        int m_ResizeEdge = 0; // 1 = right edge (width), 2 = bottom edge (height), 3 = corner
+        vec2 m_ResizeStartMouse = vec2(0, 0);
+        float m_ResizeStartW = 0.0f;
+        float m_ResizeStartH = 0.0f;
+
         // Dropdown popup state: when open, a list of options is rendered below the
         // dropdown box. Only one dropdown can be open at a time.
         bool m_DropdownOpen = false;
@@ -129,6 +139,17 @@ private:
         int m_DropdownRow = -1;
         int m_DropdownChild = -1;
         float m_DropdownAnim = 0.0f;
+
+        // v1.56.284: ToolTip state. RenderPanel records the hovered row (if it
+        // has a pToolTip); after TOOLTIP_DELAY seconds of steady hover the
+        // tooltip is drawn ClickGUI-styled near the cursor. Row identity is the
+        // stable pToolTip pointer (nullptr = nothing hovered this frame).
+        static constexpr float TOOLTIP_DELAY = 0.45f;
+        const void *m_pToolTipRow = nullptr; // hovered row this frame
+        float m_ToolTipRowTime = -1.0f; // RenderFrameTime of the last hover record
+        const void *m_pToolTipStable = nullptr; // row hovered continuously
+        float m_ToolTipHoverSince = -1.0f; // RenderFrameTime when the hover started
+        char m_aToolTipText[512] = {}; // current tooltip text
 
         // Input field editing state: when active, keystrokes go into the buffer.
         bool m_InputEditing = false;
@@ -203,10 +224,20 @@ private:
                 unsigned signature = 0;
         };
         SLayoutCache m_aLayoutCache[NUM_PANELS];
-        bool m_aLayoutCacheDirty[NUM_PANELS] = {true, true, true, true, true, true, true, true, true}; // v1.56.176: 9 panels (v1.56.280: + RT Pathfinder)
+        bool m_aLayoutCacheDirty[NUM_PANELS] = {true, true, true, true, true, true, true, true, true, true, true}; // v1.56.176: 10 panels (v1.56.282: + Dummy Manager, v1.56.286: + Search)
 
         // v1.56.90: Dummies Send toggle state (per-dummy, ClickGUI-local).
-        bool m_aDummySendEnabled[8] = {};
+        bool m_aDummySendEnabled[MAX_DUMMIES] = {};
+
+        // v1.56.282: Dummy Manager — staged proxy changes (Reconnect (Apply)
+        // button is visible only while dirty) + the last APPLIED proxy snapshot
+        // (used to decide whether the MAIN connection needs a full reconnect).
+        bool m_ProxyDirty = false;
+        bool m_aaAppliedProxyOn[MAX_DUMMIES] = {};
+        char m_aaAppliedProxy[MAX_DUMMIES][256] = {};
+        // Dummy Profiles / Dummy Tee target selection (ClickGUI-local).
+        bool m_aProfileTargets[MAX_DUMMIES] = {};
+        bool m_aTeeTargets[MAX_DUMMIES] = {};
 
         bool m_FileBrowserOpen = false;
         std::vector<std::string> m_vScriptBrowserFiles;
@@ -223,6 +254,14 @@ private:
         void UpdatePathfinderLabels();
         void UpdateCodeExecRows();
         void UpdateTasRows();
+        // v1.56.282: Dummy Manager — per-frame sync of the Dummy Manager panel
+        // rows (dummy limit slider, proxy toggle+input buffers, profile/tee
+        // target toggles) from CBotNet::m_Dummy. Called from OnRender.
+        void UpdateDummyManagerRows();
+        // v1.56.282: Dummy Manager — push staged proxies to the engine, reconnect
+        // dummies whose proxy changed (main: full reconnect if its proxy changed),
+        // snapshot the applied state and clear m_ProxyDirty.
+        void ApplyProxiesAndReconnect();
         void OpenScriptPicker();
         void OnScriptPicked(const char *pPath, bool ViaStorage);
         void ExecuteSelectedScript();
@@ -245,6 +284,9 @@ private:
         // used for rendering (copied from stored each frame when scrollable).
         float m_aPanelScroll[NUM_PANELS] = {};
         float m_aPanelScrollStored[NUM_PANELS] = {};
+        // v1.56.284: smooth scrolling — m_aPanelScrollStored approaches this
+        // target exponentially each frame (inertia-like deceleration).
+        float m_aPanelScrollTarget[NUM_PANELS] = {};
 
         // Background dimming: computed from m_BgBlackout (0-100) / 100.0f.
         // Was hardcoded BG_DIM_ALPHA = 0.30f before v1.56.199.
@@ -333,6 +375,10 @@ private:
         // Low-level draw helpers (all screen-space px).
         void DrawRoundedRect(float x, float y, float w, float h, float radius, int corners, ColorRGBA color);
         void DrawText(float x, float y, float size, const char *pText, ColorRGBA color, int align = 0);
+
+        // v1.56.284: ClickGUI-styled ToolTip near the cursor (word-wrapped,
+        // rounded panel + accent border). Drawn on top of all panels.
+        void RenderToolTip(float alpha);
 };
 
 #endif // GAME_CLIENT_COMPONENTS_KINETIX_CLICKGUI_CLICKGUI_H

@@ -2393,6 +2393,11 @@ void CMenus::SetActive(bool Active)
         m_MenuActive = Active;
         if(!m_MenuActive)
         {
+                // Kinetix Dummy Manager: finish any dummy profile/tee edit
+                // session (applies the scratch profile to all targets and sends
+                // the per-slot info changes).
+                EndDummyEdit();
+
                 if(m_NeedSendinfo)
                 {
                         GameClient()->SendInfo(false);
@@ -2401,7 +2406,7 @@ void CMenus::SetActive(bool Active)
 
                 if(m_NeedSendDummyinfo)
                 {
-                        GameClient()->SendDummyInfo(false);
+                        GameClient()->SendDummyInfo(false, m_NeedSendDummySlot);
                         m_NeedSendDummyinfo = false;
                 }
 

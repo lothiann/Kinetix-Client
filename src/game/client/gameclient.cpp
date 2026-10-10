@@ -187,7 +187,7 @@ void CGameClient::OnConsoleInit()
                                               &m_BotNet, // moved here so world-space renders (Pathfinder, Show Path) draw ON TOP of the map
                                               &m_Tas, // TAS fake world (fake tee + fake projectiles) render on top of map
                                               &m_AimBot, // AimBot/TriggerBot rendering (FOV/Radius circles)
-                                              &m_BasicAvoidFreeze, // Basic Avoid Freeze - override input to avoid freeze
+                                              &m_AvoidFreeze, // Avoid Freeze - override input to avoid freeze
                                               &m_Esp, // ESP lines (Layer 0 = behind fg blocks; Layer>0 deferred to m_KinetixLines)
                                               &m_Trajectory, // v1.56.178: per-type trajectory prediction (replaces old RenderTrajectory in players.cpp)
                                               &m_MapLayersForeground,
@@ -3771,9 +3771,9 @@ void CGameClient::SendSwitchTeam(int Team) const
 void CGameClient::SendStartInfo7(int Dummy)
 {
         protocol7::CNetMsg_Cl_StartInfo Msg;
-        Msg.m_pName = Dummy ? Client()->DummyName() : Client()->PlayerName();
-        Msg.m_pClan = Dummy ? Config()->m_ClDummyClan : Config()->m_PlayerClan;
-        Msg.m_Country = Dummy ? Config()->m_ClDummyCountry : Config()->m_PlayerCountry;
+        Msg.m_pName = Dummy ? m_BotNet.m_Dummy.ProfileName(Dummy) : Client()->PlayerName();
+        Msg.m_pClan = Dummy ? m_BotNet.m_Dummy.ProfileClan(Dummy) : Config()->m_PlayerClan;
+        Msg.m_Country = Dummy ? m_BotNet.m_Dummy.ProfileCountry(Dummy) : Config()->m_PlayerCountry;
         for(int p = 0; p < protocol7::NUM_SKINPARTS; p++)
         {
                 Msg.m_apSkinPartNames[p] = CSkins7::ms_apSkinVariables[Dummy][p];
@@ -3903,13 +3903,13 @@ void CGameClient::SendDummyInfo(bool Start, int Dummy)
         if(Start)
         {
                 CNetMsg_Cl_StartInfo Msg;
-                Msg.m_pName = Client()->DummyName();
-                Msg.m_pClan = g_Config.m_ClDummyClan;
-                Msg.m_Country = g_Config.m_ClDummyCountry;
-                Msg.m_pSkin = g_Config.m_ClDummySkin;
-                Msg.m_UseCustomColor = g_Config.m_ClDummyUseCustomColor;
-                Msg.m_ColorBody = g_Config.m_ClDummyColorBody;
-                Msg.m_ColorFeet = g_Config.m_ClDummyColorFeet;
+                Msg.m_pName = m_BotNet.m_Dummy.ProfileName(Dummy);
+                Msg.m_pClan = m_BotNet.m_Dummy.ProfileClan(Dummy);
+                Msg.m_Country = m_BotNet.m_Dummy.ProfileCountry(Dummy);
+                Msg.m_pSkin = m_BotNet.m_Dummy.ProfileSkin(Dummy);
+                Msg.m_UseCustomColor = m_BotNet.m_Dummy.ProfileUseCustomColor(Dummy);
+                Msg.m_ColorBody = m_BotNet.m_Dummy.ProfileColorBody(Dummy);
+                Msg.m_ColorFeet = m_BotNet.m_Dummy.ProfileColorFeet(Dummy);
                 CMsgPacker Packer(&Msg);
                 Msg.Pack(&Packer);
                 Client()->SendMsg(Conn, &Packer, MSGFLAG_VITAL);
@@ -3918,13 +3918,13 @@ void CGameClient::SendDummyInfo(bool Start, int Dummy)
         else
         {
                 CNetMsg_Cl_ChangeInfo Msg;
-                Msg.m_pName = Client()->DummyName();
-                Msg.m_pClan = g_Config.m_ClDummyClan;
-                Msg.m_Country = g_Config.m_ClDummyCountry;
-                Msg.m_pSkin = g_Config.m_ClDummySkin;
-                Msg.m_UseCustomColor = g_Config.m_ClDummyUseCustomColor;
-                Msg.m_ColorBody = g_Config.m_ClDummyColorBody;
-                Msg.m_ColorFeet = g_Config.m_ClDummyColorFeet;
+                Msg.m_pName = m_BotNet.m_Dummy.ProfileName(Dummy);
+                Msg.m_pClan = m_BotNet.m_Dummy.ProfileClan(Dummy);
+                Msg.m_Country = m_BotNet.m_Dummy.ProfileCountry(Dummy);
+                Msg.m_pSkin = m_BotNet.m_Dummy.ProfileSkin(Dummy);
+                Msg.m_UseCustomColor = m_BotNet.m_Dummy.ProfileUseCustomColor(Dummy);
+                Msg.m_ColorBody = m_BotNet.m_Dummy.ProfileColorBody(Dummy);
+                Msg.m_ColorFeet = m_BotNet.m_Dummy.ProfileColorFeet(Dummy);
                 CMsgPacker Packer(&Msg);
                 Msg.Pack(&Packer);
                 Client()->SendMsg(Conn, &Packer, MSGFLAG_VITAL);

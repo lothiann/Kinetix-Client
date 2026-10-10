@@ -31,7 +31,7 @@
 #include "components/background.h"
 #include "components/binds.h"
 #include "components/kinetix/aimbot.h"
-#include "components/kinetix/basic_avoid_freeze.h"
+#include "components/kinetix/avoid_freeze.h"
 #include "components/kinetix/bot_control.h"
 #include "components/kinetix/clickgui.h"
 #include "components/kinetix/esp.h"
@@ -168,7 +168,7 @@ public:
         CBotNet m_BotNet;
         CTas m_Tas;
         CAimBot m_AimBot;
-        CBasicAvoidFreeze m_BasicAvoidFreeze;
+        CAvoidFreeze m_AvoidFreeze;
         CEsp m_Esp;
         CTrajectory m_Trajectory; // v1.56.178: per-type trajectory prediction (Tee/Pistol/Shotgun/Grenade/Laser)
         CKinetixLines m_KinetixLines;

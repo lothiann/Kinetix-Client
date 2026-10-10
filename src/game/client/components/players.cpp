@@ -1076,7 +1076,7 @@ void CPlayers::OnRender()
                 return;
 
         // update render info for ninja
-        CTeeRenderInfo aRenderInfo[MAX_CLIENTS];
+        static CTeeRenderInfo aRenderInfo[MAX_CLIENTS];
         const bool IsTeamPlay = GameClient()->IsTeamPlay();
         for(int i = 0; i < MAX_CLIENTS; ++i)
         {

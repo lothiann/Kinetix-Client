@@ -250,8 +250,8 @@ MACRO_CONFIG_COL(ClDummyColorBody, dummy_color_body, 65408, CFGFLAG_CLIENT | CFG
 MACRO_CONFIG_COL(ClDummyColorFeet, dummy_color_feet, 65408, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_COLLIGHT | CFGFLAG_INSENSITIVE, "Dummy feet color")
 MACRO_CONFIG_STR(ClDummySkin, dummy_skin, 24, "default", CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Dummy skin")
 MACRO_CONFIG_INT(ClDummyDefaultEyes, dummy_default_eyes, 0, 0, 5, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Dummy eyes when joining server (0 = normal, 1 = pain, 2 = happy, 3 = surprise, 4 = angry, 5 = blink)")
-// Max value 7 = MAX_DUMMIES-1 — update when MAX_DUMMIES changes
-MACRO_CONFIG_INT(ClDummy, cl_dummy, 0, 0, 7, CFGFLAG_CLIENT | CFGFLAG_INSENSITIVE, "Which player you control (0 = main, 1-7 = dummies)")
+// Max value 127 = MAX_DUMMIES-1 — update when MAX_DUMMIES changes
+MACRO_CONFIG_INT(ClDummy, cl_dummy, 0, 0, 127, CFGFLAG_CLIENT | CFGFLAG_INSENSITIVE, "Which player you control (0 = main, 1-127 = dummies)")
 MACRO_CONFIG_INT(ClDummyHammer, cl_dummy_hammer, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_INSENSITIVE, "Whether dummy is hammering for a hammerfly")
 MACRO_CONFIG_INT(KxDummyHammerKeepInputs, kx_dummy_hammer_keep_inputs, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Preserve dummy movement inputs (direction/jump/hook) during hammerfly; aim is still overridden for hammer direction")
 MACRO_CONFIG_INT(KxDummyHammerCustomLatency, kx_dummy_hammer_custom_latency, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Use custom hammer latency instead of default 500ms")
@@ -262,7 +262,7 @@ MACRO_CONFIG_INT(KxDummyHammerAutoPredict, kx_dummy_hammer_auto_predict, 0, 0, 1
 MACRO_CONFIG_INT(KxFlyRide, kx_fly_ride, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Fly Ride: pilot (active dummy) hooks/hammers nearest dummy, WASD moves anchor point")
 MACRO_CONFIG_INT(KxTripleFly, kx_triple_fly, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Auto Triple Fly: acting dummy auto-hooks a target that enters trigger radius and holds hook while farther than radius")
 MACRO_CONFIG_INT(KxTripleFlyDummyMode, kx_triple_fly_dummy_mode, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Auto Triple Fly: acting dummy selection (0 = closest to active dummy, 1 = by ID)")
-MACRO_CONFIG_INT(KxTripleFlyDummyId, kx_triple_fly_dummy_id, 1, 0, 7, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Auto Triple Fly: acting dummy index when dummy mode = ID (0 = main, 1-7 = dummies)")
+MACRO_CONFIG_INT(KxTripleFlyDummyId, kx_triple_fly_dummy_id, 1, 0, 127, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Auto Triple Fly: acting dummy index when dummy mode = ID (0 = main, 1-127 = dummies)")
 MACRO_CONFIG_INT(KxTripleFlyTargetMode, kx_triple_fly_target_mode, 0, 0, 2, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Auto Triple Fly: target selection (0 = closest to acting dummy, 1 = closest to active dummy aim, 2 = server IDs)")
 MACRO_CONFIG_STR(KxTripleFlyTargetIds, kx_triple_fly_target_ids, 64, "", CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Auto Triple Fly: comma-separated server IDs of targets when target mode = IDs")
 MACRO_CONFIG_INT(KxTripleFlyTriggerRadius, kx_triple_fly_trigger_radius, 380, 32, 380, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Auto Triple Fly: start radius (units) around acting dummy — function engages when target enters it")
@@ -318,8 +318,8 @@ MACRO_CONFIG_INT(KxDummyDirection, kx_dummy_direction, 0, 0, 1, CFGFLAG_CLIENT |
 
 // bot control
 MACRO_CONFIG_INT(KxBotActionDuration, kx_bot_action_duration, 500, 100, 10000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Duration in ms for bot input actions (kx_input UI buttons)")
-// Max value 7 = MAX_DUMMIES-1 — update when MAX_DUMMIES changes
-MACRO_CONFIG_INT(KxBotTargetDummy, kx_bot_target_dummy, 1, 0, 7, CFGFLAG_CLIENT | CFGFLAG_INSENSITIVE, "Target dummy for bot control UI (0=main, 1-7=dummies)")
+// Max value 127 = MAX_DUMMIES-1 — update when MAX_DUMMIES changes
+MACRO_CONFIG_INT(KxBotTargetDummy, kx_bot_target_dummy, 1, 0, 127, CFGFLAG_CLIENT | CFGFLAG_INSENSITIVE, "Target dummy for bot control UI (0=main, 1-127=dummies)")
 
 // trajectory prediction
 MACRO_CONFIG_INT(KxShowTrajectory, kx_show_trajectory, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Show trajectory prediction for active player")
@@ -436,19 +436,19 @@ MACRO_CONFIG_INT(KxTasShowSpeed, kx_tas_show_speed, 0, 0, 1, CFGFLAG_CLIENT | CF
 MACRO_CONFIG_INT(KxTasShowTrajectory, kx_tas_show_trajectory, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "TAS Visuals: simulate and draw the upcoming trajectory of the replay")
 
 // Basic Avoid Freeze - predict freeze via brute-force input combinations.
-MACRO_CONFIG_INT(KxBasicAvoidFreeze, kx_basic_avoid_freeze, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Basic Avoid Freeze: predict freeze and override input to avoid it")
-MACRO_CONFIG_INT(KxBafAvoidFreeze, kx_baf_avoid_freeze, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "BAF: avoid freeze tiles (m_FreezeTime > 0)")
-MACRO_CONFIG_INT(KxBafAvoidTeleport, kx_baf_avoid_teleport, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "BAF: avoid teleport tiles (IsTeleport/IsEvilTeleport)")
-MACRO_CONFIG_INT(KxBafAvoidDeath, kx_baf_avoid_death, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "BAF: avoid death tiles (TILE_DEATH / m_MarkedForDestroy)")
-MACRO_CONFIG_INT(KxBafDirection, kx_baf_direction, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "BAF: allow direction changes (-1/0/1)")
-MACRO_CONFIG_INT(KxBafJump, kx_baf_jump, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "BAF: allow jump toggle")
-MACRO_CONFIG_INT(KxBafHook, kx_baf_hook, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "BAF: allow hook toggle")
-MACRO_CONFIG_INT(KxBafAim, kx_baf_aim, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "BAF: allow aim angle variation in brute-force")
-MACRO_CONFIG_INT(KxBafFov, kx_baf_fov, 90, 5, 360, CFGFLAG_CLIENT | CFGFLAG_SAVE, "BAF: aim FOV in degrees (spread angles within this cone)")
-MACRO_CONFIG_INT(KxBafAngles, kx_baf_angles, 9, 1, 144, CFGFLAG_CLIENT | CFGFLAG_SAVE, "BAF: number of aim angles to try (within FOV)")
-MACRO_CONFIG_INT(KxBafSilent, kx_baf_silent, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "BAF: silent aim (don't move visible crosshair)")
-MACRO_CONFIG_INT(KxBafTicks, kx_baf_ticks, 10, 1, 20, CFGFLAG_CLIENT | CFGFLAG_SAVE, "BAF: ticks to simulate per combination")
-MACRO_CONFIG_INT(KxBafTriggerTicks, kx_baf_trigger_ticks, 3, 1, 20, CFGFLAG_CLIENT | CFGFLAG_SAVE, "BAF: trigger prediction ticks (how far ahead to check for freeze)")
+MACRO_CONFIG_INT(KxAvoidFreeze, kx_avoid_freeze, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Avoid Freeze: predict freeze and override input to avoid it")
+MACRO_CONFIG_INT(KxAfAvoidFreeze, kx_af_avoid_freeze, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "AF: avoid freeze tiles (m_FreezeTime > 0)")
+MACRO_CONFIG_INT(KxAfAvoidTeleport, kx_af_avoid_teleport, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "AF: avoid teleport tiles (IsTeleport/IsEvilTeleport)")
+MACRO_CONFIG_INT(KxAfAvoidDeath, kx_af_avoid_death, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "AF: avoid death tiles (TILE_DEATH / m_MarkedForDestroy)")
+MACRO_CONFIG_INT(KxAfDirection, kx_af_direction, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "AF: allow direction changes (-1/0/1)")
+MACRO_CONFIG_INT(KxAfJump, kx_af_jump, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "AF: allow jump toggle")
+MACRO_CONFIG_INT(KxAfHook, kx_af_hook, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "AF: allow hook toggle")
+MACRO_CONFIG_INT(KxAfAim, kx_af_aim, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "AF: allow aim angle variation in brute-force")
+MACRO_CONFIG_INT(KxAfFov, kx_af_fov, 90, 5, 360, CFGFLAG_CLIENT | CFGFLAG_SAVE, "AF: aim FOV in degrees (spread angles within this cone)")
+MACRO_CONFIG_INT(KxAfAngles, kx_af_angles, 9, 1, 144, CFGFLAG_CLIENT | CFGFLAG_SAVE, "AF: number of aim angles to try (within FOV)")
+MACRO_CONFIG_INT(KxAfSilent, kx_af_silent, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "AF: silent aim (don't move visible crosshair)")
+MACRO_CONFIG_INT(KxAfTicks, kx_af_ticks, 10, 1, 20, CFGFLAG_CLIENT | CFGFLAG_SAVE, "AF: ticks to simulate per combination")
+MACRO_CONFIG_INT(KxAfTicksBefore, kx_af_ticks_before, 3, 1, 10, CFGFLAG_CLIENT | CFGFLAG_SAVE, "AF: ticks before the freeze to start acting (lead time)")
 
 // ESP — draw lines from a point to all players matching filters
 MACRO_CONFIG_INT(KxEsp, kx_esp, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ESP: draw lines from point A to all matching players")
@@ -554,7 +554,7 @@ MACRO_CONFIG_STR(KxHitboxesTargetsFilter, kx_hitboxes_targets_filter, 64, "", CF
 // State machine: pathfinding (idle) -> stop (running) -> finish (done, path shown until user clicks).
 MACRO_CONFIG_INT(KxPfAlgorithm, kx_pf_algorithm, 0, 0, 3, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder algorithm: 0=BFS (per-tick A*) 1=Beam 2=RHEA 3=BMCTS")
 MACRO_CONFIG_INT(KxPfBeamWidth, kx_pf_beam_width, 128, 8, 4096, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder Beam: max children kept per expansion (Custom effort uses this value)")
-MACRO_CONFIG_INT(KxPfHookAngles, kx_pf_hook_angles, 9, 4, 32, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: hook fan-raycast rays (4-32)")
+// v1.56.283: kx_pf_hook_angles removed - the hook fan is always 36 rays (PfEffortHookAngles)
 MACRO_CONFIG_INT(KxPfAStarWeight, kx_pf_astar_weight, 120, 100, 2000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: A* heuristic weight x100 (100 = 1.00 optimal, higher = faster but suboptimal)")
 MACRO_CONFIG_INT(KxPfAStarNodeBudget, kx_pf_astar_node_budget, 10000000, 1000, 100000000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: A* max nodes before giving up (1000-100000000)")
 MACRO_CONFIG_INT(KxPfPerf, kx_pf_perf, 100, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: performance budget per tick in % (1-100; lower = slower but smoother, spreads chunk generation across many ticks)")
@@ -1269,6 +1269,44 @@ MACRO_CONFIG_INT(KxHideParticles, kx_hide_particles, 0, 0, 1, CFGFLAG_CLIENT | C
 MACRO_CONFIG_INT(KxPanelsStartX, kx_panels_start_x, 60, 0, 3840, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ClickGUI: panels start X (px)")
 MACRO_CONFIG_INT(KxPanelsStartY, kx_panels_start_y, 90, 0, 2160, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ClickGUI: panels start Y (px)")
 MACRO_CONFIG_INT(KxDragToSort, kx_drag_to_sort, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ClickGUI: drag-to-sort (1=swap by dragging over slot, 0=free positioning)")
+
+// v1.56.283: ClickGUI Settings expandable - master toggle + panel layout extras.
+// Master off (kx_ui_settings_on 0) = built-in defaults for all the settings below.
+MACRO_CONFIG_INT(KxUiSettingsOn, kx_ui_settings_on, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ClickGUI: apply UI settings (master; 0 = built-in defaults)")
+MACRO_CONFIG_INT(KxPanelsIndentX, kx_panels_indent_x, 30, 0, 200, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ClickGUI: panels X indentation (px)")
+MACRO_CONFIG_INT(KxPanelsIndentY, kx_panels_indent_y, 12, 0, 200, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ClickGUI: panels Y indentation (px)")
+MACRO_CONFIG_INT(KxPanelsDynamicScale, kx_panels_dynamic_scale, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ClickGUI: dynamic panel scale - drag edges to resize (beta)")
+MACRO_CONFIG_INT(KxPanelsWidth, kx_panels_width, 300, 150, 800, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ClickGUI: panels width (px)")
+MACRO_CONFIG_INT(KxPanelsHeight, kx_panels_height, 600, 200, 2000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ClickGUI: panels body max height (px)")
+MACRO_CONFIG_INT(KxCustomColors, kx_custom_colors, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: custom colors (master; 0 = original look)")
+
+// v1.56.283: per-entity-category custom colors (Visuals > Custom colors > Sprite = Entities > Entity).
+// Category enable 0 = the shared kx_rainbow_ent_* settings apply to that category.
+MACRO_CONFIG_INT(KxRainbowEntHookable, kx_rainbow_ent_hookable, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: hookable entities custom color (enable)")
+MACRO_CONFIG_COL(KxRainbowEntHookableColor, kx_rainbow_ent_hookable_color, 4294967295, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: hookable entities color (hex RGB)")
+MACRO_CONFIG_INT(KxRainbowEntHookableAlpha, kx_rainbow_ent_hookable_alpha, 100, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: hookable entities opacity %")
+MACRO_CONFIG_INT(KxRainbowEntHookableAnim, kx_rainbow_ent_hookable_anim, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: hookable entities rainbow animation")
+MACRO_CONFIG_INT(KxRainbowEntHookableSpeed, kx_rainbow_ent_hookable_speed, 10, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: hookable entities rainbow speed x10")
+MACRO_CONFIG_INT(KxRainbowEntUnhookable, kx_rainbow_ent_unhookable, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: unhookable entities custom color (enable)")
+MACRO_CONFIG_COL(KxRainbowEntUnhookableColor, kx_rainbow_ent_unhookable_color, 4294967295, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: unhookable entities color (hex RGB)")
+MACRO_CONFIG_INT(KxRainbowEntUnhookableAlpha, kx_rainbow_ent_unhookable_alpha, 100, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: unhookable entities opacity %")
+MACRO_CONFIG_INT(KxRainbowEntUnhookableAnim, kx_rainbow_ent_unhookable_anim, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: unhookable entities rainbow animation")
+MACRO_CONFIG_INT(KxRainbowEntUnhookableSpeed, kx_rainbow_ent_unhookable_speed, 10, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: unhookable entities rainbow speed x10")
+MACRO_CONFIG_INT(KxRainbowEntFreeze, kx_rainbow_ent_freeze, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: freeze entities custom color (enable)")
+MACRO_CONFIG_COL(KxRainbowEntFreezeColor, kx_rainbow_ent_freeze_color, 4294967295, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: freeze entities color (hex RGB)")
+MACRO_CONFIG_INT(KxRainbowEntFreezeAlpha, kx_rainbow_ent_freeze_alpha, 100, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: freeze entities opacity %")
+MACRO_CONFIG_INT(KxRainbowEntFreezeAnim, kx_rainbow_ent_freeze_anim, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: freeze entities rainbow animation")
+MACRO_CONFIG_INT(KxRainbowEntFreezeSpeed, kx_rainbow_ent_freeze_speed, 10, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: freeze entities rainbow speed x10")
+MACRO_CONFIG_INT(KxRainbowEntDeath, kx_rainbow_ent_death, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: death entities custom color (enable)")
+MACRO_CONFIG_COL(KxRainbowEntDeathColor, kx_rainbow_ent_death_color, 4294967295, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: death entities color (hex RGB)")
+MACRO_CONFIG_INT(KxRainbowEntDeathAlpha, kx_rainbow_ent_death_alpha, 100, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: death entities opacity %")
+MACRO_CONFIG_INT(KxRainbowEntDeathAnim, kx_rainbow_ent_death_anim, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: death entities rainbow animation")
+MACRO_CONFIG_INT(KxRainbowEntDeathSpeed, kx_rainbow_ent_death_speed, 10, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: death entities rainbow speed x10")
+MACRO_CONFIG_INT(KxRainbowEntOthers, kx_rainbow_ent_others, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: other entities custom color (enable)")
+MACRO_CONFIG_COL(KxRainbowEntOthersColor, kx_rainbow_ent_others_color, 4294967295, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: other entities color (hex RGB)")
+MACRO_CONFIG_INT(KxRainbowEntOthersAlpha, kx_rainbow_ent_others_alpha, 100, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: other entities opacity %")
+MACRO_CONFIG_INT(KxRainbowEntOthersAnim, kx_rainbow_ent_others_anim, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: other entities rainbow animation")
+MACRO_CONFIG_INT(KxRainbowEntOthersSpeed, kx_rainbow_ent_others_speed, 10, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: other entities rainbow speed x10")
 
 // v1.56.255: AimBot per-weapon persisted settings (CAimBot::m_AimBotWeapons).
 // Weapon order matches g_ABWeaponOpts: hammer, pistol, shotgun, grenade, laser, ninja, hook.

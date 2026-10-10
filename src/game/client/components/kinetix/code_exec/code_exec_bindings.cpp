@@ -1423,7 +1423,7 @@ void CCodeExec::RegisterRawAPI()
                 "m_CodeExec", sol::property([](CGameClient &gc) -> CCodeExec& { return gc.m_CodeExec; }),
                 "m_ClickGui", sol::property([](CGameClient &gc) -> CClickGui& { return gc.m_ClickGui; }),
                 "m_AimBot", sol::property([](CGameClient &gc) -> CAimBot& { return gc.m_AimBot; }),
-                "m_BasicAvoidFreeze", sol::property([](CGameClient &gc) -> CBasicAvoidFreeze& { return gc.m_BasicAvoidFreeze; }),
+                "m_AvoidFreeze", sol::property([](CGameClient &gc) -> CAvoidFreeze& { return gc.m_AvoidFreeze; }),
                 "m_Esp", sol::property([](CGameClient &gc) -> CEsp& { return gc.m_Esp; }),
                 "m_Trajectory", sol::property([](CGameClient &gc) -> CTrajectory& { return gc.m_Trajectory; }),
                 "m_KinetixLines", sol::property([](CGameClient &gc) -> CKinetixLines& { return gc.m_KinetixLines; }),

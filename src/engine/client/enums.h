@@ -5,7 +5,7 @@
 
 enum
 {
-        MAX_DUMMIES = 8, // 1 main + 7 dummies
+        MAX_DUMMIES = 128, // 1 main + 127 dummies
 };
 
 #endif

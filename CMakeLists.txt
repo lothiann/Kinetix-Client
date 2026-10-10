@@ -2572,8 +2572,8 @@ if(CLIENT)
     components/key_binder.h
     components/kinetix/aimbot.cpp
     components/kinetix/aimbot.h
-    components/kinetix/basic_avoid_freeze.cpp
-    components/kinetix/basic_avoid_freeze.h
+    components/kinetix/avoid_freeze.cpp
+    components/kinetix/avoid_freeze.h
     components/kinetix/attack/attack.cpp
     components/kinetix/attack/attack_commands.cpp
     components/kinetix/bot_control.cpp
@@ -2586,6 +2586,8 @@ if(CLIENT)
     components/kinetix/code_exec/file_dialog.cpp
     components/kinetix/code_exec/file_dialog.h
     components/kinetix/console_commands.cpp
+    components/kinetix/dummies/dummy_data.cpp
+    components/kinetix/dummies/dummy_data.h
     components/kinetix/dummies/dummy_helpers.cpp
     components/kinetix/dummies/dummy_management.cpp
     components/kinetix/dummies/process_dummy.cpp
@@ -2603,6 +2605,8 @@ if(CLIENT)
     components/kinetix/laser_unfreeze.cpp
     components/kinetix/fly_ride.cpp
     components/kinetix/triple_fly.cpp
+    components/kinetix/socks5_proxy.cpp
+    components/kinetix/socks5_proxy.h
     components/kinetix/tas.cpp
     components/kinetix/tas.h
     components/kinetix/trajectory.cpp

@@ -289,7 +289,26 @@ void CInput::MouseModeAbsolute()
 {
 	m_InputGrabbed = false;
 	SDL_SetRelativeMouseMode(SDL_FALSE);
+	// v1.56.284: guarantee the OS cursor is visible in absolute mode —
+	// in fullscreen it could stay hidden after relative mouse mode.
+	SDL_ShowCursor(SDL_ENABLE);
 	Graphics()->SetWindowGrab(false);
+}
+
+// v1.56.285: ClickGUI resize cursor feedback (called per frame from
+// clickgui.cpp). Switches the OS cursor to the Windows-style resize arrows
+// over the panel edge zones. Shape mirrors SDL_SystemCursor: 0=ARROW,
+// 5=SIZENWSE, 7=SIZEWE, 8=SIZENS (the ones the GUI uses).
+extern "C" void KxSetCursorShape(int Shape)
+{
+	static SDL_Cursor *apCursors[10] = {};
+	if(Shape >= 0 && Shape < 10)
+	{
+		if(!apCursors[Shape])
+			apCursors[Shape] = SDL_CreateSystemCursor((SDL_SystemCursor)Shape);
+		if(apCursors[Shape])
+			SDL_SetCursor(apCursors[Shape]);
+	}
 }
 
 void CInput::MouseModeRelative()

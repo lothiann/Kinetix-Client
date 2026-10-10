@@ -205,6 +205,11 @@ void CBotNet::OnConsoleInit()
         Console()->Register("kx_pf_live", "i[state]", CFGFLAG_CLIENT, ConPfLive, this, "Pathfinder tab: 0=idle, 1=running, 2=finished");
 	Console()->Register("kx_pf_paste", "", CFGFLAG_CLIENT, ConPfPaste, this, "Pathfinder: paste the found path into TAS Playground as the current run");
 	Console()->Register("kx_dummy_switch", "", CFGFLAG_CLIENT, ConDummySwitch, this, "Switch to next dummy (smart dummy switch)");
+
+	// Kinetix Dummy Manager (v1.56.282): register the dummy%d_* / kx_dummy_limit
+	// runtime commands, load kinetix_dummies.cfg and push the per-slot proxies
+	// + limit into the engine.
+	m_Dummy.Init(Console(), Client(), Storage());
 }
 
 // =========================================================

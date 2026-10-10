@@ -235,37 +235,176 @@ void CMenus::RenderSettingsGeneral(CUIRect MainView)
 
 void CMenus::SetNeedSendInfo()
 {
+        // Kinetix Dummy Manager: while a dummy profile/tee session is active
+        // the edits go to that dummy's profile, not to the main player config.
+        if(m_DummyEditSlot >= 1)
+        {
+                if(m_DummyEditScope == 0)
+                        GameClient()->m_BotNet.m_Dummy.Save();
+                // All/Targets scopes are applied to every target in EndDummyEdit().
+                return;
+        }
         if(m_Dummy)
                 m_NeedSendDummyinfo = true;
         else
                 m_NeedSendinfo = true;
 }
 
+// Kinetix Dummy Manager: start a dummy profile/tee edit session. The settings
+// UI opens on the Player (Profiles) or Tee (Dummy Tee) tab which renames to
+// "Dummy N" (localized); the main tee (slot 0) keeps the vanilla player_*
+// config and needs no session.
+// v1.56.282: open the settings at the Player/Tee tab (Dummy Manager buttons).
+// Both page variables are set (works from the main menu and in-game), the
+// settings sub-tab comes from the Tee flag, then the menus are activated.
+// m_MenuPage/m_GamePage are protected — hence this public CMenus wrapper
+// (the ClickGUI Dummy Manager panel calls it).
+void CMenus::OpenDummySettingsPage(bool Tee)
+{
+        SetActive(true);
+        m_GamePage = PAGE_SETTINGS;
+        m_MenuPage = PAGE_SETTINGS;
+        g_Config.m_UiSettingsPage = Tee ? SETTINGS_TEE : SETTINGS_PLAYER;
+}
+
+void CMenus::BeginDummyEdit(int Slot, int Scope, bool Tee, const bool *pTargets)
+{
+        m_DummyEditSlot = Slot;
+        m_DummyEditScope = Scope;
+        m_DummyEditIsTee = Tee;
+        m_SkinListScrollToSelected = true;
+
+        if(pTargets)
+        {
+                for(int D = 0; D < MAX_DUMMIES; D++)
+                        m_aDummyEditTargets[D] = pTargets[D];
+        }
+        else
+        {
+                for(int D = 0; D < MAX_DUMMIES; D++)
+                        m_aDummyEditTargets[D] = false;
+        }
+
+        // Prefill the scratch profile from the first target (All/Targets scopes),
+        // falling back to the shared dummy_* config for inherited values.
+        if(Scope != 0 && Slot >= 1)
+        {
+                const CDummyData *pDummy = &GameClient()->m_BotNet.m_Dummy;
+                int First = -1;
+                for(int D = 1; D < MAX_DUMMIES && First < 0; D++)
+                {
+                        if(Scope == 1 || m_aDummyEditTargets[D])
+                                First = D;
+                }
+                if(First < 0)
+                        First = 1;
+                const SDummyProfile &P = pDummy->m_aProfiles[First];
+                str_copy(m_aDummyEditScratchName, P.m_aName[0] ? P.m_aName : g_Config.m_ClDummyName, sizeof(m_aDummyEditScratchName));
+                str_copy(m_aDummyEditScratchClan, P.m_aClan[0] ? P.m_aClan : g_Config.m_ClDummyClan, sizeof(m_aDummyEditScratchClan));
+                m_DummyEditScratchCountry = P.m_Country >= 0 ? P.m_Country : g_Config.m_ClDummyCountry;
+                str_copy(m_aDummyEditScratchSkin, P.m_aSkin[0] ? P.m_aSkin : g_Config.m_ClDummySkin, sizeof(m_aDummyEditScratchSkin));
+                m_DummyEditScratchUseCustomColor = P.m_UseCustomColor >= 0 ? P.m_UseCustomColor : g_Config.m_ClDummyUseCustomColor;
+                m_aDummyEditScratchColorBody = P.m_ColorBody != 0xFFFFFFFF ? P.m_ColorBody : (unsigned)g_Config.m_ClDummyColorBody;
+                m_aDummyEditScratchColorFeet = P.m_ColorFeet != 0xFFFFFFFF ? P.m_ColorFeet : (unsigned)g_Config.m_ClDummyColorFeet;
+                m_DummyEditScratchEyes = P.m_DefaultEyes >= 0 ? P.m_DefaultEyes : g_Config.m_ClDummyDefaultEyes;
+        }
+}
+
+// Finish the session: apply the scratch profile (All/Targets) to every target,
+// send the per-slot info changes and revert the dynamic tab back to "Player".
+void CMenus::EndDummyEdit()
+{
+        if(m_DummyEditSlot < 0)
+                return;
+
+        if(m_DummyEditSlot >= 1)
+        {
+                if(m_DummyEditScope == 0)
+                {
+                        // Single dummy — the edits went straight into the profile.
+                        if(Client()->DummyConnected(m_DummyEditSlot))
+                                GameClient()->SendDummyInfo(false, m_DummyEditSlot);
+                }
+                else
+                {
+                        // All/Targets — apply the scratch profile to every target.
+                        const bool All = m_DummyEditScope == 1;
+                        for(int D = 1; D < MAX_DUMMIES; D++)
+                        {
+                                if(!All && !m_aDummyEditTargets[D])
+                                        continue;
+                                SDummyProfile &P = GameClient()->m_BotNet.m_Dummy.m_aProfiles[D];
+                                str_copy(P.m_aName, m_aDummyEditScratchName, sizeof(P.m_aName));
+                                str_copy(P.m_aClan, m_aDummyEditScratchClan, sizeof(P.m_aClan));
+                                P.m_Country = m_DummyEditScratchCountry;
+                                str_copy(P.m_aSkin, m_aDummyEditScratchSkin, sizeof(P.m_aSkin));
+                                P.m_UseCustomColor = m_DummyEditScratchUseCustomColor;
+                                P.m_ColorBody = m_aDummyEditScratchColorBody;
+                                P.m_ColorFeet = m_aDummyEditScratchColorFeet;
+                                P.m_DefaultEyes = m_DummyEditScratchEyes;
+                                if(Client()->DummyConnected(D))
+                                        GameClient()->SendDummyInfo(false, D);
+                        }
+                        // "Main" targeted in Targets mode → also update the shared
+                        // dummy_* config every inheriting dummy falls back to.
+                        if(m_DummyEditScope == 2 && m_aDummyEditTargets[0])
+                        {
+                                str_copy(g_Config.m_ClDummyName, m_aDummyEditScratchName, sizeof(g_Config.m_ClDummyName));
+                                str_copy(g_Config.m_ClDummyClan, m_aDummyEditScratchClan, sizeof(g_Config.m_ClDummyClan));
+                                g_Config.m_ClDummyCountry = m_DummyEditScratchCountry;
+                                str_copy(g_Config.m_ClDummySkin, m_aDummyEditScratchSkin, sizeof(g_Config.m_ClDummySkin));
+                                g_Config.m_ClDummyUseCustomColor = m_DummyEditScratchUseCustomColor;
+                                g_Config.m_ClDummyColorBody = m_aDummyEditScratchColorBody;
+                                g_Config.m_ClDummyColorFeet = m_aDummyEditScratchColorFeet;
+                                g_Config.m_ClDummyDefaultEyes = m_DummyEditScratchEyes;
+                                if(Client()->DummyConnected(1))
+                                        GameClient()->SendDummyInfo(false, 1);
+                        }
+                }
+                GameClient()->m_BotNet.m_Dummy.Save();
+        }
+
+        m_DummyEditSlot = -1;
+        m_DummyEditScope = 0;
+        m_DummyEditIsTee = false;
+}
+
 void CMenus::RenderSettingsPlayer(CUIRect MainView)
 {
-        CUIRect TabBar, PlayerTab, DummyTab, ChangeInfo, QuickSearch;
+        CUIRect TabBar, PlayerTab, ChangeInfo, QuickSearch;
         MainView.HSplitTop(20.0f, &TabBar, &MainView);
         TabBar.VSplitMid(&TabBar, &ChangeInfo, 20.f);
-        TabBar.VSplitMid(&PlayerTab, &DummyTab);
+        PlayerTab = TabBar; // v1.56.282: the "Dummy" subtab was removed
         MainView.HSplitTop(10.0f, nullptr, &MainView);
 
+        // v1.56.282: dynamic tab — while a Dummy Profiles session is active the
+        // "Player" tab renames to "Dummy N" (localized) and edits that dummy's
+        // profile. Clicking the active tab ends the session (save + revert).
+        char aTabLabel[64];
+        const bool Session = m_DummyEditSlot >= 1 && !m_DummyEditIsTee;
+        if(Session)
+        {
+                if(m_DummyEditScope == 0)
+                        str_format(aTabLabel, sizeof(aTabLabel), "%s %d", Localize("Dummy"), m_DummyEditSlot);
+                else
+                        str_format(aTabLabel, sizeof(aTabLabel), "%s (%s)", Localize("Dummy"), m_DummyEditScope == 1 ? Localize("All") : Localize("Targets"));
+        }
+        else
+                str_copy(aTabLabel, Localize("Player"), sizeof(aTabLabel));
+
         static CButtonContainer s_PlayerTabButton;
-        if(DoButton_MenuTab(&s_PlayerTabButton, Localize("Player"), !m_Dummy, &PlayerTab, IGraphics::CORNER_L, nullptr, nullptr, nullptr, nullptr, 4.0f))
+        if(DoButton_MenuTab(&s_PlayerTabButton, aTabLabel, Session ? 1 : 0, &PlayerTab, IGraphics::CORNER_ALL, nullptr, nullptr, nullptr, nullptr, 4.0f))
         {
-                m_Dummy = false;
+                if(Session)
+                        EndDummyEdit();
         }
 
-        static CButtonContainer s_DummyTabButton;
-        if(DoButton_MenuTab(&s_DummyTabButton, Localize("Dummy"), m_Dummy, &DummyTab, IGraphics::CORNER_R, nullptr, nullptr, nullptr, nullptr, 4.0f))
-        {
-                m_Dummy = true;
-        }
-
+        const int EditSlot = Session ? m_DummyEditSlot : 0;
         if(Client()->State() == IClient::STATE_ONLINE &&
-                GameClient()->m_aNextChangeInfo[m_Dummy] > Client()->GameTick(m_Dummy))
+                GameClient()->m_aNextChangeInfo[EditSlot] > Client()->GameTick(EditSlot))
         {
                 char aChangeInfo[128], aTimeLeft[32];
-                str_format(aTimeLeft, sizeof(aTimeLeft), Localize("%ds left"), (GameClient()->m_aNextChangeInfo[m_Dummy] - Client()->GameTick(m_Dummy) + Client()->GameTickSpeed() - 1) / Client()->GameTickSpeed());
+                str_format(aTimeLeft, sizeof(aTimeLeft), Localize("%ds left"), (GameClient()->m_aNextChangeInfo[EditSlot] - Client()->GameTick(EditSlot) + Client()->GameTickSpeed() - 1) / Client()->GameTickSpeed());
                 str_format(aChangeInfo, sizeof(aChangeInfo), "%s: %s", Localize("Player info change cooldown"), aTimeLeft);
                 Ui()->DoLabel(&ChangeInfo, aChangeInfo, 10.f, TEXTALIGN_ML);
         }
@@ -274,19 +413,22 @@ void CMenus::RenderSettingsPlayer(CUIRect MainView)
         static CLineInput s_ClanInput;
 
         int *pCountry;
-        if(!m_Dummy)
+        if(Session)
+        {
+                // Dummy profile session: bind to the dummy's profile (single) or
+                // to the scratch profile (All/Targets scopes).
+                SDummyProfile *pProfile = m_DummyEditScope == 0 ? &GameClient()->m_BotNet.m_Dummy.m_aProfiles[m_DummyEditSlot] : nullptr;
+                pCountry = pProfile ? &pProfile->m_Country : &m_DummyEditScratchCountry;
+                s_NameInput.SetBuffer(pProfile ? pProfile->m_aName : m_aDummyEditScratchName, sizeof(SDummyProfile::m_aName));
+                s_NameInput.SetEmptyText(Client()->DummyName());
+                s_ClanInput.SetBuffer(pProfile ? pProfile->m_aClan : m_aDummyEditScratchClan, sizeof(SDummyProfile::m_aClan));
+        }
+        else
         {
                 pCountry = &g_Config.m_PlayerCountry;
                 s_NameInput.SetBuffer(g_Config.m_PlayerName, sizeof(g_Config.m_PlayerName));
                 s_NameInput.SetEmptyText(Client()->PlayerName());
                 s_ClanInput.SetBuffer(g_Config.m_PlayerClan, sizeof(g_Config.m_PlayerClan));
-        }
-        else
-        {
-                pCountry = &g_Config.m_ClDummyCountry;
-                s_NameInput.SetBuffer(g_Config.m_ClDummyName, sizeof(g_Config.m_ClDummyName));
-                s_NameInput.SetEmptyText(Client()->DummyName());
-                s_ClanInput.SetBuffer(g_Config.m_ClDummyClan, sizeof(g_Config.m_ClDummyClan));
         }
 
         // player name
@@ -373,31 +515,41 @@ void CMenus::RenderSettingsPlayer(CUIRect MainView)
 
 void CMenus::RenderSettingsTee(CUIRect MainView)
 {
-        CUIRect TabBar, PlayerTab, DummyTab, ChangeInfo;
+        CUIRect TabBar, PlayerTab, ChangeInfo;
         MainView.HSplitTop(20.0f, &TabBar, &MainView);
         TabBar.VSplitMid(&TabBar, &ChangeInfo, 20.f);
-        TabBar.VSplitMid(&PlayerTab, &DummyTab);
+        PlayerTab = TabBar; // v1.56.282: the "Dummy" subtab was removed
         MainView.HSplitTop(10.0f, nullptr, &MainView);
 
+        // v1.56.282: dynamic tab — while a Dummy Tee session is active the tab
+        // renames to "Dummy N" (localized) and edits that dummy's skin profile.
+        // Clicking the active tab ends the session (save + revert).
+        char aTabLabel[64];
+        const bool Session = m_DummyEditSlot >= 1 && m_DummyEditIsTee;
+        if(Session)
+        {
+                if(m_DummyEditScope == 0)
+                        str_format(aTabLabel, sizeof(aTabLabel), "%s %d", Localize("Dummy"), m_DummyEditSlot);
+                else
+                        str_format(aTabLabel, sizeof(aTabLabel), "%s (%s)", Localize("Dummy"), m_DummyEditScope == 1 ? Localize("All") : Localize("Targets"));
+        }
+        else
+                str_copy(aTabLabel, Localize("Player"), sizeof(aTabLabel));
+
         static CButtonContainer s_PlayerTabButton;
-        if(DoButton_MenuTab(&s_PlayerTabButton, Localize("Player"), !m_Dummy, &PlayerTab, IGraphics::CORNER_L, nullptr, nullptr, nullptr, nullptr, 4.0f))
+        if(DoButton_MenuTab(&s_PlayerTabButton, aTabLabel, Session ? 1 : 0, &PlayerTab, IGraphics::CORNER_ALL, nullptr, nullptr, nullptr, nullptr, 4.0f))
         {
-                m_Dummy = false;
+                if(Session)
+                        EndDummyEdit();
                 m_SkinListScrollToSelected = true;
         }
 
-        static CButtonContainer s_DummyTabButton;
-        if(DoButton_MenuTab(&s_DummyTabButton, Localize("Dummy"), m_Dummy, &DummyTab, IGraphics::CORNER_R, nullptr, nullptr, nullptr, nullptr, 4.0f))
-        {
-                m_Dummy = true;
-                m_SkinListScrollToSelected = true;
-        }
-
+        const int EditSlot = Session ? m_DummyEditSlot : 0;
         if(Client()->State() == IClient::STATE_ONLINE &&
-                GameClient()->m_aNextChangeInfo[m_Dummy] > Client()->GameTick(m_Dummy))
+                GameClient()->m_aNextChangeInfo[EditSlot] > Client()->GameTick(EditSlot))
         {
                 char aChangeInfo[128], aTimeLeft[32];
-                str_format(aTimeLeft, sizeof(aTimeLeft), Localize("%ds left"), (GameClient()->m_aNextChangeInfo[m_Dummy] - Client()->GameTick(m_Dummy) + Client()->GameTickSpeed() - 1) / Client()->GameTickSpeed());
+                str_format(aTimeLeft, sizeof(aTimeLeft), Localize("%ds left"), (GameClient()->m_aNextChangeInfo[EditSlot] - Client()->GameTick(EditSlot) + Client()->GameTickSpeed() - 1) / Client()->GameTickSpeed());
                 str_format(aChangeInfo, sizeof(aChangeInfo), "%s: %s", Localize("Player info change cooldown"), aTimeLeft);
                 Ui()->DoLabel(&ChangeInfo, aChangeInfo, 10.f, TEXTALIGN_ML);
         }
@@ -417,7 +569,19 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
         unsigned *pColorBody;
         unsigned *pColorFeet;
         int *pEmote;
-        if(!m_Dummy)
+        if(Session)
+        {
+                // Dummy tee session: bind to the dummy's profile (single) or to
+                // the scratch profile (All/Targets scopes).
+                SDummyProfile *pProfile = m_DummyEditScope == 0 ? &GameClient()->m_BotNet.m_Dummy.m_aProfiles[m_DummyEditSlot] : nullptr;
+                pSkinName = pProfile ? pProfile->m_aSkin : m_aDummyEditScratchSkin;
+                SkinNameSize = sizeof(SDummyProfile::m_aSkin);
+                pUseCustomColor = pProfile ? &pProfile->m_UseCustomColor : &m_DummyEditScratchUseCustomColor;
+                pColorBody = pProfile ? &pProfile->m_ColorBody : &m_aDummyEditScratchColorBody;
+                pColorFeet = pProfile ? &pProfile->m_ColorFeet : &m_aDummyEditScratchColorFeet;
+                pEmote = pProfile ? &pProfile->m_DefaultEyes : &m_DummyEditScratchEyes;
+        }
+        else
         {
                 pSkinName = g_Config.m_ClPlayerSkin;
                 SkinNameSize = sizeof(g_Config.m_ClPlayerSkin);
@@ -425,15 +589,6 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
                 pColorBody = &g_Config.m_ClPlayerColorBody;
                 pColorFeet = &g_Config.m_ClPlayerColorFeet;
                 pEmote = &g_Config.m_ClPlayerDefaultEyes;
-        }
-        else
-        {
-                pSkinName = g_Config.m_ClDummySkin;
-                SkinNameSize = sizeof(g_Config.m_ClDummySkin);
-                pUseCustomColor = &g_Config.m_ClDummyUseCustomColor;
-                pColorBody = &g_Config.m_ClDummyColorBody;
-                pColorFeet = &g_Config.m_ClDummyColorFeet;
-                pEmote = &g_Config.m_ClDummyDefaultEyes;
         }
 
         const float EyeButtonSize = 40.0f;
@@ -623,7 +778,27 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
         TextRender()->SetRenderFlags(ETextRenderFlags::TEXT_RENDER_FLAG_ONLY_ADVANCE_WIDTH | ETextRenderFlags::TEXT_RENDER_FLAG_NO_X_BEARING | ETextRenderFlags::TEXT_RENDER_FLAG_NO_Y_BEARING | ETextRenderFlags::TEXT_RENDER_FLAG_NO_PIXEL_ALIGNMENT | ETextRenderFlags::TEXT_RENDER_FLAG_NO_OVERSIZE);
         if(DoButton_Menu(&s_RandomSkinButton, s_apDice[s_CurrentDie], 0, &RandomSkinButton, BUTTONFLAG_LEFT, nullptr, IGraphics::CORNER_ALL, 5.0f, -0.2f))
         {
-                GameClient()->m_Skins.RandomizeSkin(m_Dummy);
+                if(Session)
+                {
+                        // Randomize into the shared dummy config vars, copy the
+                        // result into the session target, restore the shared vars.
+                        const int BakUCC = g_Config.m_ClDummyUseCustomColor;
+                        const unsigned BakBody = g_Config.m_ClDummyColorBody;
+                        const unsigned BakFeet = g_Config.m_ClDummyColorFeet;
+                        char aBakSkin[sizeof(g_Config.m_ClDummySkin)];
+                        str_copy(aBakSkin, g_Config.m_ClDummySkin, sizeof(aBakSkin));
+                        GameClient()->m_Skins.RandomizeSkin(1);
+                        str_copy(pSkinName, g_Config.m_ClDummySkin, SkinNameSize);
+                        *pUseCustomColor = g_Config.m_ClDummyUseCustomColor;
+                        *pColorBody = g_Config.m_ClDummyColorBody;
+                        *pColorFeet = g_Config.m_ClDummyColorFeet;
+                        str_copy(g_Config.m_ClDummySkin, aBakSkin, sizeof(g_Config.m_ClDummySkin));
+                        g_Config.m_ClDummyUseCustomColor = BakUCC;
+                        g_Config.m_ClDummyColorBody = BakBody;
+                        g_Config.m_ClDummyColorFeet = BakFeet;
+                }
+                else
+                        GameClient()->m_Skins.RandomizeSkin(0);
                 SetNeedSendInfo();
                 m_SkinListScrollToSelected = true;
                 s_CurrentDie = rand() % std::size(s_apDice);
@@ -716,7 +891,10 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
                 CSkins::CSkinListEntry &SkinListEntry = vSkinList[i];
                 const CSkins::CSkinContainer *pSkinContainer = vSkinList[i].SkinContainer();
 
-                if(!m_Dummy ? SkinListEntry.IsSelectedMain() : SkinListEntry.IsSelectedDummy())
+                const bool SkinSelected = Session ?
+                        str_comp(pSkinContainer->Name(), pSkinName) == 0 :
+                        (!m_Dummy ? SkinListEntry.IsSelectedMain() : SkinListEntry.IsSelectedDummy());
+                if(SkinSelected)
                 {
                         OldSelected = i;
                         if(m_SkinListScrollToSelected)

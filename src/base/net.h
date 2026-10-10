@@ -288,6 +288,33 @@ int net_udp_send(NETSOCKET sock, const NETADDR *addr, const void *data, int size
 int net_udp_recv(NETSOCKET sock, NETADDR *addr, unsigned char **data);
 
 /**
+ * Installs optional SOCKS5 UDP proxy hooks (Kinetix Dummy Manager).
+ *
+ * When installed, net_udp_send/net_udp_recv route per-connection traffic
+ * through SOCKS5 UDP relays (see game/client/components/kinetix/socks5_proxy.h). The socket
+ * argument identifies the connection, which enables per-dummy proxy routing.
+ *
+ * @param pSend Send hook or `nullptr` to disable.
+ * @param pRecv Recv hook or `nullptr` to disable.
+ */
+typedef int (*SOCKS5_UDP_SEND_HOOK)(NETSOCKET sock, const NETADDR *pDst, const void *pData, int Size);
+typedef int (*SOCKS5_UDP_RECV_HOOK)(NETSOCKET sock, NETADDR *pSrc, unsigned char **ppData);
+void net_set_socks5_hooks(SOCKS5_UDP_SEND_HOOK pSend, SOCKS5_UDP_RECV_HOOK pRecv);
+
+/**
+ * Direct (no-hook) variants of net_udp_send/net_udp_recv. Used by the SOCKS5
+ * proxy itself to talk to its relay socket without recursing into the hooks.
+ */
+int net_udp_send_direct(NETSOCKET sock, const NETADDR *addr, const void *data, int size);
+int net_udp_recv_direct(NETSOCKET sock, NETADDR *addr, unsigned char **data);
+
+/**
+ * Returns the raw underlying socket descriptor (IPv4 preferred, IPv6
+ * fallback), or -1. Used by CSocks5Proxy for select()/TCP_NODELAY.
+ */
+int net_socket_fd(NETSOCKET sock);
+
+/**
  * Closes an UDP socket.
  *
  * @ingroup Network-UDP

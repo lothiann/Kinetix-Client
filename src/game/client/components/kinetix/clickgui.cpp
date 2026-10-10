@@ -19,8 +19,11 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <regex>
 
 #include <base/color.h>
+#include <base/hash.h>
+#include <base/io.h>
 #include <base/mem.h>
 #include <base/str.h>
 #include <base/time.h>
@@ -38,11 +41,45 @@
 #include <game/client/gameclient.h>
 #include <game/version.h> // v1.56.177: GAME_NAME, GAME_RELEASE_VERSION, DDNET_VERSION_NUMBER, GIT_SHORTREV_HASH (used by Info panel)
 
+#ifdef _WIN32
+extern "C" __declspec(dllimport) unsigned long __stdcall GetModuleFileNameA(void *hModule, char *lpFilename, unsigned long nSize);
+#endif
+
+// v1.56.285: ClickGUI resize cursor feedback (implemented in input.cpp — that
+// TU already owns the SDL headers). Shape mirrors SDL_SystemCursor:
+// 0=ARROW, 5=SIZENWSE, 7=SIZEWE, 8=SIZENS.
+extern "C" void KxSetCursorShape(int Shape);
+
 namespace {
 // Total number of ClickGUI panels. Must match CClickGui::NUM_PANELS in .h.
 // v1.56.177: was stale at 5 — caused "too many initializers" on g_Panels[6].
-constexpr int NUM_PANELS = 9; // v1.56.280: + Real-Time Pathfinder (last panel)
+constexpr int NUM_PANELS = 11; // v1.56.286: + Search (last panel)
 } // namespace
+
+// v1.56.284: live panel geometry. The file-local macros below route every
+// existing PANEL_WIDTH/MAX_BODY_HEIGHT call site (layout, render, hit-tests)
+// to the config-driven values: KxPanelsWidth/KxPanelsHeight while UI settings
+// are enabled, built-in defaults otherwise. Updated each frame in OnRender.
+static float g_PanelW = 300.0f;
+static float g_PanelMaxBodyH = 600.0f;
+// v1.56.285: set when a layout offset config (Panels Start/Indent X/Y) changes —
+// forces every panel to glide to its new slot home once, then clears itself.
+static bool g_ForceRehome = false;
+
+// v1.56.286: ClickGUI-wide search state (the Search panel). The field writes
+// g_SearchQuery live (polled from the edit buffer); SearchUpdateMatches()
+// marks matching rows and the Search* helpers hide non-matching rows in
+// every layout/render/hit-test pass. Not persisted (ClickGUI-local).
+static char g_SearchQuery[128] = {0};
+static bool g_SearchCaseSensitive = false;
+static bool g_SearchWholeWord = false;
+static bool g_SearchRegex = false;
+static bool g_SearchFuzzy = false;
+// v1.56.286: smoothed body height per panel — the search reflow updates the
+// Yoga layout instantly, the panel bottom glides to the new height.
+static float g_aSmoothBodyH[NUM_PANELS] = {0.0f};
+#define PANEL_WIDTH g_PanelW
+#define MAX_BODY_HEIGHT g_PanelMaxBodyH
 
 // ============================================================================
 // Data model — mirrors the `data` object in upload/clickgui.html exactly.
@@ -58,6 +95,7 @@ enum class ERowType
         ToggleDropdown,
         Slider,
         Input,
+        ToggleInput, // v1.56.282: toggle (left) + text input (right) — Dummy Manager proxy rows
         Dropdown,
         Expandable,
         Button,
@@ -85,6 +123,11 @@ struct SRow
         int valueIdx; // dropdown / toggle-dropdown
         SRow *pChildren; // expandable only (non-const for child mutation)
         int childCount; // expandable only
+        // v1.56.284: optional ToolTip text — available for EVERY row type
+        // (slider, toggle, expandable, visual expandable, button, double
+        // button, label, input, dropdown...). nullptr = no tooltip. To give
+        // a row a tooltip, append one more string to its initializer.
+        const char *pToolTip = nullptr;
         // v1.56.43: mutable input buffer (so edited text persists).
         // Lazy-initialized from pInputValue on first render.
         char m_aInputBuf[256] = {};
@@ -93,8 +136,43 @@ struct SRow
         // m_AnimExpand: 0..1 progress of the expand/collapse slide animation.
         //               lerps toward (row.expanded ? 1.0 : 0.0) each frame.
         //               0 = children fully hidden (collapsed), 1 = fully shown.
-        float m_AnimExpand = 0.0f;
+	float m_AnimExpand = 0.0f;
+	// v1.56.286: search state (recomputed by SearchUpdateMatches() when the
+	// query or a filter toggle changes). m_SearchChildMatch is only set on
+	// top-level expandables (any direct child matched).
+	bool m_SearchMatch = false;
+	bool m_SearchChildMatch = false;
 };
+
+// v1.56.284: snaps a slider value to its step (drag + display share this).
+// step <= 0 = free value. Result clamped to [min, max].
+static float SnapSliderStep(const SRow &Row)
+{
+        if(Row.step <= 0.0f || Row.max <= Row.min)
+                return Row.value;
+        float v = Row.min + roundf((Row.value - Row.min) / Row.step) * Row.step;
+        if(v < Row.min)
+                v = Row.min;
+        if(v > Row.max)
+                v = Row.max;
+        return v;
+}
+
+// v1.56.284: decimals to display for a step (0 for step >= 1, up to 3
+// for fractional steps like 0.1 / 0.01 / 0.001).
+static int SliderStepDecimals(const SRow &Row)
+{
+        if(Row.step <= 0.0f)
+                return 0;
+        int d = 0;
+        float s = Row.step;
+        while(s < 0.999f && d < 3)
+        {
+                s *= 10.0f;
+                ++d;
+        }
+        return d;
+}
 
 // ---------- Functions panel (4) ----------
 // "Custom latency" expandable: 1 slider child.
@@ -253,20 +331,126 @@ static SRow g_TriggerBotChildren[] = {
         // silent direction instead of the crosshair.
         {ERowType::Toggle, "Use silent channel AB", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
-// v1.56.90: Dummies expandable — dummy connect/disconnect/switch buttons.
-// MAX_DUMMIES=8 (D1..D7, index 0 = main). Layout: Connect/Disconnect button +
-// Switch button per dummy. Plus top "Connect Dummy 1" (first connect) and
-// "Switch to Main Player" (only visible when not on main).
-static SRow g_DummiesChildren[] = {
-        {ERowType::Button, "Connect Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Button, "Switch to Main", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::DoubleButton, "D1 Connect", "D1 Switch", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::DoubleButton, "D2 Connect", "D2 Switch", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::DoubleButton, "D3 Connect", "D3 Switch", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::DoubleButton, "D4 Connect", "D4 Switch", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::DoubleButton, "D5 Connect", "D5 Switch", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::DoubleButton, "D6 Connect", "D6 Switch", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::DoubleButton, "D7 Connect", "D7 Switch", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+// ============================================================================
+// v1.56.282: Dummy Manager panel (replaces the old 8-dummy g_DummiesChildren).
+// MAX_DUMMIES = 128 (engine/client/enums.h); slot 0 = Main. Rows with per-dummy
+// names are runtime-initialized once by InitDummyManagerRows() (str_format for
+// up to 127 dummies); g_DummyMgrRows indices are DUMMYMGR_ROW_*.
+// ============================================================================
+
+// Dummies expandable: "Connect Dummy" + "Switch to Main" + D%d Connect/Switch.
+static SRow g_DummyConnectChildren[2 + MAX_DUMMIES - 1];
+// Proxy manager: ToggleInput per dummy (idx 0 = "Main").
+static SRow g_DummyProxyChildren[MAX_DUMMIES];
+// Dummy Profiles / Dummy Tee (259 rows each): "Edit Mode" dropdown, "Open Main",
+// 128 target toggles ("Main" + "Dummy 1..127"), "Open Targets", 127 per-dummy
+// "Open Dummy %d" buttons, "Open All".
+static SRow g_DummyProfilesChildren[4 + MAX_DUMMIES + (MAX_DUMMIES - 1)];
+static SRow g_DummyTeeChildren[4 + MAX_DUMMIES + (MAX_DUMMIES - 1)];
+// v1.56.282: masters — InitDummyManagerRows fills these; UpdateDummyManagerRows
+// compacts the visible subset into the arrays above (visibility by compaction
+// + childCount, so no per-site child-visibility checks are needed).
+static SRow g_DummyProfilesMaster[4 + MAX_DUMMIES + (MAX_DUMMIES - 1)];
+static SRow g_DummyTeeMaster[4 + MAX_DUMMIES + (MAX_DUMMIES - 1)];
+
+// Name buffers the runtime rows point into.
+static char g_aDblConnectNames[MAX_DUMMIES][16]; // "D127 Connect"
+static char g_aDblSwitchNames[MAX_DUMMIES][16]; // "D127 Switch"
+static char g_aDummyRowNames[MAX_DUMMIES][12]; // "Main" / "Dummy 127"
+static char g_aOpenProfNames[MAX_DUMMIES][24]; // "Open Dummy 127 Profile"
+static char g_aOpenTeeNames[MAX_DUMMIES][20]; // "Open Dummy 127 Tee"
+
+static const char *const g_DummyEditModeOpts[] = {"Per-Dummy", "All", "Targets"};
+
+// g_DummyMgrRows indices.
+enum
+{
+        DUMMYMGR_ROW_LIMIT = 0, // "Dummies" slider (runtime dummy limit)
+        DUMMYMGR_ROW_CONNECT = 1, // "Dummies" expandable
+        DUMMYMGR_ROW_PROXY = 2, // "Proxy manager" expandable
+        DUMMYMGR_ROW_PROFILES = 3, // "Dummy Profiles" expandable
+        DUMMYMGR_ROW_TEE = 4, // "Dummy Tee" expandable
+        DUMMYMGR_ROW_APPLY = 5, // "Reconnect (Apply)" button
+};
+
+static bool g_DummyRowsInitialized = false;
+
+static void InitDummyManagerRows()
+{
+        if(g_DummyRowsInitialized)
+                return;
+        g_DummyRowsInitialized = true;
+
+        int n = 0;
+        g_DummyConnectChildren[n++] = {ERowType::Button, "Connect Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0};
+        g_DummyConnectChildren[n++] = {ERowType::Button, "Switch to Main", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0};
+        for(int D = 1; D < MAX_DUMMIES; ++D)
+        {
+                str_format(g_aDblConnectNames[D], sizeof(g_aDblConnectNames[D]), "D%d Connect", D);
+                str_format(g_aDblSwitchNames[D], sizeof(g_aDblSwitchNames[D]), "D%d Switch", D);
+                g_DummyConnectChildren[n++] = {ERowType::DoubleButton, g_aDblConnectNames[D], g_aDblSwitchNames[D], false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0};
+        }
+
+        for(int D = 0; D < MAX_DUMMIES; ++D)
+        {
+                if(D == 0)
+                        str_copy(g_aDummyRowNames[D], "Main", sizeof(g_aDummyRowNames[D]));
+                else
+                        str_format(g_aDummyRowNames[D], sizeof(g_aDummyRowNames[D]), "Dummy %d", D);
+                g_DummyProxyChildren[D] = {ERowType::ToggleInput, g_aDummyRowNames[D], nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, "u:p@socks5:proxy", nullptr, 0, 0, nullptr, 0};
+        }
+
+        for(int pass = 0; pass < 2; ++pass)
+        {
+                SRow *pRows = (pass == 0) ? g_DummyProfilesMaster : g_DummyTeeMaster;
+                const bool Tee = pass != 0;
+                int m = 0;
+                pRows[m++] = {ERowType::Dropdown, "Edit Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_DummyEditModeOpts, 3, 0, nullptr, 0};
+                if(Tee)
+                        pRows[m++] = {ERowType::Button, "Open Main Tee", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0};
+                else
+                        pRows[m++] = {ERowType::Button, "Open Main Profile", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0};
+                for(int D = 0; D < MAX_DUMMIES; ++D)
+                        pRows[m++] = {ERowType::Toggle, g_aDummyRowNames[D], nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0};
+                if(Tee)
+                        pRows[m++] = {ERowType::Button, "Open Targets Tee", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0};
+                else
+                        pRows[m++] = {ERowType::Button, "Open Targets Profile", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0};
+                for(int D = 1; D < MAX_DUMMIES; ++D)
+                {
+                        if(Tee)
+                        {
+                                str_format(g_aOpenTeeNames[D], sizeof(g_aOpenTeeNames[D]), "Open Dummy %d Tee", D);
+                                pRows[m++] = {ERowType::Button, g_aOpenTeeNames[D], nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0};
+                        }
+                        else
+                        {
+                                str_format(g_aOpenProfNames[D], sizeof(g_aOpenProfNames[D]), "Open Dummy %d Profile", D);
+                                pRows[m++] = {ERowType::Button, g_aOpenProfNames[D], nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0};
+                        }
+                }
+                if(Tee)
+                        pRows[m++] = {ERowType::Button, "Open All Tee", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0};
+                else
+                        pRows[m++] = {ERowType::Button, "Open All Profile", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0};
+        }
+
+        // v1.56.282: initial copy into the display arrays (UpdateDummyManagerRows
+        // re-compacts them every frame).
+        mem_copy(g_DummyProfilesChildren, g_DummyProfilesMaster, sizeof(g_DummyProfilesChildren));
+        mem_copy(g_DummyTeeChildren, g_DummyTeeMaster, sizeof(g_DummyTeeChildren));
+}
+
+// v1.56.282: Dummy Manager top-level rows. Slider "Dummies" = runtime dummy
+// limit incl. Main (enforced engine-side via IClient::SetDummyLimit);
+// "Reconnect (Apply)" is visible only while proxy changes are staged.
+static SRow g_DummyMgrRows[] = {
+        {ERowType::Slider, "Dummies", nullptr, false, false, 1.0f, (float)MAX_DUMMIES, 1.0f, 8.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Expandable, "Dummies", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_DummyConnectChildren, 2 + MAX_DUMMIES - 1},
+        {ERowType::Expandable, "Proxy manager", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_DummyProxyChildren, MAX_DUMMIES},
+        {ERowType::Expandable, "Dummy Profiles", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_DummyProfilesChildren, 4 + MAX_DUMMIES + (MAX_DUMMIES - 1)},
+        {ERowType::Expandable, "Dummy Tee", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_DummyTeeChildren, 4 + MAX_DUMMIES + (MAX_DUMMIES - 1)},
+        {ERowType::Button, "Reconnect (Apply)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 // v1.56.258: Block expandable — compact config (was 37 rows). Movement, fire,
 // hook and rescue are driven by the Block pathfinder (physical beam search);
@@ -400,8 +584,8 @@ static SRow g_HitboxesChildren[] = {
         {ERowType::Dropdown, "Targets", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0},
         {ERowType::Input, "Targets IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0},
 };
-// v1.56.121: "Basic Avoid Freeze" expandable.
-static SRow g_BasicAvoidFreezeChildren[] = {
+// v1.56.121: "Avoid Freeze" expandable.
+static SRow g_AvoidFreezeChildren[] = {
         {ERowType::Toggle, "Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Teleport", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Death", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
@@ -413,13 +597,13 @@ static SRow g_BasicAvoidFreezeChildren[] = {
         {ERowType::Slider, "Angles", nullptr, false, false, 1.0f, 144.0f, 1.0f, 9.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Silent", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Ticks", nullptr, false, false, 1.0f, 20.0f, 1.0f, 10.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Trigger ticks", nullptr, false, false, 1.0f, 20.0f, 1.0f, 3.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Ticks Before", nullptr, false, false, 1.0f, 10.0f, 1.0f, 3.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 // v1.56.260: Functions panel merged with the former Advanced rows (Laser unfreeze,
 // Fake Aim, Basic Avoid Freeze). Trajectory/ESP/Hitboxes moved to the Visuals
 // panel; Random Aim rows removed (feature deleted).
 static SRow g_FunctionsRows[] = {
-        {ERowType::Expandable, "Dummies", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_DummiesChildren, 9},
+        // v1.56.282: "Dummies" expandable moved to the Dummy Manager panel.
         {ERowType::Expandable, "Helpers", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_HelpersChildren, 16},
         // v1.56.83: AimBot + TriggerBot expandables (AimBot: 23 children since v1.56.262)
         {ERowType::Expandable, "AimBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AimBotChildren, 26},
@@ -448,7 +632,7 @@ static SRow g_FunctionsRows[] = {
         // v1.56.260: former Advanced rows (Trajectory/ESP/Hitboxes now live in Visuals).
         {ERowType::Expandable, "Laser unfreeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LaserUnfreezeChildren, 7},
         {ERowType::Expandable, "Fake Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_FakeAimChildren, 7},
-        {ERowType::Expandable, "Basic Avoid Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BasicAvoidFreezeChildren, 12},
+        {ERowType::Expandable, "Avoid Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AvoidFreezeChildren, 12},
 };
 
 // ---------- Settings panel (6) ----------
@@ -481,10 +665,8 @@ static SRow g_SpoofSpectateChildren[] = {
         {ERowType::Input, "Fake spectate Y", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "y...", nullptr, 0, 0, nullptr, 0},
         {ERowType::Input, "Fake Follow ID", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0},
 };
-// v1.56.77: "Rainbow color" expandable: toggle + speed slider.
-static SRow g_RainbowChildren[] = {
-        {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-};
+// v1.56.283: g_RainbowChildren removed - "Rainbow Main Color" + "Speed" are now
+// children of the "ClickGUI Settings" expandable.
 // v1.56.89: "Line rendering" visual expandable (cannot toggle, only expand).
 // Shared line render settings used by trajectory, aimbot FOV/radius, pathfinder path, laser unfreeze.
 // v1.56.108: Line rendering per-component. Component dropdown selects which
@@ -504,16 +686,26 @@ static SRow g_LineRenderingChildren[] = {
         {ERowType::Slider, "Step", nullptr, false, false, 1.0f, 180.0f, 1.0f, 15.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Slider, "Layer", nullptr, false, false, 0.0f, 10.0f, 1.0f, 0.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
+// v1.56.283: "ClickGUI Settings" expandable - all UI settings in one place.
+// Header = master toggle (KxUiSettingsOn): off = built-in defaults.
+static SRow g_ClickGuiSettingsChildren[] = {
+        {ERowType::Input, "Main Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "9d4edd", "hex...", nullptr, 0, 0, nullptr, 0, "Accent color of the GUI (hex RGB). Setting a manual color turns the rainbow off."},
+        {ERowType::Toggle, "Rainbow Main Color", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Continuously cycle the accent color hue."},
+        {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Rainbow hue rotation speed."},
+        {ERowType::Input, "Panel Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "161622", "hex...", nullptr, 0, 0, nullptr, 0, "Background color of the panels (hex RGB)."},
+        {ERowType::Slider, "BG Blackout", nullptr, false, false, 0.0f, 100.0f, 1.0f, 30.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Darkens the game behind the panels (0-100%)."},
+        {ERowType::Slider, "ClickGUI Scale", nullptr, false, false, 0.1f, 2.0f, 0.1f, 1.0f, "x", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Overall scale of the whole ClickGUI."},
+        {ERowType::Slider, "Panels Start X", nullptr, false, false, 0.0f, 1920.0f, 1.0f, 60.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Default X position of the panel grid."},
+        {ERowType::Slider, "Panels Start Y", nullptr, false, false, 0.0f, 1080.0f, 1.0f, 90.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Default Y position of the panel grid."},
+        {ERowType::Slider, "Panels X-indentation", nullptr, false, false, 0.0f, 200.0f, 1.0f, 30.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Horizontal spacing between the panels in the grid."},
+        {ERowType::Slider, "Panels Y-indentation", nullptr, false, false, 0.0f, 200.0f, 1.0f, 12.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Vertical spacing between the panels in the grid."},
+        {ERowType::Toggle, "Dynamic scale (Beta)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Dynamic panel sizing: drag the panel edges to resize. Hides the fixed width/height sliders."},
+        {ERowType::Slider, "Panels width", nullptr, false, false, 150.0f, 800.0f, 1.0f, 300.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Fixed panel width in pixels (visible when Dynamic scale is off)."},
+        {ERowType::Slider, "Panels height", nullptr, false, false, 200.0f, 2000.0f, 1.0f, 600.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Maximum visible body height of a panel (when Dynamic scale is off)."},
+        {ERowType::Toggle, "Drag-To-Sort", nullptr, true, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Drag a panel header onto another slot to swap their positions."},
+};
 static SRow g_SettingsRows[] = {
-        {ERowType::Input, "Main Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "9d4edd", "hex...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Expandable, "Rainbow color", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowChildren, 1},
-        {ERowType::Input, "Panel Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "161622", "hex...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "BG blackout", nullptr, false, false, 0.0f, 100.0f, 1.0f, 30.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "ClickGUI Scale", nullptr, false, false, 0.1f, 2.0f, 0.1f, 1.0f, "x", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        // v1.56.260: panels start offset + drag-to-sort.
-        {ERowType::Slider, "Panels Start X", nullptr, false, false, 0.0f, 1920.0f, 1.0f, 60.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Panels Start Y", nullptr, false, false, 0.0f, 1080.0f, 1.0f, 90.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Drag-To-Sort", nullptr, true, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Expandable, "ClickGUI Settings", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ClickGuiSettingsChildren, 14, "Master switch: off = built-in default look."},
         {ERowType::Expandable, "Line rendering", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LineRenderingChildren, 9},
         {ERowType::Expandable, "IRC", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_IrcChildren, 2},
         {ERowType::Expandable, "Spoofer", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_SpooferChildren, 7},
@@ -541,16 +733,20 @@ static char g_PfDyn_Time[96];
 static bool g_PfShowRunLabels = false;
 static bool g_PfShowStatLabels = false;
 
+// v1.56.283: "Settings" visual expandable - effort-based knobs in one place.
+// kx_pf_hook_angles removed entirely: the hook fan is always 36 rays.
+static SRow g_PfSettingsChildren[] = {
+        {ERowType::Slider, "A* Weight", nullptr, false, false, 1.0f, 20.0f, 0.01f, 3.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "A* path cost weight (requires Effort = Custom)."},
+        {ERowType::Slider, "Evolutions", nullptr, false, false, 1.0f, 100.0f, 1.0f, 10.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "RHEA evolution count (Effort = Custom + Algorithm = RHEA)."},
+        {ERowType::Slider, "Beam width", nullptr, false, false, 8.0f, 4096.0f, 1.0f, 128.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Beam search width (Effort = Custom + Algorithm = Beam)."},
+        {ERowType::Slider, "Performance", nullptr, false, false, 1.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Pathfinder performance budget (0-100%)."},
+        {ERowType::Toggle, "Freeze Support (Beta)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Let the pathfinder route through freeze tiles."},
+};
 static SRow g_PathfinderRows[] = {
         {ERowType::Dropdown, "Effort", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_PfEffortOpts, 7, 0, nullptr, 0},
         {ERowType::Dropdown, "Algorithm", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_PfAlgorithmOpts, 4, 0, nullptr, 0},
         {ERowType::Expandable, "Freedom Path", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_PfFreedomPathChildren, 1},
-        {ERowType::Slider, "Hook angles", nullptr, false, false, 4.0f, 32.0f, 1.0f, 9.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "A* Weight", nullptr, false, false, 1.0f, 20.0f, 0.01f, 3.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Evolutions", nullptr, false, false, 1.0f, 100.0f, 1.0f, 10.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Beam width", nullptr, false, false, 8.0f, 4096.0f, 1.0f, 128.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Performance", nullptr, false, false, 1.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Freeze Support (Beta)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Expandable, "Settings", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_PfSettingsChildren, 5, "Effort-based pathfinder knobs: visible rows depend on Effort/Algorithm."},
         {ERowType::Expandable, "Visuals", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_VisualsChildren, 4},
         // v1.56.150: DoubleButton — Pathfinding (left) + Play (right, visible only when FINISHED).
         {ERowType::DoubleButton, "Pathfinding", "Paste", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
@@ -572,11 +768,27 @@ struct SPanel
 
 // v1.56.89: Binds panel — input fields for binding keys to toggle commands.
 // On input commit (focus lost), executes: bind <input_value> toggle <cmd> 1 0
-static SRow g_BindsTasChildren[] = {
-        {ERowType::Input, "Record", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Pause", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Rewind", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Forward", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
+// v1.56.283: "Binds" visual expandable - all bind fields in one place, plus
+// the former TAS expandable flattened with a "TAS " name prefix.
+static SRow g_BindsMainChildren[] = {
+        {ERowType::Input, "ClickGUI", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle the ClickGUI."},
+        {ERowType::Input, "AimBot", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle the AimBot on/off."},
+        {ERowType::Input, "TriggerBot", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle the TriggerBot on/off."},
+        {ERowType::Input, "Fake Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle Fake Aim."},
+        {ERowType::Input, "Laser Unfreeze", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle laser unfreeze."},
+        {ERowType::Input, "Copy Moves Filter", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle the copy moves filter."},
+        {ERowType::Input, "Copy Moves Latency", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle copy moves latency."},
+        {ERowType::Input, "Trajectory", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle the trajectory."},
+        {ERowType::Input, "ESP", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle the ESP."},
+        {ERowType::Input, "Avoid Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle avoid freeze."},
+        {ERowType::Input, "Helpers", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle the Helpers (Block) bot."},
+        {ERowType::Input, "Auto Triple Fly", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle Auto Triple Fly."},
+        {ERowType::Input, "Auto Fire", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle Auto Fire."},
+        {ERowType::Input, "BalanceBot", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle BalanceBot."},
+        {ERowType::Input, "TAS Record", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle TAS recording."},
+        {ERowType::Input, "TAS Pause", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle TAS pause."},
+        {ERowType::Input, "TAS Rewind", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to trigger a TAS rewind."},
+        {ERowType::Input, "TAS Forward", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to trigger a TAS forward."},
 };
 
 static SRow g_BindsEdgeChildren[] = {
@@ -593,21 +805,7 @@ static SRow g_BindsSdsChildren[] = {
 
 static SRow g_BindsRows[] = {
         {ERowType::Dropdown, "Bind Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_BindsModeOpts, 2, 0, nullptr, 0},
-        {ERowType::Input, "ClickGUI", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "AimBot", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "TriggerBot", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Fake Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Laser Unfreeze", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Copy Moves Filter", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Copy Moves Latency", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Trajectory", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "ESP", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Basic Avoid Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Helpers", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Auto Triple Fly", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "Auto Fire", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Input, "BalanceBot", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Expandable, "TAS", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BindsTasChildren, 4},
+        {ERowType::Expandable, "Binds", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BindsMainChildren, 18, "Bind keys to toggle features. Commits on Enter or on focus loss."},
         {ERowType::Expandable, "Edge bind", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BindsEdgeChildren, 2},
         {ERowType::Expandable, "Smart dummy switch", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BindsSdsChildren, 3},
 };
@@ -635,6 +833,7 @@ static char g_InfoDyn_Name[64];
 static char g_InfoDyn_Version[96];
 static char g_InfoDyn_Hash[64];
 static char g_InfoDyn_Fps[32];
+static char g_InfoDyn_ExeHash[96];
 
 // Index of the "Show spoofed" toggle in g_InfoRows (so UpdateInfoRows can read it).
 static constexpr int INFO_ROW_SHOWSPOOFED = 0;
@@ -643,8 +842,9 @@ static constexpr int INFO_ROW_VERSION = 2;
 static constexpr int INFO_ROW_HASH = 3;
 static constexpr int INFO_ROW_KINETIX = 4;
 static constexpr int INFO_ROW_FPS = 5;
-static constexpr int INFO_ROW_TELEGRAM = 6;
-static constexpr int INFO_ROW_TIKTOK = 7;
+static constexpr int INFO_ROW_EXEHASH = 6;
+static constexpr int INFO_ROW_TELEGRAM = 7;
+static constexpr int INFO_ROW_TIKTOK = 8;
 
 static SRow g_InfoRows[] = {
         {ERowType::Toggle, "Show spoofed", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
@@ -653,6 +853,7 @@ static SRow g_InfoRows[] = {
         {ERowType::Label, g_InfoDyn_Hash, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Label, "Kinetix Version: " KINETIX_VERSION, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Label, g_InfoDyn_Fps, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_InfoDyn_ExeHash, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Button, "Telegram", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Button, "TikTok", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
@@ -771,54 +972,81 @@ static SRow g_RtPathfinderRows[] = {
 // anim toggle + Speed (visible only when Rainbow is on). Header checkbox =
 // master (off = original look). Anim=1 -> hue rotation at Speed; Anim=0 ->
 // static Color with Opacity. Old per-entity-category children removed.
-static SRow g_RainbowTeeChildren[] = {
-        {ERowType::Input, "Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ffffff", "hex...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Rainbow", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+// v1.56.283: "Custom colors" - one combo expandable. The Sprite dropdown
+// selects which sprite's settings are edited; the Entity dropdown (visible
+// only for Entities) selects the entity category. Header = master toggle.
+static const char *const g_CustomColorSpriteOpts[] = {"Tee", "Legs", "Entities", "Guns", "Hook", "HUD", "Particles", "Emotions"};
+static const char *const g_CustomColorEntityOpts[] = {"Hookable", "Unhookable", "Freeze", "Death", "Others"};
+static SRow g_CustomColorsChildren[] = {
+        {ERowType::Dropdown, "Sprite", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_CustomColorSpriteOpts, 8, 0, nullptr, 0, "Select which sprite group you are configuring."},
+        {ERowType::Dropdown, "Entity", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_CustomColorEntityOpts, 5, 0, nullptr, 0, "Entity category to configure (only for Sprite = Entities)."},
+        {ERowType::Toggle, "Enable", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Enable the custom color for the selected sprite."},
+        {ERowType::Input, "Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ffffff", "hex...", nullptr, 0, 0, nullptr, 0, "Custom color of the selected sprite (hex RGB)."},
+        {ERowType::Slider, "Opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Opacity of the custom color (0-100%)."},
+        {ERowType::Toggle, "Rainbow", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Animate the custom color with a hue cycle."},
+        {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Rainbow hue rotation speed for the selected sprite."},
 };
-static SRow g_RainbowLegsChildren[] = {
-        {ERowType::Input, "Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ffffff", "hex...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Rainbow", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+
+// v1.56.283: resolves the config ints (enable, color, alpha, anim, speed x10)
+// for the Custom colors Sprite/Entity selection. Sprite: 0=Tee 1=Legs
+// 2=Entities(by EntIdx) 3=Guns 4=Hook 5=HUD 6=Particles 7=Emotions.
+// EntIdx: 0=Hookable 1=Unhookable 2=Freeze 3=Death 4=Others.
+struct SCustomColorCfg
+{
+        int *pOn;
+        unsigned int *pColor;
+        int *pAlpha;
+        int *pAnim;
+        int *pSpeed;
 };
-static SRow g_RainbowEntChildren[] = {
-        {ERowType::Input, "Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ffffff", "hex...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Rainbow", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-};
-static SRow g_RainbowGunsChildren[] = {
-        {ERowType::Input, "Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ffffff", "hex...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Rainbow", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-};
-static SRow g_RainbowHookChildren[] = {
-        {ERowType::Input, "Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ffffff", "hex...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Rainbow", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-};
-static SRow g_RainbowHudChildren[] = {
-        {ERowType::Input, "Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ffffff", "hex...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Rainbow", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-};
-static SRow g_RainbowParticlesChildren[] = {
-        {ERowType::Input, "Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ffffff", "hex...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Rainbow", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-};
-static SRow g_RainbowEmoticonsChildren[] = {
-        {ERowType::Input, "Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ffffff", "hex...", nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Rainbow", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-};
+
+static SCustomColorCfg CustomColorCfgFor(int SpriteIdx, int EntIdx)
+{
+        SCustomColorCfg Cfg = {nullptr, nullptr, nullptr, nullptr, nullptr};
+        if(SpriteIdx == 2)
+        {
+                switch(EntIdx)
+                {
+                case 0: Cfg = {&g_Config.m_KxRainbowEntHookable, &g_Config.m_KxRainbowEntHookableColor, &g_Config.m_KxRainbowEntHookableAlpha, &g_Config.m_KxRainbowEntHookableAnim, &g_Config.m_KxRainbowEntHookableSpeed}; break;
+                case 1: Cfg = {&g_Config.m_KxRainbowEntUnhookable, &g_Config.m_KxRainbowEntUnhookableColor, &g_Config.m_KxRainbowEntUnhookableAlpha, &g_Config.m_KxRainbowEntUnhookableAnim, &g_Config.m_KxRainbowEntUnhookableSpeed}; break;
+                case 2: Cfg = {&g_Config.m_KxRainbowEntFreeze, &g_Config.m_KxRainbowEntFreezeColor, &g_Config.m_KxRainbowEntFreezeAlpha, &g_Config.m_KxRainbowEntFreezeAnim, &g_Config.m_KxRainbowEntFreezeSpeed}; break;
+                case 3: Cfg = {&g_Config.m_KxRainbowEntDeath, &g_Config.m_KxRainbowEntDeathColor, &g_Config.m_KxRainbowEntDeathAlpha, &g_Config.m_KxRainbowEntDeathAnim, &g_Config.m_KxRainbowEntDeathSpeed}; break;
+                default: Cfg = {&g_Config.m_KxRainbowEntOthers, &g_Config.m_KxRainbowEntOthersColor, &g_Config.m_KxRainbowEntOthersAlpha, &g_Config.m_KxRainbowEntOthersAnim, &g_Config.m_KxRainbowEntOthersSpeed}; break;
+                }
+        }
+        else
+        {
+                switch(SpriteIdx)
+                {
+                case 0: Cfg = {&g_Config.m_KxRainbowTee, &g_Config.m_KxRainbowTeeColor, &g_Config.m_KxRainbowTeeAlpha, &g_Config.m_KxRainbowTeeAnim, &g_Config.m_KxRainbowTeeSpeed}; break;
+                case 1: Cfg = {&g_Config.m_KxRainbowLegs, &g_Config.m_KxRainbowLegsColor, &g_Config.m_KxRainbowLegsAlpha, &g_Config.m_KxRainbowLegsAnim, &g_Config.m_KxRainbowLegsSpeed}; break;
+                case 3: Cfg = {&g_Config.m_KxRainbowGuns, &g_Config.m_KxRainbowGunsColor, &g_Config.m_KxRainbowGunsAlpha, &g_Config.m_KxRainbowGunsAnim, &g_Config.m_KxRainbowGunsSpeed}; break;
+                case 4: Cfg = {&g_Config.m_KxRainbowHook, &g_Config.m_KxRainbowHookColor, &g_Config.m_KxRainbowHookAlpha, &g_Config.m_KxRainbowHookAnim, &g_Config.m_KxRainbowHookSpeed}; break;
+                case 5: Cfg = {&g_Config.m_KxRainbowHud, &g_Config.m_KxRainbowHudColor, &g_Config.m_KxRainbowHudAlpha, &g_Config.m_KxRainbowHudAnim, &g_Config.m_KxRainbowHudSpeed}; break;
+                case 6: Cfg = {&g_Config.m_KxRainbowParticles, &g_Config.m_KxRainbowParticlesColor, &g_Config.m_KxRainbowParticlesAlpha, &g_Config.m_KxRainbowParticlesAnim, &g_Config.m_KxRainbowParticlesSpeed}; break;
+                default: Cfg = {&g_Config.m_KxRainbowEmoticons, &g_Config.m_KxRainbowEmoticonsColor, &g_Config.m_KxRainbowEmoticonsAlpha, &g_Config.m_KxRainbowEmoticonsAnim, &g_Config.m_KxRainbowEmoticonsSpeed}; break;
+                }
+        }
+        return Cfg;
+}
+
+// v1.56.283: reads the Sprite/Entity dropdown selections from a "Custom colors" row.
+static void CustomColorSelection(const SRow &Row, int *pSpriteIdx, int *pEntIdx)
+{
+        *pSpriteIdx = 0;
+        *pEntIdx = 0;
+        for(int i = 0; i < Row.childCount; ++i)
+        {
+                if(str_comp(Row.pChildren[i].pName, "Sprite") == 0)
+                        *pSpriteIdx = Row.pChildren[i].valueIdx;
+                else if(str_comp(Row.pChildren[i].pName, "Entity") == 0)
+                        *pEntIdx = Row.pChildren[i].valueIdx;
+        }
+        if(*pSpriteIdx < 0 || *pSpriteIdx > 7)
+                *pSpriteIdx = 0;
+        if(*pEntIdx < 0 || *pEntIdx > 4)
+                *pEntIdx = 0;
+}
 
 // v1.56.263: "Admin Alarm" expandable — per-level, like AimBot per-weapon:
 // the Level dropdown selects which level's settings are being edited. The
@@ -834,14 +1062,7 @@ static SRow g_AdminAlarmChildren[] = {
 };
 
 static SRow g_VisualsRows[] = {
-        {ERowType::Expandable, "Custom color tee", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowTeeChildren, 4},
-        {ERowType::Expandable, "Custom color legs", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowLegsChildren, 4},
-        {ERowType::Expandable, "Custom color entities", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowEntChildren, 4},
-        {ERowType::Expandable, "Custom color guns", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowGunsChildren, 4},
-        {ERowType::Expandable, "Custom color hook", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowHookChildren, 4},
-        {ERowType::Expandable, "Custom color HUD", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowHudChildren, 4},
-        {ERowType::Expandable, "Custom color particles", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowParticlesChildren, 4},
-        {ERowType::Expandable, "Custom color emoticons", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RainbowEmoticonsChildren, 4},
+        {ERowType::Expandable, "Custom colors", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CustomColorsChildren, 7, "Master switch: off = original game look."},
         {ERowType::Toggle, "Hide particles", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         // v1.56.260: moved from the Advanced panel.
         {ERowType::Expandable, "Trajectory", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TrajectoryChildren, 7},
@@ -851,6 +1072,18 @@ static SRow g_VisualsRows[] = {
         {ERowType::Toggle, "Bypass Zoom Lock", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Bypass Asset Lock", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Expandable, "Admin Alarm", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AdminAlarmChildren, 5},
+};
+
+// v1.56.286: Search panel — real-time filtering of every other panel.
+static SRow g_SearchParamChildren[] = {
+        {ERowType::Toggle, "Case Sensitive", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Match letter case exactly."},
+        {ERowType::Toggle, "Whole Word", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Match whole words only (no substring hits)."},
+        {ERowType::Toggle, "Use Regex", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Treat the query as an ECMAScript regular expression."},
+        {ERowType::Toggle, "Fuzzy Match", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Match when every query character appears in order."},
+};
+static SRow g_SearchRows[] = {
+        {ERowType::Input, "Search", nullptr, false, false, 0, 0, 0, 0, nullptr, g_SearchQuery, "search...", nullptr, 0, 0, nullptr, 0, "Type to filter all panels in real time. Empty = show everything."},
+        {ERowType::Expandable, "Search parameters", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_SearchParamChildren, 4},
 };
 
 static SPanel g_Panels[NUM_PANELS] = {
@@ -865,12 +1098,172 @@ static SPanel g_Panels[NUM_PANELS] = {
         {"TAS", g_TasRows, sizeof(g_TasRows) / sizeof(g_TasRows[0])},
         // v1.56.280: Real-Time Pathfinder — placed AFTER all other panels.
         {"Real-Time Pathfinder", g_RtPathfinderRows, sizeof(g_RtPathfinderRows) / sizeof(g_RtPathfinderRows[0])},
+        // v1.56.282: Dummy Manager — last panel (NUM_PANELS = 10).
+        {"Dummy Manager", g_DummyMgrRows, sizeof(g_DummyMgrRows) / sizeof(g_DummyMgrRows[0])},
+        // v1.56.286: Search — real-time filter of every other panel (last panel).
+        {"Search", g_SearchRows, sizeof(g_SearchRows) / sizeof(g_SearchRows[0])},
 };
 
 // Conditional visibility for Functions panel top-level rows.
 // Mirror aim X/Y visible only when Aim mode = Mirror (valueIdx=1).
 // Smart aim visible only when Aim mode = Smart (valueIdx=0).
 // All other rows always visible.
+// v1.56.286: search matching (the Search panel). The compiled regex lives
+// here so a query change recompiles it once, not per row.
+static bool SearchIsWordChar(char C)
+{
+        return (C >= 'a' && C <= 'z') || (C >= 'A' && C <= 'Z') || (C >= '0' && C <= '9') || C == '_';
+}
+static char SearchFoldChar(char C)
+{
+        return (C >= 'A' && C <= 'Z') ? (char)(C + ('a' - 'A')) : C;
+}
+static std::regex g_SearchRegexCompiled;
+static bool g_SearchRegexValid = false;
+
+static bool SearchSubstrMatch(const char *pName)
+{
+        const int QueryLen = str_length(g_SearchQuery);
+        if(QueryLen == 0)
+                return true;
+        for(const char *p = pName; *p; ++p)
+        {
+                const char *pAt = g_SearchCaseSensitive ? str_find(p, g_SearchQuery) : str_find_nocase(p, g_SearchQuery);
+                if(!pAt)
+                        return false;
+                if(!g_SearchWholeWord)
+                        return true;
+                const bool OkBefore = (pAt == pName) || !SearchIsWordChar(pAt[-1]);
+                const char *pAfter = pAt + QueryLen;
+                const bool OkAfter = (*pAfter == 0) || !SearchIsWordChar(*pAfter);
+                if(OkBefore && OkAfter)
+                        return true;
+                p = pAt;
+        }
+        return false;
+}
+static bool SearchFuzzyMatch(const char *pName)
+{
+        const char *p = pName;
+        for(const char *pQ = g_SearchQuery; *pQ; ++pQ)
+        {
+                const char QC = g_SearchCaseSensitive ? *pQ : SearchFoldChar(*pQ);
+                bool Found = false;
+                while(*p)
+                {
+                        const char PC = g_SearchCaseSensitive ? *p : SearchFoldChar(*p);
+                        ++p;
+                        if(PC == QC)
+                        {
+                                Found = true;
+                                break;
+                        }
+                }
+                if(!Found)
+                        return false;
+        }
+        return true;
+}
+static bool SearchMatchName(const char *pName)
+{
+        if(!g_SearchQuery[0])
+                return true;
+        if(g_SearchRegex)
+        {
+                if(!g_SearchRegexValid)
+                        return false;
+                if(g_SearchWholeWord)
+                {
+                        const int NameLen = str_length(pName);
+                        const std::cregex_iterator End;
+                        for(std::cregex_iterator It(pName, pName + NameLen, g_SearchRegexCompiled); It != End; ++It)
+                        {
+                                const int Pos = (int)It->position();
+                                const int Len = (int)It->length();
+                                if(Len == 0)
+                                        continue;
+                                const bool OkBefore = (Pos == 0) || !SearchIsWordChar(pName[Pos - 1]);
+                                const bool OkAfter = (Pos + Len >= NameLen) || !SearchIsWordChar(pName[Pos + Len]);
+                                if(OkBefore && OkAfter)
+                                        return true;
+                        }
+                        return false;
+                }
+                return std::regex_search(pName, g_SearchRegexCompiled);
+        }
+        if(g_SearchFuzzy)
+                return SearchFuzzyMatch(pName);
+        return SearchSubstrMatch(pName);
+}
+// v1.56.286: search visibility gates — false = the row is hidden by the
+// active search. The Search panel's own rows are marked always-matching in
+// SearchUpdateMatches(), so the call sites need no panel special-casing.
+static bool SearchKeepsRow(const SRow &row)
+{
+        if(g_SearchQuery[0] == 0)
+                return true;
+        return row.m_SearchMatch || row.m_SearchChildMatch;
+}
+static bool SearchKeepsChild(const SRow &child)
+{
+        if(g_SearchQuery[0] == 0)
+                return true;
+        return child.m_SearchMatch;
+}
+// v1.56.286: recompute the match flags for every row of every panel. Called
+// from OnRender when the query or a filter toggle changes.
+static void SearchUpdateMatches()
+{
+        g_SearchRegexValid = false;
+        if(g_SearchRegex && g_SearchQuery[0])
+        {
+                try
+                {
+                        std::regex::flag_type Flags = std::regex::ECMAScript;
+                        if(!g_SearchCaseSensitive)
+                                Flags |= std::regex::icase;
+                        g_SearchRegexCompiled.assign(g_SearchQuery, Flags);
+                        g_SearchRegexValid = true;
+                }
+                catch(const std::regex_error &)
+                {
+                        g_SearchRegexValid = false;
+                }
+        }
+        const bool Active = g_SearchQuery[0] != 0;
+        for(int p = 0; p < NUM_PANELS; ++p)
+        {
+                SPanel &panel = g_Panels[p];
+                const bool IsSearchPanel = (str_comp(panel.pTitle, "Search") == 0);
+                for(int r = 0; r < panel.rowCount; ++r)
+                {
+                        SRow &row = panel.pRows[r];
+                        if(IsSearchPanel || !Active)
+                        {
+                                row.m_SearchMatch = true;
+                                row.m_SearchChildMatch = false;
+                                if(row.type == ERowType::Expandable && row.pChildren)
+                                {
+                                        for(int c = 0; c < row.childCount; ++c)
+                                                row.pChildren[c].m_SearchMatch = true;
+                                }
+                                continue;
+                        }
+                        row.m_SearchMatch = SearchMatchName(row.pName);
+                        row.m_SearchChildMatch = false;
+                        if(row.type == ERowType::Expandable && row.pChildren)
+                        {
+                                for(int c = 0; c < row.childCount; ++c)
+                                {
+                                        SRow &child = row.pChildren[c];
+                                        child.m_SearchMatch = SearchMatchName(child.pName);
+                                        if(child.m_SearchMatch)
+                                                row.m_SearchChildMatch = true;
+                                }
+                        }
+                }
+        }
+}
 static bool PfRowVisible(const SRow *pRows, int rowCount, int idx)
 {
         if(idx < 0 || idx >= rowCount)
@@ -1161,6 +1554,67 @@ static bool TriggerBotChildVisible(const SRow *pChildren, int childCount, int id
         return true;
 }
 
+// v1.56.282: Dummy Manager sync mirrors — updated each frame by
+// UpdateDummyManagerRows() so the static visibility helpers below (no access
+// to CClickGui members) can see the engine dummy limit and staged-proxy state.
+static int g_DummyLimit = 8;
+static bool g_ProxyDirty = false;
+
+// v1.56.282: prefix test without a <string.h> dependency.
+static bool DummyMgrIsPrefix(const char *pStr, const char *pPrefix)
+{
+        for(; *pPrefix; ++pStr, ++pPrefix)
+        {
+                if(*pStr != *pPrefix)
+                        return false;
+        }
+        return true;
+}
+
+// v1.56.282: "D<N> Connect"/"D<N> Switch" -> N (any digit count), else -1.
+static int DummyMgrParseD(const char *pName)
+{
+        if(!pName || pName[0] != 'D' || pName[1] < '0' || pName[1] > '9')
+                return -1;
+        int v = 0;
+        const char *p = pName + 1;
+        for(; *p >= '0' && *p <= '9'; ++p)
+                v = v * 10 + (*p - '0');
+        return (*p == ' ' && v >= 1 && v < MAX_DUMMIES) ? v : -1;
+}
+
+// v1.56.282: "Main" -> 0, "Dummy <N>" -> N, else -1.
+static int DummyMgrParseDummyName(const char *pName)
+{
+        if(!pName)
+                return -1;
+        if(str_comp(pName, "Main") == 0)
+                return 0;
+        if(!DummyMgrIsPrefix(pName, "Dummy "))
+                return -1;
+        int v = 0;
+        const char *p = pName + 6;
+        if(*p < '0' || *p > '9')
+                return -1;
+        for(; *p >= '0' && *p <= '9'; ++p)
+                v = v * 10 + (*p - '0');
+        return (*p == '\0' && v >= 1 && v < MAX_DUMMIES) ? v : -1;
+}
+
+// v1.56.282: "Open Dummy <N> Profile"/"Open Dummy <N> Tee" -> N, else -1.
+static int DummyMgrParseOpenName(const char *pName)
+{
+        if(!pName || !DummyMgrIsPrefix(pName, "Open Dummy "))
+                return -1;
+        int v = 0;
+        const char *p = pName + 11;
+        if(*p < '0' || *p > '9')
+                return -1;
+        for(; *p >= '0' && *p <= '9'; ++p)
+                v = v * 10 + (*p - '0');
+        return (v >= 1 && v < MAX_DUMMIES) ? v : -1;
+}
+
 // v1.56.90: Dummies — "Switch to Main" hidden when already on main player.
 static bool DummiesChildVisible(const SRow *pChildren, int childCount, int idx)
 {
@@ -1171,6 +1625,70 @@ static bool DummiesChildVisible(const SRow *pChildren, int childCount, int idx)
                 return g_Config.m_ClDummy != 0; // visible only when on a dummy
         return true;
 }
+
+// v1.56.282: Dummy Manager top-level visibility — "Reconnect (Apply)" only
+// while staged proxy changes exist.
+static bool DummyManagerRowVisible(const SRow *pRows, int rowCount, int idx)
+{
+        if(idx < 0 || idx >= rowCount)
+                return false;
+        const SRow &row = pRows[idx];
+        if(str_comp(row.pName, "Reconnect (Apply)") == 0)
+                return g_ProxyDirty;
+        return true;
+}
+
+// v1.56.282: Dummy Manager child visibility — D% rows follow the runtime
+// dummy limit; Profiles/Tee children follow the "Edit Mode" dropdown (child 0):
+// 0 = Per-Dummy (Open Dummy %d buttons), 1 = All (Open All), 2 = Targets
+// (target toggles + Open Targets).
+static bool DummyManagerChildVisible(const SRow *pChildren, int childCount, int idx)
+{
+        if(idx < 0 || idx >= childCount)
+                return false;
+        const SRow &ch = pChildren[idx];
+        if(pChildren == g_DummyConnectChildren)
+        {
+                if(!DummiesChildVisible(pChildren, childCount, idx))
+                        return false;
+                if(ch.type == ERowType::DoubleButton)
+                {
+                        const int d = DummyMgrParseD(ch.pName);
+                        return d >= 1 && d < g_DummyLimit;
+                }
+                return true;
+        }
+        if(pChildren == g_DummyProxyChildren)
+                return idx < g_DummyLimit;
+        if(pChildren == g_DummyProfilesChildren || pChildren == g_DummyTeeChildren ||
+           pChildren == g_DummyProfilesMaster || pChildren == g_DummyTeeMaster)
+        {
+                if(ch.type == ERowType::Dropdown)
+                        return true; // "Edit Mode"
+                const int mode = pChildren[0].valueIdx;
+                if(ch.type == ERowType::Toggle)
+                {
+                        const int d = DummyMgrParseDummyName(ch.pName);
+                        return mode == 2 && d >= 0 && d < g_DummyLimit;
+                }
+                if(ch.type == ERowType::Button)
+                {
+                        if(str_comp(ch.pName, "Open Main Profile") == 0 || str_comp(ch.pName, "Open Main Tee") == 0)
+                                return true;
+                        if(str_comp(ch.pName, "Open Targets Profile") == 0 || str_comp(ch.pName, "Open Targets Tee") == 0)
+                                return mode == 2;
+                        if(str_comp(ch.pName, "Open All Profile") == 0 || str_comp(ch.pName, "Open All Tee") == 0)
+                                return mode == 1;
+                        const int d = DummyMgrParseOpenName(ch.pName);
+                        return mode == 0 && d >= 1 && d < g_DummyLimit;
+                }
+        }
+        return true;
+}
+
+// v1.56.282: NOTE — child/top-level visibility for the Dummy Manager is
+// handled dynamically via childCount/rowCount truncation + per-mode child
+// compaction (see UpdateDummyManagerRows), so no per-site checks are needed.
 // v1.56.256: Hitboxes — "Hitbox Style"/"Box Speed" visible only when their group
 // toggle is on ("Tee tile" idx 0, "Tee trigger" idx 3); "Box Speed" also requires
 // style 2 (Dotted Box).
@@ -1378,25 +1896,94 @@ static bool LineRenderingChildVisible(const SRow *pChildren, int childCount, int
 }
 // v1.56.275: Visuals rainbow expandables — "Speed" visible only when the
 // "Rainbow" anim toggle is on.
+// v1.56.283: unified per-child visibility for the combo expandables
+// ("Custom colors", "ClickGUI Settings", Pathfinder "Settings"). The parent
+// is identified by sniffing its child set - the three sets are disjoint.
 static bool IsRainbowVisualRow(const char *pName)
 {
-        return str_comp(pName, "Custom color tee") == 0 || str_comp(pName, "Custom color legs") == 0 ||
-                str_comp(pName, "Custom color entities") == 0 || str_comp(pName, "Custom color guns") == 0 ||
-                str_comp(pName, "Custom color hook") == 0 || str_comp(pName, "Custom color HUD") == 0 ||
-                str_comp(pName, "Custom color particles") == 0 || str_comp(pName, "Custom color emoticons") == 0;
+        return str_comp(pName, "Custom colors") == 0 ||
+                str_comp(pName, "ClickGUI Settings") == 0 ||
+                str_comp(pName, "Settings") == 0;
 }
 static bool VisualRainbowChildVisible(const SRow *pChildren, int childCount, int idx)
 {
         if(idx < 0 || idx >= childCount)
                 return false;
-        if(str_comp(pChildren[idx].pName, "Speed") != 0)
-                return true;
+        const SRow &ch = pChildren[idx];
+        bool HasSprite = false, HasRainbowMain = false, HasAStarWeight = false;
         for(int i = 0; i < childCount; ++i)
         {
-                if(str_comp(pChildren[i].pName, "Rainbow") == 0)
-                        return pChildren[i].on;
+                if(str_comp(pChildren[i].pName, "Sprite") == 0)
+                        HasSprite = true;
+                else if(str_comp(pChildren[i].pName, "Rainbow Main Color") == 0)
+                        HasRainbowMain = true;
+                else if(str_comp(pChildren[i].pName, "A* Weight") == 0)
+                        HasAStarWeight = true;
         }
-        return false;
+        if(HasSprite)
+        {
+                // Custom colors: Entity only for Sprite = Entities (2);
+                // Speed only when the Rainbow toggle is on.
+                if(str_comp(ch.pName, "Entity") == 0)
+                {
+                        for(int i = 0; i < childCount; ++i)
+                        {
+                                if(str_comp(pChildren[i].pName, "Sprite") == 0)
+                                        return pChildren[i].valueIdx == 2;
+                        }
+                        return false;
+                }
+                if(str_comp(ch.pName, "Speed") == 0)
+                {
+                        for(int i = 0; i < childCount; ++i)
+                        {
+                                if(str_comp(pChildren[i].pName, "Rainbow") == 0)
+                                        return pChildren[i].on;
+                        }
+                        return false;
+                }
+                return true;
+        }
+        if(HasRainbowMain)
+        {
+                // ClickGUI Settings: Speed only when Rainbow Main Color is on;
+                // Panels width/height only when Dynamic scale (Beta) is off.
+                auto FindChild = [&](const char *pFind) -> const SRow * {
+                        for(int i = 0; i < childCount; ++i)
+                        {
+                                if(str_comp(pChildren[i].pName, pFind) == 0)
+                                        return &pChildren[i];
+                        }
+                        return nullptr;
+                };
+                if(str_comp(ch.pName, "Speed") == 0)
+                {
+                        const SRow *pRainbow = FindChild("Rainbow Main Color");
+                        return pRainbow && pRainbow->on;
+                }
+                if(str_comp(ch.pName, "Panels width") == 0 || str_comp(ch.pName, "Panels height") == 0)
+                {
+                        const SRow *pDyn = FindChild("Dynamic scale (Beta)");
+                        return pDyn && !pDyn->on;
+                }
+                return true;
+        }
+        if(HasAStarWeight)
+        {
+                // Pathfinder Settings: A* Weight + Freeze Support need Custom
+                // effort (6); Beam width also Beam algorithm (1); Evolutions
+                // also RHEA (2); Performance is always visible.
+                if(str_comp(ch.pName, "Performance") == 0)
+                        return true;
+                if(g_Config.m_KxPfEffort != 6)
+                        return false;
+                if(str_comp(ch.pName, "Beam width") == 0)
+                        return g_Config.m_KxPfAlgorithm == 1;
+                if(str_comp(ch.pName, "Evolutions") == 0)
+                        return g_Config.m_KxPfAlgorithm == 2;
+                return true;
+        }
+        return true;
 }
 static bool BindsChildVisible(const SRow *pChildren, int childCount, int idx)
 {
@@ -1407,7 +1994,7 @@ static bool BindsChildVisible(const SRow *pChildren, int childCount, int idx)
         return true;
 }
 // v1.56.129: BAF — "Angles" + "Silent" visible only when Aim toggle is on.
-static bool BafChildVisible(const SRow *pChildren, int childCount, int idx)
+static bool AfChildVisible(const SRow *pChildren, int childCount, int idx)
 {
         if(idx < 0 || idx >= childCount)
                 return false;
@@ -1539,6 +2126,7 @@ static float RowHeight(ERowType t)
         case ERowType::Slider:
                 return ROW_H_SLIDER;
         case ERowType::Input:
+        case ERowType::ToggleInput: // v1.56.282
                 return ROW_H_INPUT;
         case ERowType::Expandable:
                 return ROW_H_EXPANDABLE;
@@ -1591,11 +2179,13 @@ vec2 CClickGui::SlotHomePos(int slot) const
         // panel, so a relocated panel never drags its lower neighbour with it.
         // Layout runs in the virtual 1920x1080 space (DPI-independent).
         const float screenW = VScreenWidth();
-        // v1.56.260: configurable start offset (Settings → Panels Start X/Y).
+// v1.56.260: configurable start offset (Settings → Panels Start X/Y).
+        // v1.56.285: Panels X/Y-indentation = the gap BETWEEN panels, set
+        // ABSOLUTELY by the sliders (0 = panels touch — no hidden base offset).
         const float startX = (float)g_Config.m_KxPanelsStartX;
         const float startY = (float)g_Config.m_KxPanelsStartY;
-        const float spacingX = 30.0f; // gap between panels horizontally
-        const float spacingY = FLOW_GAP; // gap between rows vertically
+        const float spacingX = std::max((float)g_Config.m_KxPanelsIndentX, 0.0f); // gap between panels horizontally
+        const float spacingY = std::max((float)g_Config.m_KxPanelsIndentY, 0.0f); // gap between rows vertically
 
         // Phase 1: determine which slots fit in the first row.
         int firstRowCount = 0;
@@ -1822,27 +2412,21 @@ void CClickGui::DrawText(float x, float y, float size, const char *pText, ColorR
 //   m_AnimExpand → (row.expanded? 1.0 : 0.0)   for every Expandable row (children slide)
 //   m_aPanelCollapseAnim[i] → (m_aPanelCollapsed[i] ? 1.0 : 0.0)
 //
-// Speed: 1 / DURATION per second. We use a clamped linear step (not exponential)
-// so the animation reaches exactly 0.0 or 1.0 in bounded time, matching the
-// legacy m_AnimProgress style above.
+// v1.56.285: exponential smoothing (k = 7 / DURATION) — 1-exp(-7x) matches the
+	// CSS curve cubic-bezier(0.16,1,0.3,1) almost exactly (87.5% at 30% time,
+	// 97% at half time), so the pace matches the pre-284 build instead of
+	// crawling in an exponential tail, and a mid-flight target flip stays
+	// value-continuous (reverse-close fix). Snaps to the target when close
+	// enough so the "val == 0" layout-cache boundary still fires.
 void CClickGui::UpdateAnimations(float dt)
 {
-        const float expandSpeed = (EXPAND_ANIM_DURATION > 0.0f) ? (1.0f / EXPAND_ANIM_DURATION) : 1.0f;
+	const float expandSpeed = (EXPAND_ANIM_DURATION > 0.0f) ? (1.0f / EXPAND_ANIM_DURATION) : 1.0f;
 
-        auto lerpToward = [dt](float &val, float target, float speed) {
-                if(val < target)
-                {
-                        val += dt * speed;
-                        if(val > target)
-                                val = target;
-                }
-                else if(val > target)
-                {
-                        val -= dt * speed;
-                        if(val < target)
-                                val = target;
-                }
-        };
+	auto lerpToward = [dt](float &val, float target, float speed) {
+		val += (target - val) * (1.0f - std::exp(-(7.0f * speed) * dt));
+		if(std::fabs(target - val) < 0.002f)
+			val = target;
+	};
 
         // Per-panel collapse animation.
         for(int i = 0; i < NUM_PANELS; ++i)
@@ -1863,7 +2447,7 @@ void CClickGui::UpdateAnimations(float dt)
                         if(row.type == ERowType::Expandable)
                         {
                                 const bool wasInLayout = (row.m_AnimExpand > 0.0f);
-                                lerpToward(row.m_AnimExpand, row.expanded ? 1.0f : 0.0f, expandSpeed);
+                                lerpToward(row.m_AnimExpand, (row.expanded || row.m_SearchChildMatch) ? 1.0f : 0.0f, expandSpeed);
                                 // v1.56.72: invalidate Yoga cache when row crosses the
                                 // 0 boundary (children added/removed from layout).
                                 if(wasInLayout != (row.m_AnimExpand > 0.0f))
@@ -1880,6 +2464,129 @@ void CClickGui::UpdateAnimations(float dt)
                                                 lerpToward(child.m_AnimExpand, child.expanded ? 1.0f : 0.0f, expandSpeed);
                                 }
                         }
+                }
+        }
+}
+
+// v1.56.282: Dummy Manager — apply the staged proxies and reconnect.
+// 1) Push every slot's proxy to the engine (IClient::SetDummyProxy);
+// 2) reconnect connected dummies whose proxy changed (a fresh connection picks
+//    up the new SOCKS5 socket; the engine's 5s reconnect delay is respected);
+// 3) fully reconnect the MAIN connection if its proxy changed (UDP routing is
+//    bound at connect time);
+// 4) snapshot the applied state and clear m_ProxyDirty.
+void CClickGui::ApplyProxiesAndReconnect()
+{
+        CDummyData &DD = GameClient()->m_BotNet.m_Dummy;
+
+        for(int D = 0; D < MAX_DUMMIES; ++D)
+                Client()->SetDummyProxy(D, DD.m_aProfiles[D].m_ProxyOn, DD.m_aProfiles[D].m_aProxy);
+
+        for(int D = 1; D < MAX_DUMMIES; ++D)
+        {
+                const SDummyProfile &P = DD.m_aProfiles[D];
+                const bool Changed = m_aaAppliedProxyOn[D] != (P.m_ProxyOn != 0) ||
+                        str_comp(m_aaAppliedProxy[D], P.m_aProxy) != 0;
+                if(!Changed || !Client()->DummyConnected(D))
+                        continue;
+                Client()->DummyDisconnect(D, nullptr);
+                if(!Client()->DummyConnectingDelayed(D))
+                        Client()->DummyConnect(D);
+        }
+
+        // Main: full reconnect when the main proxy changed.
+        {
+                const SDummyProfile &P = DD.m_aProfiles[0];
+                const bool MainChanged = m_aaAppliedProxyOn[0] != (P.m_ProxyOn != 0) ||
+                        str_comp(m_aaAppliedProxy[0], P.m_aProxy) != 0;
+                if(MainChanged && Client()->State() != IClient::STATE_OFFLINE)
+                {
+                        // Copy the address first — Disconnect() may clear it.
+                        char aAddr[256];
+                        str_copy(aAddr, Client()->ConnectAddressString(), sizeof(aAddr));
+                        Client()->Disconnect();
+                        Client()->Connect(aAddr);
+                }
+        }
+
+        for(int D = 0; D < MAX_DUMMIES; ++D)
+        {
+                m_aaAppliedProxyOn[D] = DD.m_aProfiles[D].m_ProxyOn != 0;
+                str_copy(m_aaAppliedProxy[D], DD.m_aProfiles[D].m_aProxy, sizeof(m_aaAppliedProxy[D]));
+        }
+        m_ProxyDirty = false;
+}
+
+// v1.56.282: Dummy Manager — per-frame sync (called from OnRender).
+// Mirrors the engine dummy limit and staged-proxy state into the file-static
+// visibility mirrors, syncs the limit slider, the proxy ToggleInput rows and
+// the Profiles/Tee target toggles from CBotNet::m_Dummy.
+void CClickGui::UpdateDummyManagerRows()
+{
+        InitDummyManagerRows();
+
+        CDummyData &DD = GameClient()->m_BotNet.m_Dummy;
+        const int Limit = Client()->DummyLimit();
+        g_DummyLimit = (Limit >= 1 && Limit <= MAX_DUMMIES) ? Limit : 8;
+        g_ProxyDirty = m_ProxyDirty;
+
+        // v1.56.282: dynamic visibility via row/child counts (no per-site checks):
+        // "Reconnect (Apply)" is the LAST top-level row — hide it by truncating
+        // rowCount while nothing is staged; connect/proxy children show only the
+        // slots below the runtime limit; Profiles/Tee children are compacted per
+        // "Edit Mode" (DummyManagerChildVisible decides visibility).
+        SPanel &MgrPanel = g_Panels[NUM_PANELS - 2];
+        MgrPanel.rowCount = m_ProxyDirty ? DUMMYMGR_ROW_APPLY + 1 : DUMMYMGR_ROW_APPLY;
+        g_DummyMgrRows[DUMMYMGR_ROW_CONNECT].childCount = 2 + (g_DummyLimit - 1);
+        g_DummyMgrRows[DUMMYMGR_ROW_PROXY].childCount = g_DummyLimit;
+        for(int pass = 0; pass < 2; ++pass)
+        {
+                SRow *pMaster = (pass == 0) ? g_DummyProfilesMaster : g_DummyTeeMaster;
+                SRow *pRows = (pass == 0) ? g_DummyProfilesChildren : g_DummyTeeChildren;
+                const int Total = 4 + MAX_DUMMIES + (MAX_DUMMIES - 1);
+                pMaster[0].valueIdx = pRows[0].valueIdx; // keep the live Edit Mode selection
+                int n = 0;
+                for(int i = 0; i < Total; ++i)
+                {
+                        if(DummyManagerChildVisible(pMaster, Total, i))
+                                pRows[n++] = pMaster[i];
+                }
+                g_DummyMgrRows[(pass == 0) ? DUMMYMGR_ROW_PROFILES : DUMMYMGR_ROW_TEE].childCount = n;
+        }
+
+        // Slider "Dummies" <- engine limit (don't stomp while the user drags it).
+        const int RowCount = (int)(sizeof(g_DummyMgrRows) / sizeof(g_DummyMgrRows[0]));
+        const bool DraggingLimit = (m_DragSliderPanel == NUM_PANELS - 2 && m_DragSliderChild < 0 &&
+                m_DragSliderRow >= 0 && m_DragSliderRow < RowCount &&
+                str_comp(g_Panels[NUM_PANELS - 2].pRows[m_DragSliderRow].pName, "Dummies") == 0);
+        if(!DraggingLimit)
+                g_DummyMgrRows[DUMMYMGR_ROW_LIMIT].value = (float)g_DummyLimit;
+
+        // Proxy ToggleInput rows <- per-slot profile proxy state.
+        for(int D = 0; D < MAX_DUMMIES; ++D)
+        {
+                SRow &ch = g_DummyProxyChildren[D];
+                ch.on = DD.m_aProfiles[D].m_ProxyOn != 0;
+                if(!(m_InputEditing && m_InputPanel == NUM_PANELS - 2 && m_InputRow == DUMMYMGR_ROW_PROXY && m_InputChild == D))
+                {
+                        str_copy(ch.m_aInputBuf, DD.m_aProfiles[D].m_aProxy, sizeof(ch.m_aInputBuf));
+                        ch.m_InputInitialized = true;
+                }
+        }
+
+        // Profiles/Tee target toggles <- ClickGUI-local target selections.
+        for(int pass = 0; pass < 2; ++pass)
+        {
+                SRow *pRows = (pass == 0) ? g_DummyProfilesChildren : g_DummyTeeChildren;
+                const bool *pTargets = (pass == 0) ? m_aProfileTargets : m_aTeeTargets;
+                for(int i = 0; i < 4 + MAX_DUMMIES + (MAX_DUMMIES - 1); ++i)
+                {
+                        SRow &ch = pRows[i];
+                        if(ch.type != ERowType::Toggle)
+                                continue;
+                        const int d = DummyMgrParseDummyName(ch.pName);
+                        if(d >= 0)
+                                ch.on = pTargets[d];
                 }
         }
 }
@@ -1947,6 +2654,44 @@ void CClickGui::UpdateInfoRows()
 
         // --- AVG FPS ---
         str_format(g_InfoDyn_Fps, sizeof(g_InfoDyn_Fps), "AVG FPS: %d", (int)(m_AvgFps + 0.5f));
+
+        // v1.56.284: EXE SHA-256 — computed once per session from the running
+        // executable file.
+        static bool s_ExeHashDone = false;
+        if(!s_ExeHashDone)
+        {
+                s_ExeHashDone = true;
+                str_copy(g_InfoDyn_ExeHash, "EXE SHA-256: n/a", sizeof(g_InfoDyn_ExeHash));
+                char aExePath[1024];
+                aExePath[0] = 0;
+        #ifdef _WIN32
+                GetModuleFileNameA(nullptr, aExePath, (unsigned long)sizeof(aExePath));
+        #endif
+                if(aExePath[0])
+                {
+                        IOHANDLE File = io_open(aExePath, IOFLAG_READ);
+                        if(File)
+                        {
+                                const long FileSize = io_length(File);
+                                if(FileSize > 0 && FileSize < 512 * 1024 * 1024)
+                                {
+                                        unsigned char *pData = (unsigned char *)malloc((size_t)FileSize);
+                                        if(pData)
+                                        {
+                                                if(io_read(File, pData, (unsigned)FileSize) == (unsigned)FileSize)
+                                                {
+                                                        SHA256_DIGEST Digest = sha256(pData, (size_t)FileSize);
+                                                        char aHashStr[SHA256_MAXSTRSIZE];
+                                                        sha256_str(Digest, aHashStr, sizeof(aHashStr));
+                                                        str_format(g_InfoDyn_ExeHash, sizeof(g_InfoDyn_ExeHash), "EXE SHA-256: %s", aHashStr);
+                                                }
+                                                free(pData);
+                                        }
+                                }
+                                io_close(File);
+                        }
+                }
+        }
 }
 
 void CClickGui::UpdatePathfinderLabels()
@@ -2435,6 +3180,7 @@ void CClickGui::OnReset()
                 // panels only reset on client exit (process lifetime).
                 m_aPanelScroll[i] = 0.0f;
                 m_aPanelScrollStored[i] = 0.0f;
+                m_aPanelScrollTarget[i] = 0.0f;
                 m_aZOrder[i] = i;
                 // v1.56.175: reset drag-to-sort order to identity on reset.
                 m_aPanelOrder[i] = i;
@@ -2455,8 +3201,11 @@ void CClickGui::OnRender()
 	// v1.56.255: UI persistence — accent/panel colors + rainbow + blackout.
 	// Pull once after settings.cfg is loaded, push every frame so changes
 	// are written back and saved on exit.
+	// v1.56.284: master KxUiSettingsOn=0 renders built-in defaults and does
+	// NOT push, so the saved config survives toggling the master back on.
 	{
 		static bool s_Init = false;
+		static bool s_Off = false;
 		if(!s_Init)
 		{
 			s_Init = true;
@@ -2472,9 +3221,37 @@ void CClickGui::OnRender()
 			m_RainbowEnabled = g_Config.m_KxUiRainbow != 0;
 			m_RainbowSpeed = g_Config.m_KxUiRainbowSpeed / 10.0f;
 			m_BgBlackout = g_Config.m_KxUiBlackout;
+			s_Off = (g_Config.m_KxUiSettingsOn == 0);
+		}
+		else if(g_Config.m_KxUiSettingsOn == 0)
+		{
+			m_AccentColorRGBA = 0xff9d4edd;
+			m_SavedAccentColorRGBA = m_AccentColorRGBA;
+			m_PanelBgRGBA = 0xff161622;
+			m_RainbowEnabled = false;
+			m_RainbowSpeed = 1.0f;
+			m_BgBlackout = 30;
+			s_Off = true;
 		}
 		else
 		{
+			if(s_Off)
+			{
+				// master turned back on — restore the saved state from config.
+				unsigned hex = 0;
+				if(sscanf(g_Config.m_KxUiAccentColor, "%6x", &hex) == 1)
+				{
+					m_AccentColorRGBA = 0xff000000u | (hex & 0xffffff);
+					m_SavedAccentColorRGBA = m_AccentColorRGBA;
+				}
+				hex = 0;
+				if(sscanf(g_Config.m_KxUiPanelColor, "%6x", &hex) == 1)
+					m_PanelBgRGBA = 0xff000000u | (hex & 0xffffff);
+				m_RainbowEnabled = g_Config.m_KxUiRainbow != 0;
+				m_RainbowSpeed = g_Config.m_KxUiRainbowSpeed / 10.0f;
+				m_BgBlackout = g_Config.m_KxUiBlackout;
+				s_Off = false;
+			}
 			str_format(g_Config.m_KxUiAccentColor, sizeof(g_Config.m_KxUiAccentColor), "%06x", m_SavedAccentColorRGBA & 0xffffff);
 			str_format(g_Config.m_KxUiPanelColor, sizeof(g_Config.m_KxUiPanelColor), "%06x", m_PanelBgRGBA & 0xffffff);
 			g_Config.m_KxUiRainbow = m_RainbowEnabled ? 1 : 0;
@@ -2488,7 +3265,31 @@ void CClickGui::OnRender()
         // geometry, so panels keep the same physical size on every resolution
         // as they have at 1920x1080.
         const float physH = (float)Graphics()->ScreenHeight();
-        m_UiScale = ((physH > 0.0f) ? (physH / 1080.0f) : 1.0f) * (g_Config.m_KxClickGuiScale / 10.0f);
+        // v1.56.284: ClickGUI Scale applies only when UI settings are enabled.
+        const float GuiScale = (g_Config.m_KxUiSettingsOn != 0) ? (g_Config.m_KxClickGuiScale / 10.0f) : 1.0f;
+        m_UiScale = ((physH > 0.0f) ? (physH / 1080.0f) : 1.0f) * GuiScale;
+
+        // v1.56.284: live panel geometry for the PANEL_WIDTH/MAX_BODY_HEIGHT
+        // macros (KxPanelsWidth/KxPanelsHeight when UI settings are on).
+        g_PanelW = (g_Config.m_KxUiSettingsOn != 0) ? (float)g_Config.m_KxPanelsWidth : 300.0f;
+
+        // v1.56.284: smooth scrolling — the stored scroll approaches the
+        // target exponentially each frame (frame-rate independent inertia).
+        {
+                const float ScrollDt = Client()->RenderFrameTime();
+                const float ScrollFactor = 1.0f - std::exp(-14.0f * ScrollDt);
+                for(int i = 0; i < NUM_PANELS; ++i)
+                {
+                        const float ScrollDelta = m_aPanelScrollTarget[i] - m_aPanelScrollStored[i];
+                        if(ScrollDelta * ScrollDelta > 0.25f)
+                                m_aPanelScrollStored[i] += ScrollDelta * ScrollFactor;
+                        else
+                                m_aPanelScrollStored[i] = m_aPanelScrollTarget[i];
+                }
+        }
+        g_PanelMaxBodyH = (g_Config.m_KxUiSettingsOn != 0) ? (float)g_Config.m_KxPanelsHeight : 600.0f;
+        // Keep the panel (and its resize edge) inside the screen.
+        g_PanelMaxBodyH = std::min(g_PanelMaxBodyH, std::max(200.0f, VScreenHeight() - 120.0f));
 
         // Mouse position in virtual units (physical px / scale).
         // v1.56.218: while a touch finger drives the GUI (Android), keep the
@@ -2569,8 +3370,8 @@ void CClickGui::OnRender()
 					row.on = g_Config.m_KxFakeAim != 0;
                                 else if(str_comp(row.pName, "ESP") == 0)
                                         row.on = g_Config.m_KxEsp != 0;
-                                else if(str_comp(row.pName, "Basic Avoid Freeze") == 0)
-                                        row.on = g_Config.m_KxBasicAvoidFreeze != 0;
+                                else if(str_comp(row.pName, "Avoid Freeze") == 0)
+                                        row.on = g_Config.m_KxAvoidFreeze != 0;
                                 // Functions panel — Fly/Copy Moves sub-section
                                 else if(str_comp(row.pName, "Preserve input") == 0)
                                         row.on = g_Config.m_KxDummyHammerKeepInputs != 0;
@@ -2611,8 +3412,6 @@ void CClickGui::OnRender()
                                 else if(str_comp(row.pName, "Copy Moves Latency") == 0)
                                         row.on = g_Config.m_KxCopyMovesLatencyEnabled != 0;
                                 // Pathfinder top-level sliders/toggles
-                                else if(str_comp(row.pName, "Hook angles") == 0)
-                                        row.value = (float)g_Config.m_KxPfHookAngles;
                                 else if(str_comp(row.pName, "A* Weight") == 0)
                                         row.value = g_Config.m_KxPfAStarWeight / 100.0f;
                                 else if(str_comp(row.pName, "Beam width") == 0)
@@ -2678,7 +3477,7 @@ if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) &&
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c) || (str_comp(row.pName, "Spoof Spectate") == 0 && !SpoofSpectateChildVisible(row.pChildren, row.childCount, c)))
         continue;
-if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
+if(str_comp(row.pName, "Avoid Freeze") == 0 && !AfChildVisible(row.pChildren, row.childCount, c))
         continue;
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
         continue;
@@ -2765,30 +3564,30 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                         else if(str_comp(child.pName, "Show attempt") == 0)
                                                 child.on = g_Config.m_KxLaserUnfreezeShowAttempt != 0;
                                         // Basic Avoid Freeze children
-                                        else if(str_comp(child.pName, "Freeze") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
-                                                child.on = g_Config.m_KxBafAvoidFreeze != 0;
-                                        else if(str_comp(child.pName, "Teleport") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
-                                                child.on = g_Config.m_KxBafAvoidTeleport != 0;
-                                        else if(str_comp(child.pName, "Death") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
-                                                child.on = g_Config.m_KxBafAvoidDeath != 0;
-                                        else if(str_comp(child.pName, "Direction") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
-                                                child.on = g_Config.m_KxBafDirection != 0;
-                                        else if(str_comp(child.pName, "Jump") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
-                                                child.on = g_Config.m_KxBafJump != 0;
-                                        else if(str_comp(child.pName, "Hook") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
-                                                child.on = g_Config.m_KxBafHook != 0;
-                                        else if(str_comp(child.pName, "Aim") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
-                                                child.on = g_Config.m_KxBafAim != 0;
-                                        else if(str_comp(child.pName, "FOV") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
-                                                child.value = (float)g_Config.m_KxBafFov;
-                                        else if(str_comp(child.pName, "Angles") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
-                                                child.value = (float)g_Config.m_KxBafAngles;
-                                        else if(str_comp(child.pName, "Silent") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
-                                                child.on = g_Config.m_KxBafSilent != 0;
-                                        else if(str_comp(child.pName, "Ticks") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
-                                                child.value = (float)g_Config.m_KxBafTicks;
-                                        else if(str_comp(child.pName, "Trigger ticks") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
-                                                child.value = (float)g_Config.m_KxBafTriggerTicks;
+                                        else if(str_comp(child.pName, "Freeze") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                                                child.on = g_Config.m_KxAfAvoidFreeze != 0;
+                                        else if(str_comp(child.pName, "Teleport") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                                                child.on = g_Config.m_KxAfAvoidTeleport != 0;
+                                        else if(str_comp(child.pName, "Death") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                                                child.on = g_Config.m_KxAfAvoidDeath != 0;
+                                        else if(str_comp(child.pName, "Direction") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                                                child.on = g_Config.m_KxAfDirection != 0;
+                                        else if(str_comp(child.pName, "Jump") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                                                child.on = g_Config.m_KxAfJump != 0;
+                                        else if(str_comp(child.pName, "Hook") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                                                child.on = g_Config.m_KxAfHook != 0;
+                                        else if(str_comp(child.pName, "Aim") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                                                child.on = g_Config.m_KxAfAim != 0;
+                                        else if(str_comp(child.pName, "FOV") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                                                child.value = (float)g_Config.m_KxAfFov;
+                                        else if(str_comp(child.pName, "Angles") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                                                child.value = (float)g_Config.m_KxAfAngles;
+                                        else if(str_comp(child.pName, "Silent") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                                                child.on = g_Config.m_KxAfSilent != 0;
+                                        else if(str_comp(child.pName, "Ticks") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                                                child.value = (float)g_Config.m_KxAfTicks;
+                                        else if(str_comp(child.pName, "Ticks Before") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                                                child.value = (float)g_Config.m_KxAfTicksBefore;
                                         // Fake Aim children
 					else if(str_comp(child.pName, "Mode") == 0 && str_comp(row.pName, "Fake Aim") == 0 && str_comp(g_Panels[p].pTitle, "Functions") == 0)
 						child.valueIdx = g_Config.m_KxFakeAimMode;
@@ -3555,75 +4354,189 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                         // Hide if already on main (g_Config.m_ClDummy == 0).
                                                         ch.on = (g_Config.m_ClDummy != 0);
                                                 }
-                                                else if(ch.pName && ch.pName[0] == 'D' && ch.pName[1] >= '1' && ch.pName[1] <= '7')
+                                                else if(ch.type != ERowType::DoubleButton && ch.pName && ch.pName[0] == 'D' && DummyMgrParseD(ch.pName) >= 1)
                                                 {
-                                                        int d = ch.pName[1] - '0';
+                                                        const int d = DummyMgrParseD(ch.pName);
                                                         if(strstr(ch.pName, "Connect"))
                                                                 ch.on = GameClient()->Client()->DummyConnected(d);
                                                         else if(strstr(ch.pName, "Switch"))
                                                                 ch.on = (g_Config.m_ClDummy == d);
                                                 }
-                                                // v1.56.90: DoubleButton (Connect+Switch+Send) — ch.on=connected, ch.value=active, ch.expanded=send
+                                                // v1.56.282: DoubleButton (Connect+Switch+Send) — ch.on=connected, ch.value=active, ch.expanded=send
                                                 else if(ch.type == ERowType::DoubleButton && ch.pName && ch.pName[0] == 'D')
                                                 {
-                                                        int d = ch.pName[1] - '0';
-                                                        ch.on = GameClient()->Client()->DummyConnected(d);
-                                                        ch.value = (g_Config.m_ClDummy == d) ? 1.0f : 0.0f;
-                                                        if(d >= 1 && d < 8)
+                                                        const int d = DummyMgrParseD(ch.pName);
+                                                        if(d >= 1 && d < MAX_DUMMIES)
+                                                        {
+                                                                ch.on = GameClient()->Client()->DummyConnected(d);
+                                                                ch.value = (g_Config.m_ClDummy == d) ? 1.0f : 0.0f;
                                                                 ch.expanded = m_aDummySendEnabled[d];
+                                                        }
                                                 }
                                         }
                                 }
                         }
                 }
         }
-        // v1.56.199: sync Main Color, Panel Color, BG blackout, Rainbow state.
+        // v1.56.283: every-frame sync of the combo expandables. The former
+        // top-level rows (Main/Panel Color, BG blackout, ClickGUI Scale, Panels
+        // Start X/Y, Drag-To-Sort, per-sprite Custom color *) live as children
+        // now, so they are synced inside their parent's branch below.
         for(int p = 0; p < NUM_PANELS; ++p)
         {
                 for(int r = 0; r < g_Panels[p].rowCount; ++r)
                 {
                         SRow &row = g_Panels[p].pRows[r];
-                        if(str_comp(row.pName, "Main Color") == 0 && row.type == ERowType::Input)
+                        if(str_comp(row.pName, "ClickGUI Settings") == 0 && row.type == ERowType::Expandable)
                         {
-                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r)
-                                {
-                                        char hex[8];
-                                        str_format(hex, sizeof(hex), "%06x", m_AccentColorRGBA & 0xffffff);
-                                        str_copy(row.m_aInputBuf, hex, sizeof(row.m_aInputBuf));
-                                        row.m_InputInitialized = true;
-                                }
-                        }
-                        else if(str_comp(row.pName, "Rainbow color") == 0 && row.type == ERowType::Expandable)
-                        {
-                                row.on = m_RainbowEnabled;
-                                // v1.56.78: do NOT force row.expanded — let the user
-                                // expand/collapse independently of the toggle state,
-                                // like every other expandable.
+                                row.on = g_Config.m_KxUiSettingsOn != 0;
                                 for(int c = 0; c < row.childCount; ++c)
                                 {
                                         SRow &child = row.pChildren[c];
-                                        if(str_comp(child.pName, "Speed") == 0)
-                                                child.value = m_RainbowSpeed;
+                                        const bool Dragging = (m_DragSliderPanel == p && m_DragSliderRow == r && m_DragSliderChild == c);
+                                        if(str_comp(child.pName, "Main Color") == 0)
+                                        {
+                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                {
+                                                        char aHex[8];
+                                                        str_format(aHex, sizeof(aHex), "%06x", m_AccentColorRGBA & 0xffffff);
+                                                        str_copy(child.m_aInputBuf, aHex, sizeof(child.m_aInputBuf));
+                                                        child.m_InputInitialized = true;
+                                                }
+                                        }
+                                        else if(str_comp(child.pName, "Rainbow Main Color") == 0)
+                                                child.on = m_RainbowEnabled;
+                                        else if(str_comp(child.pName, "Speed") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = m_RainbowSpeed;
+                                        }
+                                        else if(str_comp(child.pName, "Panel Color") == 0)
+                                        {
+                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                {
+                                                        char aHex[8];
+                                                        str_format(aHex, sizeof(aHex), "%06x", m_PanelBgRGBA & 0xffffff);
+                                                        str_copy(child.m_aInputBuf, aHex, sizeof(child.m_aInputBuf));
+                                                        child.m_InputInitialized = true;
+                                                }
+                                        }
+                                        else if(str_comp(child.pName, "BG Blackout") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = (float)m_BgBlackout;
+                                        }
+                                        else if(str_comp(child.pName, "ClickGUI Scale") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = g_Config.m_KxClickGuiScale / 10.0f;
+                                        }
+                                        else if(str_comp(child.pName, "Panels Start X") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = (float)g_Config.m_KxPanelsStartX;
+                                        }
+                                        else if(str_comp(child.pName, "Panels Start Y") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = (float)g_Config.m_KxPanelsStartY;
+                                        }
+                                        else if(str_comp(child.pName, "Panels X-indentation") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = (float)g_Config.m_KxPanelsIndentX;
+                                        }
+                                        else if(str_comp(child.pName, "Panels Y-indentation") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = (float)g_Config.m_KxPanelsIndentY;
+                                        }
+                                        else if(str_comp(child.pName, "Dynamic scale (Beta)") == 0)
+                                                child.on = g_Config.m_KxPanelsDynamicScale != 0;
+                                        else if(str_comp(child.pName, "Panels width") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = (float)g_Config.m_KxPanelsWidth;
+                                        }
+                                        else if(str_comp(child.pName, "Panels height") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = (float)g_Config.m_KxPanelsHeight;
+                                        }
+                                        else if(str_comp(child.pName, "Drag-To-Sort") == 0)
+                                                child.on = g_Config.m_KxDragToSort != 0;
                                 }
                         }
-                        // v1.56.199: sync Panel Color input from m_PanelBgRGBA.
-                        else if(str_comp(row.pName, "Panel Color") == 0 && row.type == ERowType::Input)
+                        // v1.56.283: Custom colors — one branch for the selected Sprite/Entity.
+                        else if(str_comp(row.pName, "Custom colors") == 0 && row.type == ERowType::Expandable)
                         {
-                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r)
+                                row.on = g_Config.m_KxCustomColors != 0;
+                                int SpriteIdx = 0, EntIdx = 0;
+                                CustomColorSelection(row, &SpriteIdx, &EntIdx);
+                                const SCustomColorCfg Cfg = CustomColorCfgFor(SpriteIdx, EntIdx);
+                                if(Cfg.pOn)
                                 {
-                                        char hex[8];
-                                        str_format(hex, sizeof(hex), "%06x", m_PanelBgRGBA & 0xffffff);
-                                        str_copy(row.m_aInputBuf, hex, sizeof(row.m_aInputBuf));
-                                        row.m_InputInitialized = true;
+                                        for(int c = 0; c < row.childCount; ++c)
+                                        {
+                                                SRow &child = row.pChildren[c];
+                                                const bool Dragging = (m_DragSliderPanel == p && m_DragSliderRow == r && m_DragSliderChild == c);
+                                                if(str_comp(child.pName, "Enable") == 0)
+                                                        child.on = *Cfg.pOn != 0;
+                                                else if(str_comp(child.pName, "Color") == 0)
+                                                {
+                                                        if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                        {
+                                                                char aHex[8];
+                                                                str_format(aHex, sizeof(aHex), "%06x", *Cfg.pColor & 0xffffff);
+                                                                str_copy(child.m_aInputBuf, aHex, sizeof(child.m_aInputBuf));
+                                                                child.m_InputInitialized = true;
+                                                        }
+                                                }
+                                                else if(str_comp(child.pName, "Opacity") == 0)
+                                                {
+                                                        if(!Dragging)
+                                                                child.value = (float)*Cfg.pAlpha;
+                                                }
+                                                else if(str_comp(child.pName, "Rainbow") == 0)
+                                                        child.on = *Cfg.pAnim != 0;
+                                                else if(str_comp(child.pName, "Speed") == 0)
+                                                {
+                                                        if(!Dragging)
+                                                                child.value = (float)*Cfg.pSpeed / 10.0f;
+                                                }
+                                        }
                                 }
                         }
-                        // v1.56.199: sync BG blackout slider from m_BgBlackout.
-                        else if(str_comp(row.pName, "BG blackout") == 0 && row.type == ERowType::Slider)
-                                row.value = (float)m_BgBlackout;
-                        else if(str_comp(row.pName, "ClickGUI Scale") == 0 && row.type == ERowType::Slider)
+                        // v1.56.283: Pathfinder "Settings" visual expandable children.
+                        else if(str_comp(row.pName, "Settings") == 0 && row.type == ERowType::Expandable && str_comp(g_Panels[p].pTitle, "Pathfinder") == 0)
                         {
-                                if(!(m_DragSliderPanel == p && m_DragSliderRow == r && m_DragSliderChild == -1))
-                                        row.value = g_Config.m_KxClickGuiScale / 10.0f;
+                                for(int c = 0; c < row.childCount; ++c)
+                                {
+                                        SRow &child = row.pChildren[c];
+                                        const bool Dragging = (m_DragSliderPanel == p && m_DragSliderRow == r && m_DragSliderChild == c);
+                                        if(str_comp(child.pName, "A* Weight") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = g_Config.m_KxPfAStarWeight / 100.0f;
+                                        }
+                                        else if(str_comp(child.pName, "Evolutions") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = (float)g_Config.m_KxPfRheaGenerations;
+                                        }
+                                        else if(str_comp(child.pName, "Beam width") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = (float)g_Config.m_KxPfBeamWidth;
+                                        }
+                                        else if(str_comp(child.pName, "Performance") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = (float)g_Config.m_KxPfPerf;
+                                        }
+                                        else if(str_comp(child.pName, "Freeze Support (Beta)") == 0)
+                                                child.on = g_Config.m_KxPfFreezeSupport != 0;
+                                }
                         }
                         // v1.56.260: Panels Start X/Y + Drag-To-Sort.
                         else if(str_comp(row.pName, "Panels Start X") == 0 && row.type == ERowType::Slider)
@@ -3759,48 +4672,32 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                         // v1.56.199: Binds panel — sync input fields with actual bound keys
                         // every frame (not just on open), so console bind changes appear
                         // immediately while ClickGUI is open.
-                        else if(p == 4 && row.type == ERowType::Input)
-                        {
-                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r)
-                                {
-                                        const char *pCmd = nullptr;
-                                        if(str_comp(row.pName, "ClickGUI") == 0) pCmd = "toggle cl_clickgui 1 0";
-                                        else if(str_comp(row.pName, "AimBot") == 0) pCmd = "toggle kx_aimbot 1 0";
-                                        else if(str_comp(row.pName, "TriggerBot") == 0) pCmd = "toggle kx_triggerbot 1 0";
-                                        else if(str_comp(row.pName, "Fake Aim") == 0) pCmd = "toggle kx_fake_aim 1 0";
-                                        else if(str_comp(row.pName, "Laser Unfreeze") == 0) pCmd = "toggle kx_laser_unfreeze 1 0";
-                                        else if(str_comp(row.pName, "Copy Moves Filter") == 0) pCmd = "toggle kx_dummy_copy_moves_filter 1 0";
-                                        else if(str_comp(row.pName, "Copy Moves Latency") == 0) pCmd = "toggle kx_copy_moves_latency_enabled 1 0";
-                                        else if(str_comp(row.pName, "Trajectory") == 0) pCmd = "toggle kx_show_trajectory 1 0";
-                                        else if(str_comp(row.pName, "ESP") == 0) pCmd = "toggle kx_esp 1 0";
-                                        else if(str_comp(row.pName, "Basic Avoid Freeze") == 0) pCmd = "toggle kx_basic_avoid_freeze 1 0";
-                                        else if(str_comp(row.pName, "Helpers") == 0) pCmd = "toggle kx_helpers 1 0";
-                                        else if(str_comp(row.pName, "Auto Triple Fly") == 0) pCmd = "toggle kx_triple_fly 1 0";
-                                        if(pCmd)
-                                        {
-                                                char aKey[64];
-                                                if(g_Config.m_KxBindsMode == 0)
-                                                        GameClient()->m_Binds.GetKeySegment(pCmd, aKey, sizeof(aKey));
-                                                else
-                                                        GameClient()->m_Binds.GetKey(pCmd, aKey, sizeof(aKey));
-                                                if(aKey[0])
-                                                        str_copy(row.m_aInputBuf, aKey, sizeof(row.m_aInputBuf));
-                                                else
-                                                        str_copy(row.m_aInputBuf, "", sizeof(row.m_aInputBuf));
-                                                row.m_InputInitialized = true;
-                                        }
-                                }
-                        }
-                        else if(p == 4 && row.type == ERowType::Expandable && str_comp(row.pName, "TAS") == 0)
+                        // v1.56.283: Binds expandable — sync all bind input children
+                        // every frame (console bind changes reflect immediately).
+                        else if(p == 4 && row.type == ERowType::Expandable && str_comp(row.pName, "Binds") == 0)
                         {
                                 for(int c = 0; c < row.childCount; ++c)
                                 {
                                         SRow &child = row.pChildren[c];
                                         const char *pCmd = nullptr;
-                                        if(str_comp(child.pName, "Record") == 0) pCmd = "toggle kx_tas_record 1 0";
-                                        else if(str_comp(child.pName, "Pause") == 0) pCmd = "toggle kx_tas_pause 1 0";
-                                        else if(str_comp(child.pName, "Rewind") == 0) pCmd = "kx_tas_rewind";
-                                        else if(str_comp(child.pName, "Forward") == 0) pCmd = "kx_tas_forward";
+                                        if(str_comp(child.pName, "ClickGUI") == 0) pCmd = "toggle cl_clickgui 1 0";
+                                        else if(str_comp(child.pName, "AimBot") == 0) pCmd = "toggle kx_aimbot 1 0";
+                                        else if(str_comp(child.pName, "TriggerBot") == 0) pCmd = "toggle kx_triggerbot 1 0";
+                                        else if(str_comp(child.pName, "Fake Aim") == 0) pCmd = "toggle kx_fake_aim 1 0";
+                                        else if(str_comp(child.pName, "Laser Unfreeze") == 0) pCmd = "toggle kx_laser_unfreeze 1 0";
+                                        else if(str_comp(child.pName, "Copy Moves Filter") == 0) pCmd = "toggle kx_dummy_copy_moves_filter 1 0";
+                                        else if(str_comp(child.pName, "Copy Moves Latency") == 0) pCmd = "toggle kx_copy_moves_latency_enabled 1 0";
+                                        else if(str_comp(child.pName, "Trajectory") == 0) pCmd = "toggle kx_show_trajectory 1 0";
+                                        else if(str_comp(child.pName, "ESP") == 0) pCmd = "toggle kx_esp 1 0";
+                                        else if(str_comp(child.pName, "Avoid Freeze") == 0) pCmd = "toggle kx_avoid_freeze 1 0";
+                                        else if(str_comp(child.pName, "Helpers") == 0) pCmd = "toggle kx_helpers 1 0";
+                                        else if(str_comp(child.pName, "Auto Triple Fly") == 0) pCmd = "toggle kx_triple_fly 1 0";
+                                        else if(str_comp(child.pName, "Auto Fire") == 0) pCmd = "toggle kx_auto_fire 1 0";
+                                        else if(str_comp(child.pName, "BalanceBot") == 0) pCmd = "toggle kx_balance_bot 1 0";
+                                        else if(str_comp(child.pName, "TAS Record") == 0) pCmd = "toggle kx_tas_record 1 0";
+                                        else if(str_comp(child.pName, "TAS Pause") == 0) pCmd = "toggle kx_tas_pause 1 0";
+                                        else if(str_comp(child.pName, "TAS Rewind") == 0) pCmd = "kx_tas_rewind";
+                                        else if(str_comp(child.pName, "TAS Forward") == 0) pCmd = "kx_tas_forward";
                                         if(pCmd && (!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c))
                                         {
                                                 char aKey[64];
@@ -3982,19 +4879,19 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                 Input()->MouseModeRelative();
 
         // Drive animation toward the current cl_clickgui target (0 or 1).
+        // v1.56.285: exponential approach (k = 7 / DURATION — matches the CSS
+        // curve cubic-bezier(0.16,1,0.3,1)). m_AnimProgress now IS the eased
+        // value: fast-start on open, fast-start vanish on close, and a
+        // mid-flight flip (sharp close right after open) stays value-continuous.
+        // The old linear timeline + asymmetric ease-OUT curve stalled the close
+        // for half of the duration and then snapped shut (broken exit anims).
         const float target = isOpen ? 1.0f : 0.0f;
         const float dt = Client()->RenderFrameTime();
         const float speed = (ANIM_DURATION > 0.0f) ? (1.0f / ANIM_DURATION) : 1.0f;
-        if(m_AnimProgress < target)
+        if(m_AnimProgress != target)
         {
-                m_AnimProgress += dt * speed;
-                if(m_AnimProgress > target)
-                        m_AnimProgress = target;
-        }
-        else if(m_AnimProgress > target)
-        {
-                m_AnimProgress -= dt * speed;
-                if(m_AnimProgress < target)
+                m_AnimProgress += (target - m_AnimProgress) * (1.0f - std::exp(-(7.0f * speed) * dt));
+                if(std::fabs(target - m_AnimProgress) < 0.002f)
                         m_AnimProgress = target;
         }
 
@@ -4009,6 +4906,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
         UpdatePathfinderLabels();
         UpdateCodeExecRows();
         UpdateTasRows();
+        UpdateDummyManagerRows(); // v1.56.282: Dummy Manager panel sync
 
         // v1.56.77: rainbow color rotation. When enabled, overwrite m_AccentColorRGBA
         // each frame with a hue-rotating color. HSV→RGB conversion inline.
@@ -4091,6 +4989,28 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                 }
         }
 
+        // v1.56.285: panel edge resize (Dynamic scale) — live width/height,
+        // measured from the panel's CURRENT position: its slot home shifts
+        // while the width changes (the grid reflows around the new width), so
+        // the old drag-start + delta math overshot on every panel except the
+        // leftmost one. The bottom edge accounts for the header height.
+        if(m_ResizePanel >= 0)
+        {
+                const vec2 PanelPos = m_aPanelPosValid[m_ResizePanel] ? m_aPanelPos[m_ResizePanel] : PanelHomePos(m_ResizePanel);
+                if(m_ResizeEdge & 1)
+                {
+                        const float w = std::clamp(m_MousePos.x - PanelPos.x, 150.0f, 800.0f);
+                        g_Config.m_KxPanelsWidth = (int)w;
+                        g_PanelW = w;
+                }
+                if(m_ResizeEdge & 2)
+                {
+                        const float h = std::clamp(m_MousePos.y - PanelPos.y - HEADER_HEIGHT, 200.0f, 2000.0f);
+                        g_Config.m_KxPanelsHeight = (int)h;
+                        g_PanelMaxBodyH = h;
+                }
+        }
+
         // If dragging a slider, update its value from mouse X position.
         if(m_DragSliderPanel >= 0 && m_DragSliderRow >= 0)
         {
@@ -4109,22 +5029,39 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                         const float trackW = PANEL_WIDTH - BODY_PADDING * 2 - indent - 4.0f;
                         float pct = (m_MousePos.x - trackX) / trackW;
                         pct = std::clamp(pct, 0.0f, 1.0f);
-                        {
-                                float raw = pTarget->min + pct * (pTarget->max - pTarget->min);
-                                if(pTarget->step >= 1.0f)
-                                        pTarget->value = pTarget->min + roundf((raw - pTarget->min) / pTarget->step) * pTarget->step;
-                                else
-                                        pTarget->value = raw;
-                        }
+{
+                                                // v1.56.284: snap to the step for ANY step > 0
+                                                // (fractional steps included), clamped to [min, max].
+                                                float raw = pTarget->min + pct * (pTarget->max - pTarget->min);
+                                                if(pTarget->step > 0.0f)
+                                                {
+                                                        pTarget->value = pTarget->min + roundf((raw - pTarget->min) / pTarget->step) * pTarget->step;
+                                                        if(pTarget->value > pTarget->max)
+                                                                pTarget->value = pTarget->max;
+                                                        if(pTarget->value < pTarget->min)
+                                                                pTarget->value = pTarget->min;
+                                                }
+                                                else
+                                                        pTarget->value = raw;
+                                        }
                         if(str_comp(pTarget->pName, "Latency (ms)") == 0 && str_comp(row.pName, "Custom latency") == 0)
                                 g_Config.m_KxDummyHammerLatencyMs = (int)pTarget->value;
-                        else if(str_comp(pTarget->pName, "BG blackout") == 0)
+                        else if(str_comp(pTarget->pName, "BG Blackout") == 0)
                                 m_BgBlackout = (int)pTarget->value;
                         // v1.56.260: Panels Start X/Y live update while dragging.
                         else if(str_comp(pTarget->pName, "Panels Start X") == 0)
                                 g_Config.m_KxPanelsStartX = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Panels Start Y") == 0)
                                 g_Config.m_KxPanelsStartY = (int)pTarget->value;
+                        // v1.56.283: Panels indentation + width/height live update.
+                        else if(str_comp(pTarget->pName, "Panels X-indentation") == 0)
+                                g_Config.m_KxPanelsIndentX = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Panels Y-indentation") == 0)
+                                g_Config.m_KxPanelsIndentY = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Panels width") == 0)
+                                g_Config.m_KxPanelsWidth = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Panels height") == 0)
+                                g_Config.m_KxPanelsHeight = (int)pTarget->value;
                         // v1.56.204: Line rendering per-component Speed slider (display = config/10)
                         else if(str_comp(pTarget->pName, "Speed") == 0 && str_comp(row.pName, "Line rendering") == 0)
                         {
@@ -4187,14 +5124,14 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 g_Config.m_KxLaserUnfreezeTicks = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Trigger ticks") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
                                 g_Config.m_KxLaserUnfreezeTriggerTicks = (int)pTarget->value;
-                        else if(str_comp(pTarget->pName, "Ticks") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
-                                g_Config.m_KxBafTicks = (int)pTarget->value;
-                        else if(str_comp(pTarget->pName, "Trigger ticks") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
-                                g_Config.m_KxBafTriggerTicks = (int)pTarget->value;
-                        else if(str_comp(pTarget->pName, "Angles") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
-                                g_Config.m_KxBafAngles = (int)pTarget->value;
-                        else if(str_comp(pTarget->pName, "FOV") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
-                                g_Config.m_KxBafFov = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Ticks") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                                g_Config.m_KxAfTicks = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Ticks Before") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                                g_Config.m_KxAfTicksBefore = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Angles") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                                g_Config.m_KxAfAngles = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "FOV") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                                g_Config.m_KxAfFov = (int)pTarget->value;
                         // v1.56.108: Line rendering per-component writes
                         else if(str_comp(pTarget->pName, "Line size") == 0 || str_comp(pTarget->pName, "Line opacity") == 0)
                         {
@@ -4265,57 +5202,24 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 if(sel >= 0 && sel < CTrajectory::NUM_TRAJ_TYPES)
                                         traj.m_aTypes[sel].m_PredictionTicks = (int)pTarget->value;
                         }
-                        // v1.56.260: Visuals rainbow Speed sliders (before the generic
-                        // "Speed" branch, which would otherwise write Fake Aim speed).
-                        // v1.56.275: entities now use the master Speed cvar.
-                        else if(str_comp(pTarget->pName, "Speed") == 0 &&
-                                (str_comp(row.pName, "Custom color tee") == 0 || str_comp(row.pName, "Custom color legs") == 0 ||
-                                 str_comp(row.pName, "Custom color entities") == 0 || str_comp(row.pName, "Custom color guns") == 0 ||
-                                 str_comp(row.pName, "Custom color hook") == 0 || str_comp(row.pName, "Custom color HUD") == 0 ||
-                                 str_comp(row.pName, "Custom color particles") == 0 || str_comp(row.pName, "Custom color emoticons") == 0))
+                        // v1.56.283: Visuals — Custom colors Speed/Opacity sliders for
+                        // the selected Sprite/Entity (before the generic "Speed"
+                        // branch, which would otherwise write Fake Aim speed).
+                        else if(str_comp(pTarget->pName, "Speed") == 0 && str_comp(row.pName, "Custom colors") == 0)
                         {
-                                int rawVal = (int)(pTarget->value * 10.0f + 0.5f);
-                                if(str_comp(row.pName, "Custom color tee") == 0)
-                                        g_Config.m_KxRainbowTeeSpeed = rawVal;
-                                else if(str_comp(row.pName, "Custom color legs") == 0)
-                                        g_Config.m_KxRainbowLegsSpeed = rawVal;
-                                else if(str_comp(row.pName, "Custom color entities") == 0)
-                                        g_Config.m_KxRainbowEntSpeed = rawVal;
-                                else if(str_comp(row.pName, "Custom color guns") == 0)
-                                        g_Config.m_KxRainbowGunsSpeed = rawVal;
-                                else if(str_comp(row.pName, "Custom color hook") == 0)
-                                        g_Config.m_KxRainbowHookSpeed = rawVal;
-                                else if(str_comp(row.pName, "Custom color HUD") == 0)
-                                        g_Config.m_KxRainbowHudSpeed = rawVal;
-                                else if(str_comp(row.pName, "Custom color particles") == 0)
-                                        g_Config.m_KxRainbowParticlesSpeed = rawVal;
-                                else
-                                        g_Config.m_KxRainbowEmoticonsSpeed = rawVal;
+                                int SpriteIdx = 0, EntIdx = 0;
+                                CustomColorSelection(row, &SpriteIdx, &EntIdx);
+                                const SCustomColorCfg Cfg = CustomColorCfgFor(SpriteIdx, EntIdx);
+                                if(Cfg.pOn)
+                                        *Cfg.pSpeed = (int)(pTarget->value * 10.0f + 0.5f);
                         }
-                        // v1.56.275: Visuals custom-color Opacity sliders.
-                        else if(str_comp(pTarget->pName, "Opacity") == 0 &&
-                                (str_comp(row.pName, "Custom color tee") == 0 || str_comp(row.pName, "Custom color legs") == 0 ||
-                                 str_comp(row.pName, "Custom color entities") == 0 || str_comp(row.pName, "Custom color guns") == 0 ||
-                                 str_comp(row.pName, "Custom color hook") == 0 || str_comp(row.pName, "Custom color HUD") == 0 ||
-                                 str_comp(row.pName, "Custom color particles") == 0 || str_comp(row.pName, "Custom color emoticons") == 0))
+                        else if(str_comp(pTarget->pName, "Opacity") == 0 && str_comp(row.pName, "Custom colors") == 0)
                         {
-                                int rawVal = (int)(pTarget->value + 0.5f);
-                                if(str_comp(row.pName, "Custom color tee") == 0)
-                                        g_Config.m_KxRainbowTeeAlpha = rawVal;
-                                else if(str_comp(row.pName, "Custom color legs") == 0)
-                                        g_Config.m_KxRainbowLegsAlpha = rawVal;
-                                else if(str_comp(row.pName, "Custom color entities") == 0)
-                                        g_Config.m_KxRainbowEntAlpha = rawVal;
-                                else if(str_comp(row.pName, "Custom color guns") == 0)
-                                        g_Config.m_KxRainbowGunsAlpha = rawVal;
-                                else if(str_comp(row.pName, "Custom color hook") == 0)
-                                        g_Config.m_KxRainbowHookAlpha = rawVal;
-                                else if(str_comp(row.pName, "Custom color HUD") == 0)
-                                        g_Config.m_KxRainbowHudAlpha = rawVal;
-                                else if(str_comp(row.pName, "Custom color particles") == 0)
-                                        g_Config.m_KxRainbowParticlesAlpha = rawVal;
-                                else
-                                        g_Config.m_KxRainbowEmoticonsAlpha = rawVal;
+                                int SpriteIdx = 0, EntIdx = 0;
+                                CustomColorSelection(row, &SpriteIdx, &EntIdx);
+                                const SCustomColorCfg Cfg = CustomColorCfgFor(SpriteIdx, EntIdx);
+                                if(Cfg.pOn)
+                                        *Cfg.pAlpha = (int)(pTarget->value + 0.5f);
                         }
                         else if(str_comp(pTarget->pName, "Speed") == 0)
                         {
@@ -4328,7 +5232,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                         if(m_DragSliderRow >= 0 && m_DragSliderRow < dragPanel.rowCount)
                                         {
                                                 SRow &parentRow = dragPanel.pRows[m_DragSliderRow];
-                                                if(str_comp(parentRow.pName, "Rainbow color") == 0)
+                                                if(str_comp(parentRow.pName, "ClickGUI Settings") == 0)
                                                         isRainbow = true;
                                         }
                                 }
@@ -4386,8 +5290,6 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 g_Config.m_KxBalanceBotRadius = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Stand Radius") == 0)
                                 g_Config.m_KxBalanceBotStandRadius = (int)pTarget->value;
-                        else if(str_comp(pTarget->pName, "Hook angles") == 0)
-                                g_Config.m_KxPfHookAngles = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "A* Weight") == 0)
                                 g_Config.m_KxPfAStarWeight = (int)(pTarget->value * 100.0f + 0.5f);
                         else if(str_comp(pTarget->pName, "Beam width") == 0)
@@ -4403,6 +5305,9 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 g_Config.m_KxRtPfTrigger = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Future Ticks") == 0)
                                 g_Config.m_KxRtPfFutureTicks = (int)pTarget->value;
+                        // v1.56.282: Dummy Manager — live dummy limit while dragging.
+                        else if(str_comp(pTarget->pName, "Dummies") == 0)
+                                Client()->SetDummyLimit((int)pTarget->value);
                         // v1.56.83: AimBot/TriggerBot per-weapon sliders (disambiguate by parent expandable)
                         else if(m_DragSliderChild >= 0 && m_DragSliderPanel >= 0)
                         {
@@ -4446,15 +5351,12 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                 }
         }
 
-        // Easing: open uses CubicBezierEase(progress) which is fast-start, slow-end.
-        // Close should mirror this so the easing is at the END of the animation
-        // (slow-start, fast-end) — i.e. panels decelerate as they vanish, matching
-        // the HTML's symmetric transition. We invert the curve for close direction.
-        float eased;
-        if(isOpen)
-                eased = CubicBezierEase(m_AnimProgress); // 0→1, fast-start slow-end
-        else
-                eased = 1.0f - CubicBezierEase(1.0f - m_AnimProgress); // 1→0, slow-start fast-end
+        // v1.56.285: m_AnimProgress is already the eased value (exponential
+        // approach, k = 7 / DURATION ≈ the CSS curve) — use it directly for
+        // both directions. CubicBezierEase(linear progress) is an ease-OUT
+        // curve: applied to a decreasing progress it stalled the close for
+        // half of the duration and then snapped shut (broken exit animation).
+        float eased = m_AnimProgress;
         const float alpha = eased;
 
         // Set up pixel-space projection. The screen is mapped into the virtual
@@ -4490,6 +5392,76 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 renderOrder[b] = tmp;
                         }
 
+        // v1.56.286: Search panel — live query polling + match-flag recompute.
+        // While the Search field is being edited, the query follows the edit
+        // buffer in real time. On any query/filter change the match flags are
+        // recomputed; the layout signatures pick the change up automatically
+        // (hidden rows drop out of the signature) and the panel bodies glide
+        // to their new height via the smoothed body height in RenderPanel.
+        {
+                static char s_LastQuery[128] = {0};
+                static bool s_LastCase = false;
+                static bool s_LastWhole = false;
+                static bool s_LastRegex = false;
+                static bool s_LastFuzzy = false;
+                static bool s_SearchInit = false;
+                SRow *pEditing = (SRow *)GetEditingInputRowPtr();
+                if(m_InputEditing && pEditing == &g_Panels[NUM_PANELS - 1].pRows[0])
+                        str_copy(g_SearchQuery, m_InputBuf, sizeof(g_SearchQuery));
+                if(!s_SearchInit || str_comp(s_LastQuery, g_SearchQuery) != 0 ||
+                        s_LastCase != g_SearchCaseSensitive || s_LastWhole != g_SearchWholeWord ||
+                        s_LastRegex != g_SearchRegex || s_LastFuzzy != g_SearchFuzzy)
+                {
+                        str_copy(s_LastQuery, g_SearchQuery, sizeof(s_LastQuery));
+                        s_LastCase = g_SearchCaseSensitive;
+                        s_LastWhole = g_SearchWholeWord;
+                        s_LastRegex = g_SearchRegex;
+                        s_LastFuzzy = g_SearchFuzzy;
+                        s_SearchInit = true;
+                        SearchUpdateMatches();
+                }
+        }
+
+        // v1.56.285: PANEL_WIDTH changed since the last frame (ClickGUI Settings
+        // slider or edge resize)? The cached Yoga layouts were built with the
+        // old width — invalidate them all so the rows reflow. Without this the
+        // row visuals kept the cached width while collisions used the live one.
+        static float s_LastLayoutW = -1.0f;
+        if(g_PanelW != s_LastLayoutW)
+        {
+                for(int p = 0; p < NUM_PANELS; ++p)
+                        m_aLayoutCacheDirty[p] = true;
+                s_LastLayoutW = g_PanelW;
+        }
+
+        // v1.56.285: Panels X/Y-indentation is the GAP BETWEEN panels (user
+        // clarification) — applied inside SlotHomePos as spacingX/spacingY.
+        // When a layout offset config changes (Indent or Start X/Y), force
+        // every panel to glide to its new slot home so the sliders give live
+        // feedback even with KxDragToSort off.
+        {
+                static float s_LastIndentX = -1.0f;
+                static float s_LastIndentY = -1.0f;
+                static float s_LastStartX = -1.0f;
+                static float s_LastStartY = -1.0f;
+                const float indentX = (float)g_Config.m_KxPanelsIndentX;
+                const float indentY = (float)g_Config.m_KxPanelsIndentY;
+                const float startXCfg = (float)g_Config.m_KxPanelsStartX;
+                const float startYCfg = (float)g_Config.m_KxPanelsStartY;
+                if(s_LastIndentX != indentX || s_LastIndentY != indentY ||
+                        s_LastStartX != startXCfg || s_LastStartY != startYCfg)
+                {
+                        s_LastIndentX = indentX;
+                        s_LastIndentY = indentY;
+                        s_LastStartX = startXCfg;
+                        s_LastStartY = startYCfg;
+                        g_ForceRehome = true;
+                }
+        }
+
+        // v1.56.285: per-frame OS cursor shape for the resize zones (0 = arrow).
+        int CursorShape = 0;
+
         for(int idx = 0; idx < NUM_PANELS; ++idx)
         {
                 const int i = renderOrder[idx];
@@ -4519,10 +5491,11 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                         m_aPanelPos[i].x + (m_aPanelTarget[i].x - m_aPanelPos[i].x) * dragFactor,
                         m_aPanelPos[i].y + (m_aPanelTarget[i].y - m_aPanelPos[i].y) * dragFactor);
         }
-        else if(g_Config.m_KxDragToSort)
+        else if(g_Config.m_KxDragToSort || g_ForceRehome)
         {
                 // Non-dragged panel: glide toward its slot home (supports drag-to-sort
-                // swaps). When already at home this is a no-op.
+                // swaps, and re-layout after a Panels Start/Indent X/Y change). When
+                // already at home this is a no-op.
                 m_aPanelTarget[i] = home;
                 m_aPanelPos[i] = vec2(
                         m_aPanelPos[i].x + (m_aPanelTarget[i].x - m_aPanelPos[i].x) * dragFactor,
@@ -4545,13 +5518,78 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                         offscreen.x + (current.x - offscreen.x) * eased,
                         offscreen.y + (current.y - offscreen.y) * eased);
                 RenderPanel(i, pos, alpha);
+
+                // v1.56.285: resize cursor feedback (Dynamic scale) — Windows-style
+                // edge cursors while hovering a panel's right/bottom edge strip.
+                // The loop runs in z-ascending order, so the last hit (= topmost
+                // panel) wins. The actual resize hit-test lives in HandleMouseDown.
+                if(g_Config.m_KxPanelsDynamicScale != 0 && g_Config.m_KxUiSettingsOn != 0)
+                {
+                        const float ph = m_aPanelCurrentHeight[i];
+                        const bool RightEdge = PointInRect(m_MousePos, current.x + g_PanelW - 7.0f, current.y, 7.0f, ph);
+                        const bool BottomEdge = !m_aPanelCollapsed[i] && PointInRect(m_MousePos, current.x, current.y + ph - 7.0f, g_PanelW, 7.0f);
+                        if(RightEdge && BottomEdge)
+                                CursorShape = 5; // SDL_SYSTEM_CURSOR_SIZENWSE (corner)
+                        else if(RightEdge)
+                                CursorShape = 7; // SDL_SYSTEM_CURSOR_SIZEWE (right edge)
+                        else if(BottomEdge)
+                                CursorShape = 8; // SDL_SYSTEM_CURSOR_SIZENS (bottom edge)
+                }
         }
+
+        // v1.56.285: stop the forced re-home once every panel has arrived —
+        // a later manual drag then stays where the user put it.
+        if(g_ForceRehome)
+        {
+                bool allHome = true;
+                for(int p = 0; p < NUM_PANELS && allHome; ++p)
+                {
+                        if(!m_aPanelPosValid[p])
+                                continue;
+                        const vec2 homePos = PanelHomePos(p);
+                        if(std::fabs(m_aPanelPos[p].x - homePos.x) > 1.0f || std::fabs(m_aPanelPos[p].y - homePos.y) > 1.0f)
+                                allHome = false;
+                }
+                if(allHome)
+                        g_ForceRehome = false;
+        }
+
+        // v1.56.285: apply the OS cursor for the resize zones (the SDL system
+        // cursors are lazy-created in input.cpp; setting the same shape every
+        // frame is a no-op on the OS side). While the GUI is not fully open,
+        // force the plain arrow so no stale resize shape leaks between sessions.
+        if(m_AnimProgress < 0.95f)
+                CursorShape = 0;
+        if(m_ResizePanel >= 0)
+                CursorShape = (m_ResizeEdge == 1) ? 7 : ((m_ResizeEdge == 2) ? 8 : 5);
+        KxSetCursorShape(CursorShape);
 
         // Render dropdown popup ON TOP of all panels (if open).
         RenderDropdownPopup(alpha);
 
         if(m_FileBrowserOpen)
                 RenderFileBrowser(alpha);
+
+        // v1.56.284: ToolTip on top of everything — shown after the row has
+        // been hovered steadily for TOOLTIP_DELAY seconds. Suppressed while
+        // dragging a panel/slider, editing an input or with any popup open.
+        const float ttNow = Client()->RenderFrameTime();
+        const bool ttAllowed = !m_Dragging && m_DragSliderPanel < 0 && !m_DropdownOpen && !m_InputEditing && !m_FileBrowserOpen;
+        if(ttAllowed && m_pToolTipRow && ttNow - m_ToolTipRowTime <= 0.05f)
+        {
+                if(m_pToolTipRow != m_pToolTipStable)
+                {
+                        m_pToolTipStable = m_pToolTipRow;
+                        m_ToolTipHoverSince = ttNow;
+                }
+                if(m_aToolTipText[0] && ttNow - m_ToolTipHoverSince >= TOOLTIP_DELAY)
+                        RenderToolTip(alpha);
+        }
+        else
+        {
+                m_pToolTipStable = nullptr;
+                m_ToolTipHoverSince = -1.0f;
+        }
 
         TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
 }
@@ -4851,6 +5889,27 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                 const int i = clickOrder[idx];
                 const vec2 ppos = m_aPanelPosValid[i] ? m_aPanelPos[i] : PanelHomePos(i);
 
+                // v1.56.284: panel edge resize (Dynamic scale) — right/bottom
+                // edges take priority over header drag and row clicks.
+                if(g_Config.m_KxPanelsDynamicScale != 0 && g_Config.m_KxUiSettingsOn != 0)
+                {
+                        const float pw = g_PanelW;
+                        const float ph = m_aPanelCurrentHeight[i];
+                        const bool RightEdge = PointInRect(mousePos, ppos.x + pw - 7.0f, ppos.y, 7.0f, ph);
+                        const bool BottomEdge = !m_aPanelCollapsed[i] &&
+                                PointInRect(mousePos, ppos.x, ppos.y + ph - 7.0f, pw, 7.0f);
+                        if(RightEdge || BottomEdge)
+                        {
+                                BringToFront(i);
+                                m_ResizePanel = i;
+                                m_ResizeEdge = (RightEdge ? 1 : 0) | (BottomEdge ? 2 : 0);
+                                m_ResizeStartMouse = mousePos;
+                                m_ResizeStartW = g_PanelW;
+                                m_ResizeStartH = g_PanelMaxBodyH;
+                                return;
+                        }
+                }
+
                 // Check header hit (drag + collapse arrow).
                 if(PointInRect(mousePos, ppos.x, ppos.y, PANEL_WIDTH, HEADER_HEIGHT))
                 {
@@ -4898,7 +5957,7 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 const bool isVisualExpandable = (pTarget->type == ERowType::Expandable) &&
                                         (str_comp(pTarget->pName, "Visuals") == 0 ||
                                          str_comp(pTarget->pName, "Line rendering") == 0 ||
-                                         str_comp(pTarget->pName, "TAS") == 0);
+                                         str_comp(pTarget->pName, "TAS") == 0 || str_comp(pTarget->pName, "Settings") == 0 || str_comp(pTarget->pName, "Binds") == 0);
                                          // v1.56.281: Future Limit is a master toggle now (click dispatch below).
                                 // Click on check area or name area → toggle on/off (or expand for visual).
                                 const float toggleEndX = rx + rw - (pTarget->type == ERowType::Expandable ? ARROW_W + 4.0f : (pTarget->type == ERowType::ToggleDropdown ? DROPDOWN_W + 4.0f : 0.0f));
@@ -4915,6 +5974,18 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         // Wire reference toggles to real subsystems.
                                         if(str_comp(pTarget->pName, "Helpers") == 0)
                                                 g_Config.m_KxHelpers = pTarget->on;
+                                        // v1.56.282: Dummy Manager — Profiles/Tee target toggles (ClickGUI-local).
+                                        else if((str_comp(row.pName, "Dummy Profiles") == 0 || str_comp(row.pName, "Dummy Tee") == 0) && pTarget->type == ERowType::Toggle)
+                                        {
+                                                const int d = DummyMgrParseDummyName(pTarget->pName);
+                                                if(d >= 0)
+                                                {
+                                                        if(str_comp(row.pName, "Dummy Tee") == 0)
+                                                                m_aTeeTargets[d] = pTarget->on;
+                                                        else
+                                                                m_aProfileTargets[d] = pTarget->on;
+                                                }
+                                        }
                                         // v1.56.260: Visuals panel toggles.
                                         else if(str_comp(pTarget->pName, "Custom color tee") == 0)
                                                 g_Config.m_KxRainbowTee = pTarget->on ? 1 : 0;
@@ -4955,6 +6026,23 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 g_Config.m_KxBalanceBot = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Drag-To-Sort") == 0)
                                                 g_Config.m_KxDragToSort = pTarget->on ? 1 : 0;
+                                        // v1.56.283: combo expandable headers + Dynamic scale.
+                                        else if(str_comp(pTarget->pName, "ClickGUI Settings") == 0)
+                                                g_Config.m_KxUiSettingsOn = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Custom colors") == 0)
+                                                g_Config.m_KxCustomColors = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Dynamic scale (Beta)") == 0)
+                                                g_Config.m_KxPanelsDynamicScale = pTarget->on ? 1 : 0;
+                                        // v1.56.283: Custom colors — per-selection Enable
+                                        // (AimBot/TriggerBot "Enable" are parent-gated below).
+                                        else if(str_comp(pTarget->pName, "Enable") == 0 && str_comp(row.pName, "Custom colors") == 0)
+                                        {
+                                                int SpriteIdx = 0, EntIdx = 0;
+                                                CustomColorSelection(row, &SpriteIdx, &EntIdx);
+                                                const SCustomColorCfg Cfg = CustomColorCfgFor(SpriteIdx, EntIdx);
+                                                if(Cfg.pOn)
+                                                        *Cfg.pOn = pTarget->on ? 1 : 0;
+                                        }
                                         // v1.56.275: FNG Freeze — per-context (ninja counts as frozen in FNG).
                                         else if(str_comp(pTarget->pName, "FNG Freeze") == 0 && str_comp(row.pName, "AimBot") == 0)
                                         {
@@ -4981,23 +6069,24 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         // v1.56.261: Custom color entities master toggle.
                                         else if(str_comp(pTarget->pName, "Custom color entities") == 0)
                                                 g_Config.m_KxRainbowEnt = pTarget->on ? 1 : 0;
-                                        // v1.56.275: Visuals rainbow — per-feature Rainbow anim toggles.
-                                        else if(str_comp(pTarget->pName, "Rainbow") == 0 && str_comp(row.pName, "Custom color tee") == 0)
-                                                g_Config.m_KxRainbowTeeAnim = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Rainbow") == 0 && str_comp(row.pName, "Custom color legs") == 0)
-                                                g_Config.m_KxRainbowLegsAnim = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Rainbow") == 0 && str_comp(row.pName, "Custom color entities") == 0)
-                                                g_Config.m_KxRainbowEntAnim = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Rainbow") == 0 && str_comp(row.pName, "Custom color guns") == 0)
-                                                g_Config.m_KxRainbowGunsAnim = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Rainbow") == 0 && str_comp(row.pName, "Custom color hook") == 0)
-                                                g_Config.m_KxRainbowHookAnim = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Rainbow") == 0 && str_comp(row.pName, "Custom color HUD") == 0)
-                                                g_Config.m_KxRainbowHudAnim = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Rainbow") == 0 && str_comp(row.pName, "Custom color particles") == 0)
-                                                g_Config.m_KxRainbowParticlesAnim = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Rainbow") == 0 && str_comp(row.pName, "Custom color emoticons") == 0)
-                                                g_Config.m_KxRainbowEmoticonsAnim = pTarget->on ? 1 : 0;
+                                        // v1.56.286: Search filter toggles (Search panel).
+                                        else if(str_comp(pTarget->pName, "Case Sensitive") == 0 && str_comp(panel.pTitle, "Search") == 0)
+                                                g_SearchCaseSensitive = pTarget->on;
+                                        else if(str_comp(pTarget->pName, "Whole Word") == 0 && str_comp(panel.pTitle, "Search") == 0)
+                                                g_SearchWholeWord = pTarget->on;
+                                        else if(str_comp(pTarget->pName, "Use Regex") == 0 && str_comp(panel.pTitle, "Search") == 0)
+                                                g_SearchRegex = pTarget->on;
+                                        else if(str_comp(pTarget->pName, "Fuzzy Match") == 0 && str_comp(panel.pTitle, "Search") == 0)
+                                                g_SearchFuzzy = pTarget->on;
+                                        // v1.56.283: Custom colors — per-selection Rainbow anim toggle.
+                                        else if(str_comp(pTarget->pName, "Rainbow") == 0 && str_comp(row.pName, "Custom colors") == 0)
+                                        {
+                                                int SpriteIdx = 0, EntIdx = 0;
+                                                CustomColorSelection(row, &SpriteIdx, &EntIdx);
+                                                const SCustomColorCfg Cfg = CustomColorCfgFor(SpriteIdx, EntIdx);
+                                                if(Cfg.pOn)
+                                                        *Cfg.pAnim = pTarget->on ? 1 : 0;
+                                        }
                                         else if(str_comp(pTarget->pName, "Trajectory") == 0)
                                                 g_Config.m_KxShowTrajectory = pTarget->on ? 1 : 0;
                                         // Advanced → Laser unfreeze expandable is master toggle.
@@ -5009,8 +6098,8 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 g_Config.m_KxEsp = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Pause") == 0 && str_comp(panel.pTitle, "TAS") == 0)
                                                 GameClient()->m_Tas.SetPaused(pTarget->on);
-                                        else if(str_comp(pTarget->pName, "Basic Avoid Freeze") == 0)
-                                                g_Config.m_KxBasicAvoidFreeze = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Avoid Freeze") == 0)
+                                                g_Config.m_KxAvoidFreeze = pTarget->on ? 1 : 0;
                                         // Functions panel — Fly/Copy Moves sub-section
                                         else if(str_comp(pTarget->pName, "Preserve input") == 0)
                                                 g_Config.m_KxDummyHammerKeepInputs = pTarget->on ? 1 : 0;
@@ -5160,22 +6249,22 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         else if(str_comp(pTarget->pName, "Show attempt") == 0)
                                                 g_Config.m_KxLaserUnfreezeShowAttempt = pTarget->on ? 1 : 0;
                                         // Basic Avoid Freeze toggles
-                                        else if(str_comp(pTarget->pName, "Freeze") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
-                                                g_Config.m_KxBafAvoidFreeze = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Teleport") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
-                                                g_Config.m_KxBafAvoidTeleport = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Death") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
-                                                g_Config.m_KxBafAvoidDeath = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Direction") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
-                                                g_Config.m_KxBafDirection = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Jump") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
-                                                g_Config.m_KxBafJump = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Hook") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
-                                                g_Config.m_KxBafHook = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Aim") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
-                                                g_Config.m_KxBafAim = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Silent") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
-                                                g_Config.m_KxBafSilent = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Freeze") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                                                g_Config.m_KxAfAvoidFreeze = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Teleport") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                                                g_Config.m_KxAfAvoidTeleport = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Death") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                                                g_Config.m_KxAfAvoidDeath = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Direction") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                                                g_Config.m_KxAfDirection = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Jump") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                                                g_Config.m_KxAfJump = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Hook") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                                                g_Config.m_KxAfHook = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Aim") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                                                g_Config.m_KxAfAim = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Silent") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                                                g_Config.m_KxAfSilent = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Show for me") == 0)
                                                 g_Config.m_KxFakeAimShowForMe = pTarget->on ? 1 : 0;
                                         // v1.56.262: Fake Aim — Show Server-Side Aim.
@@ -5257,7 +6346,7 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 else
                                                         g_Config.m_KxSpoofBestClientExtraNetmsgs = pTarget->on ? 1 : 0;
                                         }
-                                        else if(str_comp(pTarget->pName, "Rainbow color") == 0)
+                                        else if(str_comp(pTarget->pName, "Rainbow Main Color") == 0)
                                         {
                                                 // v1.56.78: save color before enabling rainbow,
                                                 // restore it when disabling.
@@ -5566,6 +6655,44 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 ExecuteSelectedScript();
                                         return;
                                 }
+                                // v1.56.282: Dummy Manager — profile/tee buttons open the DDNet
+                                // settings in a per-dummy edit session (CMenus::BeginDummyEdit).
+                                else if(pTarget->type == ERowType::Button && (str_comp(row.pName, "Dummy Profiles") == 0 || str_comp(row.pName, "Dummy Tee") == 0))
+                                {
+                                        const bool Tee = str_comp(row.pName, "Dummy Tee") == 0;
+                                        if(str_comp(pTarget->pName, "Open Main Profile") == 0 || str_comp(pTarget->pName, "Open Main Tee") == 0)
+                                        {
+                                                // Main = vanilla player profile — no session, just open the tab.
+                                                g_Config.m_ClClickGui = 0;
+                                                GameClient()->m_Menus.OpenDummySettingsPage(Tee);
+                                        }
+                                        else if(str_comp(pTarget->pName, "Open All Profile") == 0 || str_comp(pTarget->pName, "Open All Tee") == 0)
+                                        {
+                                                g_Config.m_ClClickGui = 0;
+                                                GameClient()->m_Menus.BeginDummyEdit(1, 1, Tee, nullptr);
+                                                GameClient()->m_Menus.OpenDummySettingsPage(Tee);
+                                        }
+                                        else if(str_comp(pTarget->pName, "Open Targets Profile") == 0 || str_comp(pTarget->pName, "Open Targets Tee") == 0)
+                                        {
+                                                g_Config.m_ClClickGui = 0;
+                                                GameClient()->m_Menus.BeginDummyEdit(1, 2, Tee, Tee ? m_aTeeTargets : m_aProfileTargets);
+                                                GameClient()->m_Menus.OpenDummySettingsPage(Tee);
+                                        }
+                                        else if(DummyMgrParseOpenName(pTarget->pName) >= 1)
+                                        {
+                                                // "Open Dummy %d Profile"/"Open Dummy %d Tee" — per-dummy session.
+                                                g_Config.m_ClClickGui = 0;
+                                                GameClient()->m_Menus.BeginDummyEdit(DummyMgrParseOpenName(pTarget->pName), 0, Tee, nullptr);
+                                                GameClient()->m_Menus.OpenDummySettingsPage(Tee);
+                                        }
+                                        return;
+                                }
+                                // v1.56.282: Dummy Manager — apply staged proxies and reconnect.
+                                else if(pTarget->type == ERowType::Button && str_comp(pTarget->pName, "Reconnect (Apply)") == 0)
+                                {
+                                        ApplyProxiesAndReconnect();
+                                        return;
+                                }
                                 // v1.56.90: Dummies Button (Connect Dummy, Switch to Main)
                                 else if(str_comp(row.pName, "Dummies") == 0 && pTarget->type == ERowType::Button)
                                 {
@@ -5586,7 +6713,9 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 // v1.56.90: Dummies DoubleButton (Connect+Switch+Send)
                                 else if(str_comp(row.pName, "Dummies") == 0 && pTarget->type == ERowType::DoubleButton)
                                 {
-                                        int d = pTarget->pName[1] - '0';
+                                        const int d = DummyMgrParseD(pTarget->pName);
+                                        if(d < 1)
+                                                return;
                                         if(!GameClient()->Client()->DummyConnected(d))
                                         {
                                                 // Not connected — any click = Connect.
@@ -5614,7 +6743,7 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 {
                                                         // Right = Send toggle
                                                         pTarget->expanded = !pTarget->expanded;
-                                                        if(d >= 1 && d < 8)
+                                                        if(d >= 1 && d < MAX_DUMMIES)
                                                                 m_aDummySendEnabled[d] = pTarget->expanded;
                                                 }
                                         }
@@ -5659,7 +6788,10 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         else
                                                 pTarget->value = raw;
                                 }
-                                if(str_comp(pTarget->pName, "Latency (ms)") == 0 && str_comp(row.pName, "Custom latency") == 0)
+                                // v1.56.282: Dummy Manager — "Dummies" slider sets the runtime dummy limit.
+                                if(str_comp(pTarget->pName, "Dummies") == 0)
+                                        Client()->SetDummyLimit((int)pTarget->value);
+                                else if(str_comp(pTarget->pName, "Latency (ms)") == 0 && str_comp(row.pName, "Custom latency") == 0)
                                         g_Config.m_KxDummyHammerLatencyMs = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Latency (ms)") == 0 && str_comp(row.pName, "Copy Moves Latency") == 0)
                                         g_Config.m_KxCopyMovesLatency = (int)pTarget->value;
@@ -5685,14 +6817,14 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         g_Config.m_KxLaserUnfreezeTicks = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Trigger ticks") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
                                         g_Config.m_KxLaserUnfreezeTriggerTicks = (int)pTarget->value;
-                                else if(str_comp(pTarget->pName, "Ticks") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
-                                        g_Config.m_KxBafTicks = (int)pTarget->value;
-                                else if(str_comp(pTarget->pName, "Trigger ticks") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
-                                        g_Config.m_KxBafTriggerTicks = (int)pTarget->value;
-                                else if(str_comp(pTarget->pName, "Angles") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
-                                        g_Config.m_KxBafAngles = (int)pTarget->value;
-                                else if(str_comp(pTarget->pName, "FOV") == 0 && str_comp(row.pName, "Basic Avoid Freeze") == 0)
-                                        g_Config.m_KxBafFov = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Ticks") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                                        g_Config.m_KxAfTicks = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Ticks Before") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                                        g_Config.m_KxAfTicksBefore = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Angles") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                                        g_Config.m_KxAfAngles = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "FOV") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                                        g_Config.m_KxAfFov = (int)pTarget->value;
                                 // Settings → Line rendering children
                                 // v1.56.108: Line rendering per-component writes
                                 else if(str_comp(pTarget->pName, "Line size") == 0 || str_comp(pTarget->pName, "Line opacity") == 0)
@@ -5764,8 +6896,6 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         if(sel >= 0 && sel < CTrajectory::NUM_TRAJ_TYPES)
                                                 traj.m_aTypes[sel].m_PredictionTicks = (int)pTarget->value;
                                 }
-                                else if(str_comp(pTarget->pName, "Hook angles") == 0)
-                                        g_Config.m_KxPfHookAngles = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "A* Weight") == 0)
                                         g_Config.m_KxPfAStarWeight = (int)(pTarget->value * 100.0f + 0.5f);
                                 else if(str_comp(pTarget->pName, "Beam width") == 0)
@@ -5797,6 +6927,65 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         return;
                                 }
                                 // For ToggleDropdown, click on name still toggles (handled above).
+                                return;
+                        }
+                        if(pTarget->type == ERowType::ToggleInput) // v1.56.282: Dummy Manager proxy rows
+                        {
+                                const float inW = rw / 2.0f;
+                                const float inX = rx + rw - inW - 2.0f;
+                                const float inY = ry + 2.0f;
+                                const float inH = rh - 4.0f;
+                                if(PointInRect(mousePos, inX, inY, inW, inH))
+                                {
+                                        // Click on the input box → start editing (same as Input).
+                                        if(!pTarget->m_InputInitialized)
+                                        {
+                                                if(pTarget->pInputValue)
+                                                        str_copy(pTarget->m_aInputBuf, pTarget->pInputValue, sizeof(pTarget->m_aInputBuf));
+                                                pTarget->m_InputInitialized = true;
+                                        }
+                                        m_InputEditing = true;
+                                        m_InputPanel = i;
+                                        m_InputRow = outRow;
+                                        m_InputChild = outChild;
+                                        m_InputLen = (int)str_length(pTarget->m_aInputBuf);
+                                        if(m_InputLen >= INPUT_BUF_SIZE)
+                                                m_InputLen = INPUT_BUF_SIZE - 1;
+                                        mem_copy(m_InputBuf, pTarget->m_aInputBuf, m_InputLen);
+                                        m_InputBuf[m_InputLen] = 0;
+                                        const float textX = inX + 4.0f;
+                                        const float clickOffset = mousePos.x - textX;
+                                        m_InputCursor = 0;
+                                        float accumW = 0.0f;
+                                        for(int ci = 0; ci < m_InputLen; ++ci)
+                                        {
+                                                char tmp[2] = {m_InputBuf[ci], 0};
+                                                float cw = TextRender()->TextWidth(17.0f, tmp);
+                                                if(accumW + cw * 0.5f > clickOffset)
+                                                {
+                                                        m_InputCursor = ci;
+                                                        break;
+                                                }
+                                                accumW += cw;
+                                                m_InputCursor = ci + 1;
+                                        }
+                                        m_InputSelStart = -1;
+                                        m_InputSelEnd = -1;
+                                        Input()->StartTextInput();
+                                        return;
+                                }
+                                // Left part (checkbox + name) → toggle the proxy for this slot.
+                                if(mousePos.x < inX)
+                                {
+                                        pTarget->on = !pTarget->on;
+                                        const int D = (int)(pTarget - g_DummyProxyChildren);
+                                        if(D >= 0 && D < MAX_DUMMIES)
+                                        {
+                                                GameClient()->m_BotNet.m_Dummy.m_aProfiles[D].m_ProxyOn = pTarget->on ? 1 : 0;
+                                                GameClient()->m_BotNet.m_Dummy.Save();
+                                                m_ProxyDirty = true;
+                                        }
+                                }
                                 return;
                         }
                         if(pTarget->type == ERowType::Input)
@@ -5872,6 +7061,15 @@ void CClickGui::HandleMouseUp(vec2 mousePos)
                                 g_Config.m_KxPanelsStartX = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Panels Start Y") == 0)
                                 g_Config.m_KxPanelsStartY = (int)pTarget->value;
+                        // v1.56.283: Panels indentation + width/height commit.
+                        else if(str_comp(pTarget->pName, "Panels X-indentation") == 0)
+                                g_Config.m_KxPanelsIndentX = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Panels Y-indentation") == 0)
+                                g_Config.m_KxPanelsIndentY = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Panels width") == 0)
+                                g_Config.m_KxPanelsWidth = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Panels height") == 0)
+                                g_Config.m_KxPanelsHeight = (int)pTarget->value;
                 }
         }
         m_Dragging = false;
@@ -5879,6 +7077,8 @@ void CClickGui::HandleMouseUp(vec2 mousePos)
         m_DragSliderPanel = -1;
         m_DragSliderRow = -1;
         m_DragSliderChild = -1;
+        m_ResizePanel = -1;
+        m_ResizeEdge = 0;
 }
 
 bool CClickGui::ScrollPanelAt(vec2 mousePos, float dir)
@@ -5917,10 +7117,11 @@ bool CClickGui::ScrollPanelAt(vec2 mousePos, float dir)
                 const float bodyBottom = p.y + HEADER_HEIGHT + MAX_BODY_HEIGHT + 50.0f;
                 if(mousePos.x >= p.x && mousePos.x < p.x + PANEL_WIDTH && mousePos.y >= bodyTop && mousePos.y < bodyBottom)
                 {
-                        // Write to stored so the value survives panel collapse/expand.
-                        m_aPanelScrollStored[i] += dir;
-                        if(m_aPanelScrollStored[i] < 0.0f)
-                                m_aPanelScrollStored[i] = 0.0f;
+                        // v1.56.284: write to the smooth-scroll target; the stored value
+                        // approaches it exponentially each frame (inertia).
+                        m_aPanelScrollTarget[i] += dir;
+                        if(m_aPanelScrollTarget[i] < 0.0f)
+                                m_aPanelScrollTarget[i] = 0.0f;
                         return true;
                 }
         }
@@ -6081,7 +7282,7 @@ if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) &&
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c) || (str_comp(row.pName, "Spoof Spectate") == 0 && !SpoofSpectateChildVisible(row.pChildren, row.childCount, c)))
         continue;
-if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
+if(str_comp(row.pName, "Avoid Freeze") == 0 && !AfChildVisible(row.pChildren, row.childCount, c))
         continue;
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
         continue;
@@ -6375,7 +7576,9 @@ void CClickGui::RenderDropdownPopup(float alpha)
 			continue;
 		if(str_comp(panel.pTitle, "TAS") == 0 && !TasRowVisible(panel.pRows, panel.rowCount, r))
 			continue;
-		const float rh = RowHeight(row.type);
+if(!SearchKeepsRow(row))
+                                        continue;
+                                const float rh = RowHeight(row.type);
                 if(r == m_DropdownRow && m_DropdownChild < 0)
                 {
                         const float rw = PANEL_WIDTH - BODY_PADDING * 2;
@@ -6406,7 +7609,7 @@ if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) &&
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c) || (str_comp(row.pName, "Spoof Spectate") == 0 && !SpoofSpectateChildVisible(row.pChildren, row.childCount, c)))
         continue;
-if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
+if(str_comp(row.pName, "Avoid Freeze") == 0 && !AfChildVisible(row.pChildren, row.childCount, c))
         continue;
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
         continue;
@@ -6624,7 +7827,7 @@ bool CClickGui::HitTestRow(vec2 mousePos, int panelIdx, int &outRow, int &outChi
 			continue;
 		if(str_comp(g_Panels[panelIdx].pTitle, "Code Execution (Lua)") == 0 && !CodeExecRowVisible(g_Panels[panelIdx].pRows, g_Panels[panelIdx].rowCount, r))
 			continue;
-		if(str_comp(g_Panels[panelIdx].pTitle, "TAS") == 0 && !TasRowVisible(g_Panels[panelIdx].pRows, g_Panels[panelIdx].rowCount, r))
+		if((str_comp(g_Panels[panelIdx].pTitle, "TAS") == 0 && !TasRowVisible(g_Panels[panelIdx].pRows, g_Panels[panelIdx].rowCount, r)) || (str_comp(g_Panels[panelIdx].pTitle, "Dummy Manager") == 0 && !DummyManagerRowVisible(g_Panels[panelIdx].pRows, g_Panels[panelIdx].rowCount, r)))
 			continue;
                 const float rh = RowHeight(row.type);
                 const float rw = PANEL_WIDTH - BODY_PADDING * 2;
@@ -6639,7 +7842,10 @@ bool CClickGui::HitTestRow(vec2 mousePos, int panelIdx, int &outRow, int &outChi
                         return true;
                 }
                 cursorY += rh + ROW_GAP;
-                if(row.type == ERowType::Expandable && row.expanded && row.pChildren)
+                // v1.56.286: search auto-expand — children of a parent with
+                // matching children stay hit-testable while the search forces
+                // them visible (m_SearchChildMatch is false when inactive).
+                if(row.type == ERowType::Expandable && (row.expanded || row.m_SearchChildMatch) && row.pChildren)
                 {
                         for(int c = 0; c < row.childCount; ++c)
                         {
@@ -6660,7 +7866,7 @@ if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) &&
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c) || (str_comp(row.pName, "Spoof Spectate") == 0 && !SpoofSpectateChildVisible(row.pChildren, row.childCount, c)))
         continue;
-if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
+if(str_comp(row.pName, "Avoid Freeze") == 0 && !AfChildVisible(row.pChildren, row.childCount, c))
         continue;
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
         continue;
@@ -6668,6 +7874,8 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
         continue;
 if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
+                                if(!SearchKeepsChild(child))
+                                        continue;
                                 const float crh = RowHeight(child.type);
                                 const float crw = rw - SUB_LIST_INDENT;
                                 if(PointInRect(mousePos, bodyX + SUB_LIST_INDENT, cursorY, crw, crh))
@@ -6700,6 +7908,18 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
         SRow *pRow = (SRow *)pRowVoid;
         if(!pRow)
                 return;
+
+        // v1.56.282: Dummy Manager proxy inputs — identified by array membership
+        // ("Main"/"Dummy N" names are too generic for the name chain below).
+        if(pRow >= g_DummyProxyChildren && pRow < g_DummyProxyChildren + MAX_DUMMIES)
+        {
+                const int D = (int)(pRow - g_DummyProxyChildren);
+                CDummyData &DD = GameClient()->m_BotNet.m_Dummy;
+                str_copy(DD.m_aProfiles[D].m_aProxy, pRow->m_aInputBuf, sizeof(DD.m_aProfiles[D].m_aProxy));
+                DD.Save();
+                m_ProxyDirty = true;
+                return;
+        }
 
         // Main Color (hex, e.g. "ff8800"). Was "ClickGUI Color" before v1.56.199.
         if(str_comp(pRow->pName, "Main Color") == 0)
@@ -6820,30 +8040,19 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
                 else if(str_comp(pOwner, "BalanceBot") == 0)
                         g_Config.m_KxBbDDraceTeamId = atoi(pRow->m_aInputBuf);
         }
-        // v1.56.275: Visuals custom-color Color inputs (owner row selects the cvar).
+        // v1.56.283: Visuals custom-color Color input — the Sprite/Entity
+        // dropdowns on the "Custom colors" owner row select the cvar.
         else if(str_comp(pRow->pName, "Color") == 0 && m_InputPanel >= 0 && m_InputPanel < NUM_PANELS && m_InputRow >= 0 && m_InputRow < g_Panels[m_InputPanel].rowCount)
         {
-                const char *pOwner = g_Panels[m_InputPanel].pRows[m_InputRow].pName;
-                unsigned hex = 0;
-                if(sscanf(pRow->m_aInputBuf, "%6x", &hex) == 1)
+                const SRow &pOwner = g_Panels[m_InputPanel].pRows[m_InputRow];
+                if(str_comp(pOwner.pName, "Custom colors") == 0)
                 {
-                        const unsigned Packed = 0xff000000u | (hex & 0xffffff);
-                        if(str_comp(pOwner, "Custom color tee") == 0)
-                                g_Config.m_KxRainbowTeeColor = Packed;
-                        else if(str_comp(pOwner, "Custom color legs") == 0)
-                                g_Config.m_KxRainbowLegsColor = Packed;
-                        else if(str_comp(pOwner, "Custom color entities") == 0)
-                                g_Config.m_KxRainbowEntColor = Packed;
-                        else if(str_comp(pOwner, "Custom color guns") == 0)
-                                g_Config.m_KxRainbowGunsColor = Packed;
-                        else if(str_comp(pOwner, "Custom color hook") == 0)
-                                g_Config.m_KxRainbowHookColor = Packed;
-                        else if(str_comp(pOwner, "Custom color HUD") == 0)
-                                g_Config.m_KxRainbowHudColor = Packed;
-                        else if(str_comp(pOwner, "Custom color particles") == 0)
-                                g_Config.m_KxRainbowParticlesColor = Packed;
-                        else if(str_comp(pOwner, "Custom color emoticons") == 0)
-                                g_Config.m_KxRainbowEmoticonsColor = Packed;
+                        int SpriteIdx = 0, EntIdx = 0;
+                        CustomColorSelection(pOwner, &SpriteIdx, &EntIdx);
+                        const SCustomColorCfg Cfg = CustomColorCfgFor(SpriteIdx, EntIdx);
+                        unsigned hex = 0;
+                        if(Cfg.pColor && sscanf(pRow->m_aInputBuf, "%6x", &hex) == 1)
+                                *Cfg.pColor = 0xff000000u | (hex & 0xffffff);
                 }
         }
         // v1.56.171 BUG9: Binds panel — unified bind/unbind logic.
@@ -6863,15 +8072,15 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
                 else if(str_comp(pRow->pName, "Copy Moves Latency") == 0) pCmd = "toggle kx_copy_moves_latency_enabled 1 0";
                 else if(str_comp(pRow->pName, "Trajectory") == 0) pCmd = "toggle kx_show_trajectory 1 0";
                 else if(str_comp(pRow->pName, "ESP") == 0) pCmd = "toggle kx_esp 1 0";
-                else if(str_comp(pRow->pName, "Basic Avoid Freeze") == 0) pCmd = "toggle kx_basic_avoid_freeze 1 0";
+                else if(str_comp(pRow->pName, "Avoid Freeze") == 0) pCmd = "toggle kx_avoid_freeze 1 0";
                 else if(str_comp(pRow->pName, "Helpers") == 0) pCmd = "toggle kx_helpers 1 0";
                                 else if(str_comp(pRow->pName, "Auto Triple Fly") == 0) pCmd = "toggle kx_triple_fly 1 0";
                                 else if(str_comp(pRow->pName, "Auto Fire") == 0) pCmd = "toggle kx_auto_fire 1 0";
                                 else if(str_comp(pRow->pName, "BalanceBot") == 0) pCmd = "toggle kx_balance_bot 1 0";
-                else if(str_comp(pRow->pName, "Record") == 0) pCmd = "toggle kx_tas_record 1 0";
-                else if(str_comp(pRow->pName, "Pause") == 0) pCmd = "toggle kx_tas_pause 1 0";
-                else if(str_comp(pRow->pName, "Rewind") == 0) pCmd = "kx_tas_rewind";
-                                else if(str_comp(pRow->pName, "Forward") == 0) pCmd = "kx_tas_forward";
+else if(str_comp(pRow->pName, "TAS Record") == 0) pCmd = "toggle kx_tas_record 1 0";
+                                else if(str_comp(pRow->pName, "TAS Pause") == 0) pCmd = "toggle kx_tas_pause 1 0";
+                                else if(str_comp(pRow->pName, "TAS Rewind") == 0) pCmd = "kx_tas_rewind";
+                                                else if(str_comp(pRow->pName, "TAS Forward") == 0) pCmd = "kx_tas_forward";
                                 else if(str_comp(pRow->pName, "Button") == 0) pCmd = "kx_dummy_switch";
                 if(pCmd)
                 {
@@ -6903,6 +8112,87 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
                         }
                 }
         }
+}
+
+// ============================================================================
+// v1.56.284: ToolTip — ClickGUI-styled tooltip rendered near the cursor.
+// ============================================================================
+
+void CClickGui::RenderToolTip(float alpha)
+{
+        if(!m_aToolTipText[0])
+                return;
+
+        constexpr float FontSz = 15.0f;
+        constexpr float LineH = 19.0f;
+        constexpr float PadX = 8.0f;
+        constexpr float PadY = 6.0f;
+        constexpr float MaxTextW = 340.0f;
+        constexpr int MaxLines = 6;
+
+        // Greedy word wrap into at most MaxLines lines of MaxTextW pixels.
+        char aLines[MaxLines][256];
+        int lineCount = 0;
+        char aCur[256];
+        aCur[0] = '\0';
+        const char *p = m_aToolTipText;
+        while(*p && lineCount < MaxLines)
+        {
+                while(*p == ' ')
+                        ++p;
+                if(!*p)
+                        break;
+                const char *pEnd = p;
+                while(*pEnd && *pEnd != ' ')
+                        ++pEnd;
+                char aWord[192];
+                const int wordLen = (int)(pEnd - p);
+                if(wordLen <= 0 || wordLen >= (int)sizeof(aWord))
+                        break;
+                str_copy(aWord, p, wordLen + 1);
+                const int beforeLen = str_length(aCur);
+                if(beforeLen)
+                        str_append(aCur, " ", sizeof(aCur));
+                str_append(aCur, aWord, sizeof(aCur));
+                if(beforeLen > 0 && TextRender()->TextWidth(FontSz, aCur) > MaxTextW)
+                {
+                        aCur[beforeLen] = '\0';
+                        str_copy(aLines[lineCount++], aCur, sizeof(aLines[0]));
+                        str_copy(aCur, aWord, sizeof(aCur));
+                }
+                p = (*pEnd) ? pEnd + 1 : pEnd;
+        }
+        if(aCur[0] && lineCount < MaxLines)
+                str_copy(aLines[lineCount++], aCur, sizeof(aLines[0]));
+        if(lineCount == 0)
+                return;
+
+        float textW = 0.0f;
+        for(int i = 0; i < lineCount; ++i)
+                textW = std::max(textW, TextRender()->TextWidth(FontSz, aLines[i]));
+        const float boxW = textW + PadX * 2.0f;
+        const float boxH = (float)lineCount * LineH + PadY * 2.0f;
+
+        // Right-below the cursor, clamped inside the screen (flips above the
+        // cursor when there is no room below).
+        float x = m_MousePos.x + 16.0f;
+        float y = m_MousePos.y + 20.0f;
+        if(x + boxW > VScreenWidth() - 4.0f)
+                x = std::max(4.0f, VScreenWidth() - 4.0f - boxW);
+        if(y + boxH > VScreenHeight() - 4.0f)
+                y = m_MousePos.y - boxH - 10.0f;
+        if(y < 4.0f)
+                y = 4.0f;
+
+        // ClickGUI look: rounded panel + 1px accent border (outer/inner pair,
+        // same trick as the input fields).
+        DrawRoundedRect(x - 1.0f, y - 1.0f, boxW + 2.0f, boxH + 2.0f, 4.0f, IGraphics::CORNER_ALL,
+                ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha));
+        DrawRoundedRect(x, y, boxW, boxH, 4.0f, IGraphics::CORNER_ALL,
+                ColorRGBA(m_PanelBgRGBA, true).WithAlpha(alpha * 0.97f));
+        for(int i = 0; i < lineCount; ++i)
+                DrawText(x + PadX, y + PadY + (float)i * LineH, FontSz, aLines[i],
+                        ColorRGBA(1.0f, 1.0f, 1.0f, alpha));
 }
 
 // ============================================================================
@@ -6945,6 +8235,8 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
 				continue;
 			sig = sig * 31u + 7u;
                 }
+                if(!SearchKeepsRow(row))
+                        continue;
                 sig = sig * 31u + (unsigned)r + 1u;
                 if(row.type == ERowType::Expandable && row.pChildren && row.m_AnimExpand > 0.0f)
                 {
@@ -6966,7 +8258,7 @@ if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) &&
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c) || (str_comp(row.pName, "Spoof Spectate") == 0 && !SpoofSpectateChildVisible(row.pChildren, row.childCount, c)))
         continue;
-if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
+if(str_comp(row.pName, "Avoid Freeze") == 0 && !AfChildVisible(row.pChildren, row.childCount, c))
         continue;
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
         continue;
@@ -6974,6 +8266,8 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
         continue;
 if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
+                                if(!SearchKeepsChild(row.pChildren[c]))
+                                        continue;
                                 sig = sig * 31u + (unsigned)(c + 100);
                         }
                 }
@@ -7028,6 +8322,8 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
 			continue;
 				if(str_comp(panel.pTitle, "TAS") == 0 && !TasRowVisible(panel.pRows, panel.rowCount, r))
 					continue;
+                                if(!SearchKeepsRow(row))
+                                        continue;
                                 addRowNode(row, false);
                                 if(row.type == ERowType::Expandable && row.pChildren && row.m_AnimExpand > 0.0f)
                                 {
@@ -7049,7 +8345,7 @@ if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) &&
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c) || (str_comp(row.pName, "Spoof Spectate") == 0 && !SpoofSpectateChildVisible(row.pChildren, row.childCount, c)))
         continue;
-if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
+if(str_comp(row.pName, "Avoid Freeze") == 0 && !AfChildVisible(row.pChildren, row.childCount, c))
         continue;
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
         continue;
@@ -7057,6 +8353,8 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
         continue;
 if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
+                                                if(!SearchKeepsChild(row.pChildren[c]))
+                                                        continue;
                                                 addRowNode(row.pChildren[c], true);
                                         }
                                 }
@@ -7074,14 +8372,16 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                 // Copy cached data to local vars for the render code below.
                 rowCount = cache.rowCount;
                 bodyHeightFull = cache.bodyHeightFull;
+                if(rowCount == 0)
+                        bodyHeightFull = 0.0f; // v1.56.286: search-filtered empty panel — header only
                 for(int i = 0; i < rowCount; ++i)
                         rowNodes[i] = cache.aRowNodes[i];
         }
 
-        // v1.56.61: scale body height by the EASED visibility (panel open/close).
-        const float visibilityRaw = 1.0f - collapseAnim;
-        const float visibilityTarget = collapsed ? 0.0f : 1.0f;
-        const float easedVisibility = EaseBothDirections(visibilityRaw, visibilityTarget);
+// v1.56.61: scale body height by the visibility (panel open/close).
+	// v1.56.284: the collapse anim is exponentially smoothed — use it raw
+	// (EaseBothDirections jumped when the target flipped mid-animation).
+	const float easedVisibility = 1.0f - collapseAnim;
 
         // v1.56.72: single pass — compute expandProgress + childrenBlockH for each
         // expandable ONCE, store in a small map keyed by row index, reuse in the
@@ -7111,7 +8411,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                         continue;
                 if(row.type == ERowType::Expandable && row.pChildren && row.m_AnimExpand > 0.0f && row.m_AnimExpand < 1.0f)
                 {
-                        const float expandProgress = EaseBothDirections(row.m_AnimExpand, row.expanded ? 1.0f : 0.0f);
+                        const float expandProgress = row.m_AnimExpand;
                         float childrenBlockH = 0.0f;
                         int visibleCount = 0;
                         for(int c = 0; c < row.childCount; ++c)
@@ -7132,7 +8432,7 @@ if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) &&
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c) || (str_comp(row.pName, "Spoof Spectate") == 0 && !SpoofSpectateChildVisible(row.pChildren, row.childCount, c)))
         continue;
-if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
+if(str_comp(row.pName, "Avoid Freeze") == 0 && !AfChildVisible(row.pChildren, row.childCount, c))
         continue;
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
         continue;
@@ -7140,6 +8440,8 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
         continue;
 if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
+                                if(!SearchKeepsChild(row.pChildren[c]))
+                                        continue;
                                 childrenBlockH += RowHeight(row.pChildren[c].type);
                                 visibleCount++;
                         }
@@ -7173,7 +8475,19 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
 
         // Cap the visible body height at MAX_BODY_HEIGHT. The existing ClipEnable
         // call clips rows outside this rect, so scrolled-away rows are GPU-clipped.
-        const float visibleBodyHeight = scrollable ? std::min(bodyHeight, MAX_BODY_HEIGHT) : bodyHeight;
+        float visibleBodyHeight = scrollable ? std::min(bodyHeight, MAX_BODY_HEIGHT) : bodyHeight;
+        // v1.56.286: smooth the body height — the search reflow rebuilds the
+        // layout instantly (rows appear/disappear at once) and the panel bottom
+        // glides to the new height instead of snapping.
+        {
+                const float TargetBodyH = visibleBodyHeight;
+                const float dtAnim = Client()->RenderFrameTime();
+                const float SmoothK = 1.0f - std::exp(-14.0f * dtAnim);
+                g_aSmoothBodyH[panelIdx] += (TargetBodyH - g_aSmoothBodyH[panelIdx]) * SmoothK;
+                if(std::fabs(TargetBodyH - g_aSmoothBodyH[panelIdx]) < 0.5f)
+                        g_aSmoothBodyH[panelIdx] = TargetBodyH;
+                visibleBodyHeight = g_aSmoothBodyH[panelIdx];
+        }
 
         // v1.56.176: record this panel's current rendered height so SlotHomePos(5)
         // (Info panel) can stack below the panel in slot 4. Updated every frame.
@@ -7194,7 +8508,15 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
         if(scrollRef > maxScroll)
                 scrollRef = maxScroll;
         if(scrollable)
+        {
                 m_aPanelScrollStored[panelIdx] = scrollRef;
+                // v1.56.284: keep the smooth-scroll target inside the clamp
+                // range so inertia doesn't fight the content bounds.
+                if(m_aPanelScrollTarget[panelIdx] < 0.0f)
+                        m_aPanelScrollTarget[panelIdx] = 0.0f;
+                if(m_aPanelScrollTarget[panelIdx] > maxScroll)
+                        m_aPanelScrollTarget[panelIdx] = maxScroll;
+        }
         const float scrollOffset = scrollable ? scrollRef : 0.0f;
 
         // ---- Step 2: panel geometry ----
@@ -7281,7 +8603,9 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
 			continue;
 		if(str_comp(panel.pTitle, "TAS") == 0 && !TasRowVisible(panel.pRows, panel.rowCount, r))
 			continue;
-                const YGNodeRef node = rowNodes[rowIdx];
+                if(!SearchKeepsRow(row))
+                                        continue;
+                                const YGNodeRef node = rowNodes[rowIdx];
                 const float rxLocal = YGNodeLayoutGetLeft(node);
                 const float ryLocal = YGNodeLayoutGetTop(node);
                 const float rw = YGNodeLayoutGetWidth(node);
@@ -7339,22 +8663,24 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                         // Bottom: [track with thumb at value%]
                         DrawText(rx + 2.0f, ry + 4.0f, 17.0f, row.pName, textCol);
 
-                        // Value chip.
+                        // Value chip — v1.56.284: always the value snapped to the
+                        // step, with decimals derived from the step size.
+                        const float ShownVal = SnapSliderStep(row);
+                        const int StepDec = SliderStepDecimals(row);
                         char valBuf[32];
-                        // Use integer format when step >= 1.0 (no fractional values needed).
-                        if(row.step >= 1.0f)
+                        if(StepDec == 0)
                         {
                                 if(row.pSuffix)
-                                        str_format(valBuf, sizeof(valBuf), "%d%s", (int)row.value, row.pSuffix);
+                                        str_format(valBuf, sizeof(valBuf), "%d%s", (int)ShownVal, row.pSuffix);
                                 else
-                                        str_format(valBuf, sizeof(valBuf), "%d", (int)row.value);
+                                        str_format(valBuf, sizeof(valBuf), "%d", (int)ShownVal);
                         }
                         else
                         {
                                 if(row.pSuffix)
-                                        str_format(valBuf, sizeof(valBuf), "%.2f%s", row.value, row.pSuffix);
+                                        str_format(valBuf, sizeof(valBuf), "%.*f%s", StepDec, ShownVal, row.pSuffix);
                                 else
-                                        str_format(valBuf, sizeof(valBuf), "%.2f", row.value);
+                                        str_format(valBuf, sizeof(valBuf), "%.*f", StepDec, ShownVal);
                         }
                         const float valW = TextRender()->TextWidth(17.0f, valBuf) + 10.0f;
                         const float valX = rx + rw - valW - 2.0f;
@@ -7441,6 +8767,59 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                         if(pText)
                                 DrawText(inX + 4.0f, inY + 4.0f, 17.0f, pText, inCol);
                         // Cursor at m_InputCursor position while editing.
+                        if(editingThis)
+                        {
+                                char tmp[256];
+                                int n = std::min(m_InputCursor, (int)sizeof(tmp) - 1);
+                                mem_copy(tmp, m_InputBuf, n); tmp[n] = 0;
+                                const float cursorX = inX + 4.0f + TextRender()->TextWidth(17.0f, tmp);
+                                DrawRoundedRect(cursorX, inY + 4.0f, 1.5f, inH - 8.0f, 0.0f,
+                                        IGraphics::CORNER_NONE,
+                                        ColorRGBA(0xffffffff, true).WithAlpha(alpha * (0.5f + 0.5f * std::sin(LocalTime() * 5.0f))));
+                        }
+                        break;
+                }
+                case ERowType::ToggleInput: // v1.56.282: [✕] [name] [input box]
+                {
+                        DrawRoundedRect(rx + 1.0f, ry + 3.0f, CHECK_W, CHECK_W, 3.0f,
+                                IGraphics::CORNER_ALL,
+                                ColorRGBA(COL_CHECK_SQUARE, true).WithAlpha(alpha));
+                        if(row.on)
+                                DrawText(rx + 1.0f + CHECK_W * 0.5f, ry + 3.0f - 2.0f, 24.0f, "\xe2\x9c\x95",
+                                        ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha), TEXTALIGN_CENTER);
+                        DrawText(rx + CHECK_W + 4.0f, ry + 5.0f, 17.0f, row.pName, textCol);
+
+                        const float inW = rw / 2.0f;
+                        const float inX = rx + rw - inW - 2.0f;
+                        const float inY = ry + 2.0f;
+                        const float inH = rh - 4.0f;
+                        const bool editingThis = (m_InputEditing && m_InputPanel == panelIdx && m_InputRow == r && m_InputChild < 0);
+                        DrawRoundedRect(inX, inY, inW, inH, 2.0f,
+                                IGraphics::CORNER_ALL,
+                                ColorRGBA(COL_INPUT_BG, true).WithAlpha(alpha));
+                        DrawRoundedRect(inX - 1.0f, inY - 1.0f, inW + 2.0f, inH + 2.0f, 2.0f,
+                                IGraphics::CORNER_ALL,
+                                editingThis ? ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha) : ColorRGBA(COL_INPUT_BORDER, true).WithAlpha(alpha * 0.5f));
+                        if(!row.m_InputInitialized)
+                        {
+                                if(row.pInputValue)
+                                        str_copy(row.m_aInputBuf, row.pInputValue, sizeof(row.m_aInputBuf));
+                                row.m_InputInitialized = true;
+                        }
+                        const char *pText;
+                        ColorRGBA inCol;
+                        if(editingThis)
+                        {
+                                pText = m_InputBuf;
+                                inCol = textCol;
+                        }
+                        else
+                        {
+                                pText = (row.m_aInputBuf[0]) ? row.m_aInputBuf : row.pPlaceholder;
+                                inCol = (row.m_aInputBuf[0]) ? textCol : ColorRGBA(0xff8a8aa8, true).WithAlpha(alpha);
+                        }
+                        if(pText)
+                                DrawText(inX + 4.0f, inY + 4.0f, 17.0f, pText, inCol);
                         if(editingThis)
                         {
                                 char tmp[256];
@@ -7824,7 +9203,7 @@ if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) &&
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c) || (str_comp(row.pName, "Spoof Spectate") == 0 && !SpoofSpectateChildVisible(row.pChildren, row.childCount, c)))
         continue;
-if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
+if(str_comp(row.pName, "Avoid Freeze") == 0 && !AfChildVisible(row.pChildren, row.childCount, c))
         continue;
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
         continue;
@@ -7832,6 +9211,8 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
         continue;
 if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
+                                        if(!SearchKeepsChild(row.pChildren[c]))
+                                                continue;
                                         ++rowIdx;
                                 }
                                 // Update rowYOffset for lower rows (children are hidden).
@@ -7865,11 +9246,13 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c)) continue;
                                 if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c))) continue;
                                 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c) || (str_comp(row.pName, "Spoof Spectate") == 0 && !SpoofSpectateChildVisible(row.pChildren, row.childCount, c))) continue;
-                                if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c)) continue;
+                                if(str_comp(row.pName, "Avoid Freeze") == 0 && !AfChildVisible(row.pChildren, row.childCount, c)) continue;
                                 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c)) continue;
                                 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
                                         continue;
                                 if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c))) continue;
+                                if(!SearchKeepsChild(row.pChildren[c]))
+                                        continue;
                                 const YGNodeRef pn = rowNodes[preIdx];
                                 const float py2 = bodyY + YGNodeLayoutGetTop(pn) + rowYOffset;
                                 const float ph2 = YGNodeLayoutGetHeight(pn);
@@ -7911,7 +9294,7 @@ if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) &&
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c) || (str_comp(row.pName, "Spoof Spectate") == 0 && !SpoofSpectateChildVisible(row.pChildren, row.childCount, c)))
         continue;
-if(str_comp(row.pName, "Basic Avoid Freeze") == 0 && !BafChildVisible(row.pChildren, row.childCount, c))
+if(str_comp(row.pName, "Avoid Freeze") == 0 && !AfChildVisible(row.pChildren, row.childCount, c))
         continue;
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
         continue;
@@ -7919,12 +9302,22 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
         continue;
 if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
+                                if(!SearchKeepsChild(child))
+                                        continue;
                                 const YGNodeRef cnode = rowNodes[rowIdx];
                                 const float crx = bodyX + YGNodeLayoutGetLeft(cnode);
                                 const float cry = bodyY + YGNodeLayoutGetTop(cnode) + rowYOffset;
                                 const float crw = YGNodeLayoutGetWidth(cnode);
                                 const float crh = YGNodeLayoutGetHeight(cnode);
                                 ++rowIdx;
+
+                                // v1.56.284: record hovered child row for the ToolTip.
+                                if(child.pToolTip && PointInRect(m_MousePos, crx, cry, crw, crh))
+                                {
+                                        str_copy(m_aToolTipText, child.pToolTip, sizeof(m_aToolTipText));
+                                        m_pToolTipRow = child.pToolTip;
+                                        m_ToolTipRowTime = Client()->RenderFrameTime();
+                                }
 
                                 const ColorRGBA cText = child.on
                                         ? ColorRGBA(COL_ROW_TEXT_ON, true).WithAlpha(alpha)
@@ -7945,20 +9338,23 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 case ERowType::Slider:
                                 {
                                         DrawText(crx + 2.0f, cry + 5.0f, 17.0f, child.pName, cText);
+                                        // v1.56.284: stepped value + step-derived decimals.
+                                        const float cShown = SnapSliderStep(child);
+                                        const int cDec = SliderStepDecimals(child);
                                         char vbuf[32];
-                                        if(child.step >= 1.0f)
+                                        if(cDec == 0)
                                         {
                                                 if(child.pSuffix)
-                                                        str_format(vbuf, sizeof(vbuf), "%d%s", (int)child.value, child.pSuffix);
+                                                        str_format(vbuf, sizeof(vbuf), "%d%s", (int)cShown, child.pSuffix);
                                                 else
-                                                        str_format(vbuf, sizeof(vbuf), "%d", (int)child.value);
+                                                        str_format(vbuf, sizeof(vbuf), "%d", (int)cShown);
                                         }
                                         else
                                         {
                                                 if(child.pSuffix)
-                                                        str_format(vbuf, sizeof(vbuf), "%.2f%s", child.value, child.pSuffix);
+                                                        str_format(vbuf, sizeof(vbuf), "%.*f%s", cDec, cShown, child.pSuffix);
                                                 else
-                                                        str_format(vbuf, sizeof(vbuf), "%.2f", child.value);
+                                                        str_format(vbuf, sizeof(vbuf), "%.*f", cDec, cShown);
                                         }
                                         const float vw = TextRender()->TextWidth(17.0f, vbuf) + 10.0f;
                                         const float vx = crx + crw - vw - 2.0f;
@@ -7972,9 +9368,10 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                         DrawRoundedRect(trx, trY, trW, SLIDER_TRACK_H, 2.0f,
                                                 IGraphics::CORNER_ALL,
                                                 ColorRGBA(COL_SLIDER_TRACK, true).WithAlpha(alpha));
+                                        // v1.56.284: thumb at the snapped (step) position.
                                         float cpct = 0.0f;
                                         if(child.max > child.min)
-                                                cpct = (child.value - child.min) / (child.max - child.min);
+                                                cpct = (cShown - child.min) / (child.max - child.min);
                                         cpct = std::clamp(cpct, 0.0f, 1.0f);
                                         const float thX = trx + trW * cpct;
                                         const float thY = trY + SLIDER_TRACK_H * 0.5f;
@@ -8017,6 +9414,72 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                 ic = (child.m_aInputBuf[0])
                                                         ? cText
                                                         : ColorRGBA(0xff8a8aa8, true).WithAlpha(alpha);
+                                        }
+                                        if(editingChild && m_InputSelStart >= 0 && m_InputSelEnd > m_InputSelStart)
+                                        {
+                                                char tmp[256];
+                                                int n = std::min(m_InputSelStart, (int)sizeof(tmp) - 1);
+                                                mem_copy(tmp, m_InputBuf, n); tmp[n] = 0;
+                                                float selStartX = ix + 4.0f + TextRender()->TextWidth(17.0f, tmp);
+                                                n = std::min(m_InputSelEnd, (int)sizeof(tmp) - 1);
+                                                mem_copy(tmp, m_InputBuf, n); tmp[n] = 0;
+                                                float selEndX = ix + 4.0f + TextRender()->TextWidth(17.0f, tmp);
+                                                DrawRoundedRect(selStartX, iy + 3.0f, selEndX - selStartX, ih - 6.0f, 1.0f,
+                                                        IGraphics::CORNER_NONE,
+                                                        ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha * 0.5f));
+                                        }
+                                        if(pT)
+                                                DrawText(ix + 4.0f, iy + 3.0f, 17.0f, pT, ic);
+                                        if(editingChild)
+                                        {
+                                                char tmp[256];
+                                                int n = std::min(m_InputCursor, (int)sizeof(tmp) - 1);
+                                                mem_copy(tmp, m_InputBuf, n); tmp[n] = 0;
+                                                const float cursorX = ix + 4.0f + TextRender()->TextWidth(17.0f, tmp);
+                                                DrawRoundedRect(cursorX, iy + 3.0f, 1.5f, ih - 6.0f, 0.0f,
+                                                        IGraphics::CORNER_NONE,
+                                                        ColorRGBA(0xffffffff, true).WithAlpha(alpha * (0.5f + 0.5f * std::sin(LocalTime() * 5.0f))));
+                                        }
+                                        break;
+                                }
+                                case ERowType::ToggleInput: // v1.56.282: [✕] [name] [input box]
+                                {
+                                        DrawRoundedRect(crx + 1.0f, cry + 3.0f, CHECK_W, CHECK_W, 3.0f,
+                                                IGraphics::CORNER_ALL,
+                                                ColorRGBA(COL_CHECK_SQUARE, true).WithAlpha(alpha));
+                                        if(child.on)
+                                                DrawText(crx + 1.0f + CHECK_W * 0.5f, cry + 3.0f - 2.0f, 22.0f, "\xe2\x9c\x95",
+                                                        ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha), TEXTALIGN_CENTER);
+                                        DrawText(crx + CHECK_W + 4.0f, cry + 5.0f, 17.0f, child.pName, cText);
+
+                                        const float iw = crw / 2.0f;
+                                        const float ix = crx + crw - iw - 2.0f;
+                                        const float iy = cry + 2.0f;
+                                        const float ih = crh - 4.0f;
+                                        if(!child.m_InputInitialized)
+                                        {
+                                                if(child.pInputValue)
+                                                        str_copy(child.m_aInputBuf, child.pInputValue, sizeof(child.m_aInputBuf));
+                                                child.m_InputInitialized = true;
+                                        }
+                                        const bool editingChild = (m_InputEditing && m_InputPanel == panelIdx && m_InputRow == r && m_InputChild == c);
+                                        DrawRoundedRect(ix, iy, iw, ih, 2.0f,
+                                                IGraphics::CORNER_ALL,
+                                                ColorRGBA(COL_INPUT_BG, true).WithAlpha(alpha));
+                                        DrawRoundedRect(ix - 1.0f, iy - 1.0f, iw + 2.0f, ih + 2.0f, 2.0f,
+                                                IGraphics::CORNER_ALL,
+                                                editingChild ? ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha) : ColorRGBA(COL_INPUT_BORDER, true).WithAlpha(alpha * 0.5f));
+                                        const char *pT;
+                                        ColorRGBA ic;
+                                        if(editingChild)
+                                        {
+                                                pT = m_InputBuf;
+                                                ic = cText;
+                                        }
+                                        else
+                                        {
+                                                pT = (child.m_aInputBuf[0]) ? child.m_aInputBuf : child.pPlaceholder;
+                                                ic = (child.m_aInputBuf[0]) ? cText : ColorRGBA(0xff8a8aa8, true).WithAlpha(alpha);
                                         }
                                         if(editingChild && m_InputSelStart >= 0 && m_InputSelEnd > m_InputSelStart)
                                         {
@@ -8130,9 +9593,9 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                         // when the state requires a different word.
                                         const char *pLeftLabel = child.pName;
                                         char aLeftLabel[32];
-                                        if(child.pName && child.pName[0] == 'D' && child.pName[1] >= '1' && child.pName[1] <= '7')
+                                        if(child.pName && DummyMgrParseD(child.pName) >= 1)
                                         {
-                                                int d = child.pName[1] - '0';
+                                                const int d = DummyMgrParseD(child.pName);
                                                 if(child.on)
                                                         str_format(aLeftLabel, sizeof(aLeftLabel), "D%d Disconnect", d);
                                                 else if(GameClient()->Client()->DummyConnecting(d))
@@ -8188,7 +9651,8 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
 
                         // Restore the body clip for subsequent rows.
                         if(useChildClip)
-                                ClipEnableVirtual(bodyX, bodyY, bodyW, visibleBodyHeight);
+// v1.56.284: cut the body at the screen bottom edge.
+                ClipEnableVirtual(bodyX, bodyY, bodyW, std::min(visibleBodyHeight, std::max(0.0f, VScreenHeight() - bodyY)));
 
                         // v1.56.72: use precomputed expandInfo (avoids re-calling
                         // EaseBothDirections and re-summing childrenBlockH here).

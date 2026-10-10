@@ -1004,7 +1004,48 @@ NETSOCKET net_udp_create(NETADDR bindaddr)
 	return sock;
 }
 
+// SOCKS5 proxy hooks (Kinetix). When installed, net_udp_send/net_udp_recv
+// route per-connection traffic through SOCKS5 UDP relays instead of going
+// direct. The direct variants below are used by the proxy itself to talk to
+// its relay socket without recursing into the hooks.
+static SOCKS5_UDP_SEND_HOOK g_Socks5SendHook = nullptr;
+static SOCKS5_UDP_RECV_HOOK g_Socks5RecvHook = nullptr;
+
+void net_set_socks5_hooks(SOCKS5_UDP_SEND_HOOK pSend, SOCKS5_UDP_RECV_HOOK pRecv)
+{
+	g_Socks5SendHook = pSend;
+	g_Socks5RecvHook = pRecv;
+}
+
+int net_udp_send_direct(NETSOCKET sock, const NETADDR *addr, const void *data, int size);
+int net_udp_recv_direct(NETSOCKET sock, NETADDR *addr, unsigned char **data);
+
 int net_udp_send(NETSOCKET sock, const NETADDR *addr, const void *data, int size)
+{
+	if(g_Socks5SendHook)
+		return g_Socks5SendHook(sock, addr, data, size);
+	return net_udp_send_direct(sock, addr, data, size);
+}
+
+int net_udp_recv(NETSOCKET sock, NETADDR *addr, unsigned char **data)
+{
+	if(g_Socks5RecvHook)
+		return g_Socks5RecvHook(sock, addr, data);
+	return net_udp_recv_direct(sock, addr, data);
+}
+
+int net_socket_fd(NETSOCKET sock)
+{
+	if(!sock)
+		return -1;
+	if(sock->ipv4sock >= 0)
+		return sock->ipv4sock;
+	if(sock->ipv6sock >= 0)
+		return sock->ipv6sock;
+	return -1;
+}
+
+int net_udp_send_direct(NETSOCKET sock, const NETADDR *addr, const void *data, int size)
 {
 	int d = -1;
 
@@ -1107,7 +1148,7 @@ int net_udp_send(NETSOCKET sock, const NETADDR *addr, const void *data, int size
 	return d;
 }
 
-int net_udp_recv(NETSOCKET sock, NETADDR *addr, unsigned char **data)
+int net_udp_recv_direct(NETSOCKET sock, NETADDR *addr, unsigned char **data)
 {
 	static const auto &&update_stats = [](int bytes) {
 		network_stats.recv_bytes += bytes;

@@ -8,6 +8,7 @@
 #include <engine/shared/config.h>
 
 #include <game/client/component.h>
+#include <game/client/components/kinetix/dummies/dummy_data.h>
 #include <game/gamecore.h>
 #include <generated/protocol.h>
 
@@ -454,6 +455,11 @@ public:
 
         // Per-dummy runtime state
         CBotNetDummy m_aDummies[MAX_DUMMIES];
+
+        // Kinetix Dummy Manager (v1.56.282): per-dummy profiles + proxies.
+        // Exposed as runtime commands (dummy%d_* / kx_dummy_limit), persisted
+        // to kinetix_dummies.cfg — deliberately NOT in g_Config.
+        CDummyData m_Dummy;
 
         // Map grid (shared — same map for all)
         int m_MapWidth;
