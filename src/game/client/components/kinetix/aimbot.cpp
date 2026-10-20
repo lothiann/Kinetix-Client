@@ -13,6 +13,7 @@
 #include <game/client/prediction/entities/character.h>
 #include <game/client/prediction/gameworld.h>
 #include <game/collision.h>
+#include <game/mapitems.h>
 #include <game/tuning.h>
 #include <generated/protocol.h>
 
@@ -115,10 +116,11 @@ static const KxAbCvars s_aAbCvars[] = {
 		&g_Config.m_KxAbHookSmoothCenterSnap, &g_Config.m_KxAbHookOffWhileFreeze},
 };
 
+// v1.56.292: pTrigger removed — the Trigger fire/hook dropdown is gone
+// (weapons 0..5 always fire, index 6 = Hook always hooks).
 struct KxTbCvars
 {
 	int *pEnabled;
-	int *pTrigger;
 	int *pTriggerMode;
 	int *pFov;
 	int *pRadius;
@@ -140,43 +142,335 @@ struct KxTbCvars
 };
 
 static const KxTbCvars s_aTbCvars[] = {
-	{&g_Config.m_KxTbHammerEnabled, &g_Config.m_KxTbHammerTrigger, &g_Config.m_KxTbHammerTriggerMode,
+	{&g_Config.m_KxTbHammerEnabled, &g_Config.m_KxTbHammerTriggerMode,
 		&g_Config.m_KxTbHammerFov, &g_Config.m_KxTbHammerRadius,
 		&g_Config.m_KxTbHammerRaycastShow, &g_Config.m_KxTbHammerRules,
 		&g_Config.m_KxTbHammerTeam, &g_Config.m_KxTbHammerFriend, &g_Config.m_KxTbHammerDummy,
 		&g_Config.m_KxTbHammerClanmate, &g_Config.m_KxTbHammerTargetsFilter, g_Config.m_KxTbHammerTargetsIds,
 		&g_Config.m_KxTbHammerFreeze, &g_Config.m_KxTbHammerFngFreeze, &g_Config.m_KxTbHammerAutoSwitch, &g_Config.m_KxTbHammerPriority, &g_Config.m_KxTbHammerLatency, &g_Config.m_KxTbHammerUseSilentAB, &g_Config.m_KxTbHammerOffWhileFreeze},
-	{&g_Config.m_KxTbPistolEnabled, &g_Config.m_KxTbPistolTrigger, &g_Config.m_KxTbPistolTriggerMode,
+	{&g_Config.m_KxTbPistolEnabled, &g_Config.m_KxTbPistolTriggerMode,
 		&g_Config.m_KxTbPistolFov, &g_Config.m_KxTbPistolRadius,
 		&g_Config.m_KxTbPistolRaycastShow, &g_Config.m_KxTbPistolRules,
 		&g_Config.m_KxTbPistolTeam, &g_Config.m_KxTbPistolFriend, &g_Config.m_KxTbPistolDummy,
 		&g_Config.m_KxTbPistolClanmate, &g_Config.m_KxTbPistolTargetsFilter, g_Config.m_KxTbPistolTargetsIds,
 		&g_Config.m_KxTbPistolFreeze, &g_Config.m_KxTbPistolFngFreeze, &g_Config.m_KxTbPistolAutoSwitch, &g_Config.m_KxTbPistolPriority, &g_Config.m_KxTbPistolLatency, &g_Config.m_KxTbPistolUseSilentAB, &g_Config.m_KxTbPistolOffWhileFreeze},
-	{&g_Config.m_KxTbShotgunEnabled, &g_Config.m_KxTbShotgunTrigger, &g_Config.m_KxTbShotgunTriggerMode,
+	{&g_Config.m_KxTbShotgunEnabled, &g_Config.m_KxTbShotgunTriggerMode,
 		&g_Config.m_KxTbShotgunFov, &g_Config.m_KxTbShotgunRadius,
 		&g_Config.m_KxTbShotgunRaycastShow, &g_Config.m_KxTbShotgunRules,
 		&g_Config.m_KxTbShotgunTeam, &g_Config.m_KxTbShotgunFriend, &g_Config.m_KxTbShotgunDummy,
 		&g_Config.m_KxTbShotgunClanmate, &g_Config.m_KxTbShotgunTargetsFilter, g_Config.m_KxTbShotgunTargetsIds,
 		&g_Config.m_KxTbShotgunFreeze, &g_Config.m_KxTbShotgunFngFreeze, &g_Config.m_KxTbShotgunAutoSwitch, &g_Config.m_KxTbShotgunPriority, &g_Config.m_KxTbShotgunLatency, &g_Config.m_KxTbShotgunUseSilentAB, &g_Config.m_KxTbShotgunOffWhileFreeze},
-	{&g_Config.m_KxTbGrenadeEnabled, &g_Config.m_KxTbGrenadeTrigger, &g_Config.m_KxTbGrenadeTriggerMode,
+	{&g_Config.m_KxTbGrenadeEnabled, &g_Config.m_KxTbGrenadeTriggerMode,
 		&g_Config.m_KxTbGrenadeFov, &g_Config.m_KxTbGrenadeRadius,
 		&g_Config.m_KxTbGrenadeRaycastShow, &g_Config.m_KxTbGrenadeRules,
 		&g_Config.m_KxTbGrenadeTeam, &g_Config.m_KxTbGrenadeFriend, &g_Config.m_KxTbGrenadeDummy,
 		&g_Config.m_KxTbGrenadeClanmate, &g_Config.m_KxTbGrenadeTargetsFilter, g_Config.m_KxTbGrenadeTargetsIds,
 		&g_Config.m_KxTbGrenadeFreeze, &g_Config.m_KxTbGrenadeFngFreeze, &g_Config.m_KxTbGrenadeAutoSwitch, &g_Config.m_KxTbGrenadePriority, &g_Config.m_KxTbGrenadeLatency, &g_Config.m_KxTbGrenadeUseSilentAB, &g_Config.m_KxTbGrenadeOffWhileFreeze},
-	{&g_Config.m_KxTbLaserEnabled, &g_Config.m_KxTbLaserTrigger, &g_Config.m_KxTbLaserTriggerMode,
+	{&g_Config.m_KxTbLaserEnabled, &g_Config.m_KxTbLaserTriggerMode,
 		&g_Config.m_KxTbLaserFov, &g_Config.m_KxTbLaserRadius,
 		&g_Config.m_KxTbLaserRaycastShow, &g_Config.m_KxTbLaserRules,
 		&g_Config.m_KxTbLaserTeam, &g_Config.m_KxTbLaserFriend, &g_Config.m_KxTbLaserDummy,
 		&g_Config.m_KxTbLaserClanmate, &g_Config.m_KxTbLaserTargetsFilter, g_Config.m_KxTbLaserTargetsIds,
 		&g_Config.m_KxTbLaserFreeze, &g_Config.m_KxTbLaserFngFreeze, &g_Config.m_KxTbLaserAutoSwitch, &g_Config.m_KxTbLaserPriority, &g_Config.m_KxTbLaserLatency, &g_Config.m_KxTbLaserUseSilentAB, &g_Config.m_KxTbLaserOffWhileFreeze},
-	{&g_Config.m_KxTbNinjaEnabled, &g_Config.m_KxTbNinjaTrigger, &g_Config.m_KxTbNinjaTriggerMode,
+	{&g_Config.m_KxTbNinjaEnabled, &g_Config.m_KxTbNinjaTriggerMode,
 		&g_Config.m_KxTbNinjaFov, &g_Config.m_KxTbNinjaRadius,
 		&g_Config.m_KxTbNinjaRaycastShow, &g_Config.m_KxTbNinjaRules,
 		&g_Config.m_KxTbNinjaTeam, &g_Config.m_KxTbNinjaFriend, &g_Config.m_KxTbNinjaDummy,
 		&g_Config.m_KxTbNinjaClanmate, &g_Config.m_KxTbNinjaTargetsFilter, g_Config.m_KxTbNinjaTargetsIds,
 		&g_Config.m_KxTbNinjaFreeze, &g_Config.m_KxTbNinjaFngFreeze, &g_Config.m_KxTbNinjaAutoSwitch, &g_Config.m_KxTbNinjaPriority, &g_Config.m_KxTbNinjaLatency, &g_Config.m_KxTbNinjaUseSilentAB, &g_Config.m_KxTbNinjaOffWhileFreeze},
+	// v1.56.292: Hook (index 6) — the Hook trigger channel.
+	{&g_Config.m_KxTbHookEnabled, &g_Config.m_KxTbHookTriggerMode,
+		&g_Config.m_KxTbHookFov, &g_Config.m_KxTbHookRadius,
+		&g_Config.m_KxTbHookRaycastShow, &g_Config.m_KxTbHookRules,
+		&g_Config.m_KxTbHookTeam, &g_Config.m_KxTbHookFriend, &g_Config.m_KxTbHookDummy,
+		&g_Config.m_KxTbHookClanmate, &g_Config.m_KxTbHookTargetsFilter, g_Config.m_KxTbHookTargetsIds,
+		&g_Config.m_KxTbHookFreeze, &g_Config.m_KxTbHookFngFreeze, &g_Config.m_KxTbHookAutoSwitch, &g_Config.m_KxTbHookPriority, &g_Config.m_KxTbHookLatency, &g_Config.m_KxTbHookUseSilentAB, &g_Config.m_KxTbHookOffWhileFreeze},
 };
+
+// v1.56.294: AimBot Hook per-entity cvars — entity modes 1..5: 0 = Hookable,
+// 1 = Unhookable, 2 = Freeze, 3 = Death, 4 = Others. Entity mode 0 (Tee)
+// keeps s_aAbCvars[6] (the kx_ab_hook_* block). A separate struct: map blocks
+// have no player filters, no prediction (blocks don't move), no Rules (the
+// line-of-sight rule is fixed) and no weapon auto-switch — those settings are
+// meaningless here and are not exposed at all.
+struct KxAbEntCvars
+{
+	int *pEnabled;
+	int *pFov;
+	int *pRadius;
+	int *pRaycastShow;
+	int *pJitter;
+	int *pAimMode;
+	int *pSilent;
+	int *pSmoothSpeed;
+	int *pSmoothCenterSnap;
+	int *pPriority;
+	int *pOffWhileFreeze;
+};
+
+static const KxAbEntCvars s_aAbEntCvars[] = {
+	{&g_Config.m_KxAbEntHookableEnabled, &g_Config.m_KxAbEntHookableFov, &g_Config.m_KxAbEntHookableRadius,
+		&g_Config.m_KxAbEntHookableRaycastShow, &g_Config.m_KxAbEntHookableJitter, &g_Config.m_KxAbEntHookableAimMode,
+		&g_Config.m_KxAbEntHookableSilent, &g_Config.m_KxAbEntHookableSmoothSpeed,
+		&g_Config.m_KxAbEntHookableSmoothCenterSnap, &g_Config.m_KxAbEntHookablePriority,
+		&g_Config.m_KxAbEntHookableOffWhileFreeze},
+	{&g_Config.m_KxAbEntUnhookableEnabled, &g_Config.m_KxAbEntUnhookableFov, &g_Config.m_KxAbEntUnhookableRadius,
+		&g_Config.m_KxAbEntUnhookableRaycastShow, &g_Config.m_KxAbEntUnhookableJitter, &g_Config.m_KxAbEntUnhookableAimMode,
+		&g_Config.m_KxAbEntUnhookableSilent, &g_Config.m_KxAbEntUnhookableSmoothSpeed,
+		&g_Config.m_KxAbEntUnhookableSmoothCenterSnap, &g_Config.m_KxAbEntUnhookablePriority,
+		&g_Config.m_KxAbEntUnhookableOffWhileFreeze},
+	{&g_Config.m_KxAbEntFreezeEnabled, &g_Config.m_KxAbEntFreezeFov, &g_Config.m_KxAbEntFreezeRadius,
+		&g_Config.m_KxAbEntFreezeRaycastShow, &g_Config.m_KxAbEntFreezeJitter, &g_Config.m_KxAbEntFreezeAimMode,
+		&g_Config.m_KxAbEntFreezeSilent, &g_Config.m_KxAbEntFreezeSmoothSpeed,
+		&g_Config.m_KxAbEntFreezeSmoothCenterSnap, &g_Config.m_KxAbEntFreezePriority,
+		&g_Config.m_KxAbEntFreezeOffWhileFreeze},
+	{&g_Config.m_KxAbEntDeathEnabled, &g_Config.m_KxAbEntDeathFov, &g_Config.m_KxAbEntDeathRadius,
+		&g_Config.m_KxAbEntDeathRaycastShow, &g_Config.m_KxAbEntDeathJitter, &g_Config.m_KxAbEntDeathAimMode,
+		&g_Config.m_KxAbEntDeathSilent, &g_Config.m_KxAbEntDeathSmoothSpeed,
+		&g_Config.m_KxAbEntDeathSmoothCenterSnap, &g_Config.m_KxAbEntDeathPriority,
+		&g_Config.m_KxAbEntDeathOffWhileFreeze},
+	{&g_Config.m_KxAbEntOthersEnabled, &g_Config.m_KxAbEntOthersFov, &g_Config.m_KxAbEntOthersRadius,
+		&g_Config.m_KxAbEntOthersRaycastShow, &g_Config.m_KxAbEntOthersJitter, &g_Config.m_KxAbEntOthersAimMode,
+		&g_Config.m_KxAbEntOthersSilent, &g_Config.m_KxAbEntOthersSmoothSpeed,
+		&g_Config.m_KxAbEntOthersSmoothCenterSnap, &g_Config.m_KxAbEntOthersPriority,
+		&g_Config.m_KxAbEntOthersOffWhileFreeze},
+};
+
+// v1.56.294: TriggerBot Hook per-entity cvars — same entity order as above.
+struct KxTbEntCvars
+{
+	int *pEnabled;
+	int *pTriggerMode;
+	int *pFov;
+	int *pRadius;
+	int *pRaycastShow;
+	int *pPriority;
+	int *pLatency;
+	int *pUseSilentAB;
+	int *pOffWhileFreeze;
+};
+
+static const KxTbEntCvars s_aTbEntCvars[] = {
+	{&g_Config.m_KxTbEntHookableEnabled, &g_Config.m_KxTbEntHookableTriggerMode,
+		&g_Config.m_KxTbEntHookableFov, &g_Config.m_KxTbEntHookableRadius,
+		&g_Config.m_KxTbEntHookableRaycastShow,
+		&g_Config.m_KxTbEntHookablePriority, &g_Config.m_KxTbEntHookableLatency, &g_Config.m_KxTbEntHookableUseSilentAB, &g_Config.m_KxTbEntHookableOffWhileFreeze},
+	{&g_Config.m_KxTbEntUnhookableEnabled, &g_Config.m_KxTbEntUnhookableTriggerMode,
+		&g_Config.m_KxTbEntUnhookableFov, &g_Config.m_KxTbEntUnhookableRadius,
+		&g_Config.m_KxTbEntUnhookableRaycastShow,
+		&g_Config.m_KxTbEntUnhookablePriority, &g_Config.m_KxTbEntUnhookableLatency, &g_Config.m_KxTbEntUnhookableUseSilentAB, &g_Config.m_KxTbEntUnhookableOffWhileFreeze},
+	{&g_Config.m_KxTbEntFreezeEnabled, &g_Config.m_KxTbEntFreezeTriggerMode,
+		&g_Config.m_KxTbEntFreezeFov, &g_Config.m_KxTbEntFreezeRadius,
+		&g_Config.m_KxTbEntFreezeRaycastShow,
+		&g_Config.m_KxTbEntFreezePriority, &g_Config.m_KxTbEntFreezeLatency, &g_Config.m_KxTbEntFreezeUseSilentAB, &g_Config.m_KxTbEntFreezeOffWhileFreeze},
+	{&g_Config.m_KxTbEntDeathEnabled, &g_Config.m_KxTbEntDeathTriggerMode,
+		&g_Config.m_KxTbEntDeathFov, &g_Config.m_KxTbEntDeathRadius,
+		&g_Config.m_KxTbEntDeathRaycastShow,
+		&g_Config.m_KxTbEntDeathPriority, &g_Config.m_KxTbEntDeathLatency, &g_Config.m_KxTbEntDeathUseSilentAB, &g_Config.m_KxTbEntDeathOffWhileFreeze},
+	{&g_Config.m_KxTbEntOthersEnabled, &g_Config.m_KxTbEntOthersTriggerMode,
+		&g_Config.m_KxTbEntOthersFov, &g_Config.m_KxTbEntOthersRadius,
+		&g_Config.m_KxTbEntOthersRaycastShow,
+		&g_Config.m_KxTbEntOthersPriority, &g_Config.m_KxTbEntOthersLatency, &g_Config.m_KxTbEntOthersUseSilentAB, &g_Config.m_KxTbEntOthersOffWhileFreeze},
+};
+
+// v1.56.294: weapon tables only — every pointer is set, so no nullptr checks.
+static void KxAbPull(CAimBot::SWeaponSettings &s, const KxAbCvars &c)
+{
+	s.m_Enabled = *c.pEnabled != 0;
+	s.m_Fov = (float)*c.pFov;
+	s.m_Radius = (float)*c.pRadius;
+	s.m_UseRaycastShow = *c.pRaycastShow != 0;
+	s.m_Rules = *c.pRules;
+	s.m_UseAngle = *c.pUseAngle != 0;
+	s.m_Predict = *c.pPredict != 0;
+	s.m_Jitter = (float)*c.pJitter;
+	s.m_AimMode = *c.pAimMode;
+	s.m_Silent = *c.pSilent != 0;
+	s.m_SmoothSpeed = *c.pSmoothSpeed / 10.0f;
+	s.m_SmoothCenterSnap = *c.pSmoothCenterSnap != 0;
+	s.m_OffWhileFreeze = *c.pOffWhileFreeze != 0;
+	s.m_TeamFilter = *c.pTeam;
+	s.m_FriendFilter = *c.pFriend;
+	s.m_DummyFilter = *c.pDummy;
+	s.m_ClanmateFilter = *c.pClanmate;
+	s.m_TargetsFilter = *c.pTargetsFilter;
+	str_copy(s.m_aTargetsFilter, c.pTargetsIds, sizeof(s.m_aTargetsFilter));
+	s.m_FreezeFilter = *c.pFreeze;
+	s.m_FngFreeze = *c.pFngFreeze != 0;
+	s.m_AutoSwitchWeapon = *c.pAutoSwitch != 0;
+	s.m_Priority = *c.pPriority;
+}
+
+static void KxAbPush(const CAimBot::SWeaponSettings &s, const KxAbCvars &c)
+{
+	*c.pEnabled = s.m_Enabled ? 1 : 0;
+	*c.pFov = (int)(s.m_Fov + 0.5f);
+	*c.pRadius = (int)(s.m_Radius + 0.5f);
+	*c.pRaycastShow = s.m_UseRaycastShow ? 1 : 0;
+	*c.pRules = s.m_Rules;
+	*c.pUseAngle = s.m_UseAngle ? 1 : 0;
+	*c.pPredict = s.m_Predict ? 1 : 0;
+	*c.pJitter = (int)(s.m_Jitter + 0.5f);
+	*c.pAimMode = s.m_AimMode;
+	*c.pSilent = s.m_Silent ? 1 : 0;
+	*c.pSmoothSpeed = (int)(s.m_SmoothSpeed * 10.0f + 0.5f);
+	*c.pSmoothCenterSnap = s.m_SmoothCenterSnap ? 1 : 0;
+	*c.pOffWhileFreeze = s.m_OffWhileFreeze ? 1 : 0;
+	*c.pTeam = s.m_TeamFilter;
+	*c.pFriend = s.m_FriendFilter;
+	*c.pDummy = s.m_DummyFilter;
+	*c.pClanmate = s.m_ClanmateFilter;
+	*c.pTargetsFilter = s.m_TargetsFilter;
+	str_copy(c.pTargetsIds, s.m_aTargetsFilter, 64);
+	*c.pFreeze = s.m_FreezeFilter;
+	*c.pFngFreeze = s.m_FngFreeze ? 1 : 0;
+	*c.pAutoSwitch = s.m_AutoSwitchWeapon ? 1 : 0;
+	*c.pPriority = s.m_Priority;
+}
+
+static void KxTbPull(CAimBot::SWeaponSettings &s, const KxTbCvars &c)
+{
+	s.m_Enabled = *c.pEnabled != 0;
+	s.m_TriggerMode = *c.pTriggerMode;
+	s.m_Fov = (float)*c.pFov;
+	s.m_Radius = (float)*c.pRadius;
+	s.m_UseRaycastShow = *c.pRaycastShow != 0;
+	s.m_Rules = *c.pRules;
+	s.m_TeamFilter = *c.pTeam;
+	s.m_FriendFilter = *c.pFriend;
+	s.m_DummyFilter = *c.pDummy;
+	s.m_ClanmateFilter = *c.pClanmate;
+	s.m_TargetsFilter = *c.pTargetsFilter;
+	str_copy(s.m_aTargetsFilter, c.pTargetsIds, sizeof(s.m_aTargetsFilter));
+	s.m_FreezeFilter = *c.pFreeze;
+	s.m_FngFreeze = *c.pFngFreeze != 0;
+	s.m_AutoSwitchWeapon = *c.pAutoSwitch != 0;
+	s.m_Priority = *c.pPriority;
+	s.m_RandomLatency = *c.pLatency;
+	s.m_UseSilentChannelAB = *c.pUseSilentAB != 0;
+	s.m_OffWhileFreeze = *c.pOffWhileFreeze != 0;
+}
+
+static void KxTbPush(const CAimBot::SWeaponSettings &s, const KxTbCvars &c)
+{
+	*c.pEnabled = s.m_Enabled ? 1 : 0;
+	*c.pTriggerMode = s.m_TriggerMode;
+	*c.pFov = (int)(s.m_Fov + 0.5f);
+	*c.pRadius = (int)(s.m_Radius + 0.5f);
+	*c.pRaycastShow = s.m_UseRaycastShow ? 1 : 0;
+	*c.pRules = s.m_Rules;
+	*c.pTeam = s.m_TeamFilter;
+	*c.pFriend = s.m_FriendFilter;
+	*c.pDummy = s.m_DummyFilter;
+	*c.pClanmate = s.m_ClanmateFilter;
+	*c.pTargetsFilter = s.m_TargetsFilter;
+	str_copy(c.pTargetsIds, s.m_aTargetsFilter, 64);
+	*c.pFreeze = s.m_FreezeFilter;
+	*c.pFngFreeze = s.m_FngFreeze ? 1 : 0;
+	*c.pAutoSwitch = s.m_AutoSwitchWeapon ? 1 : 0;
+	*c.pPriority = s.m_Priority;
+	*c.pLatency = s.m_RandomLatency;
+	*c.pUseSilentAB = s.m_UseSilentChannelAB ? 1 : 0;
+	*c.pOffWhileFreeze = s.m_OffWhileFreeze ? 1 : 0;
+}
+
+// v1.56.294: per-entity pull/push — only the fields that exist in the entity
+// struct; everything else in SWeaponSettings keeps its default for these
+// blocks (and is never used by the entity targeting path).
+static void KxAbEntPull(CAimBot::SWeaponSettings &s, const KxAbEntCvars &c)
+{
+	s.m_Enabled = *c.pEnabled != 0;
+	s.m_Fov = (float)*c.pFov;
+	s.m_Radius = (float)*c.pRadius;
+	s.m_UseRaycastShow = *c.pRaycastShow != 0;
+	s.m_Jitter = (float)*c.pJitter;
+	s.m_AimMode = *c.pAimMode;
+	s.m_Silent = *c.pSilent != 0;
+	s.m_SmoothSpeed = *c.pSmoothSpeed / 10.0f;
+	s.m_SmoothCenterSnap = *c.pSmoothCenterSnap != 0;
+	s.m_Priority = *c.pPriority;
+	s.m_OffWhileFreeze = *c.pOffWhileFreeze != 0;
+}
+
+static void KxAbEntPush(const CAimBot::SWeaponSettings &s, const KxAbEntCvars &c)
+{
+	*c.pEnabled = s.m_Enabled ? 1 : 0;
+	*c.pFov = (int)(s.m_Fov + 0.5f);
+	*c.pRadius = (int)(s.m_Radius + 0.5f);
+	*c.pRaycastShow = s.m_UseRaycastShow ? 1 : 0;
+	*c.pJitter = (int)(s.m_Jitter + 0.5f);
+	*c.pAimMode = s.m_AimMode;
+	*c.pSilent = s.m_Silent ? 1 : 0;
+	*c.pSmoothSpeed = (int)(s.m_SmoothSpeed * 10.0f + 0.5f);
+	*c.pSmoothCenterSnap = s.m_SmoothCenterSnap ? 1 : 0;
+	*c.pPriority = s.m_Priority;
+	*c.pOffWhileFreeze = s.m_OffWhileFreeze ? 1 : 0;
+}
+
+static void KxTbEntPull(CAimBot::SWeaponSettings &s, const KxTbEntCvars &c)
+{
+	s.m_Enabled = *c.pEnabled != 0;
+	s.m_TriggerMode = *c.pTriggerMode;
+	s.m_Fov = (float)*c.pFov;
+	s.m_Radius = (float)*c.pRadius;
+	s.m_UseRaycastShow = *c.pRaycastShow != 0;
+	s.m_Priority = *c.pPriority;
+	s.m_RandomLatency = *c.pLatency;
+	s.m_UseSilentChannelAB = *c.pUseSilentAB != 0;
+	s.m_OffWhileFreeze = *c.pOffWhileFreeze != 0;
+}
+
+static void KxTbEntPush(const CAimBot::SWeaponSettings &s, const KxTbEntCvars &c)
+{
+	*c.pEnabled = s.m_Enabled ? 1 : 0;
+	*c.pTriggerMode = s.m_TriggerMode;
+	*c.pFov = (int)(s.m_Fov + 0.5f);
+	*c.pRadius = (int)(s.m_Radius + 0.5f);
+	*c.pRaycastShow = s.m_UseRaycastShow ? 1 : 0;
+	*c.pPriority = s.m_Priority;
+	*c.pLatency = s.m_RandomLatency;
+	*c.pUseSilentAB = s.m_UseSilentChannelAB ? 1 : 0;
+	*c.pOffWhileFreeze = s.m_OffWhileFreeze ? 1 : 0;
+}
+
+// v1.56.292: settings block of Hook entity mode Entity (0 -> the Hook weapon
+// block). Entity is clamped to 0..5; block entities live in the *HookEnt
+// arrays at index Entity - 1.
+CAimBot::SWeaponSettings &CAimBot::AimBotHookSettings(int Entity)
+{
+	if(Entity < 1)
+		return m_AimBotWeapons[6];
+	if(Entity > NUM_HOOK_ENTITIES)
+		Entity = NUM_HOOK_ENTITIES;
+	return m_AimBotHookEnt[Entity - 1];
+}
+
+const CAimBot::SWeaponSettings &CAimBot::AimBotHookSettings(int Entity) const
+{
+	if(Entity < 1)
+		return m_AimBotWeapons[6];
+	if(Entity > NUM_HOOK_ENTITIES)
+		Entity = NUM_HOOK_ENTITIES;
+	return m_AimBotHookEnt[Entity - 1];
+}
+
+CAimBot::SWeaponSettings &CAimBot::TriggerBotHookSettings(int Entity)
+{
+	if(Entity < 1)
+		return m_TriggerBotWeapons[6];
+	if(Entity > NUM_HOOK_ENTITIES)
+		Entity = NUM_HOOK_ENTITIES;
+	return m_TriggerBotHookEnt[Entity - 1];
+}
+
+const CAimBot::SWeaponSettings &CAimBot::TriggerBotHookSettings(int Entity) const
+{
+	if(Entity < 1)
+		return m_TriggerBotWeapons[6];
+	if(Entity > NUM_HOOK_ENTITIES)
+		Entity = NUM_HOOK_ENTITIES;
+	return m_TriggerBotHookEnt[Entity - 1];
+}
 
 // v1.56.255: per-weapon settings persistence. Pulls the saved cvars into the
 // weapon structs once at startup (settings.cfg is loaded before the first
@@ -189,58 +483,14 @@ void CAimBot::SyncSavedSettings()
 	{
 		s_Init = true;
 		for(int w = 0; w < NUM_WEAPONS_AIM; w++)
-		{
-			SWeaponSettings &s = m_AimBotWeapons[w];
-			const KxAbCvars &c = s_aAbCvars[w];
-			s.m_Enabled = *c.pEnabled != 0;
-			s.m_Fov = (float)*c.pFov;
-			s.m_Radius = (float)*c.pRadius;
-			s.m_UseRaycastShow = *c.pRaycastShow != 0;
-			s.m_Rules = *c.pRules;
-			s.m_UseAngle = *c.pUseAngle != 0;
-			s.m_Predict = *c.pPredict != 0;
-			s.m_Jitter = (float)*c.pJitter;
-			s.m_AimMode = *c.pAimMode;
-			s.m_Silent = *c.pSilent != 0;
-			s.m_SmoothSpeed = *c.pSmoothSpeed / 10.0f;
-			s.m_SmoothCenterSnap = *c.pSmoothCenterSnap != 0;
-			s.m_OffWhileFreeze = *c.pOffWhileFreeze != 0;
-			s.m_TeamFilter = *c.pTeam;
-			s.m_FriendFilter = *c.pFriend;
-			s.m_DummyFilter = *c.pDummy;
-			s.m_ClanmateFilter = *c.pClanmate;
-			s.m_TargetsFilter = *c.pTargetsFilter;
-			str_copy(s.m_aTargetsFilter, c.pTargetsIds, sizeof(s.m_aTargetsFilter));
-			s.m_FreezeFilter = *c.pFreeze;
-			s.m_FngFreeze = *c.pFngFreeze != 0;
-			s.m_AutoSwitchWeapon = *c.pAutoSwitch != 0;
-			s.m_Priority = *c.pPriority;
-		}
+			KxAbPull(m_AimBotWeapons[w], s_aAbCvars[w]);
+		// v1.56.292: per-entity Hook blocks (entity modes 1..5).
+		for(int e = 0; e < NUM_HOOK_ENTITIES; e++)
+			KxAbEntPull(m_AimBotHookEnt[e], s_aAbEntCvars[e]);
 		for(int w = 0; w < NUM_WEAPONS_TRIGGER; w++)
-		{
-			SWeaponSettings &s = m_TriggerBotWeapons[w];
-			const KxTbCvars &c = s_aTbCvars[w];
-			s.m_Enabled = *c.pEnabled != 0;
-			s.m_Trigger = *c.pTrigger;
-			s.m_TriggerMode = *c.pTriggerMode;
-			s.m_Fov = (float)*c.pFov;
-			s.m_Radius = (float)*c.pRadius;
-			s.m_UseRaycastShow = *c.pRaycastShow != 0;
-			s.m_Rules = *c.pRules;
-			s.m_TeamFilter = *c.pTeam;
-			s.m_FriendFilter = *c.pFriend;
-			s.m_DummyFilter = *c.pDummy;
-			s.m_ClanmateFilter = *c.pClanmate;
-			s.m_TargetsFilter = *c.pTargetsFilter;
-			str_copy(s.m_aTargetsFilter, c.pTargetsIds, sizeof(s.m_aTargetsFilter));
-			s.m_FreezeFilter = *c.pFreeze;
-			s.m_FngFreeze = *c.pFngFreeze != 0;
-			s.m_AutoSwitchWeapon = *c.pAutoSwitch != 0;
-			s.m_Priority = *c.pPriority;
-			s.m_RandomLatency = *c.pLatency;
-		s.m_UseSilentChannelAB = *c.pUseSilentAB != 0;
-		s.m_OffWhileFreeze = *c.pOffWhileFreeze != 0;
-		}
+			KxTbPull(m_TriggerBotWeapons[w], s_aTbCvars[w]);
+		for(int e = 0; e < NUM_HOOK_ENTITIES; e++)
+			KxTbEntPull(m_TriggerBotHookEnt[e], s_aTbEntCvars[e]);
 		m_AimBotShowFov = g_Config.m_KxAimBotShowFov != 0;
 		m_AimBotShowRadius = g_Config.m_KxAimBotShowRadius != 0;
 		m_AimBotUseRaycastShow = g_Config.m_KxAimBotRaycastShow != 0;
@@ -250,58 +500,14 @@ void CAimBot::SyncSavedSettings()
 		return;
 	}
 	for(int w = 0; w < NUM_WEAPONS_AIM; w++)
-	{
-		const SWeaponSettings &s = m_AimBotWeapons[w];
-		const KxAbCvars &c = s_aAbCvars[w];
-		*c.pEnabled = s.m_Enabled ? 1 : 0;
-		*c.pFov = (int)(s.m_Fov + 0.5f);
-		*c.pRadius = (int)(s.m_Radius + 0.5f);
-		*c.pRaycastShow = s.m_UseRaycastShow ? 1 : 0;
-		*c.pRules = s.m_Rules;
-		*c.pUseAngle = s.m_UseAngle ? 1 : 0;
-		*c.pPredict = s.m_Predict ? 1 : 0;
-		*c.pJitter = (int)(s.m_Jitter + 0.5f);
-		*c.pAimMode = s.m_AimMode;
-		*c.pSilent = s.m_Silent ? 1 : 0;
-		*c.pSmoothSpeed = (int)(s.m_SmoothSpeed * 10.0f + 0.5f);
-		*c.pSmoothCenterSnap = s.m_SmoothCenterSnap ? 1 : 0;
-		*c.pOffWhileFreeze = s.m_OffWhileFreeze ? 1 : 0;
-		*c.pTeam = s.m_TeamFilter;
-		*c.pFriend = s.m_FriendFilter;
-		*c.pDummy = s.m_DummyFilter;
-		*c.pClanmate = s.m_ClanmateFilter;
-		*c.pTargetsFilter = s.m_TargetsFilter;
-		str_copy(c.pTargetsIds, s.m_aTargetsFilter, 64);
-		*c.pFreeze = s.m_FreezeFilter;
-		*c.pFngFreeze = s.m_FngFreeze ? 1 : 0;
-		*c.pAutoSwitch = s.m_AutoSwitchWeapon ? 1 : 0;
-		*c.pPriority = s.m_Priority;
-	}
+		KxAbPush(m_AimBotWeapons[w], s_aAbCvars[w]);
+	// v1.56.292: per-entity Hook blocks (entity modes 1..5).
+	for(int e = 0; e < NUM_HOOK_ENTITIES; e++)
+		KxAbEntPush(m_AimBotHookEnt[e], s_aAbEntCvars[e]);
 	for(int w = 0; w < NUM_WEAPONS_TRIGGER; w++)
-	{
-		const SWeaponSettings &s = m_TriggerBotWeapons[w];
-		const KxTbCvars &c = s_aTbCvars[w];
-		*c.pEnabled = s.m_Enabled ? 1 : 0;
-		*c.pTrigger = s.m_Trigger;
-		*c.pTriggerMode = s.m_TriggerMode;
-		*c.pFov = (int)(s.m_Fov + 0.5f);
-		*c.pRadius = (int)(s.m_Radius + 0.5f);
-		*c.pRaycastShow = s.m_UseRaycastShow ? 1 : 0;
-		*c.pRules = s.m_Rules;
-		*c.pTeam = s.m_TeamFilter;
-		*c.pFriend = s.m_FriendFilter;
-		*c.pDummy = s.m_DummyFilter;
-		*c.pClanmate = s.m_ClanmateFilter;
-		*c.pTargetsFilter = s.m_TargetsFilter;
-		str_copy(c.pTargetsIds, s.m_aTargetsFilter, 64);
-		*c.pFreeze = s.m_FreezeFilter;
-		*c.pFngFreeze = s.m_FngFreeze ? 1 : 0;
-		*c.pAutoSwitch = s.m_AutoSwitchWeapon ? 1 : 0;
-		*c.pPriority = s.m_Priority;
-		*c.pLatency = s.m_RandomLatency;
-		*c.pUseSilentAB = s.m_UseSilentChannelAB ? 1 : 0;
-		*c.pOffWhileFreeze = s.m_OffWhileFreeze ? 1 : 0;
-	}
+		KxTbPush(m_TriggerBotWeapons[w], s_aTbCvars[w]);
+	for(int e = 0; e < NUM_HOOK_ENTITIES; e++)
+		KxTbEntPush(m_TriggerBotHookEnt[e], s_aTbEntCvars[e]);
 	g_Config.m_KxAimBotShowFov = m_AimBotShowFov ? 1 : 0;
 	g_Config.m_KxAimBotShowRadius = m_AimBotShowRadius ? 1 : 0;
 	g_Config.m_KxAimBotRaycastShow = m_AimBotUseRaycastShow ? 1 : 0;
@@ -314,7 +520,10 @@ void CAimBot::OnReset()
 {
         g_Config.m_KxAimBot = false;
         g_Config.m_KxTriggerBot = false;
-        m_LatencyCounter = 0;
+        // v1.56.292: drop pending TriggerBot trigger state (all channels).
+        m_TriggerBotFireState = STriggerChannelState();
+        for(auto &HookState : m_TriggerBotHookStates)
+                HookState = STriggerChannelState();
         m_PrevFire = false;
         m_PrevHook = false;
         // v1.56.262: drop pending Edge snap restore + Smooth silent glide state.
@@ -394,31 +603,63 @@ void CAimBot::OnRender()
                 }
                 // Hook (6) — v1.56.248: show FOV/radius ALWAYS when the hook weapon is
                 // enabled (previously gated on hook held / AimMode=always).
-                if(m_AimBotWeapons[6].m_Enabled &&
-                        !(m_AimBotWeapons[6].m_OffWhileFreeze && (WeFrozen || (m_AimBotWeapons[6].m_FngFreeze && WeNinja))))
+                // v1.56.294: EVERY enabled hook block draws its own zone —
+                // channel 0 (Tee, players) plus the per-entity blocks 1..5. The
+                // Entity Mode dropdown only picks the block being edited.
+                for(int EntityMode = 0; EntityMode <= NUM_HOOK_ENTITIES; EntityMode++)
                 {
+                        const SWeaponSettings &HookShow = AimBotHookSettings(EntityMode);
+                        if(!HookShow.m_Enabled)
+                                continue;
+                        if(HookShow.m_OffWhileFreeze && (WeFrozen || (HookShow.m_FngFreeze && WeNinja)))
+                                continue;
                         if(m_AimBotShowFov)
-                                RenderFov(m_AimBotWeapons[6], MyPos, AimDir, alpha);
+                                RenderFov(HookShow, MyPos, AimDir, alpha, EntityMode);
                         if(m_AimBotShowRadius)
-                                RenderRadius(m_AimBotWeapons[6], MyPos, AimDir, alpha);
+                                RenderRadius(HookShow, MyPos, AimDir, alpha, EntityMode);
                 }
         }
-        if(g_Config.m_KxTriggerBot && weapon >= 0 && weapon < NUM_WEAPONS_TRIGGER && m_TriggerBotWeapons[weapon].m_Enabled &&
-                !(m_TriggerBotWeapons[weapon].m_OffWhileFreeze && (WeFrozen || (m_TriggerBotWeapons[weapon].m_FngFreeze && WeNinja))))
+        if(g_Config.m_KxTriggerBot)
         {
-                vec2 TbAimDir = AimDir;
-                // v1.56.279: Use silent channel AB — while the silent aim is in
-                // action, draw the zone along the SILENT direction.
-                if(m_TriggerBotWeapons[weapon].m_UseSilentChannelAB && pGame->m_Controls.m_SilentAimActive)
+                if(weapon >= 0 && weapon < NUM_WEAPONS_TRIGGER - 1 && m_TriggerBotWeapons[weapon].m_Enabled &&
+                        !(m_TriggerBotWeapons[weapon].m_OffWhileFreeze && (WeFrozen || (m_TriggerBotWeapons[weapon].m_FngFreeze && WeNinja))))
                 {
-                        const vec2 SilentAim = pGame->m_Controls.m_SilentAimOffset;
-                        if(length(SilentAim) > 0.001f)
-                                TbAimDir = normalize(SilentAim);
+                        vec2 TbAimDir = AimDir;
+                        // v1.56.279: Use silent channel AB — while the silent aim is in
+                        // action, draw the zone along the SILENT direction.
+                        if(m_TriggerBotWeapons[weapon].m_UseSilentChannelAB && pGame->m_Controls.m_SilentAimActive)
+                        {
+                                const vec2 SilentAim = pGame->m_Controls.m_SilentAimOffset;
+                                if(length(SilentAim) > 0.001f)
+                                        TbAimDir = normalize(SilentAim);
+                        }
+                        if(m_TriggerBotShowFov)
+                                RenderFov(m_TriggerBotWeapons[weapon], MyPos, TbAimDir, alpha * 0.7f);
+                        if(m_TriggerBotShowRadius)
+                                RenderRadius(m_TriggerBotWeapons[weapon], MyPos, TbAimDir, alpha * 0.7f);
                 }
-                if(m_TriggerBotShowFov)
-                        RenderFov(m_TriggerBotWeapons[weapon], MyPos, TbAimDir, alpha * 0.7f);
-                if(m_TriggerBotShowRadius)
-                        RenderRadius(m_TriggerBotWeapons[weapon], MyPos, TbAimDir, alpha * 0.7f);
+                // v1.56.292: Hook trigger (index 6) — its own channel(s), shown
+                // regardless of the held weapon. v1.56.294: EVERY enabled hook
+                // block draws its own zone (Tee + per-entity blocks).
+                for(int EntityMode = 0; EntityMode <= NUM_HOOK_ENTITIES; EntityMode++)
+                {
+                        const SWeaponSettings &TbHookShow = TriggerBotHookSettings(EntityMode);
+                        if(!TbHookShow.m_Enabled)
+                                continue;
+                        if(TbHookShow.m_OffWhileFreeze && (WeFrozen || (TbHookShow.m_FngFreeze && WeNinja)))
+                                continue;
+                        vec2 TbAimDir = AimDir;
+                        if(TbHookShow.m_UseSilentChannelAB && pGame->m_Controls.m_SilentAimActive)
+                        {
+                                const vec2 SilentAim = pGame->m_Controls.m_SilentAimOffset;
+                                if(length(SilentAim) > 0.001f)
+                                        TbAimDir = normalize(SilentAim);
+                        }
+                        if(m_TriggerBotShowFov)
+                                RenderFov(TbHookShow, MyPos, TbAimDir, alpha * 0.7f, EntityMode);
+                        if(m_TriggerBotShowRadius)
+                                RenderRadius(TbHookShow, MyPos, TbAimDir, alpha * 0.7f, EntityMode);
+                }
         }
 
 }
@@ -520,9 +761,242 @@ bool CAimBot::PassesFilters(int ClientId, int LocalId, const SWeaponSettings &Se
         return true;
 }
 
-int CAimBot::FindTarget(const SWeaponSettings &Settings, int Weapon, int LocalId, const vec2 &MyPos, const vec2 &AimDir, const vec2 &AimPos, vec2 &outAimPoint)
+// v1.56.292: raw game-layer tile -> Entity Mode (same categories as Custom
+// colors -> Entities): 0 = air, 1 = Hookable (TILE_SOLID), 2 = Unhookable
+// (TILE_NOHOOK), 3 = Freeze (TILE_FREEZE / TILE_LFREEZE), 4 = Death
+// (TILE_DEATH), 5 = Others (any other non-air game tile). Shared by the entity
+// targeting, the hook-aim guard and the show-raycast.
+static int KxEntityModeFromTile(int Tile)
+{
+        if(Tile == 0)
+                return 0;
+        if(Tile == TILE_SOLID)
+                return 1;
+        if(Tile == TILE_NOHOOK)
+                return 2;
+        if(Tile == TILE_FREEZE || Tile == TILE_LFREEZE)
+                return 3;
+        if(Tile == TILE_DEATH)
+                return 4;
+        return 5;
+}
+
+// v1.56.291: block ("entity") targeting. When EntityMode != 0 the Hook bot
+// aims at a map tile of the selected category instead of a player. EntityMode
+// is passed in explicitly (0 = players, 1..5 = entity, see KxEntityModeFromTile)
+// so AimBot and TriggerBot can each use their own per-entity selection.
+// Line of sight uses IntersectLineTeleHook: for a solid tile the first hook
+// blocker must BE the target tile; for a non-solid tile the ray must reach the
+// tile unobstructed. v1.56.294: the returned outAimPoint is ALWAYS the point
+// where the hook ray meets the tile (the raycast angle; ~2 px inside), with
+// optional Jitter applied. Returns 0 on success, -1 otherwise.
+// Sets m_FoundEntityTarget.
+int CAimBot::FindEntityTarget(const SWeaponSettings &Settings, const vec2 &MyPos, const vec2 &AimDir, const vec2 &AimPos, vec2 &outAimPoint, int EntityMode)
+{
+        m_FoundEntityTarget = false;
+        CCollision *pCol = GameClient()->Collision();
+        if(!pCol)
+                return -1;
+        if(EntityMode < 1 || EntityMode > 5)
+                return -1;
+
+        const float myAngle = atan2f(AimDir.y, AimDir.x);
+        const float halfFovRad = (Settings.m_Fov * 0.5f) * (pi / 180.0f);
+        const float radius = Settings.m_Radius;
+        const int w = pCol->GetWidth();
+        const int h = pCol->GetHeight();
+        int tx0 = (int)floorf((MyPos.x - radius) / 32.0f);
+        int tx1 = (int)floorf((MyPos.x + radius) / 32.0f);
+        int ty0 = (int)floorf((MyPos.y - radius) / 32.0f);
+        int ty1 = (int)floorf((MyPos.y + radius) / 32.0f);
+        if(tx0 < 0)
+                tx0 = 0;
+        if(ty0 < 0)
+                ty0 = 0;
+        if(tx1 > w - 1)
+                tx1 = w - 1;
+        if(ty1 > h - 1)
+                ty1 = h - 1;
+
+        // v1.56.293: Priority 0 compares (angle, distance) lexicographically, so
+        // a wall the aim ray runs along selects the nearest crossed tile instead
+        // of the arbitrary tile-scan order.
+        float bestAngle = 1e18f;
+        float bestDist = 1e18f;
+        vec2 bestAim = vec2(0, 0);
+        int bestTx = 0;
+        int bestTy = 0;
+        bool found = false;
+
+        for(int ty = ty0; ty <= ty1; ++ty)
+        {
+                for(int tx = tx0; tx <= tx1; ++tx)
+                {
+                        // v1.56.292: RAW game-layer tile in TILE coords. GetTile() takes
+                        // PIXEL coords (divides by 32 inside) and filters to
+                        // TILE_SOLID..TILE_NOLASER — the old call read the tile at
+                        // (tx/32, ty/32) near the map origin (almost always air) and
+                        // Freeze/Others could never match. GetIndex() is the raw accessor
+                        // with the same tile set as Custom colors -> Entities.
+                        const int idx = pCol->GetIndex(tx, ty);
+                        if(idx == 0)
+                                continue;
+                        if(KxEntityModeFromTile(idx) != EntityMode)
+                                continue;
+
+                        const vec2 center = vec2(tx * 32.0f + 16.0f, ty * 32.0f + 16.0f);
+                        const vec2 boxMin((float)tx * 32.0f, (float)ty * 32.0f);
+                        const vec2 boxMax = boxMin + vec2(32.0f, 32.0f);
+                        // v1.56.293: measure against the tile SURFACE, not its centre —
+                        // the centre sits 16 px inside the block, so centre-based
+                        // metrics picked tiles far away along a wall and made
+                        // Priority look broken.
+                        const vec2 pMe = vec2(std::clamp(MyPos.x, boxMin.x, boxMax.x), std::clamp(MyPos.y, boxMin.y, boxMax.y));
+                        const float dist = length(MyPos - pMe);
+                        if(dist > radius || dist < 1.0f)
+                                continue;
+                        // Closest point of the tile to the aim ray (project the centre
+                        // onto the ray, clamp into the tile) — its "crosshair" point.
+                        const vec2 proj = MyPos + AimDir * dot(center - MyPos, AimDir);
+                        const vec2 pRay = vec2(std::clamp(proj.x, boxMin.x, boxMax.x), std::clamp(proj.y, boxMin.y, boxMax.y));
+                        const vec2 toRay = pRay - MyPos;
+                        const float angleDiff = (length_squared(toRay) > 0.0001f)
+                                ? fabsf(atan2f(sinf(myAngle - atan2f(toRay.y, toRay.x)), cosf(myAngle - atan2f(toRay.y, toRay.x))))
+                                : 0.0f;
+                        if(angleDiff > halfFovRad)
+                                continue;
+
+                        // Line of sight — the hook ray must reach THIS tile first.
+                        bool visible;
+                        vec2 hitPos;
+                        const int hit = pCol->IntersectLineTeleHook(MyPos, center, &hitPos, nullptr);
+                        if(hit == 0)
+                                visible = true; // non-solid tile: ray reaches it unobstructed
+                        else
+                        {
+                                // v1.56.292: the hit sample's tile must use the ENGINE'S
+                                // rounding (round_to_int(pos)/32 — same as GetTile /
+                                // GetPureMapIndex). floor() put the ~1px-before-the-face
+                                // sample into the neighbour tile and rejected valid tiles.
+                                const int hx = round_to_int(hitPos.x) / 32;
+                                const int hy = round_to_int(hitPos.y) / 32;
+                                visible = (hx == tx && hy == ty);
+                        }
+                        if(!visible)
+                                continue;
+
+                        // v1.56.297: distance accounting — the hook can attach to a
+                        // tile only on its last FULL step (the engine flips it to
+                        // HOOK_RETRACT_START on the clamped tip before the tile
+                        // check — see HOOK_TILE_REACH, ≈362 at default tuning). A tile
+                        // whose hook entry lies past that can never be grabbed: the
+                        // hook stops ~20 units short even though the tile surface is
+                        // inside the radius slider. Never target such a tile.
+                        if(hit != 0 && length(hitPos - MyPos) > HOOK_TILE_REACH)
+                                continue;
+
+                        // v1.56.294: always aim at the point where the hook ray
+                        // meets the tile ("raycast angle") instead of the tile
+                        // centre — hitPos for solid/blocker tiles, the first ray
+                        // sample inside the tile for pass-through tiles — then
+                        // nudge the point ~2 px deeper along the ray: the raycast
+                        // sample sits right on the surface and the integer aim
+                        // target (m_TargetX/Y) would otherwise pull the hook back
+                        // off the block by ~1 px.
+                        vec2 aimPoint;
+                        if(hit != 0)
+                                aimPoint = hitPos;
+                        else
+                        {
+                                aimPoint = center;
+                                const vec2 d = center - MyPos;
+                                const float len = length(d);
+                                const vec2 dir = len > 0.001f ? d / len : vec2(1, 0);
+                                const int steps = (int)len;
+                                for(int i = 1; i <= steps; i++)
+                                {
+                                        const vec2 p = MyPos + dir * (float)i;
+                                        if(round_to_int(p.x) / 32 == tx && round_to_int(p.y) / 32 == ty)
+                                        {
+                                                aimPoint = p;
+                                                break;
+                                        }
+                                }
+                        }
+                        {
+                                const vec2 toAim = aimPoint - MyPos;
+                                const float aimLen = length(toAim);
+                                if(aimLen > 0.001f)
+                                        aimPoint += toAim / aimLen * 2.0f;
+                        }
+
+                        // v1.56.293: Priority — 0 = nearest to the crosshair (angle
+                        // to the tile's closest-to-ray point; ties by distance),
+                        // 1 = nearest to the aim (cursor), 2 = nearest to me.
+                        // All distances use the tile surface, not the centre.
+                        const vec2 pAim = vec2(std::clamp(AimPos.x, boxMin.x, boxMax.x), std::clamp(AimPos.y, boxMin.y, boxMax.y));
+                        const float scoreDist = (Settings.m_Priority == 1) ? length(AimPos - pAim) : dist;
+                        bool better;
+                        if(!found)
+                                better = true;
+                        else if(Settings.m_Priority == 0)
+                                better = (angleDiff < bestAngle - 1e-4f) ||
+                                        (fabsf(angleDiff - bestAngle) <= 1e-4f && scoreDist < bestDist);
+                        else
+                                better = (scoreDist < bestDist);
+                        if(better)
+                        {
+                                bestAngle = angleDiff;
+                                bestDist = scoreDist;
+                                bestAim = aimPoint;
+                                bestTx = tx;
+                                bestTy = ty;
+                                found = true;
+                        }
+                }
+        }
+
+        if(!found)
+                return -1;
+        // v1.56.294: Jitter — randomize the aim point inside the chosen tile
+        // (Jitter % of the tile half-size, max ~14 px so it stays inside),
+        // retried until the hook ray still reaches that very tile.
+        if(Settings.m_Jitter > 0.0f)
+        {
+                const float boxMinX = (float)bestTx * 32.0f;
+                const float boxMinY = (float)bestTy * 32.0f;
+                const float JitMax = 14.0f * (Settings.m_Jitter / 100.0f);
+                for(int tryIdx = 0; tryIdx < 8; tryIdx++)
+                {
+                        const vec2 cand(
+                                std::clamp(bestAim.x + ((float)rand() / (float)RAND_MAX * 2.0f - 1.0f) * JitMax, boxMinX + 2.0f, boxMinX + 30.0f),
+                                std::clamp(bestAim.y + ((float)rand() / (float)RAND_MAX * 2.0f - 1.0f) * JitMax, boxMinY + 2.0f, boxMinY + 30.0f));
+                        vec2 jitHitPos;
+                        const int jitHit = pCol->IntersectLineTeleHook(MyPos, cand, &jitHitPos, nullptr);
+                        // v1.56.297: the jittered direction must still let the last
+                        // full hook step reach the tile (see HOOK_TILE_REACH).
+                        if(jitHit == 0 || (round_to_int(jitHitPos.x) / 32 == bestTx && round_to_int(jitHitPos.y) / 32 == bestTy &&
+                                length(jitHitPos - MyPos) <= HOOK_TILE_REACH))
+                        {
+                                bestAim = cand;
+                                break;
+                        }
+                }
+        }
+        m_FoundEntityTarget = true;
+        outAimPoint = bestAim;
+        return 0;
+}
+
+int CAimBot::FindTarget(const SWeaponSettings &Settings, int Weapon, int LocalId, const vec2 &MyPos, const vec2 &AimDir, const vec2 &AimPos, vec2 &outAimPoint, int EntityMode)
 {
         CGameClient *pGame = GameClient();
+        // v1.56.291: Entity Mode — the Hook bot targets map entities (blocks)
+        // instead of players. Handled before the player loop (and before the
+        // prediction world is allocated) so no world is created for blocks.
+        m_FoundEntityTarget = false;
+        if(EntityMode != 0)
+                return FindEntityTarget(Settings, MyPos, AimDir, AimPos, outAimPoint, EntityMode);
         float myAngle = atan2f(AimDir.y, AimDir.x);
         float halfFovRad = (Settings.m_Fov * 0.5f) * (pi / 180.0f);
         // v1.56.263: keep the sampling/jitter circle strictly INSIDE the real
@@ -977,12 +1451,38 @@ bool CAimBot::LineBlockedByCharacter(int LocalId, int TargetId, const vec2 &From
 // v1.56.263: "Use raycast (Show)" endpoint — the drawn ray stops on walls
 // AND on players, mirroring the targeting raycast physics (a hook/hit lands
 // on the first tee in the way, so drawing the ray through it is misleading).
-vec2 CAimBot::RayShowEndPoint(const vec2 &From, const vec2 &To) const
+// v1.56.292: EntityMode != 0 — the ray additionally stops on the first tile of
+// the selected Hook entity, so the shown raycast matches the block being
+// targeted (freeze/death/others are not hook blockers, the wall clip misses them).
+vec2 CAimBot::RayShowEndPoint(const vec2 &From, const vec2 &To, int EntityMode) const
 {
         vec2 End = To;
         vec2 WallHit;
         if(GameClient()->Collision()->IntersectLineTeleHook(From, To, &WallHit, nullptr) > 0)
                 End = WallHit;
+
+        if(EntityMode != 0)
+        {
+                CCollision *pCol = GameClient()->Collision();
+                const vec2 DEnd = End - From;
+                const float LenEnd = length(DEnd);
+                if(LenEnd > 0.001f)
+                {
+                        const vec2 DirEnd = DEnd / LenEnd;
+                        const int Steps = (int)LenEnd;
+                        for(int i = 0; i <= Steps; i++)
+                        {
+                                const vec2 p = From + DirEnd * (float)i;
+                                const int tx = round_to_int(p.x) / 32;
+                                const int ty = round_to_int(p.y) / 32;
+                                if(KxEntityModeFromTile(pCol->GetIndex(tx, ty)) == EntityMode)
+                                {
+                                        End = p;
+                                        break;
+                                }
+                        }
+                }
+        }
 
         CGameClient *pGame = GameClient();
         const int LocalId = pGame->m_Snap.m_LocalClientId;
@@ -1015,9 +1515,76 @@ vec2 CAimBot::RayShowEndPoint(const vec2 &From, const vec2 &To) const
         return End;
 }
 
+// v1.56.297: "do not move the aim when the hook already lands on an enabled
+// entity" — the guard asks the ENGINE where the hook would land instead of
+// marching a hand-rolled ray: IntersectLineTeleHook is the exact collision call
+// the real hook flight uses, so its first hit is the tile type the hook
+// actually stops on (solid / nohook / freeze / death — through-tiles are
+// skipped by the same IsThrough logic).
+// Distance accounting follows the two hook reaches (see HOOK_TILE_REACH):
+//   * TILES  — the last FULL hook step (~362 at default tuning; the red part
+//              of the hook-collision line). A tile hit only on the clamped tip
+//              is NOT grabbed by the engine and must not freeze the aim.
+//   * PLAYERS — the full hook length (380) is walked while the player grab
+//              loop runs, plus the PhysicalSize()+2 grab radius (~410; the
+//              yellow tip of the hook-collision line). Players are checked
+//              first because the engine's grab beats the ground in a tick.
+// Returns true only when that landing belongs to an ENABLED Hook entity block
+// (players = the Tee block); non-solid "Others" tiles are never a landing —
+// the real hook flies through them.
+bool CAimBot::HookAimAlreadyOnEntity(const vec2 &MyPos, const vec2 &AimDir) const
+{
+        CGameClient *pGame = GameClient();
+        CCollision *pCol = pGame->Collision();
+        if(!pCol)
+                return false;
+        // Players: full hook length, truncated by the first tile the flight hits
+        // (the engine overwrites NewPos with the hit point before the grab loop).
+        const vec2 PlayerRayEnd = MyPos + AimDir * GetWeaponRadius(6);
+        vec2 PlayerHitPos;
+        const int PlayerHit = pCol->IntersectLineTeleHook(MyPos, PlayerRayEnd, &PlayerHitPos, nullptr);
+        const vec2 Stop = (PlayerHit != 0) ? PlayerHitPos : PlayerRayEnd;
+
+        // Players first — the engine's grab beats the ground check in the same tick.
+        if(AimBotHookSettings(0).m_Enabled)
+        {
+                const vec2 Seg = Stop - MyPos;
+                const float SegLenSq = length_squared(Seg);
+                const float GrabR = CCharacterCore::PhysicalSize() + 2.0f;
+                const float GrabSq = GrabR * GrabR;
+                const int LocalId = pGame->m_Snap.m_LocalClientId;
+                const float intra = pGame->Client()->IntraGameTick(g_Config.m_ClDummy);
+                for(int i = 0; i < MAX_CLIENTS; i++)
+                {
+                        if(i == LocalId)
+                                continue;
+                        if(!pGame->m_aClients[i].m_Active || !pGame->m_Snap.m_aCharacters[i].m_Active)
+                                continue;
+                        const vec2 prevPos((float)pGame->m_Snap.m_aCharacters[i].m_Prev.m_X, (float)pGame->m_Snap.m_aCharacters[i].m_Prev.m_Y);
+                        const vec2 curPos((float)pGame->m_Snap.m_aCharacters[i].m_Cur.m_X, (float)pGame->m_Snap.m_aCharacters[i].m_Cur.m_Y);
+                        const vec2 Pos = mix(prevPos, curPos, intra);
+                        float t = 0.0f;
+                        if(SegLenSq > 0.0001f)
+                                t = std::clamp(dot(Pos - MyPos, Seg) / SegLenSq, 0.0f, 1.0f);
+                        if(length_squared((MyPos + Seg * t) - Pos) < GrabSq)
+                                return true; // the hook already grabs a player
+                }
+        }
+
+        // Tiles: only the last full step can attach (the clamped tip cannot).
+        vec2 HitPos;
+        const int Hit = pCol->IntersectLineTeleHook(MyPos, MyPos + AimDir * HOOK_TILE_REACH, &HitPos, nullptr);
+        if(Hit == 0)
+                return false; // nothing the hook can land on within reach
+        const int Mode = KxEntityModeFromTile(Hit); // engine hit value = game tile index
+        return Mode >= 1 && Mode <= NUM_HOOK_ENTITIES && AimBotHookSettings(Mode).m_Enabled;
+}
+
 void CAimBot::ApplyAim(int ClientId, const vec2 &MyPos, const SWeaponSettings &Settings, const vec2 &AimPoint)
 {
         CGameClient *pGame = GameClient();
+        // v1.56.295: the v1.56.294 rounding of the aim offset is reverted — it
+        // did not remove the miss.
         vec2 aimOffset = AimPoint - MyPos;
 
         // v1.56.262: Smooth mode — glide from the CURRENT aim coordinates toward
@@ -1264,21 +1831,61 @@ void CAimBot::UpdateAimBot()
                         }
                 }
         }
-        // Hook (6): Edge/Trigger use hook edge (hook has no reload cadence); Always/Smooth = every tick
-        if(m_AimBotWeapons[6].m_Enabled)
+        // Hook (6): v1.56.294 — every ENABLED hook block is an active channel:
+        // channel 0 (Tee) targets players through the Hook weapon block,
+        // channels 1..5 the per-entity blocks. The Entity Mode dropdown only
+        // picks the block that is being edited; several entities can be active
+        // at once. Edge/Trigger use the hook edge (hook has no reload cadence),
+        // Always/Smooth run every tick. The aim goes to the channel candidate
+        // closest to the crosshair, and it is left alone while the current aim
+        // already reaches an enabled entity (the check runs BEFORE target
+        // selection, so on the block the bot never touches the angle).
+        // v1.56.296: a hook fired by the TriggerBot gets its aim applied by the
+        // TriggerBot channel itself on the press tick (the edge read here would
+        // arrive after the press — see UpdateTriggerBotChannel).
+        bool AnyHookChannel = false;
+        for(int EntityMode = 0; EntityMode <= NUM_HOOK_ENTITIES && !AnyHookChannel; EntityMode++)
+                AnyHookChannel = AimBotHookSettings(EntityMode).m_Enabled;
+        if(AnyHookChannel && !HookAimAlreadyOnEntity(MyPos, AimDir))
         {
-                const SWeaponSettings &s = m_AimBotWeapons[6];
-                const bool FreezePaused = s.m_OffWhileFreeze && (WeFrozen || (s.m_FngFreeze && weapon == WEAPON_NINJA));
-                bool trigger = (s.m_AimMode >= 2) ? true : (hook && !m_PrevHook);
-                if(trigger && !FreezePaused)
+                const float myAngle = atan2f(AimDir.y, AimDir.x);
+                int bestChannel = -1;
+                int bestTarget = -1;
+                float bestAngle = 1e18f;
+                vec2 bestPt = vec2(0, 0);
+                for(int EntityMode = 0; EntityMode <= NUM_HOOK_ENTITIES; EntityMode++)
                 {
-                        vec2 aimPt; int t = FindTarget(s, 6, LocalId, MyPos, AimDir, AimPos, aimPt);
-                        if(t >= 0)
+                        const SWeaponSettings &s = AimBotHookSettings(EntityMode);
+                        if(!s.m_Enabled)
+                                continue;
+                        // is paused while we are frozen (this block's FNG Freeze applies to the Tee block).
+                        if(s.m_OffWhileFreeze && (WeFrozen || (s.m_FngFreeze && weapon == WEAPON_NINJA)))
+                                continue;
+                        bool trigger = (s.m_AimMode >= 2) ? true : (hook && !m_PrevHook);
+                        if(!trigger)
+                                continue;
+                        vec2 aimPt;
+                        const int t = FindTarget(s, 6, LocalId, MyPos, AimDir, AimPos, aimPt, EntityMode);
+                        if(t < 0)
+                                continue;
+                        const vec2 toAim = aimPt - MyPos;
+                        if(length_squared(toAim) < 0.0001f)
+                                continue;
+                        const float ang = fabsf(atan2f(sinf(myAngle - atan2f(toAim.y, toAim.x)), cosf(myAngle - atan2f(toAim.y, toAim.x))));
+                        if(bestChannel < 0 || ang < bestAngle)
                         {
-                                ApplyAim(t, MyPos, s, aimPt);
-                                if(s.m_AimMode == 3 && s.m_Silent)
-                                        SmoothSilentApplied = true;
+                                bestChannel = EntityMode;
+                                bestTarget = t;
+                                bestAngle = ang;
+                                bestPt = aimPt;
                         }
+                }
+                if(bestChannel >= 0)
+                {
+                        const SWeaponSettings &s = AimBotHookSettings(bestChannel);
+                        ApplyAim(bestTarget, MyPos, s, bestPt);
+                        if(s.m_AimMode == 3 && s.m_Silent)
+                                SmoothSilentApplied = true;
                 }
         }
         // v1.56.266: silent Smooth glides a VIRTUAL aim — restart it from the aim
@@ -1314,9 +1921,11 @@ void CAimBot::UpdateTriggerBot()
         // target in its zone, switch to the nearest enabled weapon with Auto
         // Switch on that does have one. Runs BEFORE the held-weapon gates so it
         // also works while the current weapon's triggerbot is disabled.
+        // v1.56.292: only real weapons (0..5) are candidates — the Hook entry is
+        // not a held weapon and cannot be switched to.
         {
                 bool curHasTarget = false;
-                if(weapon >= 0 && weapon < NUM_WEAPONS_TRIGGER && m_TriggerBotWeapons[weapon].m_Enabled)
+                if(weapon >= 0 && weapon < NUM_WEAPONS_TRIGGER - 1 && m_TriggerBotWeapons[weapon].m_Enabled)
                 {
                         vec2 curPt;
                         curHasTarget = FindTarget(m_TriggerBotWeapons[weapon], weapon, LocalId, MyPos, AimDir, AimPos, curPt) >= 0;
@@ -1325,7 +1934,7 @@ void CAimBot::UpdateTriggerBot()
                 {
                         int bestWeapon = -1;
                         float bestDistSq = 0.0f;
-                        for(int w = 0; w < NUM_WEAPONS_TRIGGER; w++)
+                        for(int w = 0; w < NUM_WEAPONS_TRIGGER - 1; w++)
                         {
                                 if(!m_TriggerBotWeapons[w].m_Enabled || !m_TriggerBotWeapons[w].m_AutoSwitchWeapon)
                                         continue;
@@ -1336,7 +1945,8 @@ void CAimBot::UpdateTriggerBot()
                                 const int t = FindTarget(m_TriggerBotWeapons[w], w, LocalId, MyPos, AimDir, AimPos, pt);
                                 if(t < 0)
                                         continue;
-                                const float distSq = length_squared(pGame->m_aClients[t].m_RenderPos - MyPos);
+                                // v1.56.291: entity (block) targets have no client id — use the aim point.
+                                const float distSq = m_FoundEntityTarget ? length_squared(pt - MyPos) : length_squared(pGame->m_aClients[t].m_RenderPos - MyPos);
                                 if(bestWeapon < 0 || distSq < bestDistSq)
                                 {
                                         bestWeapon = w;
@@ -1348,15 +1958,34 @@ void CAimBot::UpdateTriggerBot()
                 }
         }
 
-        if(weapon < 0 || weapon >= NUM_WEAPONS_TRIGGER)
-                return;
-        if(!m_TriggerBotWeapons[weapon].m_Enabled)
-                return;
+        // v1.56.292: Fire channel — the held weapon (0..5). The Trigger fire/hook
+        // dropdown is gone: weapons 0..5 always fire, the Hook entry always hooks.
+        if(weapon >= 0 && weapon < NUM_WEAPONS_TRIGGER - 1 && m_TriggerBotWeapons[weapon].m_Enabled)
+                UpdateTriggerBotChannel(m_TriggerBotWeapons[weapon], weapon, false, LocalId, MyPos, AimDir, AimPos, weapon, WeFrozen, 0, m_TriggerBotFireState);
 
-        const SWeaponSettings &s = m_TriggerBotWeapons[weapon];
+        // Hook channels (weapon index 6) — the hook is always available, so they
+        // run independently of the held weapon. v1.56.294: every ENABLED hook
+        // block is its own channel (0 = Tee/players, 1..5 = the per-entity
+        // blocks); all of them run in the same tick with independent state.
+        for(int EntityMode = 0; EntityMode <= NUM_HOOK_ENTITIES; EntityMode++)
+        {
+                const SWeaponSettings &s = TriggerBotHookSettings(EntityMode);
+                if(!s.m_Enabled)
+                        continue;
+                UpdateTriggerBotChannel(s, 6, true, LocalId, MyPos, AimDir, AimPos, weapon, WeFrozen, EntityMode, m_TriggerBotHookStates[EntityMode]);
+        }
+}
+
+// v1.56.292: one TriggerBot channel (the old per-weapon trigger logic). The
+// Fire channel (held weapon 0..5) and the Hook channel (Hook weapon entry,
+// index 6) each keep their own State so both can run in the same tick without
+// interfering (edge detection, one_tick release tick, random latency).
+void CAimBot::UpdateTriggerBotChannel(const SWeaponSettings &s, int Weapon, bool HookChannel, int LocalId, const vec2 &MyPos, vec2 AimDir, vec2 AimPos, int HeldWeapon, bool WeFrozen, int EntityMode, STriggerChannelState &State)
+{
+        CGameClient *pGame = GameClient();
         // is paused while we are frozen (ninja counts as frozen when this
         // weapon's FNG Freeze is on).
-        if(s.m_OffWhileFreeze && (WeFrozen || (s.m_FngFreeze && weapon == WEAPON_NINJA)))
+        if(s.m_OffWhileFreeze && (WeFrozen || (s.m_FngFreeze && HeldWeapon == WEAPON_NINJA)))
                 return;
         // v1.56.279: Use silent channel AB — while the AimBot's silent aim is
         // in action, the zone follows the SILENT direction instead of the
@@ -1366,23 +1995,41 @@ void CAimBot::UpdateTriggerBot()
                 AimPos = pGame->m_Controls.m_SilentAimOffset;
                 AimDir = normalize(AimPos);
         }
-        vec2 aimPtTb; int target = FindTarget(s, weapon, LocalId, MyPos, AimDir, AimPos, aimPtTb);
+        vec2 aimPtTb; int target = FindTarget(s, Weapon, LocalId, MyPos, AimDir, AimPos, aimPtTb, EntityMode);
         bool targetInZone = (target >= 0);
 
         // Random latency: delay the trigger reaction by a random number of ticks.
         // Counter counts down while target is in zone; when it hits 0, trigger fires.
         if(targetInZone && s.m_RandomLatency > 0)
         {
-                if(m_LatencyCounter <= 0)
-                        m_LatencyCounter = (rand() % (s.m_RandomLatency + 1));
-                if(m_LatencyCounter > 0)
+                if(State.m_LatencyCounter <= 0)
+                        State.m_LatencyCounter = (rand() % (s.m_RandomLatency + 1));
+                if(State.m_LatencyCounter > 0)
                 {
-                        m_LatencyCounter--;
+                        State.m_LatencyCounter--;
                         // While waiting, treat as "not yet triggered" — but still mark active
                         // so one_tick edge doesn't fire prematurely on the next tick.
-                        m_TriggerBotWasActive = true;
+                        State.m_WasActive = true;
                         return;
                 }
+        }
+
+        // v1.56.296: fire-tick aim — the AimBot's Edge/Trigger hook channels trigger
+        // on the hook edge read BEFORE this channel presses the hook, so an auto-hook
+        // used to leave with the previous, uncorrected aim: the bot's correction only
+        // landed a tick AFTER launch, when the hook direction is already fixed
+        // (m_HookDir) — the auto-hook always missed tiles. When we are about to press,
+        // aim at the target we are firing at FIRST, through the AimBot's Hook block of
+        // this entity (silent channel / mode per that block), so the same input that
+        // carries m_Hook=1 carries the corrected aim. The "already on an enabled
+        // entity" guard still wins, and a block paused while frozen aims nothing.
+        bool AimOnFire = false;
+        if(HookChannel && targetInZone)
+        {
+                const SWeaponSettings &AbSettings = AimBotHookSettings(EntityMode);
+                if(AbSettings.m_Enabled && !(AbSettings.m_OffWhileFreeze && (WeFrozen || (AbSettings.m_FngFreeze && HeldWeapon == WEAPON_NINJA))) &&
+                        !HookAimAlreadyOnEntity(MyPos, AimDir))
+                        AimOnFire = true;
         }
 
         CNetObj_PlayerInput *pInput = &pGame->m_Controls.m_aInputData[g_Config.m_ClDummy];
@@ -1390,13 +2037,13 @@ void CAimBot::UpdateTriggerBot()
 
         // one_tick: release the trigger on the tick AFTER it was pressed (exactly 1 tick hold).
         // Done BEFORE the targetInZone check so it runs regardless of current target state.
-        if(m_TriggerBotReleaseTick >= 0 && curTick >= m_TriggerBotReleaseTick)
+        if(State.m_ReleaseTick >= 0 && curTick >= State.m_ReleaseTick)
         {
-                if(s.m_Trigger == 0)
+                if(!HookChannel)
                         pInput->m_Fire &= ~1;
                 else
                         pInput->m_Hook = 0;
-                m_TriggerBotReleaseTick = -1;
+                State.m_ReleaseTick = -1;
         }
 
         if(targetInZone)
@@ -1408,52 +2055,68 @@ void CAimBot::UpdateTriggerBot()
                 // 2=every_tick — press trigger every tick (spam edge) while target in zone (good for hammer)
                 if(s.m_TriggerMode == 0) // one_tick
                 {
-                        if(!m_TriggerBotWasActive) // edge: target just entered zone
+                        if(!State.m_WasActive) // edge: target just entered zone
                         {
-                                if(s.m_Trigger == 0)
+                                if(!HookChannel)
                                         FireWeapon();
                                 else
+                                {
+                                        if(AimOnFire)
+                                                ApplyAim(target, MyPos, AimBotHookSettings(EntityMode), aimPtTb);
                                         DoHook();
-                                m_TriggerBotReleaseTick = curTick + 1; // release on next tick
+                                }
+                                State.m_ReleaseTick = curTick + 1; // release on next tick
                         }
                 }
                 else if(s.m_TriggerMode == 1) // hold
                 {
-                        if(s.m_Trigger == 0)
+                        if(!HookChannel)
                                 pInput->m_Fire |= 1;
                         else
+                        {
+                                // Aim every tick — a held hook re-fires after each
+                                // retract, and every re-fire must carry the aim.
+                                if(AimOnFire)
+                                        ApplyAim(target, MyPos, AimBotHookSettings(EntityMode), aimPtTb);
                                 pInput->m_Hook = 1;
+                        }
                 }
                 else // every_tick (2) — spam: force a new edge every tick
                 {
-                        if(s.m_Trigger == 0)
+                        if(!HookChannel)
                                 pInput->m_Fire = (pInput->m_Fire + 1) | 1; // increment + set bit = new edge
+                        else if(pInput->m_Hook == 0)
+                        {
+                                if(AimOnFire)
+                                        ApplyAim(target, MyPos, AimBotHookSettings(EntityMode), aimPtTb);
+                                pInput->m_Hook = 1;
+                        }
                         else
-                                pInput->m_Hook = (pInput->m_Hook == 0) ? 1 : 0; // toggle for hook edge spam
+                                pInput->m_Hook = 0; // toggle for hook edge spam
                 }
-                m_TriggerBotWasActive = true;
+                State.m_WasActive = true;
         }
         else
         {
                 // Target left zone — release for hold/every_tick modes.
-                // one_tick already released via m_TriggerBotReleaseTick (no action needed here).
+                // one_tick already released via m_ReleaseTick (no action needed here).
                 if(s.m_TriggerMode != 0)
                 {
                         // Only release if we were active (don't clobber player's own input).
-                        if(m_TriggerBotWasActive)
+                        if(State.m_WasActive)
                         {
-                                if(s.m_Trigger == 0)
+                                if(!HookChannel)
                                         pInput->m_Fire &= ~1;
                                 else
                                         pInput->m_Hook = 0;
                         }
                 }
-                m_TriggerBotWasActive = false;
-                m_LatencyCounter = 0;
+                State.m_WasActive = false;
+                State.m_LatencyCounter = 0;
         }
 }
 
-void CAimBot::RenderFov(const SWeaponSettings &Settings, const vec2 &MyPos, const vec2 &AimDir, float Alpha)
+void CAimBot::RenderFov(const SWeaponSettings &Settings, const vec2 &MyPos, const vec2 &AimDir, float Alpha, int EntityMode)
 {
         float halfFovRad = (Settings.m_Fov * 0.5f) * (pi / 180.0f);
         float myAngle = atan2f(AimDir.y, AimDir.x);
@@ -1472,8 +2135,8 @@ void CAimBot::RenderFov(const SWeaponSettings &Settings, const vec2 &MyPos, cons
                 float rightAngle = myAngle + halfFovRad;
                 // v1.56.263: show rays stop on walls AND players (same blocking
                 // physics as the targeting raycast) — no more rays drawn through tees.
-                const vec2 leftEnd = RayShowEndPoint(MyPos, MyPos + vec2(cosf(leftAngle), sinf(leftAngle)) * radius);
-                const vec2 rightEnd = RayShowEndPoint(MyPos, MyPos + vec2(cosf(rightAngle), sinf(rightAngle)) * radius);
+                const vec2 leftEnd = RayShowEndPoint(MyPos, MyPos + vec2(cosf(leftAngle), sinf(leftAngle)) * radius, EntityMode);
+                const vec2 rightEnd = RayShowEndPoint(MyPos, MyPos + vec2(cosf(rightAngle), sinf(rightAngle)) * radius, EntityMode);
                 segments.push_back({MyPos, leftEnd});
                 segments.push_back({MyPos, rightEnd});
         }
@@ -1534,7 +2197,7 @@ void CAimBot::RenderFov(const SWeaponSettings &Settings, const vec2 &MyPos, cons
         }
 }
 
-void CAimBot::RenderRadius(const SWeaponSettings &Settings, const vec2 &MyPos, const vec2 &AimDir, float Alpha)
+void CAimBot::RenderRadius(const SWeaponSettings &Settings, const vec2 &MyPos, const vec2 &AimDir, float Alpha, int EntityMode)
 {
         float halfFovRad = (Settings.m_Fov * 0.5f) * (pi / 180.0f);
         float myAngle = atan2f(AimDir.y, AimDir.x);
@@ -1553,7 +2216,7 @@ void CAimBot::RenderRadius(const SWeaponSettings &Settings, const vec2 &MyPos, c
                 if(useRay)
                 {
                         // v1.56.263: stop arc rays on players too, not just walls.
-                        p = RayShowEndPoint(MyPos, p);
+                        p = RayShowEndPoint(MyPos, p, EntityMode);
                 }
                 points.push_back(p);
         }

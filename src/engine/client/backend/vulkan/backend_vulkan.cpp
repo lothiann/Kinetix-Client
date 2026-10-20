@@ -484,6 +484,38 @@ class CCommandProcessorFragment_Vulkan : public CCommandProcessorFragment_GLBase
 		int m_BufferObjectIndex;
 	};
 
+	struct SOffscreenFrameBuffer
+	{
+		// the color attachment texture slot (the image itself lives in m_vTextures)
+		int m_ColorTextureSlot = -1;
+		uint32_t m_Width = 0;
+		uint32_t m_Height = 0;
+
+		// multi sampled attachment, only used when multi sampling is enabled
+		VkImage m_ImgMultiSample = VK_NULL_HANDLE;
+		SMemoryImageBlock<IMAGE_BUFFER_CACHE_ID> m_ImgMultiSampleMem;
+		VkImageView m_ImgMultiSampleView = VK_NULL_HANDLE;
+
+		VkFramebuffer m_FrameBuffer = VK_NULL_HANDLE;
+	};
+
+	std::vector<SOffscreenFrameBuffer> m_vOffscreenFrameBuffers;
+	std::vector<std::vector<SOffscreenFrameBuffer>> m_vvFrameDelayedOffscreenCleanup;
+
+	// additional render passes for the frame buffer (offscreen render target) support
+	VkRenderPass m_VKRenderPassLoad = VK_NULL_HANDLE; // swap chain re-entry pass, keeps the already rendered screen content
+	VkRenderPass m_VKOffscreenRenderPass = VK_NULL_HANDLE; // render pass for frame buffers
+
+	// the currently open render pass, used for the inheritance of threaded command buffers and for dynamic states
+	VkRenderPass m_CurInheritRenderPass = VK_NULL_HANDLE;
+	VkFramebuffer m_CurInheritFrameBuffer = VK_NULL_HANDLE;
+	VkExtent2D m_CurRenderTargetExtent = {0, 0};
+	bool m_IsOffscreenTarget = false;
+	// once a frame buffer command had to synchronize the threaded recording, all remaining
+	// render commands of the frame must be recorded inline into the main command buffer,
+	// because the secondary command buffers may not be re-recorded after being executed
+	bool m_ForceInlineRecording = false;
+
 	struct SFrameBuffers
 	{
 		VkBuffer m_Buffer;
@@ -1269,6 +1301,12 @@ protected:
 		m_aCommandCallbacks[CommandBufferCMDOff(CCommandBuffer::CMD_TRY_SWAP_AND_READ_PIXEL)] = {false, [](SRenderCommandExecuteBuffer &ExecBuffer, const CCommandBuffer::SCommand *pBaseCommand) {}, [this](const CCommandBuffer::SCommand *pBaseCommand, SRenderCommandExecuteBuffer &ExecBuffer) { return Cmd_ReadPixel(static_cast<const CCommandBuffer::SCommand_TrySwapAndReadPixel *>(pBaseCommand)); }};
 		m_aCommandCallbacks[CommandBufferCMDOff(CCommandBuffer::CMD_TRY_SWAP_AND_SCREENSHOT)] = {false, [](SRenderCommandExecuteBuffer &ExecBuffer, const CCommandBuffer::SCommand *pBaseCommand) {}, [this](const CCommandBuffer::SCommand *pBaseCommand, SRenderCommandExecuteBuffer &ExecBuffer) { return Cmd_Screenshot(static_cast<const CCommandBuffer::SCommand_TrySwapAndScreenshot *>(pBaseCommand)); }};
 
+		m_aCommandCallbacks[CommandBufferCMDOff(CCommandBuffer::CMD_FRAMEBUFFER_CREATE)] = {false, [](SRenderCommandExecuteBuffer &ExecBuffer, const CCommandBuffer::SCommand *pBaseCommand) {}, [this](const CCommandBuffer::SCommand *pBaseCommand, SRenderCommandExecuteBuffer &ExecBuffer) { return Cmd_FrameBuffer_Create(static_cast<const CCommandBuffer::SCommand_FrameBuffer_Create *>(pBaseCommand)); }};
+		m_aCommandCallbacks[CommandBufferCMDOff(CCommandBuffer::CMD_FRAMEBUFFER_DESTROY)] = {false, [](SRenderCommandExecuteBuffer &ExecBuffer, const CCommandBuffer::SCommand *pBaseCommand) {}, [this](const CCommandBuffer::SCommand *pBaseCommand, SRenderCommandExecuteBuffer &ExecBuffer) { return Cmd_FrameBuffer_Destroy(static_cast<const CCommandBuffer::SCommand_FrameBuffer_Destroy *>(pBaseCommand)); }};
+		m_aCommandCallbacks[CommandBufferCMDOff(CCommandBuffer::CMD_FRAMEBUFFER_SWITCH_TARGET)] = {false, [](SRenderCommandExecuteBuffer &ExecBuffer, const CCommandBuffer::SCommand *pBaseCommand) {}, [this](const CCommandBuffer::SCommand *pBaseCommand, SRenderCommandExecuteBuffer &ExecBuffer) { return Cmd_FrameBuffer_SwitchTarget(static_cast<const CCommandBuffer::SCommand_FrameBuffer_SwitchTarget *>(pBaseCommand)); }};
+		m_aCommandCallbacks[CommandBufferCMDOff(CCommandBuffer::CMD_FRAMEBUFFER_COPY_FROM_SCREEN)] = {false, [](SRenderCommandExecuteBuffer &ExecBuffer, const CCommandBuffer::SCommand *pBaseCommand) {}, [this](const CCommandBuffer::SCommand *pBaseCommand, SRenderCommandExecuteBuffer &ExecBuffer) { return Cmd_FrameBuffer_CopyFromScreen(static_cast<const CCommandBuffer::SCommand_FrameBuffer_CopyFromScreen *>(pBaseCommand)); }};
+        m_aCommandCallbacks[CommandBufferCMDOff(CCommandBuffer::CMD_FRAMEBUFFER_BLIT)] = {false, [](SRenderCommandExecuteBuffer &ExecBuffer, const CCommandBuffer::SCommand *pBaseCommand) {}, [this](const CCommandBuffer::SCommand *pBaseCommand, SRenderCommandExecuteBuffer &ExecBuffer) { return Cmd_FrameBuffer_Blit(static_cast<const CCommandBuffer::SCommand_FrameBuffer_Blit *>(pBaseCommand)); }};
+
 		m_aCommandCallbacks[CommandBufferCMDOff(CCommandBuffer::CMD_UPDATE_VIEWPORT)] = {false, [this](SRenderCommandExecuteBuffer &ExecBuffer, const CCommandBuffer::SCommand *pBaseCommand) { Cmd_Update_Viewport_FillExecuteBuffer(ExecBuffer, static_cast<const CCommandBuffer::SCommand_Update_Viewport *>(pBaseCommand)); }, [this](const CCommandBuffer::SCommand *pBaseCommand, SRenderCommandExecuteBuffer &ExecBuffer) { return Cmd_Update_Viewport(static_cast<const CCommandBuffer::SCommand_Update_Viewport *>(pBaseCommand)); }};
 
 		m_aCommandCallbacks[CommandBufferCMDOff(CCommandBuffer::CMD_WINDOW_CREATE_NTF)] = {false, [](SRenderCommandExecuteBuffer &ExecBuffer, const CCommandBuffer::SCommand *pBaseCommand) {}, [this](const CCommandBuffer::SCommand *pBaseCommand, SRenderCommandExecuteBuffer &ExecBuffer) { return Cmd_WindowCreateNtf(static_cast<const CCommandBuffer::SCommand_WindowCreateNtf *>(pBaseCommand)); }, false};
@@ -2022,6 +2060,16 @@ protected:
 		}
 		m_vvFrameDelayedBufferCleanup[FrameImageIndex].clear();
 
+		// clear pending offscreen frame buffers, that require deletion (before the textures, the frame buffers reference their texture views)
+		if(FrameImageIndex < m_vvFrameDelayedOffscreenCleanup.size())
+		{
+			for(auto &OffscreenFrameBuffer : m_vvFrameDelayedOffscreenCleanup[FrameImageIndex])
+			{
+				DestroyOffscreenFrameBufferObjects(OffscreenFrameBuffer);
+			}
+			m_vvFrameDelayedOffscreenCleanup[FrameImageIndex].clear();
+		}
+
 		// clear pending textures, that require deletion
 		for(auto &Texture : m_vvFrameDelayedTextureCleanup[FrameImageIndex])
 		{
@@ -2382,6 +2430,7 @@ protected:
 
 		// clear frame
 		vkResetCommandBuffer(GetMainGraphicCommandBuffer(), VK_COMMAND_BUFFER_RESET_RELEASE_RESOURCES_BIT);
+		m_ForceInlineRecording = false;
 
 		auto &CommandBuffer = GetMainGraphicCommandBuffer();
 		VkCommandBufferBeginInfo BeginInfo{};
@@ -2405,10 +2454,15 @@ protected:
 		RenderPassInfo.clearValueCount = 1;
 		RenderPassInfo.pClearValues = &ClearColorVal;
 
-		vkCmdBeginRenderPass(CommandBuffer, &RenderPassInfo, m_ThreadCount > 1 ? VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS : VK_SUBPASS_CONTENTS_INLINE);
+		vkCmdBeginRenderPass(CommandBuffer, &RenderPassInfo, GetSubpassContents());
 
 		for(auto &LastPipe : m_vLastPipeline)
 			LastPipe = VK_NULL_HANDLE;
+
+		m_CurInheritRenderPass = m_VKRenderPass;
+		m_CurInheritFrameBuffer = m_vFramebufferList[m_CurImageIndex];
+		m_CurRenderTargetExtent = m_VKSwapImgAndViewportExtent.m_SwapImageViewport;
+		m_IsOffscreenTarget = false;
 
 		return true;
 	}
@@ -2819,13 +2873,18 @@ protected:
 		return m_aSamplers[SamplerType];
 	}
 
-	VkImageView CreateImageView(VkImage Image, VkFormat Format, VkImageViewType ViewType, size_t Depth, size_t MipMapLevelCount)
+	VkImageView CreateImageView(VkImage Image, VkFormat Format, VkImageViewType ViewType, size_t Depth, size_t MipMapLevelCount, bool OpaqueAlpha = false)
 	{
 		VkImageViewCreateInfo ViewCreateInfo{};
 		ViewCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 		ViewCreateInfo.image = Image;
 		ViewCreateInfo.viewType = ViewType;
 		ViewCreateInfo.format = Format;
+		// frame buffer textures are sampled to build the BG blur: their alpha
+		// channel comes from the presented image and is not reliable, so force
+		// it to 1 to keep alpha blending based on the vertex color only
+		if(OpaqueAlpha)
+			ViewCreateInfo.components.a = VK_COMPONENT_SWIZZLE_ONE;
 		ViewCreateInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		ViewCreateInfo.subresourceRange.baseMipLevel = 0;
 		ViewCreateInfo.subresourceRange.levelCount = MipMapLevelCount;
@@ -2961,6 +3020,14 @@ protected:
 
 			SourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
 			DestinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+		}
+		else if(OldLayout == VK_IMAGE_LAYOUT_UNDEFINED && NewLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+		{
+			Barrier.srcAccessMask = 0;
+			Barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+			SourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+			DestinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
 		}
 		else
 		{
@@ -3142,7 +3209,7 @@ protected:
 
 	size_t GetDynamicModeIndexFromState(const CCommandBuffer::SState &State) const
 	{
-		return (State.m_ClipEnable || m_HasDynamicViewport || m_VKSwapImgAndViewportExtent.m_HasForcedViewport) ? VULKAN_BACKEND_CLIP_MODE_DYNAMIC_SCISSOR_AND_VIEWPORT : VULKAN_BACKEND_CLIP_MODE_NONE;
+		return (State.m_ClipEnable || m_HasDynamicViewport || m_VKSwapImgAndViewportExtent.m_HasForcedViewport || m_IsOffscreenTarget) ? VULKAN_BACKEND_CLIP_MODE_DYNAMIC_SCISSOR_AND_VIEWPORT : VULKAN_BACKEND_CLIP_MODE_NONE;
 	}
 
 	size_t GetDynamicModeIndexFromExecBuffer(const SRenderCommandExecuteBuffer &ExecBuffer)
@@ -3213,7 +3280,16 @@ protected:
 		if(HasDynamicState)
 		{
 			VkViewport Viewport;
-			if(m_HasDynamicViewport)
+			if(m_IsOffscreenTarget)
+			{
+				Viewport.x = 0.0f;
+				Viewport.y = 0.0f;
+				Viewport.width = (float)m_CurRenderTargetExtent.width;
+				Viewport.height = (float)m_CurRenderTargetExtent.height;
+				Viewport.minDepth = 0.0f;
+				Viewport.maxDepth = 1.0f;
+			}
+			else if(m_HasDynamicViewport)
 			{
 				Viewport.x = (float)m_DynamicViewportOffset.x;
 				Viewport.y = (float)m_DynamicViewportOffset.y;
@@ -3247,7 +3323,7 @@ protected:
 
 			// the scissor always assumes the presented viewport, because the front-end keeps the calculation
 			// for the forced viewport in sync
-			auto ScissorViewport = m_VKSwapImgAndViewportExtent.GetPresentedImageViewport();
+			auto ScissorViewport = m_IsOffscreenTarget ? m_CurRenderTargetExtent : m_VKSwapImgAndViewportExtent.GetPresentedImageViewport();
 			if(State.m_ClipEnable)
 			{
 				int32_t ScissorY = (int32_t)ScissorViewport.height - ((int32_t)State.m_ClipY + (int32_t)State.m_ClipH);
@@ -3262,7 +3338,7 @@ protected:
 			}
 
 			// if there is a dynamic viewport make sure the scissor data is scaled down to that
-			if(m_HasDynamicViewport)
+			if(m_HasDynamicViewport && !m_IsOffscreenTarget)
 			{
 				Scissor.offset.x = (int32_t)(((float)Scissor.offset.x / (float)ScissorViewport.width) * (float)m_DynamicViewportSize.width) + m_DynamicViewportOffset.x;
 				Scissor.offset.y = (int32_t)(((float)Scissor.offset.y / (float)ScissorViewport.height) * (float)m_DynamicViewportSize.height) + m_DynamicViewportOffset.y;
@@ -4486,6 +4562,680 @@ public:
 		m_vFramebufferList.clear();
 	}
 
+	/************************
+	 * FRAME BUFFERS (OFFSCREEN RENDER TARGETS)
+	 ************************/
+
+	void DestroyOffscreenRenderPasses()
+	{
+		if(m_VKRenderPassLoad != VK_NULL_HANDLE)
+		{
+			vkDestroyRenderPass(m_VKDevice, m_VKRenderPassLoad, nullptr);
+			m_VKRenderPassLoad = VK_NULL_HANDLE;
+		}
+		if(m_VKOffscreenRenderPass != VK_NULL_HANDLE)
+		{
+			vkDestroyRenderPass(m_VKDevice, m_VKOffscreenRenderPass, nullptr);
+			m_VKOffscreenRenderPass = VK_NULL_HANDLE;
+		}
+	}
+
+	// creates render passes compatible with m_VKRenderPass, so all pipelines can be used with them as well:
+	// one for re-entering the swap chain (keeping the already rendered content) and one for offscreen frame buffers
+	[[nodiscard]] bool CreateOffscreenRenderPasses()
+	{
+		const bool HasMSAA = HasMultiSampling();
+		const VkFormat Format = m_VKSurfFormat.format;
+
+		VkAttachmentReference ColorAttachmentRef{};
+		ColorAttachmentRef.attachment = 0;
+		ColorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+		VkAttachmentReference ResolveAttachmentRef{};
+		ResolveAttachmentRef.attachment = 1;
+		ResolveAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+		VkSubpassDescription Subpass{};
+		Subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+		Subpass.colorAttachmentCount = 1;
+		Subpass.pColorAttachments = &ColorAttachmentRef;
+		Subpass.pResolveAttachments = HasMSAA ? &ResolveAttachmentRef : nullptr;
+
+		VkSubpassDependency Dependency{};
+		Dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+		Dependency.dstSubpass = 0;
+		Dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		Dependency.srcAccessMask = 0;
+		Dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		Dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+		std::array<VkAttachmentDescription, 2> aAttachments{};
+
+		// swap chain re-entry render pass
+		{
+			auto &MultiSamplingColorAttachment = aAttachments[0];
+			MultiSamplingColorAttachment.format = Format;
+			MultiSamplingColorAttachment.samples = GetSampleCount();
+			MultiSamplingColorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+			MultiSamplingColorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+			MultiSamplingColorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+			MultiSamplingColorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+			MultiSamplingColorAttachment.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+			MultiSamplingColorAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+			auto &ColorAttachment = aAttachments[1];
+			ColorAttachment.format = Format;
+			ColorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+			ColorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+			ColorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+			ColorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+			ColorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+			ColorAttachment.initialLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+			ColorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+			VkRenderPassCreateInfo CreateRenderPassInfo{};
+			CreateRenderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+			CreateRenderPassInfo.attachmentCount = HasMSAA ? 2 : 1;
+			CreateRenderPassInfo.pAttachments = HasMSAA ? aAttachments.data() : aAttachments.data() + 1;
+			CreateRenderPassInfo.subpassCount = 1;
+			CreateRenderPassInfo.pSubpasses = &Subpass;
+			CreateRenderPassInfo.dependencyCount = 1;
+			CreateRenderPassInfo.pDependencies = &Dependency;
+
+			if(vkCreateRenderPass(m_VKDevice, &CreateRenderPassInfo, nullptr, &m_VKRenderPassLoad) != VK_SUCCESS)
+			{
+				SetError(EGfxErrorType::GFX_ERROR_TYPE_INIT, "Creating the swap chain load render pass failed.");
+				return false;
+			}
+		}
+
+		// offscreen render pass, the color attachment stays in a shader readable layout
+		{
+			auto &MultiSamplingColorAttachment = aAttachments[0];
+			MultiSamplingColorAttachment.format = Format;
+			MultiSamplingColorAttachment.samples = GetSampleCount();
+			MultiSamplingColorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+			MultiSamplingColorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+			MultiSamplingColorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+			MultiSamplingColorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+			MultiSamplingColorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+			MultiSamplingColorAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+			auto &ColorAttachment = aAttachments[1];
+			ColorAttachment.format = Format;
+			ColorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+			ColorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+			ColorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+			ColorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+			ColorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+			ColorAttachment.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+			ColorAttachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+			VkRenderPassCreateInfo CreateRenderPassInfo{};
+			CreateRenderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+			CreateRenderPassInfo.attachmentCount = HasMSAA ? 2 : 1;
+			CreateRenderPassInfo.pAttachments = HasMSAA ? aAttachments.data() : aAttachments.data() + 1;
+			CreateRenderPassInfo.subpassCount = 1;
+			CreateRenderPassInfo.pSubpasses = &Subpass;
+			CreateRenderPassInfo.dependencyCount = 1;
+			CreateRenderPassInfo.pDependencies = &Dependency;
+
+			if(vkCreateRenderPass(m_VKDevice, &CreateRenderPassInfo, nullptr, &m_VKOffscreenRenderPass) != VK_SUCCESS)
+			{
+				SetError(EGfxErrorType::GFX_ERROR_TYPE_INIT, "Creating the offscreen render pass failed.");
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	void DestroyOffscreenFrameBufferObjects(SOffscreenFrameBuffer &FrameBuffer)
+	{
+		if(FrameBuffer.m_FrameBuffer != VK_NULL_HANDLE)
+		{
+			vkDestroyFramebuffer(m_VKDevice, FrameBuffer.m_FrameBuffer, nullptr);
+			FrameBuffer.m_FrameBuffer = VK_NULL_HANDLE;
+		}
+		if(FrameBuffer.m_ImgMultiSample != VK_NULL_HANDLE)
+		{
+			if(FrameBuffer.m_ImgMultiSampleView != VK_NULL_HANDLE)
+			{
+				vkDestroyImageView(m_VKDevice, FrameBuffer.m_ImgMultiSampleView, nullptr);
+				FrameBuffer.m_ImgMultiSampleView = VK_NULL_HANDLE;
+			}
+			vkDestroyImage(m_VKDevice, FrameBuffer.m_ImgMultiSample, nullptr);
+			FrameBuffer.m_ImgMultiSample = VK_NULL_HANDLE;
+			FreeImageMemBlock(FrameBuffer.m_ImgMultiSampleMem);
+		}
+	}
+
+	void DestroyOffscreenFrameBuffers()
+	{
+		for(auto &FrameBuffer : m_vOffscreenFrameBuffers)
+		{
+			DestroyOffscreenFrameBufferObjects(FrameBuffer);
+		}
+	}
+
+	[[nodiscard]] bool CreateOffscreenFrameBufferObject(SOffscreenFrameBuffer &FrameBuffer)
+	{
+		DestroyOffscreenFrameBufferObjects(FrameBuffer);
+
+		const bool HasMSAA = HasMultiSampling();
+		std::array<VkImageView, 2> aAttachments{};
+		uint32_t AttachmentCount = 1;
+
+		if(HasMSAA)
+		{
+			VkImageCreateInfo ImageInfo{};
+			ImageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+			ImageInfo.imageType = VK_IMAGE_TYPE_2D;
+			ImageInfo.extent.width = FrameBuffer.m_Width;
+			ImageInfo.extent.height = FrameBuffer.m_Height;
+			ImageInfo.extent.depth = 1;
+			ImageInfo.mipLevels = 1;
+			ImageInfo.arrayLayers = 1;
+			ImageInfo.format = m_VKSurfFormat.format;
+			ImageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+			ImageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+			ImageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+			ImageInfo.samples = GetSampleCount();
+			ImageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+			if(vkCreateImage(m_VKDevice, &ImageInfo, nullptr, &FrameBuffer.m_ImgMultiSample) != VK_SUCCESS)
+			{
+				SetError(EGfxErrorType::GFX_ERROR_TYPE_OUT_OF_MEMORY_IMAGE, "Failed to create multi sampled frame buffer image.");
+				return false;
+			}
+
+			VkMemoryRequirements MemRequirements;
+			vkGetImageMemoryRequirements(m_VKDevice, FrameBuffer.m_ImgMultiSample, &MemRequirements);
+
+			if(!GetImageMemory(FrameBuffer.m_ImgMultiSampleMem, MemRequirements.size, MemRequirements.alignment, MemRequirements.memoryTypeBits))
+				return false;
+
+			vkBindImageMemory(m_VKDevice, FrameBuffer.m_ImgMultiSample, FrameBuffer.m_ImgMultiSampleMem.m_BufferMem.m_Mem, FrameBuffer.m_ImgMultiSampleMem.m_HeapData.m_OffsetToAlign);
+
+			FrameBuffer.m_ImgMultiSampleView = CreateImageView(FrameBuffer.m_ImgMultiSample, m_VKSurfFormat.format, VK_IMAGE_VIEW_TYPE_2D, 1, 1);
+
+			aAttachments[0] = FrameBuffer.m_ImgMultiSampleView;
+			aAttachments[1] = m_vTextures[(size_t)FrameBuffer.m_ColorTextureSlot].m_ImgView;
+			AttachmentCount = 2;
+		}
+		else
+		{
+			aAttachments[0] = m_vTextures[(size_t)FrameBuffer.m_ColorTextureSlot].m_ImgView;
+		}
+
+		VkFramebufferCreateInfo FramebufferInfo{};
+		FramebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+		FramebufferInfo.renderPass = m_VKOffscreenRenderPass;
+		FramebufferInfo.attachmentCount = AttachmentCount;
+		FramebufferInfo.pAttachments = aAttachments.data();
+		FramebufferInfo.width = FrameBuffer.m_Width;
+		FramebufferInfo.height = FrameBuffer.m_Height;
+		FramebufferInfo.layers = 1;
+
+		if(vkCreateFramebuffer(m_VKDevice, &FramebufferInfo, nullptr, &FrameBuffer.m_FrameBuffer) != VK_SUCCESS)
+		{
+			SetError(EGfxErrorType::GFX_ERROR_TYPE_INIT, "Creating the frame buffer failed.");
+			return false;
+		}
+
+		return true;
+	}
+
+	// recreates the vulkan frame buffer objects of all offscreen frame buffers, e.g. after a swap chain recreation
+	[[nodiscard]] bool RecreateOffscreenFrameBuffers()
+	{
+		for(auto &FrameBuffer : m_vOffscreenFrameBuffers)
+		{
+			if(FrameBuffer.m_Width > 0 && FrameBuffer.m_FrameBuffer == VK_NULL_HANDLE)
+			{
+				if(!CreateOffscreenFrameBufferObject(FrameBuffer))
+					return false;
+			}
+		}
+
+		return true;
+	}
+
+	// creates the color attachment texture of a frame buffer in the given texture slot (empty, without data upload)
+	[[nodiscard]] bool CreateFrameBufferTexture(int Slot, size_t Width, size_t Height)
+	{
+		const size_t ImageIndex = (size_t)Slot;
+
+		while(ImageIndex >= m_vTextures.size())
+		{
+			m_vTextures.resize((m_vTextures.size() * 2) + 1);
+		}
+
+		CTexture &Texture = m_vTextures[ImageIndex];
+		if(Texture.m_Img != VK_NULL_HANDLE)
+		{
+			DestroyTexture(Texture);
+		}
+
+		Texture.m_Width = (uint32_t)Width;
+		Texture.m_Height = (uint32_t)Height;
+		Texture.m_RescaleCount = 0;
+		Texture.m_MipMapCount = 1;
+
+		// the swap chain format is used, so the pipelines stay compatible with the offscreen render pass
+		VkImageCreateInfo ImageInfo{};
+		ImageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+		ImageInfo.imageType = VK_IMAGE_TYPE_2D;
+		ImageInfo.extent.width = (uint32_t)Width;
+		ImageInfo.extent.height = (uint32_t)Height;
+		ImageInfo.extent.depth = 1;
+		ImageInfo.mipLevels = 1;
+		ImageInfo.arrayLayers = 1;
+		ImageInfo.format = m_VKSurfFormat.format;
+		ImageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+		ImageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		ImageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+		ImageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+		ImageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+		if(vkCreateImage(m_VKDevice, &ImageInfo, nullptr, &Texture.m_Img) != VK_SUCCESS)
+		{
+			SetError(EGfxErrorType::GFX_ERROR_TYPE_OUT_OF_MEMORY_IMAGE, "Failed to create frame buffer color image.");
+			return false;
+		}
+
+		VkMemoryRequirements MemRequirements;
+		vkGetImageMemoryRequirements(m_VKDevice, Texture.m_Img, &MemRequirements);
+
+		if(!GetImageMemory(Texture.m_ImgMem, MemRequirements.size, MemRequirements.alignment, MemRequirements.memoryTypeBits))
+			return false;
+
+		vkBindImageMemory(m_VKDevice, Texture.m_Img, Texture.m_ImgMem.m_BufferMem.m_Mem, Texture.m_ImgMem.m_HeapData.m_OffsetToAlign);
+
+		Texture.m_ImgView = CreateImageView(Texture.m_Img, m_VKSurfFormat.format, VK_IMAGE_VIEW_TYPE_2D, 1, 1, true);
+		if(Texture.m_ImgView == VK_NULL_HANDLE)
+		{
+			SetError(EGfxErrorType::GFX_ERROR_TYPE_OUT_OF_MEMORY_IMAGE, "Failed to create frame buffer color image view.");
+			return false;
+		}
+
+		Texture.m_aSamplers[0] = GetTextureSampler(SUPPORTED_SAMPLER_TYPE_REPEAT);
+		Texture.m_aSamplers[1] = GetTextureSampler(SUPPORTED_SAMPLER_TYPE_CLAMP_TO_EDGE);
+
+		if(!CreateNewTexturedStandardDescriptorSets(ImageIndex, 0))
+			return false;
+		if(!CreateNewTexturedStandardDescriptorSets(ImageIndex, 1))
+			return false;
+
+		// transition the image into the initial layout of the offscreen render pass
+		if(!ImageBarrier(Texture.m_Img, 0, 1, 0, 1, m_VKSurfFormat.format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL))
+			return false;
+
+		return true;
+	}
+
+	// executes all pending threaded command buffers into the currently open render pass
+	void ExecutePendingThreadCommandBuffers()
+	{
+		// everything recorded from now on must go into the main command buffer, secondary
+		// command buffers cannot be recorded again before this submission finished
+		m_ForceInlineRecording = true;
+
+		if(m_ThreadCount <= 1)
+			return;
+
+		auto &CommandBuffer = GetMainGraphicCommandBuffer();
+
+		size_t ThreadedCommandsUsedCount = 0;
+		size_t RenderThreadCount = m_ThreadCount - 1;
+		for(size_t i = 0; i < RenderThreadCount; ++i)
+		{
+			if(m_vvUsedThreadDrawCommandBuffer[i + 1][m_CurImageIndex])
+			{
+				const auto &GraphicThreadCommandBuffer = m_vvThreadDrawCommandBuffers[i + 1][m_CurImageIndex];
+				m_vHelperThreadDrawCommandBuffers[ThreadedCommandsUsedCount++] = GraphicThreadCommandBuffer;
+
+				m_vvUsedThreadDrawCommandBuffer[i + 1][m_CurImageIndex] = false;
+			}
+		}
+		if(ThreadedCommandsUsedCount > 0)
+		{
+			vkCmdExecuteCommands(CommandBuffer, ThreadedCommandsUsedCount, m_vHelperThreadDrawCommandBuffers.data());
+		}
+
+		// special case if the swap chain was not completed in one run buffer call
+		if(m_vvUsedThreadDrawCommandBuffer[0][m_CurImageIndex])
+		{
+			auto &GraphicThreadCommandBuffer = m_vvThreadDrawCommandBuffers[0][m_CurImageIndex];
+			vkEndCommandBuffer(GraphicThreadCommandBuffer);
+
+			vkCmdExecuteCommands(CommandBuffer, 1, &GraphicThreadCommandBuffer);
+
+			m_vvUsedThreadDrawCommandBuffer[0][m_CurImageIndex] = false;
+		}
+	}
+
+	[[nodiscard]] bool Cmd_FrameBuffer_Create(const CCommandBuffer::SCommand_FrameBuffer_Create *pCommand)
+	{
+		const size_t FrameBufferIndex = (size_t)pCommand->m_FrameBufferIndex;
+		while(FrameBufferIndex >= m_vOffscreenFrameBuffers.size())
+		{
+			m_vOffscreenFrameBuffers.resize((m_vOffscreenFrameBuffers.size() * 2) + 1);
+		}
+
+		SOffscreenFrameBuffer &FrameBuffer = m_vOffscreenFrameBuffers[FrameBufferIndex];
+		FrameBuffer.m_ColorTextureSlot = pCommand->m_TextureSlot;
+		FrameBuffer.m_Width = (uint32_t)pCommand->m_Width;
+		FrameBuffer.m_Height = (uint32_t)pCommand->m_Height;
+
+		if(!CreateFrameBufferTexture(pCommand->m_TextureSlot, pCommand->m_Width, pCommand->m_Height))
+			return false;
+
+		if(!CreateOffscreenFrameBufferObject(FrameBuffer))
+			return false;
+
+		return true;
+	}
+
+	[[nodiscard]] bool Cmd_FrameBuffer_Destroy(const CCommandBuffer::SCommand_FrameBuffer_Destroy *pCommand)
+	{
+		if(m_vvFrameDelayedOffscreenCleanup.size() < m_SwapChainImageCount)
+		{
+			m_vvFrameDelayedOffscreenCleanup.resize(m_SwapChainImageCount);
+		}
+
+		const size_t FrameBufferIndex = (size_t)pCommand->m_FrameBufferIndex;
+		if(FrameBufferIndex < m_vOffscreenFrameBuffers.size())
+		{
+			m_vvFrameDelayedOffscreenCleanup[m_CurImageIndex].push_back(m_vOffscreenFrameBuffers[FrameBufferIndex]);
+			m_vOffscreenFrameBuffers[FrameBufferIndex] = SOffscreenFrameBuffer{};
+		}
+
+		// the color attachment texture is cleaned up with the regular delayed texture cleanup
+		const size_t TextureSlot = (size_t)pCommand->m_TextureSlot;
+		if(TextureSlot < m_vTextures.size())
+		{
+			m_vvFrameDelayedTextureCleanup[m_CurImageIndex].push_back(m_vTextures[TextureSlot]);
+			m_vTextures[TextureSlot] = CTexture{};
+		}
+
+		return true;
+	}
+
+	[[nodiscard]] bool Cmd_FrameBuffer_SwitchTarget(const CCommandBuffer::SCommand_FrameBuffer_SwitchTarget *pCommand)
+	{
+		if(!m_SwapchainCreated || m_RenderingPaused)
+			return true;
+
+		SOffscreenFrameBuffer *pFrameBuffer = nullptr;
+		if(pCommand->m_FrameBufferIndex >= 0)
+		{
+			if((size_t)pCommand->m_FrameBufferIndex >= m_vOffscreenFrameBuffers.size())
+				return true;
+
+			pFrameBuffer = &m_vOffscreenFrameBuffers[(size_t)pCommand->m_FrameBufferIndex];
+			if(pFrameBuffer->m_FrameBuffer == VK_NULL_HANDLE)
+			{
+				// e.g. invalidated by a swap chain recreation, recreate it on demand
+				if(!CreateOffscreenFrameBufferObject(*pFrameBuffer))
+					return false;
+			}
+		}
+
+		// render target switches must happen inline, force single threaded recording for the rest of this command pipe
+		m_LastCommandsInPipeThreadIndex = std::numeric_limits<decltype(m_LastCommandsInPipeThreadIndex)>::max();
+
+		// make sure all pending render work has been recorded and executed into the currently open render pass
+		FinishRenderThreads();
+		ExecutePendingThreadCommandBuffers();
+
+		auto &CommandBuffer = GetMainGraphicCommandBuffer();
+
+		// close the currently open render pass
+		vkCmdEndRenderPass(CommandBuffer);
+
+		// pipelines are only usable in compatible render passes, reset the cached pipelines
+		for(auto &LastPipe : m_vLastPipeline)
+			LastPipe = VK_NULL_HANDLE;
+
+		VkRenderPassBeginInfo RenderPassInfo{};
+		RenderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+		RenderPassInfo.renderArea.offset = {0, 0};
+
+		if(pFrameBuffer == nullptr)
+		{
+			// switch back to the default screen target, keeping the already rendered content
+			RenderPassInfo.renderPass = m_VKRenderPassLoad;
+			RenderPassInfo.framebuffer = m_vFramebufferList[m_CurImageIndex];
+			RenderPassInfo.renderArea.extent = m_VKSwapImgAndViewportExtent.m_SwapImageViewport;
+			RenderPassInfo.clearValueCount = 0;
+
+			vkCmdBeginRenderPass(CommandBuffer, &RenderPassInfo, GetSubpassContents());
+
+			m_CurInheritRenderPass = m_VKRenderPassLoad;
+			m_CurInheritFrameBuffer = m_vFramebufferList[m_CurImageIndex];
+			m_CurRenderTargetExtent = m_VKSwapImgAndViewportExtent.m_SwapImageViewport;
+			m_IsOffscreenTarget = false;
+		}
+		else
+		{
+			RenderPassInfo.renderPass = m_VKOffscreenRenderPass;
+			RenderPassInfo.framebuffer = pFrameBuffer->m_FrameBuffer;
+			RenderPassInfo.renderArea.extent = {pFrameBuffer->m_Width, pFrameBuffer->m_Height};
+			RenderPassInfo.clearValueCount = 0;
+
+			vkCmdBeginRenderPass(CommandBuffer, &RenderPassInfo, GetSubpassContents());
+
+			m_CurInheritRenderPass = m_VKOffscreenRenderPass;
+			m_CurInheritFrameBuffer = pFrameBuffer->m_FrameBuffer;
+			m_CurRenderTargetExtent = {pFrameBuffer->m_Width, pFrameBuffer->m_Height};
+			m_IsOffscreenTarget = true;
+
+			if(pCommand->m_Clear)
+			{
+				std::array<VkClearAttachment, 1> aClearAttachments = {VkClearAttachment{VK_IMAGE_ASPECT_COLOR_BIT, 0, VkClearValue{VkClearColorValue{{pCommand->m_ClearColor.r, pCommand->m_ClearColor.g, pCommand->m_ClearColor.b, pCommand->m_ClearColor.a}}}}};
+				std::array<VkClearRect, 1> aClearRects = {VkClearRect{{{0, 0}, m_CurRenderTargetExtent}, 0, 1}};
+
+				vkCmdClearAttachments(CommandBuffer, aClearAttachments.size(), aClearAttachments.data(), aClearRects.size(), aClearRects.data());
+			}
+		}
+
+		return true;
+	}
+
+	[[nodiscard]] bool Cmd_FrameBuffer_CopyFromScreen(const CCommandBuffer::SCommand_FrameBuffer_CopyFromScreen *pCommand)
+	{
+		if(!m_SwapchainCreated || m_RenderingPaused)
+			return true;
+
+		const size_t FrameBufferIndex = (size_t)pCommand->m_FrameBufferIndex;
+		if(FrameBufferIndex >= m_vOffscreenFrameBuffers.size())
+			return true;
+		SOffscreenFrameBuffer &FrameBuffer = m_vOffscreenFrameBuffers[FrameBufferIndex];
+		if(FrameBuffer.m_FrameBuffer == VK_NULL_HANDLE || FrameBuffer.m_ColorTextureSlot < 0)
+			return true;
+		auto &Texture = m_vTextures[(size_t)FrameBuffer.m_ColorTextureSlot];
+		if(Texture.m_Img == VK_NULL_HANDLE)
+			return true;
+		if(m_IsOffscreenTarget)
+			return true; // only the default screen target can be captured
+
+		// the copy must happen inline, force single threaded recording
+		m_LastCommandsInPipeThreadIndex = std::numeric_limits<decltype(m_LastCommandsInPipeThreadIndex)>::max();
+		FinishRenderThreads();
+		ExecutePendingThreadCommandBuffers();
+
+		auto &CommandBuffer = GetMainGraphicCommandBuffer();
+
+		// close the currently open render pass (the swap chain image ends up in the PRESENT layout)
+		vkCmdEndRenderPass(CommandBuffer);
+		for(auto &LastPipe : m_vLastPipeline)
+			LastPipe = VK_NULL_HANDLE;
+
+		auto &SwapImg = m_vSwapChainImages[m_CurImageIndex];
+
+		VkImageMemoryBarrier Barrier{};
+		Barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		Barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		Barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		Barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		Barrier.subresourceRange.levelCount = 1;
+		Barrier.subresourceRange.layerCount = 1;
+
+		// swap chain image: PRESENT -> TRANSFER_SRC
+		// the color attachment writes of the render pass that was just closed must
+		// be made available here, otherwise the copy reads a stale image
+		Barrier.image = SwapImg;
+		Barrier.oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+		Barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+		Barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		Barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+		vkCmdPipelineBarrier(CommandBuffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &Barrier);
+
+		// frame buffer image: SHADER_READ_ONLY -> TRANSFER_DST
+		Barrier.image = Texture.m_Img;
+		Barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		Barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+		Barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+		Barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		vkCmdPipelineBarrier(CommandBuffer, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &Barrier);
+
+		// 1:1 copy (the capture frame buffer is created at the size of the screen)
+		VkImageCopy Region{};
+		Region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		Region.srcSubresource.mipLevel = 0;
+		Region.srcSubresource.baseArrayLayer = 0;
+		Region.srcSubresource.layerCount = 1;
+		Region.dstSubresource = Region.srcSubresource;
+		Region.srcOffset = {0, 0, 0};
+		Region.dstOffset = {0, 0, 0};
+		Region.extent = {std::min(m_CurRenderTargetExtent.width, FrameBuffer.m_Width), std::min(m_CurRenderTargetExtent.height, FrameBuffer.m_Height), 1};
+		vkCmdCopyImage(CommandBuffer, SwapImg, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, Texture.m_Img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &Region);
+
+		// frame buffer image: TRANSFER_DST -> SHADER_READ_ONLY (sampleable again)
+		Barrier.image = Texture.m_Img;
+		Barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+		Barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		Barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		Barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+		vkCmdPipelineBarrier(CommandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &Barrier);
+
+		// swap chain image: TRANSFER_SRC -> PRESENT
+		// the render pass is re-opened right after and keeps drawing into the swap
+		// chain image, so wait for the copy read before the next color writes
+		Barrier.image = SwapImg;
+		Barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+		Barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+		Barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+		Barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		vkCmdPipelineBarrier(CommandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, nullptr, 0, nullptr, 1, &Barrier);
+
+		// re-open the swap chain pass, keeping the already rendered screen content
+		VkRenderPassBeginInfo RenderPassInfo{};
+		RenderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+		RenderPassInfo.renderPass = m_VKRenderPassLoad;
+		RenderPassInfo.framebuffer = m_vFramebufferList[m_CurImageIndex];
+		RenderPassInfo.renderArea.offset = {0, 0};
+		RenderPassInfo.renderArea.extent = m_VKSwapImgAndViewportExtent.m_SwapImageViewport;
+		RenderPassInfo.clearValueCount = 0;
+		vkCmdBeginRenderPass(CommandBuffer, &RenderPassInfo, GetSubpassContents());
+		m_CurInheritRenderPass = m_VKRenderPassLoad;
+		m_CurInheritFrameBuffer = m_vFramebufferList[m_CurImageIndex];
+		m_CurRenderTargetExtent = m_VKSwapImgAndViewportExtent.m_SwapImageViewport;
+		m_IsOffscreenTarget = false;
+
+		return true;
+	}
+
+[[nodiscard]] bool Cmd_FrameBuffer_Blit(const CCommandBuffer::SCommand_FrameBuffer_Blit *pCommand)
+{
+    if(!m_SwapchainCreated || m_RenderingPaused)
+        return true;
+
+    const size_t SrcIndex = (size_t)pCommand->m_SrcFrameBufferIndex;
+    const size_t DstIndex = (size_t)pCommand->m_DstFrameBufferIndex;
+    if(SrcIndex >= m_vOffscreenFrameBuffers.size() || DstIndex >= m_vOffscreenFrameBuffers.size())
+        return true;
+    SOffscreenFrameBuffer &SrcFB = m_vOffscreenFrameBuffers[SrcIndex];
+    SOffscreenFrameBuffer &DstFB = m_vOffscreenFrameBuffers[DstIndex];
+    if(SrcFB.m_FrameBuffer == VK_NULL_HANDLE || DstFB.m_FrameBuffer == VK_NULL_HANDLE)
+        return true;
+    if(SrcFB.m_ColorTextureSlot < 0 || DstFB.m_ColorTextureSlot < 0)
+        return true;
+    auto &SrcTexture = m_vTextures[(size_t)SrcFB.m_ColorTextureSlot];
+    auto &DstTexture = m_vTextures[(size_t)DstFB.m_ColorTextureSlot];
+    if(SrcTexture.m_Img == VK_NULL_HANDLE || DstTexture.m_Img == VK_NULL_HANDLE)
+        return true;
+
+    m_LastCommandsInPipeThreadIndex = std::numeric_limits<decltype(m_LastCommandsInPipeThreadIndex)>::max();
+    FinishRenderThreads();
+    ExecutePendingThreadCommandBuffers();
+
+    auto &CommandBuffer = GetMainGraphicCommandBuffer();
+    vkCmdEndRenderPass(CommandBuffer);
+    for(auto &LastPipe : m_vLastPipeline)
+        LastPipe = VK_NULL_HANDLE;
+
+    std::array<VkImageMemoryBarrier, 2> aBarriers{};
+    for(auto &Barrier : aBarriers)
+    {
+        Barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        Barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        Barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        Barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        Barrier.subresourceRange.levelCount = 1;
+        Barrier.subresourceRange.layerCount = 1;
+    }
+    aBarriers[0].image = SrcTexture.m_Img;
+    aBarriers[0].oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    aBarriers[0].newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    aBarriers[0].srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    aBarriers[0].dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    aBarriers[1].image = DstTexture.m_Img;
+    aBarriers[1].oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    aBarriers[1].newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    aBarriers[1].srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    aBarriers[1].dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    vkCmdPipelineBarrier(CommandBuffer, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, (uint32_t)aBarriers.size(), aBarriers.data());
+
+    VkImageBlit Blit{};
+    Blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    Blit.srcSubresource.mipLevel = 0;
+    Blit.srcSubresource.baseArrayLayer = 0;
+    Blit.srcSubresource.layerCount = 1;
+    Blit.srcOffsets[0] = {0, 0, 0};
+    Blit.srcOffsets[1] = {(int32_t)SrcFB.m_Width, (int32_t)SrcFB.m_Height, 1};
+    Blit.dstSubresource = Blit.srcSubresource;
+    Blit.dstOffsets[0] = {0, 0, 0};
+    Blit.dstOffsets[1] = {(int32_t)DstFB.m_Width, (int32_t)DstFB.m_Height, 1};
+    vkCmdBlitImage(CommandBuffer, SrcTexture.m_Img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, DstTexture.m_Img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &Blit, VK_FILTER_LINEAR);
+
+    aBarriers[0].oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    aBarriers[0].newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    aBarriers[0].srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    aBarriers[0].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    aBarriers[1].oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    aBarriers[1].newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    aBarriers[1].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    aBarriers[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    vkCmdPipelineBarrier(CommandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, (uint32_t)aBarriers.size(), aBarriers.data());
+
+    VkRenderPassBeginInfo RenderPassInfo{};
+    RenderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    RenderPassInfo.renderPass = m_VKRenderPassLoad;
+    RenderPassInfo.framebuffer = m_vFramebufferList[m_CurImageIndex];
+    RenderPassInfo.renderArea.offset = {0, 0};
+    RenderPassInfo.renderArea.extent = m_VKSwapImgAndViewportExtent.m_SwapImageViewport;
+    RenderPassInfo.clearValueCount = 0;
+    vkCmdBeginRenderPass(CommandBuffer, &RenderPassInfo, GetSubpassContents());
+    m_CurInheritRenderPass = m_VKRenderPassLoad;
+    m_CurInheritFrameBuffer = m_vFramebufferList[m_CurImageIndex];
+    m_CurRenderTargetExtent = m_VKSwapImgAndViewportExtent.m_SwapImageViewport;
+    m_IsOffscreenTarget = false;
+
+    return true;
+}
+
 	[[nodiscard]] bool CreateShaderModule(const std::vector<uint8_t> &vCode, VkShaderModule &ShaderModule)
 	{
 		VkShaderModuleCreateInfo CreateInfo{};
@@ -4699,6 +5449,13 @@ public:
 
 		GetStandardPipelineInfo(InputAssembly, Viewport, Scissor, ViewportState, Rasterizer, Multisampling, ColorBlendAttachment, ColorBlending);
 		InputAssembly.topology = IsLinePrim ? VK_PRIMITIVE_TOPOLOGY_LINE_LIST : VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+		// match the OpenGL backend, where BLEND_NONE disables blending entirely.
+		// without this the alpha channel of the source would still be used, which
+		// makes opaque draws (e.g. the captured screen used by the blur) turn
+		// semi-transparent.
+		if(BlendMode == VULKAN_BACKEND_BLEND_MODE_NONE)
+			ColorBlendAttachment.blendEnable = VK_FALSE;
 
 		VkPipelineLayoutCreateInfo PipelineLayoutInfo{};
 		PipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -5410,9 +6167,13 @@ public:
 		m_QuadPipeline.Destroy(m_VKDevice);
 		m_QuadGroupedPipeline.Destroy(m_VKDevice);
 
+		DestroyOffscreenFrameBuffers();
+
 		DestroyFramebuffers();
 
 		DestroyRenderPass();
+
+		DestroyOffscreenRenderPasses();
 
 		DestroyMultiSamplerImageAttachments();
 
@@ -5471,6 +6232,7 @@ public:
 		m_vvFrameDelayedBufferCleanup.clear();
 		m_vvFrameDelayedTextureCleanup.clear();
 		m_vvFrameDelayedTextTexturesCleanup.clear();
+		m_vvFrameDelayedOffscreenCleanup.clear();
 
 		m_StagingBufferCache.DestroyFrameData(SwapchainCount);
 		m_StagingBufferCacheImage.DestroyFrameData(SwapchainCount);
@@ -6035,7 +6797,13 @@ public:
 		if(!CreateRenderPass(true))
 			return -1;
 
+		if(!CreateOffscreenRenderPasses())
+			return -1;
+
 		if(!CreateFramebuffers())
+			return -1;
+
+		if(!RecreateOffscreenFrameBuffers())
 			return -1;
 
 		if(!CreateStandardGraphicsPipeline("shader/vulkan/prim.vert.spv", "shader/vulkan/prim.frag.spv", false, false))
@@ -6158,6 +6926,7 @@ public:
 		m_vvFrameDelayedBufferCleanup.resize(m_SwapChainImageCount);
 		m_vvFrameDelayedTextureCleanup.resize(m_SwapChainImageCount);
 		m_vvFrameDelayedTextTexturesCleanup.resize(m_SwapChainImageCount);
+		m_vvFrameDelayedOffscreenCleanup.resize(m_SwapChainImageCount);
 		m_StagingBufferCache.Init(m_SwapChainImageCount);
 		m_StagingBufferCacheImage.Init(m_SwapChainImageCount);
 		m_VertexBufferCache.Init(m_SwapChainImageCount);
@@ -6217,9 +6986,16 @@ public:
 		return true;
 	}
 
+	// returns the contents flag for the next render pass begin, respecting the
+	// single threaded fallback that is forced by frame buffer commands
+	[[nodiscard]] VkSubpassContents GetSubpassContents() const
+	{
+		return m_ThreadCount > 1 && !m_ForceInlineRecording ? VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS : VK_SUBPASS_CONTENTS_INLINE;
+	}
+
 	[[nodiscard]] bool GetGraphicCommandBuffer(VkCommandBuffer *&pDrawCommandBuffer, size_t RenderThreadIndex)
 	{
-		if(m_ThreadCount < 2)
+		if(m_ThreadCount < 2 || m_ForceInlineRecording)
 		{
 			pDrawCommandBuffer = &m_vMainDrawCommandBuffers[m_CurImageIndex];
 			return true;
@@ -6239,9 +7015,9 @@ public:
 
 				VkCommandBufferInheritanceInfo InheritanceInfo{};
 				InheritanceInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
-				InheritanceInfo.framebuffer = m_vFramebufferList[m_CurImageIndex];
+				InheritanceInfo.framebuffer = m_CurInheritFrameBuffer;
 				InheritanceInfo.occlusionQueryEnable = VK_FALSE;
-				InheritanceInfo.renderPass = m_VKRenderPass;
+				InheritanceInfo.renderPass = m_CurInheritRenderPass;
 				InheritanceInfo.subpass = 0;
 
 				BeginInfo.pInheritanceInfo = &InheritanceInfo;
@@ -6451,7 +7227,7 @@ public:
 			bool CanStartThread = false;
 			if(CallbackObj.m_IsRenderCommand)
 			{
-				bool ForceSingleThread = m_LastCommandsInPipeThreadIndex == std::numeric_limits<decltype(m_LastCommandsInPipeThreadIndex)>::max();
+				bool ForceSingleThread = m_ForceInlineRecording || m_LastCommandsInPipeThreadIndex == std::numeric_limits<decltype(m_LastCommandsInPipeThreadIndex)>::max();
 
 				size_t PotentiallyNextThread = (((m_CurCommandInPipe * (m_ThreadCount - 1)) / m_CommandsInPipe) + 1);
 				if(PotentiallyNextThread - 1 > m_LastCommandsInPipeThreadIndex)
@@ -6542,6 +7318,7 @@ public:
 		pCommand->m_pCapabilities->m_3DTextures = false;
 		pCommand->m_pCapabilities->m_2DArrayTextures = true;
 		pCommand->m_pCapabilities->m_NPOTTextures = true;
+		pCommand->m_pCapabilities->m_FrameBufferSupport = true;
 
 		pCommand->m_pCapabilities->m_ContextMajor = 1;
 		pCommand->m_pCapabilities->m_ContextMinor = 1;
@@ -6733,7 +7510,7 @@ public:
 		if(ExecBuffer.m_ClearColorInRenderThread)
 		{
 			std::array<VkClearAttachment, 1> aAttachments = {VkClearAttachment{VK_IMAGE_ASPECT_COLOR_BIT, 0, VkClearValue{VkClearColorValue{{pCommand->m_Color.r, pCommand->m_Color.g, pCommand->m_Color.b, pCommand->m_Color.a}}}}};
-			std::array<VkClearRect, 1> aClearRects = {VkClearRect{{{0, 0}, m_VKSwapImgAndViewportExtent.m_SwapImageViewport}, 0, 1}};
+			std::array<VkClearRect, 1> aClearRects = {VkClearRect{{{0, 0}, m_CurRenderTargetExtent}, 0, 1}};
 
 			VkCommandBuffer *pCommandBuffer;
 			if(!GetGraphicCommandBuffer(pCommandBuffer, ExecBuffer.m_ThreadIndex))

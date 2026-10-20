@@ -216,6 +216,22 @@ public:
 		void Invalidate() { m_Id = -1; }
 	};
 
+	class CFrameBufferHandle
+	{
+		friend class IGraphics;
+		int m_Id;
+
+	public:
+		CFrameBufferHandle() :
+			m_Id(-1)
+		{
+		}
+
+		bool IsValid() const { return Id() >= 0; }
+		int Id() const { return m_Id; }
+		void Invalidate() { m_Id = -1; }
+	};
+
 	int ScreenWidth() const { return m_ScreenWidth; }
 	int ScreenHeight() const { return m_ScreenHeight; }
 	float ScreenAspect() const { return (float)ScreenWidth() / (float)ScreenHeight(); }
@@ -329,6 +345,35 @@ public:
 	// destroying all buffer objects means, that all referenced VBOs are destroyed automatically, so the user does not need to save references to them
 	virtual void DeleteBufferContainer(int &ContainerIndex, bool DestroyAllBO = true) = 0;
 	virtual void IndicesNumRequiredNotify(unsigned int RequiredIndicesCount) = 0;
+
+	// frame buffer / render target support (offscreen rendering, e.g. for blur, shadows, gradients, motion blur, ...)
+	enum EFrameBufferCreateFlags
+	{
+		FRAMEBUFFER_CREATE_FLAG_NONE = 0,
+	};
+
+	// Typical usage:
+	//   auto FB = Graphics()->CreateFrameBuffer(Width, Height);
+	//   Graphics()->FrameBufferBegin(FB, ColorRGBA(0.0f, 0.0f, 0.0f, 0.0f));
+	//   ... render into the frame buffer ...
+	//   Graphics()->FrameBufferEnd();
+	// The color attachment can be sampled afterwards via Graphics()->TextureSet(Graphics()->GetFrameBufferTexture(FB))
+	// (use two frame buffers for ping-pong effects like motion blur).
+	// Note: the screen mapping (MapScreen) is not changed automatically.
+	virtual CFrameBufferHandle CreateFrameBuffer(size_t Width, size_t Height, int CreateFlags = FRAMEBUFFER_CREATE_FLAG_NONE) = 0;
+	virtual void DestroyFrameBuffer(CFrameBufferHandle &FrameBuffer) = 0;
+	// returns the color attachment of the frame buffer as a texture handle
+	virtual CTextureHandle GetFrameBufferTexture(CFrameBufferHandle FrameBuffer) = 0;
+	// switches rendering to the given frame buffer, optionally clearing it first
+	virtual void FrameBufferBegin(CFrameBufferHandle FrameBuffer, ColorRGBA ClearColor, bool Clear = true) = 0;
+	// switches rendering back to the screen
+	virtual void FrameBufferEnd() = 0;
+	// copies the current screen content into the frame buffer's color attachment
+	// (the frame buffer should match the screen size); the copy can then be
+	// sampled via GetFrameBufferTexture
+	virtual void CopyScreenToFrameBuffer(CFrameBufferHandle FrameBuffer) = 0;
+	virtual void FrameBufferBlit(CFrameBufferHandle SrcFrameBuffer, CFrameBufferHandle DstFrameBuffer) = 0;
+	virtual bool HasFrameBufferSupport() = 0;
 
 	// returns true if the driver age type is supported, passing BACKEND_TYPE_AUTO for BackendType will query the values for the currently used backend
 	virtual bool GetDriverVersion(EGraphicsDriverAgeType DriverAgeType, int &Major, int &Minor, int &Patch, const char *&pName, EBackendType BackendType) = 0;
@@ -609,6 +654,13 @@ protected:
 		CTextureHandle Tex;
 		Tex.m_Id = Index;
 		return Tex;
+	}
+
+	CFrameBufferHandle CreateFrameBufferHandle(int Index)
+	{
+		CFrameBufferHandle FrameBuffer;
+		FrameBuffer.m_Id = Index;
+		return FrameBuffer;
 	}
 };
 

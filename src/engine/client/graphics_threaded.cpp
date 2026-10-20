@@ -122,6 +122,9 @@ CGraphics_Threaded::CGraphics_Threaded()
 
 	m_RenderEnable = true;
 	m_DoScreenshot = false;
+
+	m_FirstFreeFrameBuffer = -1;
+	m_CurFrameBuffer = -1;
 }
 
 void CGraphics_Threaded::ClipEnable(int x, int y, int w, int h)
@@ -306,6 +309,132 @@ void CGraphics_Threaded::FreeTextureIndex(CTextureHandle *pIndex)
 	m_vTextureIndices[pIndex->Id()] = m_FirstFreeTexture;
 	m_FirstFreeTexture = pIndex->Id();
 	pIndex->Invalidate();
+}
+
+IGraphics::CFrameBufferHandle CGraphics_Threaded::CreateFrameBuffer(size_t Width, size_t Height, int CreateFlags)
+{
+	if(!HasFrameBufferSupport())
+		return IGraphics::CFrameBufferHandle();
+
+	if(m_FirstFreeFrameBuffer == -1)
+	{
+		const size_t CurSize = m_vFrameBuffers.size();
+		const size_t NewSize = CurSize > 0 ? CurSize * 2 : 4;
+		m_vFrameBuffers.resize(NewSize);
+		for(size_t i = CurSize; i < NewSize; ++i)
+			m_vFrameBuffers[i].m_FreeIndex = i + 1 < NewSize ? (int)(i + 1) : -1;
+		m_FirstFreeFrameBuffer = (int)CurSize;
+	}
+
+	const int Index = m_FirstFreeFrameBuffer;
+	SFrameBuffer &FrameBuffer = m_vFrameBuffers[Index];
+	m_FirstFreeFrameBuffer = FrameBuffer.m_FreeIndex;
+	FrameBuffer.m_FreeIndex = -1;
+	FrameBuffer.m_Width = Width;
+	FrameBuffer.m_Height = Height;
+
+	// the color attachment lives in a regular texture slot, so it can be sampled like any other texture
+	IGraphics::CTextureHandle ColorTexture = FindFreeTextureIndex();
+	FrameBuffer.m_ColorTextureIndex = ColorTexture.Id();
+
+	CCommandBuffer::SCommand_FrameBuffer_Create Cmd;
+	Cmd.m_FrameBufferIndex = Index;
+	Cmd.m_TextureSlot = ColorTexture.Id();
+	Cmd.m_Width = Width;
+	Cmd.m_Height = Height;
+	AddCmd(Cmd);
+
+	return CreateFrameBufferHandle(Index);
+}
+
+void CGraphics_Threaded::DestroyFrameBuffer(IGraphics::CFrameBufferHandle &FrameBuffer)
+{
+	if(!FrameBuffer.IsValid())
+		return;
+
+	SFrameBuffer &FB = m_vFrameBuffers[FrameBuffer.Id()];
+
+	// if the frame buffer is the current render target, switch back to the screen first
+	if(m_CurFrameBuffer == FrameBuffer.Id())
+		FrameBufferEnd();
+
+	IGraphics::CTextureHandle ColorTexture = CreateTextureHandle(FB.m_ColorTextureIndex);
+
+	CCommandBuffer::SCommand_FrameBuffer_Destroy Cmd;
+	Cmd.m_FrameBufferIndex = FrameBuffer.Id();
+	Cmd.m_TextureSlot = FB.m_ColorTextureIndex;
+	AddCmd(Cmd);
+
+	FreeTextureIndex(&ColorTexture);
+
+	FB.m_FreeIndex = m_FirstFreeFrameBuffer;
+	m_FirstFreeFrameBuffer = FrameBuffer.Id();
+	FB.m_ColorTextureIndex = -1;
+
+	FrameBuffer.Invalidate();
+}
+
+IGraphics::CTextureHandle CGraphics_Threaded::GetFrameBufferTexture(IGraphics::CFrameBufferHandle FrameBuffer)
+{
+	if(!FrameBuffer.IsValid())
+		return IGraphics::CTextureHandle();
+
+	const SFrameBuffer &FB = m_vFrameBuffers[FrameBuffer.Id()];
+	return CreateTextureHandle(FB.m_ColorTextureIndex);
+}
+
+void CGraphics_Threaded::FrameBufferBegin(IGraphics::CFrameBufferHandle FrameBuffer, ColorRGBA ClearColor, bool Clear)
+{
+	dbg_assert(FrameBuffer.IsValid(), "Cannot begin rendering to an invalid frame buffer");
+	dbg_assert(m_Drawing == EDrawing::NONE, "called Graphics()->FrameBufferBegin within begin");
+
+	const SFrameBuffer &FB = m_vFrameBuffers[FrameBuffer.Id()];
+	m_CurFrameBuffer = FrameBuffer.Id();
+
+	CCommandBuffer::SCommand_FrameBuffer_SwitchTarget Cmd;
+	Cmd.m_FrameBufferIndex = FrameBuffer.Id();
+	Cmd.m_Width = (int)FB.m_Width;
+	Cmd.m_Height = (int)FB.m_Height;
+	Cmd.m_Clear = Clear;
+	Cmd.m_ClearColor = ClearColor;
+	AddCmd(Cmd);
+}
+
+void CGraphics_Threaded::FrameBufferEnd()
+{
+	if(m_CurFrameBuffer == -1)
+		return;
+
+	m_CurFrameBuffer = -1;
+
+	CCommandBuffer::SCommand_FrameBuffer_SwitchTarget Cmd;
+	Cmd.m_FrameBufferIndex = -1;
+	Cmd.m_Width = m_ScreenWidth;
+	Cmd.m_Height = m_ScreenHeight;
+	Cmd.m_Clear = false;
+	Cmd.m_ClearColor = ColorRGBA(0.0f, 0.0f, 0.0f, 0.0f);
+	AddCmd(Cmd);
+}
+
+void CGraphics_Threaded::CopyScreenToFrameBuffer(IGraphics::CFrameBufferHandle FrameBuffer)
+{
+	if(!FrameBuffer.IsValid())
+		return;
+
+	CCommandBuffer::SCommand_FrameBuffer_CopyFromScreen Cmd;
+	Cmd.m_FrameBufferIndex = FrameBuffer.Id();
+	AddCmd(Cmd);
+}
+
+void CGraphics_Threaded::FrameBufferBlit(IGraphics::CFrameBufferHandle SrcFrameBuffer, IGraphics::CFrameBufferHandle DstFrameBuffer)
+{
+    if(!SrcFrameBuffer.IsValid() || !DstFrameBuffer.IsValid())
+        return;
+
+    CCommandBuffer::SCommand_FrameBuffer_Blit Cmd;
+    Cmd.m_SrcFrameBufferIndex = SrcFrameBuffer.Id();
+    Cmd.m_DstFrameBufferIndex = DstFrameBuffer.Id();
+    AddCmd(Cmd);
 }
 
 void CGraphics_Threaded::UnloadTexture(CTextureHandle *pIndex)
@@ -2414,6 +2543,8 @@ int CGraphics_Threaded::Init()
 	m_FirstFreeVertexArrayInfo = -1;
 	m_FirstFreeBufferObjectIndex = -1;
 	m_FirstFreeQuadContainer = -1;
+	m_FirstFreeFrameBuffer = -1;
+	m_CurFrameBuffer = -1;
 
 	m_pBackend = CreateGraphicsBackend(Localize);
 	if(InitWindow() != 0)

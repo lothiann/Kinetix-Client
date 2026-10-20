@@ -42,7 +42,16 @@ void CCommandProcessorFragment_OpenGL::Cmd_Update_Viewport(const CCommandBuffer:
 		m_CanvasWidth = (uint32_t)pCommand->m_Width;
 		m_CanvasHeight = (uint32_t)pCommand->m_Height;
 	}
-	glViewport(pCommand->m_X, pCommand->m_Y, pCommand->m_Width, pCommand->m_Height);
+	// while a frame buffer is bound, the viewport of the screen is kept untouched,
+	// the stored screen viewport is restored when switching back to the screen
+	if(m_CurFrameBufferIndex < 0)
+	{
+		m_aLastScreenViewport[0] = pCommand->m_X;
+		m_aLastScreenViewport[1] = pCommand->m_Y;
+		m_aLastScreenViewport[2] = pCommand->m_Width;
+		m_aLastScreenViewport[3] = pCommand->m_Height;
+		glViewport(pCommand->m_X, pCommand->m_Y, pCommand->m_Width, pCommand->m_Height);
+	}
 }
 
 size_t CCommandProcessorFragment_OpenGL::GLFormatToPixelSize(int GLFormat)
@@ -538,6 +547,14 @@ bool CCommandProcessorFragment_OpenGL::InitOpenGL(const SCommand_Init *pCommand)
 			pCommand->m_pCapabilities->m_TrianglesAsQuads = true;
 		}
 	}
+
+	#ifndef BACKEND_AS_OPENGL_ES
+	// frame buffer support: core since GL 3.0, or via the framebuffer object extension
+	pCommand->m_pCapabilities->m_FrameBufferSupport = (pCommand->m_pCapabilities->m_ContextMajor >= 3) || GLEW_ARB_framebuffer_object;
+#else
+	// frame buffer support: core since GLES 3.0
+	pCommand->m_pCapabilities->m_FrameBufferSupport = pCommand->m_pCapabilities->m_ContextMajor >= 3;
+#endif
 
 	if(*pCommand->m_pInitError != -2)
 	{
@@ -1040,6 +1057,207 @@ CCommandProcessorFragment_OpenGL::CCommandProcessorFragment_OpenGL()
 {
 	m_vTextures.resize(CCommandBuffer::MAX_TEXTURES);
 	m_HasShaders = false;
+	m_CurFrameBufferIndex = -1;
+	m_aLastScreenViewport[0] = 0;
+	m_aLastScreenViewport[1] = 0;
+	m_aLastScreenViewport[2] = 0;
+	m_aLastScreenViewport[3] = 0;
+}
+
+void CCommandProcessorFragment_OpenGL::Cmd_FrameBuffer_Create(const CCommandBuffer::SCommand_FrameBuffer_Create *pCommand)
+{
+#ifndef BACKEND_AS_OPENGL_ES
+	if(glGenFramebuffers == nullptr)
+	{
+		log_error("gfx/opengl", "Frame buffers are not supported by this context.");
+		return;
+	}
+#endif
+
+	const int FrameBufferIndex = pCommand->m_FrameBufferIndex;
+	if((size_t)FrameBufferIndex >= m_vFrameBuffers.size())
+	{
+		m_vFrameBuffers.resize(FrameBufferIndex + 1);
+	}
+
+	CFrameBuffer &FrameBuffer = m_vFrameBuffers[FrameBufferIndex];
+	FrameBuffer.m_ColorTextureSlot = pCommand->m_TextureSlot;
+	FrameBuffer.m_Width = (int)pCommand->m_Width;
+	FrameBuffer.m_Height = (int)pCommand->m_Height;
+
+	// create the color attachment texture (empty, no mipmaps) in the given texture slot
+	const int Slot = FrameBuffer.m_ColorTextureSlot;
+	while(Slot >= (int)m_vTextures.size())
+		m_vTextures.resize(m_vTextures.size() * 2);
+
+	CTexture &Texture = m_vTextures[Slot];
+	if(Texture.m_Tex != 0)
+	{
+		DestroyTexture(Slot);
+	}
+
+	glGenTextures(1, &Texture.m_Tex);
+	glBindTexture(GL_TEXTURE_2D, Texture.m_Tex);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+	// internal format GL_RGBA8 with GL_RGBA data, the contents are undefined (no data is uploaded)
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, FrameBuffer.m_Width, FrameBuffer.m_Height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+	if(IsNewApi())
+	{
+		glGenSamplers(1, &Texture.m_Sampler);
+		glSamplerParameteri(Texture.m_Sampler, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glSamplerParameteri(Texture.m_Sampler, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	}
+	Texture.m_Width = FrameBuffer.m_Width;
+	Texture.m_Height = FrameBuffer.m_Height;
+	Texture.m_RescaleCount = 0;
+	Texture.m_ResizeWidth = -1.f;
+	Texture.m_ResizeHeight = -1.f;
+	Texture.m_LastWrapMode = EWrapMode::REPEAT;
+	Texture.m_MemSize = FrameBuffer.m_Width * FrameBuffer.m_Height * 4;
+	m_pTextureMemoryUsage->store(m_pTextureMemoryUsage->load(std::memory_order_relaxed) + Texture.m_MemSize, std::memory_order_relaxed);
+
+	// create the frame buffer object and attach the color texture
+	glGenFramebuffers(1, &FrameBuffer.m_FBO);
+	glBindFramebuffer(GL_FRAMEBUFFER, FrameBuffer.m_FBO);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, Texture.m_Tex, 0);
+	if(glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+	{
+		log_error("gfx/opengl", "Frame buffer creation incomplete.");
+	}
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+void CCommandProcessorFragment_OpenGL::Cmd_FrameBuffer_Destroy(const CCommandBuffer::SCommand_FrameBuffer_Destroy *pCommand)
+{
+	const int FrameBufferIndex = pCommand->m_FrameBufferIndex;
+	if((size_t)FrameBufferIndex >= m_vFrameBuffers.size())
+		return;
+
+	CFrameBuffer &FrameBuffer = m_vFrameBuffers[FrameBufferIndex];
+	if(FrameBuffer.m_FBO != 0)
+	{
+		// if this is the currently bound frame buffer, unbind it
+		if(m_CurFrameBufferIndex == FrameBufferIndex)
+		{
+			glBindFramebuffer(GL_FRAMEBUFFER, 0);
+			m_CurFrameBufferIndex = -1;
+		}
+		glDeleteFramebuffers(1, &FrameBuffer.m_FBO);
+	}
+	FrameBuffer.m_FBO = 0;
+	FrameBuffer.m_ColorTextureSlot = -1;
+	FrameBuffer.m_Width = 0;
+	FrameBuffer.m_Height = 0;
+
+	// the color attachment texture is destroyed with the regular texture cleanup
+	DestroyTexture(pCommand->m_TextureSlot);
+}
+
+void CCommandProcessorFragment_OpenGL::Cmd_FrameBuffer_SwitchTarget(const CCommandBuffer::SCommand_FrameBuffer_SwitchTarget *pCommand)
+{
+	if(pCommand->m_FrameBufferIndex >= 0)
+	{
+		if((size_t)pCommand->m_FrameBufferIndex >= m_vFrameBuffers.size())
+			return;
+
+		CFrameBuffer &FrameBuffer = m_vFrameBuffers[pCommand->m_FrameBufferIndex];
+		if(FrameBuffer.m_FBO == 0)
+			return;
+
+		// remember the screen viewport to restore it when switching back
+		if(m_CurFrameBufferIndex < 0)
+		{
+			glGetIntegerv(GL_VIEWPORT, m_aLastScreenViewport);
+		}
+
+		glBindFramebuffer(GL_FRAMEBUFFER, FrameBuffer.m_FBO);
+		glViewport(0, 0, FrameBuffer.m_Width, FrameBuffer.m_Height);
+		m_CurFrameBufferIndex = pCommand->m_FrameBufferIndex;
+
+		if(pCommand->m_Clear)
+		{
+			glClearColor(pCommand->m_ClearColor.r, pCommand->m_ClearColor.g, pCommand->m_ClearColor.b, pCommand->m_ClearColor.a);
+			glClear(GL_COLOR_BUFFER_BIT);
+		}
+	}
+	else
+	{
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		// restore the screen viewport
+		if(m_aLastScreenViewport[2] > 0 && m_aLastScreenViewport[3] > 0)
+		{
+			glViewport(m_aLastScreenViewport[0], m_aLastScreenViewport[1], m_aLastScreenViewport[2], m_aLastScreenViewport[3]);
+		}
+		else
+		{
+			glViewport(0, 0, m_CanvasWidth, m_CanvasHeight);
+		}
+		m_CurFrameBufferIndex = -1;
+	}
+
+	// the scissor state must be re-applied for the new render target
+	if(m_LastClipEnable)
+	{
+		glDisable(GL_SCISSOR_TEST);
+		m_LastClipEnable = false;
+	}
+}
+
+void CCommandProcessorFragment_OpenGL::Cmd_FrameBuffer_CopyFromScreen(const CCommandBuffer::SCommand_FrameBuffer_CopyFromScreen *pCommand)
+{
+#ifndef BACKEND_AS_OPENGL_ES
+	if(glBlitFramebuffer == nullptr)
+		return;
+#endif
+	const int FrameBufferIndex = pCommand->m_FrameBufferIndex;
+	if((size_t)FrameBufferIndex >= m_vFrameBuffers.size())
+		return;
+
+	CFrameBuffer &FrameBuffer = m_vFrameBuffers[FrameBufferIndex];
+	if(FrameBuffer.m_FBO == 0 || m_CanvasWidth == 0 || m_CanvasHeight == 0)
+		return;
+
+	// remember the current draw framebuffer binding, restored after the copy.
+	// the copy reads from the current read framebuffer (the screen by default)
+	GLint aOldDraw = 0;
+	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &aOldDraw);
+
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, FrameBuffer.m_FBO);
+	// the destination rect is vertically flipped, so the captured texture has
+	// v=0 at the top of the screen (matches the Vulkan copy path)
+	glBlitFramebuffer(0, 0, (GLint)m_CanvasWidth, (GLint)m_CanvasHeight,
+		0, (GLint)FrameBuffer.m_Height, (GLint)FrameBuffer.m_Width, 0,
+		GL_COLOR_BUFFER_BIT, GL_LINEAR);
+
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, aOldDraw);
+}
+
+void CCommandProcessorFragment_OpenGL::Cmd_FrameBuffer_Blit(const CCommandBuffer::SCommand_FrameBuffer_Blit *pCommand)
+{
+#ifndef BACKEND_AS_OPENGL_ES
+	if(glBlitFramebuffer == nullptr)
+		return;
+#endif
+	const int SrcIndex = pCommand->m_SrcFrameBufferIndex;
+	const int DstIndex = pCommand->m_DstFrameBufferIndex;
+	if((size_t)SrcIndex >= m_vFrameBuffers.size() || (size_t)DstIndex >= m_vFrameBuffers.size())
+		return;
+	CFrameBuffer &SrcFB = m_vFrameBuffers[SrcIndex];
+	CFrameBuffer &DstFB = m_vFrameBuffers[DstIndex];
+	if(SrcFB.m_FBO == 0 || DstFB.m_FBO == 0)
+		return;
+	GLint aOldRead = 0;
+	GLint aOldDraw = 0;
+	glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &aOldRead);
+	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &aOldDraw);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, SrcFB.m_FBO);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, DstFB.m_FBO);
+	glBlitFramebuffer(0, 0, SrcFB.m_Width, SrcFB.m_Height, 0, DstFB.m_Height, DstFB.m_Width, 0, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, aOldRead);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, aOldDraw);
 }
 
 ERunCommandReturnTypes CCommandProcessorFragment_OpenGL::RunCommand(const CCommandBuffer::SCommand *pBaseCommand)
@@ -1082,8 +1300,24 @@ ERunCommandReturnTypes CCommandProcessorFragment_OpenGL::RunCommand(const CComma
 	case CCommandBuffer::CMD_TRY_SWAP_AND_SCREENSHOT:
 		Cmd_Screenshot(static_cast<const CCommandBuffer::SCommand_TrySwapAndScreenshot *>(pBaseCommand));
 		break;
-	case CCommandBuffer::CMD_UPDATE_VIEWPORT:
+case CCommandBuffer::CMD_UPDATE_VIEWPORT:
 		Cmd_Update_Viewport(static_cast<const CCommandBuffer::SCommand_Update_Viewport *>(pBaseCommand));
+		break;
+
+	case CCommandBuffer::CMD_FRAMEBUFFER_CREATE:
+		Cmd_FrameBuffer_Create(static_cast<const CCommandBuffer::SCommand_FrameBuffer_Create *>(pBaseCommand));
+		break;
+	case CCommandBuffer::CMD_FRAMEBUFFER_DESTROY:
+		Cmd_FrameBuffer_Destroy(static_cast<const CCommandBuffer::SCommand_FrameBuffer_Destroy *>(pBaseCommand));
+		break;
+case CCommandBuffer::CMD_FRAMEBUFFER_SWITCH_TARGET:
+		Cmd_FrameBuffer_SwitchTarget(static_cast<const CCommandBuffer::SCommand_FrameBuffer_SwitchTarget *>(pBaseCommand));
+		break;
+	case CCommandBuffer::CMD_FRAMEBUFFER_BLIT:
+		Cmd_FrameBuffer_Blit(static_cast<const CCommandBuffer::SCommand_FrameBuffer_Blit *>(pBaseCommand));
+		break;
+	case CCommandBuffer::CMD_FRAMEBUFFER_COPY_FROM_SCREEN:
+		Cmd_FrameBuffer_CopyFromScreen(static_cast<const CCommandBuffer::SCommand_FrameBuffer_CopyFromScreen *>(pBaseCommand));
 		break;
 
 	case CCommandBuffer::CMD_CREATE_BUFFER_OBJECT: Cmd_CreateBufferObject(static_cast<const CCommandBuffer::SCommand_CreateBufferObject *>(pBaseCommand)); break;

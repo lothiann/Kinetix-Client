@@ -125,6 +125,9 @@ struct SBackendCapabilities
 	// use quads as much as possible, even if the user config says otherwise
 	bool m_TrianglesAsQuads;
 
+	// support for rendering into frame buffers (offscreen render targets)
+	bool m_FrameBufferSupport;
+
 	int m_ContextMajor;
 	int m_ContextMinor;
 	int m_ContextPatch;
@@ -273,6 +276,7 @@ public:
 	bool HasQuadContainerBuffering() override { return m_Capabilities.m_QuadContainerBuffering; }
 	bool Uses2DTextureArrays() override { return m_Capabilities.m_2DArrayTextures; }
 	bool HasTextureArraysSupport() override { return m_Capabilities.m_2DArrayTextures || m_Capabilities.m_3DTextures; }
+	bool HasFrameBufferSupport() override { return m_Capabilities.m_FrameBufferSupport; }
 
 	const char *GetErrorString() override
 	{

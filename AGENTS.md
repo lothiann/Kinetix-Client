@@ -11,6 +11,12 @@
 
 Конфигурация VS — **x64-Release** (генератор Ninja, `CMAKE_BUILD_TYPE=RelWithDebInfo`), корень сборки `out/build/x64-Release`.
 
+**Сборка только в окружении VS** — иначе `ninja` падает с `LNK1104: cannot open file "shlwapi.lib"` (вне окружения пустые `LIB`/`INCLUDE`). Перед сборкой:
+
+```
+call "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat"
+```
+
 `ninja.exe` из Visual Studio:
 `C:/Program Files/Microsoft Visual Studio/18/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe`
 

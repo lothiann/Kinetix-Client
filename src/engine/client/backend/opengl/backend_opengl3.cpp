@@ -739,6 +739,14 @@ void CCommandProcessorFragment_OpenGL3_3::Cmd_Clear(const CCommandBuffer::SComma
 	}
 }
 
+void CCommandProcessorFragment_OpenGL3_3::Cmd_FrameBuffer_SwitchTarget(const CCommandBuffer::SCommand_FrameBuffer_SwitchTarget *pCommand)
+{
+	CCommandProcessorFragment_OpenGL::Cmd_FrameBuffer_SwitchTarget(pCommand);
+	// keep the clear color cache in sync, the switch target handler may have changed the clear color
+	if(pCommand->m_Clear && pCommand->m_FrameBufferIndex >= 0)
+		m_ClearColor = pCommand->m_ClearColor;
+}
+
 void CCommandProcessorFragment_OpenGL3_3::UploadStreamBufferData(EPrimitiveType PrimitiveType, const void *pVertices, size_t VertSize, unsigned int PrimitiveCount, bool AsTex3D)
 {
 	int Count = 0;

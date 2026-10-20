@@ -71,6 +71,23 @@ protected:
 
 	bool m_IsOpenGLES;
 
+	struct CFrameBuffer
+	{
+		CFrameBuffer() :
+			m_FBO(0), m_ColorTextureSlot(-1), m_Width(0), m_Height(0) {}
+
+		TWGLuint m_FBO;
+		int m_ColorTextureSlot;
+		int m_Width;
+		int m_Height;
+	};
+	std::vector<CFrameBuffer> m_vFrameBuffers;
+	// the currently bound frame buffer, -1 = default screen frame buffer
+	int m_CurFrameBufferIndex;
+	// the last known screen viewport, restored when switching back from a frame buffer
+	// note: plain int, this header is included before the GL headers (GLint == int)
+	int m_aLastScreenViewport[4];
+
 	bool IsTexturedState(const CCommandBuffer::SState &State);
 
 	bool InitOpenGL(const SCommand_Init *pCommand);
@@ -98,6 +115,12 @@ protected:
 	virtual void Cmd_RenderTex3D(const CCommandBuffer::SCommand_RenderTex3D *pCommand) { dbg_assert_failed("Call of unsupported Cmd_RenderTex3D"); }
 	virtual void Cmd_ReadPixel(const CCommandBuffer::SCommand_TrySwapAndReadPixel *pCommand);
 	virtual void Cmd_Screenshot(const CCommandBuffer::SCommand_TrySwapAndScreenshot *pCommand);
+
+	virtual void Cmd_FrameBuffer_Create(const CCommandBuffer::SCommand_FrameBuffer_Create *pCommand);
+	virtual void Cmd_FrameBuffer_Destroy(const CCommandBuffer::SCommand_FrameBuffer_Destroy *pCommand);
+	virtual void Cmd_FrameBuffer_SwitchTarget(const CCommandBuffer::SCommand_FrameBuffer_SwitchTarget *pCommand);
+	virtual void Cmd_FrameBuffer_CopyFromScreen(const CCommandBuffer::SCommand_FrameBuffer_CopyFromScreen *pCommand);
+	virtual void Cmd_FrameBuffer_Blit(const CCommandBuffer::SCommand_FrameBuffer_Blit *pCommand);
 
 	virtual void Cmd_Update_Viewport(const CCommandBuffer::SCommand_Update_Viewport *pCommand);
 

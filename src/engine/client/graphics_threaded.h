@@ -14,7 +14,7 @@
 #include <vector>
 
 constexpr int CMD_BUFFER_DATA_BUFFER_SIZE = 1024 * 1024 * 2;
-constexpr int CMD_BUFFER_CMD_BUFFER_SIZE = 1024 * 256;
+constexpr int CMD_BUFFER_CMD_BUFFER_SIZE = 1024 * 1024 * 2;
 
 namespace TextureFlag
 {
@@ -164,11 +164,18 @@ public:
 		CMD_TRY_SWAP_AND_SCREENSHOT,
 		CMD_UPDATE_VIEWPORT,
 
-		// in Android a window that minimizes gets destroyed
-		CMD_WINDOW_CREATE_NTF,
-		CMD_WINDOW_DESTROY_NTF,
+// in Android a window that minimizes gets destroyed
+	CMD_WINDOW_CREATE_NTF,
+	CMD_WINDOW_DESTROY_NTF,
 
-		CMD_COUNT,
+	// frame buffers (offscreen render targets)
+	CMD_FRAMEBUFFER_CREATE,
+	CMD_FRAMEBUFFER_DESTROY,
+	CMD_FRAMEBUFFER_SWITCH_TARGET,
+	CMD_FRAMEBUFFER_COPY_FROM_SCREEN,
+    CMD_FRAMEBUFFER_BLIT,
+
+	CMD_COUNT,
 	};
 
 	typedef vec2 SPoint;
@@ -586,6 +593,55 @@ public:
 		uint32_t m_WindowId;
 	};
 
+	struct SCommand_FrameBuffer_Create : public SCommand
+	{
+		SCommand_FrameBuffer_Create() :
+			SCommand(CMD_FRAMEBUFFER_CREATE) {}
+
+		int m_FrameBufferIndex;
+		int m_TextureSlot; // the color attachment texture is stored in this texture slot
+		size_t m_Width;
+		size_t m_Height;
+	};
+
+	struct SCommand_FrameBuffer_Destroy : public SCommand
+	{
+		SCommand_FrameBuffer_Destroy() :
+			SCommand(CMD_FRAMEBUFFER_DESTROY) {}
+
+		int m_FrameBufferIndex;
+		int m_TextureSlot;
+	};
+
+	struct SCommand_FrameBuffer_SwitchTarget : public SCommand
+	{
+		SCommand_FrameBuffer_SwitchTarget() :
+			SCommand(CMD_FRAMEBUFFER_SWITCH_TARGET) {}
+
+		int m_FrameBufferIndex; // -1 = switch back to the default screen target
+		int m_Width; // size of the target (frame buffer or canvas size)
+		int m_Height;
+		bool m_Clear;
+		SColorf m_ClearColor;
+	};
+
+    struct SCommand_FrameBuffer_Blit : public SCommand
+    {
+        SCommand_FrameBuffer_Blit() :
+            SCommand(CMD_FRAMEBUFFER_BLIT) {}
+
+        int m_SrcFrameBufferIndex;
+        int m_DstFrameBufferIndex;
+    };
+
+	struct SCommand_FrameBuffer_CopyFromScreen : public SCommand
+	{
+		SCommand_FrameBuffer_CopyFromScreen() :
+			SCommand(CMD_FRAMEBUFFER_COPY_FROM_SCREEN) {}
+
+		int m_FrameBufferIndex;
+	};
+
 	//
 	CCommandBuffer(unsigned CmdBufferSize, unsigned DataBufferSize) :
 		m_CmdBuffer(CmdBufferSize), m_DataBuffer(DataBufferSize), m_pCmdBufferHead(nullptr), m_pCmdBufferTail(nullptr)
@@ -721,6 +777,7 @@ public:
 	virtual bool HasQuadContainerBuffering() { return false; }
 	virtual bool Uses2DTextureArrays() { return false; }
 	virtual bool HasTextureArraysSupport() { return false; }
+	virtual bool HasFrameBufferSupport() { return false; }
 	virtual const char *GetErrorString() { return nullptr; }
 
 	virtual const char *GetVendorString() = 0;
@@ -841,6 +898,22 @@ class CGraphics_Threaded : public IEngineGraphics
 	std::vector<SQuadContainer> m_vQuadContainers;
 	int m_FirstFreeQuadContainer;
 
+	struct SFrameBuffer
+	{
+		SFrameBuffer() :
+			m_ColorTextureIndex(-1), m_Width(0), m_Height(0), m_FreeIndex(-1) {}
+
+		// the color attachment lives in this (client side) texture slot
+		int m_ColorTextureIndex;
+		size_t m_Width;
+		size_t m_Height;
+		int m_FreeIndex;
+	};
+	std::vector<SFrameBuffer> m_vFrameBuffers;
+	int m_FirstFreeFrameBuffer;
+	// the currently bound frame buffer, -1 = default screen target
+	int m_CurFrameBuffer;
+
 	std::vector<WINDOW_RESIZE_FUNC> m_vResizeListeners;
 	std::vector<WINDOW_PROPS_CHANGED_FUNC> m_vPropChangeListeners;
 
@@ -878,8 +951,9 @@ class CGraphics_Threaded : public IEngineGraphics
 		// kick command buffer and try again
 		KickCommandBuffer();
 
-		dbg_assert(FailFunc(), "graphics: failed to run fail handler for command '%s'", typeid(TName).name());
-		dbg_assert(m_pCommandBuffer->AddCommandUnsafe(Cmd), "graphics: failed to add command '%s' to command buffer", typeid(TName).name());
+        if(!FailFunc())
+        return;
+        (void)m_pCommandBuffer->AddCommandUnsafe(Cmd);
 	}
 
 	void KickCommandBuffer();
@@ -1202,6 +1276,15 @@ public:
 	void UpdateBufferContainerInternal(int ContainerIndex, SBufferContainerInfo *pContainerInfo);
 	void IndicesNumRequiredNotify(unsigned int RequiredIndicesCount) override;
 
+	// frame buffers (offscreen render targets)
+	IGraphics::CFrameBufferHandle CreateFrameBuffer(size_t Width, size_t Height, int CreateFlags) override;
+	void DestroyFrameBuffer(IGraphics::CFrameBufferHandle &FrameBuffer) override;
+	IGraphics::CTextureHandle GetFrameBufferTexture(IGraphics::CFrameBufferHandle FrameBuffer) override;
+	void FrameBufferBegin(IGraphics::CFrameBufferHandle FrameBuffer, ColorRGBA ClearColor, bool Clear) override;
+	void FrameBufferEnd() override;
+	void CopyScreenToFrameBuffer(IGraphics::CFrameBufferHandle FrameBuffer) override;
+    void FrameBufferBlit(IGraphics::CFrameBufferHandle SrcFrameBuffer, IGraphics::CFrameBufferHandle DstFrameBuffer) override;
+
 	int GetNumScreens() const override;
 	const char *GetScreenName(int Screen) const override;
 
@@ -1264,6 +1347,7 @@ public:
 	bool IsQuadBufferingEnabled() override { return m_GLQuadBufferingEnabled; }
 	bool IsTextBufferingEnabled() override { return m_GLTextBufferingEnabled; }
 	bool IsQuadContainerBufferingEnabled() override { return m_GLQuadContainerBufferingEnabled; }
+	bool HasFrameBufferSupport() override { return m_pBackend->HasFrameBufferSupport(); }
 	bool Uses2DTextureArrays() override { return m_GLUses2DTextureArrays; }
 	int TextureLoadFlags() override { return Uses2DTextureArrays() ? IGraphics::TEXLOAD_TO_2D_ARRAY_TEXTURE : IGraphics::TEXLOAD_TO_3D_TEXTURE; }
 	bool HasTextureArraysSupport() override { return m_GLHasTextureArraysSupport; }

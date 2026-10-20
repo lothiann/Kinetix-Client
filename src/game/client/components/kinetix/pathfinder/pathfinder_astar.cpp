@@ -3,25 +3,18 @@
 #include <algorithm>
 
 // =========================================================
-// PHYSICS A* — MACRO: chunked-primitive search (v1.56.246).
+// PHYSICS A* — v1.56.245: time-optimal per-tick search.
 //
-// Replaces the per-tick expansion (v1.56.245). A* over simulated
-// character states, but the tree is built over MACRO-ACTIONS
-// (chunks) simulated with the real CCharacter physics:
-//   - run chunk: hold (dir, jump); commits at jump apex, ledge
-//     walk-off, landing, an early tick (short walk / brake /
-//     mid-rise hook window) or the tick cap;
-//   - hook chunk: fire a ray-validated hook angle (or continue an
-//     active hook) with a steering dir, hold while grabbed, release
-//     when close to the hook point (pull), slow inside the no-drag
-//     zone, or swinging fast toward the steer side (pendulum), then
-//     ballistic until grounded / coast apex / cap.
-// G stays pure simulated ticks; dedup and the flow-field heuristic
-// are unchanged, so the first finish popped is the fastest path the
-// chunk tree can express. Freeze contact and forbidden zones kill a
-// chunk. Port of the validated Python reference (macro.py): 2 knobs
-// total — the A* weight slider (KxPfAStarWeight) and the pump
-// steered-hook variants, which are fixed ON here.
+// Uniform-cost A* over simulated character states. Each expansion
+// simulates EVERY valid single-tick input (direction x jump, hook
+// steering while attached, ray-validated hook-fire angles) through
+// the real CCharacter physics (PfSimulateChunk) and pushes each
+// surviving end state as a child. The previous candidate generators
+// (RHEA evolution, chunk beam search) and the score/penalty ranking
+// are gone: G is pure simulated ticks, pruning is done only by the
+// BestG state dedup and the flow-field heuristic, so the first
+// finish found is the fastest path the quantized state space can
+// express instead of the best-scoring sample of one.
 // =========================================================
 
 // State dedup key: quantized position (2px), velocity (3px), hook state,
@@ -91,250 +84,9 @@ static int PfAStarHeapPop(std::vector<int> &heap, const std::vector<CBotNet::ASt
 	return top;
 }
 
-// =========================================================
-// MACRO chunk primitives (v1.56.246). A chunk is a macro-action
-// simulated tick-by-tick with the real CCharacter physics:
-//
-//   run chunk  — hold (dir, jump); commits at jump apex, ledge
-//                walk-off, landing, an early tick (short walk /
-//                brake / mid-rise hook window) or the tick cap;
-//   hook chunk — fire a ray-validated hook angle (or continue an
-//                active hook) with a steering dir, hold while
-//                grabbed, release when close to the hook point
-//                (pull), slow inside the no-drag zone, or swinging
-//                fast toward the steer side (pendulum), then
-//                ballistic until grounded / coast apex / cap.
-//
-// Freeze contact, a forbidden-zone touch or engine death kills the
-// chunk (1:1 with the validated Python reference macro.py).
-// =========================================================
-
-static const int MACRO_RUN_CAP = 28;           // max ticks for a run/jump chunk
-static const int MACRO_HOOK_CAP = 64;          // max ticks for a hook chunk
-static const int MACRO_RELEASE_CAP = 28;       // max ballistic ticks after release
-static const float MACRO_GRAB_DIST2 = 1600.0f; // 40px squared: unconditional pull release
-static const float MACRO_SWING_VEL = 3.0f;     // pendulum release: vel.x * dir above this
-static const int MACRO_MIN_GRAB_TICKS = 4;     // min grabbed ticks before a swing release
-static const int MACRO_EARLY_TICKS = 8;        // early-commit tick for run chunks
-
-struct PfMacroCand
-{
-	int kind;     // 0 = run, 1 = hook fire, 2 = hook continue
-	int jump;     // run: jump flag held through the chunk
-	int angleIdx; // hook fire: fan index
-	int dir;      // steering direction
-	int early;    // run: early-commit tick (0 = none)
-};
-
-struct PfMacroChunk
-{
-	std::vector<CNetObj_PlayerInput> inputs;
-	std::vector<vec2> traj;
-	std::vector<PfHookSeg> hookSegs;
-	int ticks = 0;
-	CBotNet::PfAState end{};
-	int endFreezeTime = 0;
-	bool hitFinish = false;
-};
-
-static bool PfMacroRunChunk(CGameWorld *pWorld, int LocalID, CCharacter *pBot,
-	const CBotNet::PfAState &startCore, bool startedGrounded, const PfMacroCand &cand,
-	int HookAngles, int StartTick,
-	const unsigned char *pForbiddenGrid, const unsigned char *pCustomFinishGrid,
-	PfMacroChunk &out)
-{
-	CCollision *pColl = pWorld->Collision();
-	if(!pColl || !pBot)
-		return false;
-	const int cw = pColl->GetWidth();
-	const int chh = pColl->GetHeight();
-	const int cap = (cand.kind == 0) ? MACRO_RUN_CAP : MACRO_HOOK_CAP;
-
-	float fireAngle = 0.0f;
-	if(cand.kind == 1)
-	{
-		float fa = (float)cand.angleIdx / (float)(HookAngles - 1 < 1 ? 1 : HookAngles - 1);
-		fireAngle = (-5.0f / 6.0f) * pi + fa * (10.0f / 6.0f) * pi;
-	}
-
-	out.inputs.clear();
-	out.traj.clear();
-	out.traj.push_back(pBot->m_Pos);
-	out.hookSegs.clear();
-	out.ticks = 0;
-	out.hitFinish = false;
-	out.endFreezeTime = 0;
-
-	int prevHookState = startCore.HookState;
-	int grabT = 0;
-	int releaseT = -1;
-	int stuck = 0;
-	vec2 prevSimPos = pBot->m_Pos;
-	bool grounded = false;
-	int t = 0;
-	while(t < cap)
-	{
-		t++;
-		CNetObj_PlayerInput in;
-		mem_zero(&in, sizeof(in));
-		if(cand.kind == 0)
-		{
-			in.m_Direction = cand.dir;
-			in.m_Jump = cand.jump;
-			in.m_TargetX = cand.dir * 256;
-			in.m_TargetY = -256;
-		}
-		else if(releaseT >= 0)
-		{
-			in.m_Direction = cand.dir;
-			in.m_TargetX = cand.dir * 256;
-			in.m_TargetY = -256;
-			releaseT++;
-		}
-		else
-		{
-			in.m_Hook = 1;
-			in.m_Direction = cand.dir;
-			if(t == 1 && cand.kind == 1)
-			{
-				in.m_TargetX = (int)(cosf(fireAngle) * 256.0f);
-				in.m_TargetY = (int)(sinf(fireAngle) * 256.0f);
-			}
-			else
-			{
-				CCharacterCore hc = pBot->GetCore();
-				in.m_TargetX = (int)(hc.m_HookPos.x - hc.m_Pos.x);
-				in.m_TargetY = (int)(hc.m_HookPos.y - hc.m_Pos.y);
-			}
-		}
-		out.inputs.push_back(in);
-
-		pBot->OnDirectInput(&in);
-		pWorld->m_GameTick = StartTick + t;
-		pBot->OnPredictedInput(&in);
-		pWorld->Tick();
-		if(!pWorld->GetCharacterById(LocalID))
-			return false; // engine death / out of world
-
-		if(pBot->m_FreezeTime <= 0)
-			PfCheckFreeze(pWorld, pBot, prevSimPos, pBot->m_Pos);
-		if(pBot->m_FreezeTime > 0)
-			return false; // freeze contact kills the chunk
-		if(PfLineTouchesForbidden(pForbiddenGrid, cw, chh, prevSimPos, pBot->m_Pos))
-			return false;
-		prevSimPos = pBot->m_Pos;
-
-		out.traj.push_back(pBot->m_Pos);
-
-		CCharacterCore c = pBot->GetCore();
-		if(c.m_HookState == HOOK_GRABBED && prevHookState != HOOK_GRABBED)
-			out.hookSegs.push_back({pBot->m_Pos, c.m_HookPos});
-
-		// finish contact truncates the chunk right here
-		{
-			int tc = round_to_int(c.m_Pos.x / 32.0f);
-			int tr = round_to_int(c.m_Pos.y / 32.0f);
-			if(tc >= 0 && tr >= 0 && tc < cw && tr < chh)
-			{
-				int MapIndex = tr * cw + tc;
-				bool fin;
-				if(pCustomFinishGrid)
-					fin = pCustomFinishGrid[MapIndex] != 0;
-				else
-				{
-					int Tile = pColl->GetTileIndex(MapIndex);
-					int FTile = pColl->GetFrontTileIndex(MapIndex);
-					fin = (Tile == TILE_FINISH || FTile == TILE_FINISH);
-				}
-				if(fin)
-				{
-					out.hitFinish = true;
-					break;
-				}
-			}
-		}
-
-		grounded = pColl->IsOnGround(pBot->m_Pos, CCharacterCore::PhysicalSize());
-		const int hs = c.m_HookState;
-
-		if(cand.kind == 0)
-		{
-			if(cand.early > 0 && t >= cand.early)
-				break; // early commit: short walk / brake / mid-rise hook window
-			if(cand.jump == 0 && grounded && fabsf(c.m_Vel.x) < 0.1f)
-			{
-				stuck++;
-				if(stuck >= 10)
-					return false; // pressed into a wall with no jump: dead end
-			}
-			else
-				stuck = 0;
-			if(startedGrounded)
-			{
-				if(!grounded && c.m_Vel.y >= 0.0f)
-					break; // ledge walk-off or jump apex: decision point
-			}
-			else
-			{
-				if(grounded)
-					break; // landed
-			}
-		}
-		else
-		{
-			if(releaseT >= 0)
-			{
-				if(grounded || c.m_Vel.y >= 0.0f || releaseT >= MACRO_RELEASE_CAP)
-					break; // grounded / coast apex / cap
-			}
-			else if(hs == HOOK_GRABBED)
-			{
-				grabT++;
-				const float dxh = c.m_HookPos.x - c.m_Pos.x;
-				const float dyh = c.m_HookPos.y - c.m_Pos.y;
-				const float d2h = dxh * dxh + dyh * dyh;
-				const float sp2 = c.m_Vel.x * c.m_Vel.x + c.m_Vel.y * c.m_Vel.y;
-				if(d2h < MACRO_GRAB_DIST2)
-					releaseT = 0; // pulled in: release, go ballistic
-				else if(d2h < 48.0f * 48.0f && sp2 < 4.0f)
-					releaseT = 0; // slow inside the no-drag zone: pull is done
-				else if(cand.dir != 0 && grabT >= MACRO_MIN_GRAB_TICKS && c.m_Vel.x * cand.dir > MACRO_SWING_VEL)
-					releaseT = 0; // pendulum release on the forward swing
-				else if(grounded && grabT >= 12 && sp2 < 0.25f)
-					return false; // pinned on the ground by a hook: dead end
-			}
-			else if(hs == HOOK_IDLE)
-			{
-				if(prevHookState == HOOK_FLYING)
-					return false; // fired and missed
-				if(prevHookState == HOOK_GRABBED)
-					releaseT = 0; // hook timed out, go ballistic
-				else if(t == 1)
-					return false; // fire produced nothing
-			}
-		}
-		prevHookState = hs;
-	}
-
-	CCharacterCore c = pBot->GetCore();
-	out.end = startCore;
-	out.end.Pos = c.m_Pos;
-	out.end.Vel = c.m_Vel;
-	out.end.HookState = c.m_HookState;
-	out.end.HookPos = c.m_HookPos;
-	out.end.HookDir = c.m_HookDir;
-	out.end.HookTick = c.m_HookTick;
-	out.end.Jumped = c.m_Jumped;
-	out.end.JumpedTotal = c.m_JumpedTotal;
-	out.endFreezeTime = pBot->m_FreezeTime;
-	out.ticks = t;
-	return true;
-}
-
 int PfEffortHookAngles()
 {
-	// v1.56.283: kx_pf_hook_angles removed - the hook fan is always 36 rays.
-	return 36;
+	return (g_Config.m_KxPfEffort >= 2) ? 32 : 24;
 }
 
 static int PfEffortIndex()
@@ -489,7 +241,7 @@ static int PfBuildTickCandidates(const CBotNet::PfAState &core, CCollision *pCol
 		if(n >= 128)
 			return;
 		if(aCodes)
-			aCodes[n] = (2 + dir) | (jump << 2) | (hook << 3) | (angleIdx << 5) | ((HookAngles - 1) << 11);
+			aCodes[n] = (2 + dir) | (jump << 2) | (hook << 3) | (angleIdx << 5) | ((HookAngles - 1) << 10);
 		CNetObj_PlayerInput &in = aOut[n];
 		mem_zero(&in, sizeof(in));
 		in.m_Direction = dir;
@@ -617,7 +369,17 @@ int CBotNet::PfAStarStep()
 {
 	if(m_PfAOpen.empty())
 	{
-
+		if(g_Config.m_KxPfAlgorithm == 1 && !m_PfABeamReserve.empty())
+		{
+			int cap = PfEffortBeamWidth() * 4;
+			std::sort(m_PfABeamReserve.begin(), m_PfABeamReserve.end(), [&](int x, int y) { return PfAHeapLess(m_PfANodes[x], m_PfANodes[y]); });
+			int take = (cap < (int)m_PfABeamReserve.size()) ? cap : (int)m_PfABeamReserve.size();
+			std::lock_guard<std::mutex> lock(m_PfDataMutex);
+			for(int i = 0; i < take; i++)
+				PfAStarHeapPush(m_PfAOpen, m_PfANodes, m_PfABeamReserve[i]);
+			m_PfABeamReserve.erase(m_PfABeamReserve.begin(), m_PfABeamReserve.begin() + take);
+			return 0;
+		}
 		dbg_msg("pathfinder", "A* exhausted: open set empty (no route to a finish tile — blocked by walls/forbidden zones?)");
 		return -1;
 	}
@@ -799,7 +561,7 @@ if(W > 20.0f)
 		float angle;
 		bool hasTarget;
 	};
-	HookRayResult aHookRays[64]; // v1.56.283: 36-ray fan (was 32)
+	HookRayResult aHookRays[32];
 	bool hookRaysReady = false;
 	int HookAngles = PfEffortHookAngles();
 	if(cur.Core.HookState == HOOK_IDLE)
@@ -823,46 +585,39 @@ if(W > 20.0f)
 	bool hookIdle = (cur.Core.HookState == HOOK_IDLE);
 	bool hookActive = (cur.Core.HookState == HOOK_FLYING || cur.Core.HookState == HOOK_GRABBED);
 
-	// ── MACRO candidate list ──
-	// grounded: run chunks (dir × jump) in full + early variants;
-	// air: run chunks (dir, no jump) in full + early variants (turn fix);
-	// hook idle: fire each ray-valid angle unsteered (+ steered pump
-	// variants); hook active: continue the hook unsteered (+ steered).
-	static const int aRunGrounded[][2] = {{-1, 0}, {1, 0}, {-1, 1}, {1, 1}, {0, 1}, {0, 0}};
-	static const int aRunAir[][2] = {{-1, 0}, {1, 0}, {0, 0}};
-	PfMacroCand aCands[128];
+	// Per-tick systematic expansion: build EVERY valid single-tick input for
+	// this state, simulate each one tick and push each surviving end state.
+	// No candidate scoring, no beam width — the A* open set + BestG dedup
+	// decide which branches survive, so G stays pure time and the first
+	// finish reached is the fastest path the search can express.
+	static const int aDirs[] = {-1, 0, 1};
+	CNetObj_PlayerInput aCands[128];
+	int aCandCodes[128];
 	int nCands = 0;
-	auto fnAddCand = [&](int kind, int jump, int angleIdx, int dir, int early) {
+	auto fnAddCand = [&](int dirIdx, int jump, int mode, int angleIdx, vec2 aim) {
 		if(nCands >= 128)
 			return;
-		aCands[nCands].kind = kind;
-		aCands[nCands].jump = jump;
-		aCands[nCands].angleIdx = angleIdx;
-		aCands[nCands].dir = dir;
-		aCands[nCands].early = early;
+		mem_zero(&aCands[nCands], sizeof(CNetObj_PlayerInput));
+		aCands[nCands].m_Direction = aDirs[dirIdx];
+		aCands[nCands].m_Jump = jump;
+		aCands[nCands].m_Hook = (mode != 0) ? 1 : 0;
+		aCands[nCands].m_TargetX = (int)aim.x;
+		aCands[nCands].m_TargetY = (int)aim.y;
+		aCandCodes[nCands] = (1 + dirIdx) | (jump << 2) | (mode << 3) | (angleIdx << 5) | ((HookAngles - 1) << 10);
 		nCands++;
 	};
-	if(cur.Grounded)
+	for(int d = 0; d < 3; d++)
 	{
-		for(const auto &rd : aRunGrounded)
-		{
-			if(rd[0] == 0 && rd[1] == 0)
-				fnAddCand(0, rd[1], 0, rd[0], MACRO_EARLY_TICKS); // idle: short-wait chunk only
-			else
-			{
-				fnAddCand(0, rd[1], 0, rd[0], 0);
-				fnAddCand(0, rd[1], 0, rd[0], 4); // tight-turn commit
-				fnAddCand(0, rd[1], 0, rd[0], MACRO_EARLY_TICKS);
-			}
-		}
+		for(int j = 0; j < 2; j++)
+			fnAddCand(d, j, 0, 0, vec2((float)aDirs[d] * 256.0f, -256.0f));
 	}
-	else
+	if(hookActive)
 	{
-		for(const auto &rd : aRunAir)
+		vec2 aimRel = cur.Core.HookPos - cur.Core.Pos;
+		for(int d = 0; d < 3; d++)
 		{
-			fnAddCand(0, rd[1], 0, rd[0], 0);
-			fnAddCand(0, rd[1], 0, rd[0], 4); // mid-air turn control (the wide-arc fix)
-			fnAddCand(0, rd[1], 0, rd[0], MACRO_EARLY_TICKS);
+			for(int j = 0; j < 2; j++)
+				fnAddCand(d, j, 1, 0, aimRel);
 		}
 	}
 	if(hookIdle && hookRaysReady)
@@ -871,47 +626,63 @@ if(W > 20.0f)
 		{
 			if(!aHookRays[a].hasTarget)
 				continue;
-			fnAddCand(1, 0, a, 0, 0);
-			// pump: steered fire variants (fixed on — part of the algorithm)
-			const float ax = cosf(aHookRays[a].angle);
-			const float ay = sinf(aHookRays[a].angle);
-			if(ay < 0.0f)
-			{
-				if(ax != 0.0f)
-				{
-					fnAddCand(1, 0, a, 1, 0);
-					fnAddCand(1, 0, a, -1, 0);
-				}
-			}
-			else if(ax != 0.0f)
-				fnAddCand(1, 0, a, ax > 0.0f ? 1 : -1, 0);
+			vec2 aim = vec2(cosf(aHookRays[a].angle), sinf(aHookRays[a].angle)) * 256.0f;
+			for(int d = 0; d < 3; d++)
+				fnAddCand(d, 0, 2, a, aim);
 		}
 	}
-	else if(hookActive)
-	{
-		fnAddCand(2, 0, -1, 0, 0);
-		fnAddCand(2, 0, -1, 1, 0);
-		fnAddCand(2, 0, -1, -1, 0);
-	}
 
-	// ── MACRO chunk expansion: each candidate simulates to its commit
-	// point; the surviving end state becomes one child with G += ticks.
-	// The A* open set + BestG dedup prune; freeze/forbidden/death kill
-	// the chunk inside PfMacroRunChunk. ──
 	for(int ci = 0; ci < nCands; ci++)
 	{
 		CCharacter *pBot = fnSpawnBot(cur.Core, cur.Core.Pos, cur.FreezeTime, cur.TickOffset);
 		if(!pBot)
 			continue;
-		PfMacroChunk chunk;
-		if(!PfMacroRunChunk(m_PfSimWorld, LocalID, pBot, cur.Core, cur.Grounded,
-				aCands[ci], HookAngles, RootStartTick + cur.TickOffset,
-				m_pForbiddenGrid, PfCustomFinishSimGrid(), chunk))
+		PfChunkResult res;
+		std::vector<CNetObj_PlayerInput> oneInput(1, aCands[ci]);
+		PfSimulateChunk(m_PfSimWorld, LocalID, pBot, oneInput,
+			RootStartTick + cur.TickOffset, res,
+			m_pForbiddenGrid, PfCustomFinishSimGrid());
+		if(res.died && !res.reachedFinish)
 			continue;
-		fnPushChild(chunk.end, chunk.endFreezeTime, chunk.inputs, chunk.traj,
-			chunk.hookSegs, chunk.ticks, 0, 0, 0);
+		PfAState endCore = cur.Core;
+		endCore.Pos = res.endPos;
+		endCore.Vel = res.endVel;
+		endCore.HookState = res.endHookState;
+		endCore.HookPos = res.endHookPos;
+		endCore.HookDir = res.endHookDir;
+		endCore.HookTick = res.endHookTick;
+		endCore.Jumped = res.endJumped;
+		endCore.JumpedTotal = res.endJumpedTotal;
+		const std::vector<CNetObj_PlayerInput> emptyInputs;
+		const std::vector<vec2> emptyTraj;
+		const std::vector<PfHookSeg> emptySegs;
+		fnPushChild(endCore, res.endFreezeTime, emptyInputs, emptyTraj, emptySegs, 1, res.freezeTicks, res.forbiddenTicks, aCandCodes[ci]);
+	}
+	if(g_Config.m_KxPfAlgorithm == 1)
+	{
+		int beamK = PfEffortBeamWidth();
+		if((int)vPending.size() > beamK)
+		{
+			std::sort(vPending.begin(), vPending.end(), [](const AStarNode &a, const AStarNode &b) { return a.F < b.F; });
+			std::lock_guard<std::mutex> lock(m_PfDataMutex);
+			for(int i = beamK; i < (int)vPending.size(); i++)
+			{
+				m_PfANodes.push_back(std::move(vPending[i]));
+				m_PfABeamReserve.push_back((int)m_PfANodes.size() - 1);
+			}
+			vPending.resize(beamK);
+		}
 	}
 	fnFlushPending();
+	if(g_Config.m_KxPfAlgorithm == 1 && (int)m_PfAOpen.size() > PfEffortBeamWidth() * 4)
+	{
+		int cap = PfEffortBeamWidth() * 4;
+		std::lock_guard<std::mutex> lock(m_PfDataMutex);
+		std::sort(m_PfAOpen.begin(), m_PfAOpen.end(), [&](int x, int y) { return PfAHeapLess(m_PfANodes[x], m_PfANodes[y]); });
+		m_PfABeamReserve.insert(m_PfABeamReserve.end(), m_PfAOpen.begin() + cap, m_PfAOpen.end());
+		m_PfAOpen.resize(cap);
+	}
+
 	return 0;
 }
 
@@ -1020,8 +791,8 @@ void CBotNet::PfAStarReconstruct()
 		const int dirIdx = bits & 3;
 		const int jump = (bits >> 2) & 1;
 		const int mode = (bits >> 3) & 3;
-const int angleIdx = (bits >> 5) & 63;
-			const int angles = ((bits >> 11) & 63) + 1;
+		const int angleIdx = (bits >> 5) & 31;
+		const int angles = ((bits >> 10) & 63) + 1;
 		CNetObj_PlayerInput in;
 		mem_zero(&in, sizeof(in));
 		in.m_Direction = dirIdx - 1;

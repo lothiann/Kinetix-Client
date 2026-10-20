@@ -36,6 +36,7 @@
 #include <engine/client/enums.h> // MAX_DUMMIES (v1.56.282: Dummy Manager per-dummy state)
 
 #include <game/client/component.h>
+#include <engine/graphics.h> // IGraphics::CFrameBufferHandle (v1.56.287: BG Blur)
 
 class CClickGui : public CComponent
 {
@@ -379,6 +380,20 @@ private:
         // v1.56.284: ClickGUI-styled ToolTip near the cursor (word-wrapped,
         // rounded panel + accent border). Drawn on top of all panels.
         void RenderToolTip(float alpha);
+
+        // v1.56.298: BG Blur — m_SceneFB holds the raw screen capture (horizontal
+        // pass source), m_BlurFbTmp receives the horizontally blurred screen
+        // (vertical pass source). Two separate images are used because re-writing
+        // the same frame buffer image twice in one frame is not reliably visible
+        // to the sampler afterwards.
+        IGraphics::CFrameBufferHandle m_SceneFB;     // full resolution capture
+        IGraphics::CFrameBufferHandle m_BlurFbTmp;   // full resolution, horizontal result
+        int m_BlurFbScreenWidth = 0; // screen size at creation time (resize detection)
+        int m_BlurFbScreenHeight = 0;
+
+        void DestroyBlurFbos();
+        void EnsureBlurFbos();
+        void RenderBlurBackground(); // capture + two separable gaussian passes
 };
 
 #endif // GAME_CLIENT_COMPONENTS_KINETIX_CLICKGUI_CLICKGUI_H

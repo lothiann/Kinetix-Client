@@ -20,13 +20,19 @@ public:
 
         // 7 weapons for AimBot: hammer, pistol, shotgun, grenade, laser, ninja, hook
         static constexpr int NUM_WEAPONS_AIM = 7;
-        // 6 weapons for TriggerBot: no hook (triggerbot does not aim, hook makes no sense)
-        static constexpr int NUM_WEAPONS_TRIGGER = 6;
+        // v1.56.292: 7 weapons for TriggerBot: hammer..ninja + Hook. The Hook
+        // entry is not a held weapon — it is the Hook trigger channel (own
+        // settings + Entity Mode). The per-weapon Trigger fire/hook dropdown is
+        // gone: weapons 0..5 always fire, index 6 always hooks.
+        static constexpr int NUM_WEAPONS_TRIGGER = 7;
+        // v1.56.292: per-entity settings — entity modes 1..5 (Hookable,
+        // Unhookable, Freeze, Death, Others) each own a settings block in both
+        // bots; entity mode 0 (Tee / players) keeps the Hook weapon block.
+        static constexpr int NUM_HOOK_ENTITIES = 5;
 
         struct SWeaponSettings
         {
                 bool m_Enabled = false;
-                int m_Trigger = 0; // 0=fire 1=hook (TriggerBot only)
                 int m_TriggerMode = 0; // 0=one_tick 1=hold 2=every_tick (TriggerBot only)
                 float m_Fov = 90.0f;
                 float m_Radius = 300.0f;
@@ -86,37 +92,98 @@ public:
 
         SWeaponSettings m_AimBotWeapons[NUM_WEAPONS_AIM];
         SWeaponSettings m_TriggerBotWeapons[NUM_WEAPONS_TRIGGER];
+        // v1.56.292: per-entity Hook settings — index 0 = Hookable ... 4 =
+        // Others (entity modes 1..5). Entity mode 0 (Tee, players) keeps the
+        // Hook weapon block above (m_AimBotWeapons[6] / m_TriggerBotWeapons[6]).
+        SWeaponSettings m_AimBotHookEnt[NUM_HOOK_ENTITIES];
+        SWeaponSettings m_TriggerBotHookEnt[NUM_HOOK_ENTITIES];
 
         int m_AimBotSelectedWeapon = 0;
         int m_TriggerBotSelectedWeapon = 0;
+        // v1.56.292: selected Hook entity (0=Tee 1=Hookable 2=Unhookable
+        // 3=Freeze 4=Death 5=Others) — a GUI selection like the Weapon
+        // dropdown (not saved). v1.56.294: it only picks the per-entity block
+        // that is being EDITED — all enabled Hook blocks are active channels.
+        int m_AimBotSelectedEntity = 0;
+        int m_TriggerBotSelectedEntity = 0;
+
+        // v1.56.292: settings block of Hook entity mode Entity (0 -> the Hook
+        // weapon block). Entity is clamped to 0..5.
+        SWeaponSettings &AimBotHookSettings(int Entity);
+        const SWeaponSettings &AimBotHookSettings(int Entity) const;
+        SWeaponSettings &TriggerBotHookSettings(int Entity);
+        const SWeaponSettings &TriggerBotHookSettings(int Entity) const;
 
         float GetWeaponRadius(int Weapon) const;
+        // v1.56.297: real reach for hooking TILES — the last FULL hook step.
+        // The engine walks the hook in hook_fire_speed steps from the launch
+        // offset PhysicalSize()*1.5 and clamps the last step to hook_length,
+        // setting HOOK_RETRACT_START *before* the tile check (gamecore.cpp), so
+        // a tile is never grabbed on that clamped tip — only on a full step:
+        //   42 + floor((380 - 42) / 80) * 80 = 362
+        //   (42 = PhysicalSize()*1.5, 380 = hook_length, 80 = hook_fire_speed)
+        // That is the red part of the hook-collision line; the yellow tip up to
+        // 380 is players-only (they are grabbed on the clamped step as well).
+        static constexpr float HOOK_TILE_REACH = 362.0f;
 
 private:
-        int m_LatencyCounter = 0;
         bool m_PrevFire = false;
         bool m_PrevHook = false;
-        bool m_TriggerBotWasActive = false; // edge detection for TriggerBot one_tick mode
-        int m_TriggerBotReleaseTick = -1; // one_tick: tick on which to release trigger (-1 = none)
+        // v1.56.291: set by FindTarget — true when the last call resolved to a
+        // map entity (block) target instead of a player. Callers must not index
+        // m_aClients[...] with the target id in that case.
+        bool m_FoundEntityTarget = false;
+        // v1.56.294: per-channel TriggerBot state — 0 = Fire (held weapon
+        // 0..5), 1..6 = the Hook channels (0 = Tee players, 1..5 = the
+        // per-entity blocks; the Hook runs independently of the held weapon,
+        // so every channel needs its own edge/latency state).
+        struct STriggerChannelState
+        {
+                bool m_WasActive = false; // edge detection for one_tick mode
+                int m_ReleaseTick = -1; // one_tick: tick on which to release trigger (-1 = none)
+                int m_LatencyCounter = 0; // random latency countdown
+        };
+        STriggerChannelState m_TriggerBotFireState;
+        STriggerChannelState m_TriggerBotHookStates[NUM_HOOK_ENTITIES + 1];
 
         void Update();
         void UpdateAimBot();
         void UpdateTriggerBot();
-        int FindTarget(const SWeaponSettings &Settings, int Weapon, int LocalId, const vec2 &MyPos, const vec2 &AimDir, const vec2 &AimPos, vec2 &outAimPoint);
+        // v1.56.292: one TriggerBot channel (fire or hook) — all per-weapon
+        // state lives in State so the two channels don't interfere.
+        void UpdateTriggerBotChannel(const SWeaponSettings &Settings, int Weapon, bool HookChannel, int LocalId, const vec2 &MyPos, vec2 AimDir, vec2 AimPos, int HeldWeapon, bool WeFrozen, int EntityMode, STriggerChannelState &State);
+        // EntityMode: 0 = players (normal player targeting), 1..5 = the Hook
+        // block category (same categories as Custom colors -> Entities).
+        int FindTarget(const SWeaponSettings &Settings, int Weapon, int LocalId, const vec2 &MyPos, const vec2 &AimDir, const vec2 &AimPos, vec2 &outAimPoint, int EntityMode = 0);
         bool IsVisible(const vec2 &From, const vec2 &To);
         // v1.56.263: InsertCharacter — true when another player's hitbox
         // intersects the segment (hooks/projectiles/lasers stop on the first
         // player touched, so a target behind a player is unreachable).
         bool LineBlockedByCharacter(int LocalId, int TargetId, const vec2 &From, const vec2 &To) const;
         // v1.56.263: show-raycast endpoint — clips the ray on walls AND players
-        // (used by FOV/radius "Use raycast (Show)" rendering).
-        vec2 RayShowEndPoint(const vec2 &From, const vec2 &To) const;
+        // (used by FOV/radius "Use raycast (Show)" rendering). v1.56.292:
+        // EntityMode != 0 additionally stops the ray at the first tile of the
+        // selected Hook entity (also non-solid: freeze/death), so the shown
+        // raycast matches the block being targeted.
+        vec2 RayShowEndPoint(const vec2 &From, const vec2 &To, int EntityMode = 0) const;
+        // v1.56.294: true when the CURRENT aim already sends the hook onto a
+        // tile of an ENABLED Hook entity category (before any other hook
+        // blocker) — the aim must not be moved then. On the block = the user
+        // pointed it there; Priority only applies while the aim is elsewhere.
+        bool HookAimAlreadyOnEntity(const vec2 &MyPos, const vec2 &AimDir) const;
         bool PassesFilters(int ClientId, int LocalId, const SWeaponSettings &Settings);
         void ApplyAim(int ClientId, const vec2 &MyPos, const SWeaponSettings &Settings, const vec2 &AimPoint);
         void FireWeapon();
         void DoHook();
-        void RenderFov(const SWeaponSettings &Settings, const vec2 &MyPos, const vec2 &AimDir, float Alpha);
-	void RenderRadius(const SWeaponSettings &Settings, const vec2 &MyPos, const vec2 &AimDir, float Alpha);
+        // v1.56.292: EntityMode != 0 makes the show-raycast stop on a tile of
+        // that entity category (mirrors the targeting of that channel).
+        void RenderFov(const SWeaponSettings &Settings, const vec2 &MyPos, const vec2 &AimDir, float Alpha, int EntityMode = 0);
+	// v1.56.291: block ("entity") targeting used when EntityMode != 0.
+	// Scans map tiles within FOV/radius for the selected category and returns a
+	// non-negative sentinel (0) with outAimPoint = the point where the hook ray
+	// meets the tile (the raycast angle; Jitter applied when set), or -1.
+	int FindEntityTarget(const SWeaponSettings &Settings, const vec2 &MyPos, const vec2 &AimDir, const vec2 &AimPos, vec2 &outAimPoint, int EntityMode);
+	void RenderRadius(const SWeaponSettings &Settings, const vec2 &MyPos, const vec2 &AimDir, float Alpha, int EntityMode = 0);
 
 	// v1.56.255: per-weapon settings persistence (cvars <-> structs, pull once
 	// at startup / push every tick). See aimbot.cpp.
