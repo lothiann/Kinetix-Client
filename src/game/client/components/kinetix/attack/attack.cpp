@@ -531,23 +531,17 @@ int CBotNet::MoveToSafety(CGameClient *pGame, CNetObj_PlayerInput *pInput, int D
 // STEP 4a — HOOK (the old AutoHook pulse)
 // =========================================================
 
-void CBotNet::UpdateHelpersHook(CGameClient *pGame, CNetObj_PlayerInput *pInput, int Dummy, CBotNetDummy &State,
-        int LocalID, int TargetID, const vec2 &MyPos, const vec2 &TPos, float Dist,
-        bool CanShoot, bool TargetIsRescue, bool tgtFrozen)
+void CBotNet::UpdateHelpersHook(CNetObj_PlayerInput *pInput, CBotNetDummy &State, float Dist,
+        bool CanShoot, bool TargetIsRescue, bool tgtFrozen, bool LineBlocked)
 {
         // The hook drags the target toward the bot: pulls a frozen ally out
         // of the freeze, drags an enemy in.  A frozen attack target is never
         // hooked — that would pull it back out of the freeze.
-        bool canHook = CanShoot && Dist < (float)g_Config.m_KxHookDist &&
-                (TargetIsRescue || !tgtFrozen) &&
-                pGame->Collision()->IntersectLine(MyPos, TPos, NULL, NULL) == 0;
-        if(canHook)
-        {
-                vec2 IntersectPos;
-                int HitPlayer = pGame->IntersectCharacter(MyPos, TPos, IntersectPos, LocalID);
-                if(HitPlayer != -1 && HitPlayer != TargetID)
-                        canHook = false;
-        }
+        // v1.56.299: the "behind a tee or a wall" gate is computed once by the
+        // caller (LineBlocked) and blocks the hook here, as it did before the
+        // Block -> Helpers refactor (IntersectLine + IntersectCharacter).
+        bool canHook = CanShoot && !LineBlocked && Dist < (float)g_Config.m_KxHookDist &&
+                (TargetIsRescue || !tgtFrozen);
         if(canHook)
         {
                 int TicksCycle = ComputeHookTicksCycle();
@@ -624,6 +618,23 @@ void CBotNet::UpdateHelpers(CGameClient *pGame, CNetObj_PlayerInput *pInput, int
         float dy = TPos.y - MyPos.y;
         float Dist = distance(MyPos, TPos);
 
+        // v1.56.299: "behind a tee or a wall" — don't attack or rescue through
+        // an obstacle.  Restored from the pre-refactor Block/Helpers behaviour:
+        // the old code checked IntersectLine (tiles) and IntersectCharacter
+        // (another tee in the way) before attacking/rescuing.  The line is
+        // probed once here and re-used by the hook and the hammer; the bot
+        // still plans/walks towards the target and re-arms as soon as the line
+        // clears.
+        const bool WallInLine = pGame->Collision()->IntersectLine(MyPos, TPos, NULL, NULL) != 0;
+        bool TeeInLine = false;
+        if(!WallInLine)
+        {
+                vec2 TeeHitPos;
+                const int HitPlayer = pGame->IntersectCharacter(MyPos, TPos, TeeHitPos, LocalID);
+                TeeInLine = HitPlayer != -1 && HitPlayer != TargetID;
+        }
+        const bool LineBlocked = WallInLine || TeeInLine;
+
         // Everything is shootable except the escorted main (an explicitly
         // targeted main is an enemy, not escort).
         bool CanShoot = !TargetIsMain || TargetExplicit;
@@ -660,11 +671,11 @@ void CBotNet::UpdateHelpers(CGameClient *pGame, CNetObj_PlayerInput *pInput, int
 
         // === HOOK === skipped while the plan replays — it manages the hook itself.
         if(!planActive)
-                UpdateHelpersHook(pGame, pInput, Dummy, State, LocalID, TargetID, MyPos, TPos, Dist, CanShoot, TargetIsRescue, tgtFrozen);
+                UpdateHelpersHook(pInput, State, Dist, CanShoot, TargetIsRescue, tgtFrozen, LineBlocked);
 
         // === FIRE === hammer at anything shootable in range — rescue allies
-        // included.  Plain fire++, it never fights the plan or the hook.
-        if(CanShoot && Dist < (float)g_Config.m_KxFireDist)
+        // included, but never through a wall or another tee (v1.56.299).
+        if(CanShoot && !LineBlocked && Dist < (float)g_Config.m_KxFireDist)
                 pInput->m_Fire++;
         if(pInput->m_Fire > 0)
                 pInput->m_WantedWeapon = 1;

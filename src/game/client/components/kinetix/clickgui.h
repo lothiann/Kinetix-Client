@@ -302,6 +302,12 @@ private:
         // Home position of slot N. v1.56.176: non-static (slot 5 depends on
         // the current height of the panel in slot 4).
         vec2 SlotHomePos(int slot) const;
+        // v1.56.299: effective panel layout offsets / drag-to-sort. The master
+        // KxUiSettingsOn toggle owns every ClickGUI setting: while it is off
+        // the built-in defaults are used, so saved UI settings never leak into
+        // the layout.
+        void EffectivePanelLayout(float &StartX, float &StartY, float &IndentX, float &IndentY) const;
+        bool EffectiveDragToSort() const;
         // v1.56.212: virtual screen size in virtual units (width preserves the
         // physical aspect ratio). Used by all layout/fit logic so panels scale
         // consistently at any resolution (DPI-independent).
@@ -393,7 +399,7 @@ private:
 
         void DestroyBlurFbos();
         void EnsureBlurFbos();
-        void RenderBlurBackground(); // capture + two separable gaussian passes
+        void RenderBlurBackground(float Fade); // capture + two separable gaussian passes
 };
 
 #endif // GAME_CLIENT_COMPONENTS_KINETIX_CLICKGUI_CLICKGUI_H

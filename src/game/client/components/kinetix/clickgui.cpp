@@ -106,7 +106,7 @@ enum class ERowType
 
 // v1.56.176: Kinetix client version string (shown in Info panel).
 // Bumped manually per release. Matches the commit-message version scheme.
-#define KINETIX_VERSION "v6"
+#define KINETIX_VERSION "v6 Alpha"
 
 struct SRow
 {
@@ -2597,6 +2597,25 @@ void CClickGui::ClipEnableVirtual(float x, float y, float w, float h)
         Graphics()->ClipEnable((int)roundf(x * s), (int)roundf(y * s), (int)roundf(w * s), (int)roundf(h * s));
 }
 
+// v1.56.299: effective panel layout offsets. The master KxUiSettingsOn toggle
+// owns every UI setting: while it is off the built-in defaults are used, so
+// Panels Start X/Y and the X/Y indentation no longer leak into the layout.
+void CClickGui::EffectivePanelLayout(float &StartX, float &StartY, float &IndentX, float &IndentY) const
+{
+        const bool On = g_Config.m_KxUiSettingsOn != 0;
+        StartX = On ? (float)g_Config.m_KxPanelsStartX : 60.0f;
+        StartY = On ? (float)g_Config.m_KxPanelsStartY : 90.0f;
+        IndentX = On ? (float)g_Config.m_KxPanelsIndentX : 30.0f;
+        IndentY = On ? (float)g_Config.m_KxPanelsIndentY : 12.0f;
+}
+
+// v1.56.299: drag-to-sort is a UI setting too — master off falls back to the
+// built-in default (enabled).
+bool CClickGui::EffectiveDragToSort() const
+{
+        return g_Config.m_KxUiSettingsOn != 0 ? (g_Config.m_KxDragToSort != 0) : true;
+}
+
 vec2 CClickGui::SlotHomePos(int slot) const
 {
         // v1.56.212: dynamic relocation of overflow panels.
@@ -2608,13 +2627,15 @@ vec2 CClickGui::SlotHomePos(int slot) const
         // panel, so a relocated panel never drags its lower neighbour with it.
         // Layout runs in the virtual 1920x1080 space (DPI-independent).
         const float screenW = VScreenWidth();
-// v1.56.260: configurable start offset (Settings → Panels Start X/Y).
+        // v1.56.260: configurable start offset (Settings → Panels Start X/Y).
         // v1.56.285: Panels X/Y-indentation = the gap BETWEEN panels, set
         // ABSOLUTELY by the sliders (0 = panels touch — no hidden base offset).
-        const float startX = (float)g_Config.m_KxPanelsStartX;
-        const float startY = (float)g_Config.m_KxPanelsStartY;
-        const float spacingX = std::max((float)g_Config.m_KxPanelsIndentX, 0.0f); // gap between panels horizontally
-        const float spacingY = std::max((float)g_Config.m_KxPanelsIndentY, 0.0f); // gap between rows vertically
+        // v1.56.299: these come through EffectivePanelLayout(), so the master
+        // UI toggle off falls back to the built-in defaults.
+        float startX, startY, indentX, indentY;
+        EffectivePanelLayout(startX, startY, indentX, indentY);
+        const float spacingX = std::max(indentX, 0.0f); // gap between panels horizontally
+        const float spacingY = std::max(indentY, 0.0f); // gap between rows vertically
 
         // Phase 1: determine which slots fit in the first row.
         int firstRowCount = 0;
@@ -3675,14 +3696,18 @@ void CClickGui::EnsureBlurFbos()
 // exact. Unlike the old sparse 2D tap cloud this kernel is sampled densely (one
 // texel per step), so there is no undersampling -> no "worm" ghosting, and the
 // radius maps continuously to sigma (no level switches, strictly monotonic).
-void CClickGui::RenderBlurBackground()
+void CClickGui::RenderBlurBackground(float Fade)
 {
 	EnsureBlurFbos();
 	if(!m_SceneFB.IsValid() || !m_BlurFbTmp.IsValid())
 		return;
 
-	const int Radius = std::clamp(g_Config.m_KxUiBgBlurRadius, 0, 100);
-	if(Radius <= 0)
+	// v1.56.289: the blur strength follows the ClickGUI open/close animation
+	// (m_AnimProgress is already the eased value, i.e. an ease-out curve), so
+	// the backdrop smoothly unblurs on close and blurs in on open instead of
+	// popping. Radius 0 means "no blur" and leaves the screen untouched.
+	const float Radius = std::clamp((float)g_Config.m_KxUiBgBlurRadius, 0.0f, 100.0f) * std::clamp(Fade, 0.0f, 1.0f);
+	if(Radius <= 0.05f)
 		return; // no blur requested: leave the screen untouched
 
 	// save the current projection (restored below for the panel rendering)
@@ -5580,7 +5605,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                         m_aPanelTarget[m_DragPanelIdx].y + HEADER_HEIGHT * 0.5f);
                 const int dragSlot = SlotOf(m_DragPanelIdx);
                 // v1.56.260: Drag-To-Sort off → free positioning, no slot swaps.
-                for(int s = 0; s < NUM_PANELS && g_Config.m_KxDragToSort; ++s)
+                for(int s = 0; s < NUM_PANELS && EffectiveDragToSort(); ++s)
                 {
                         if(s == dragSlot)
                                 continue;
@@ -5970,13 +5995,14 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
 
         Graphics()->TextureClear();
 
-        // v1.56.287: BG Blur — capture the rendered game behind the GUI and blur
-        // it via the FBO downsample chain, then draw it fullscreen (opaque) under
-        // the dim overlay. The blur appears/disappears together with the GUI
-        // itself (the captured frame's alpha channel is not reliable, so the
-        // blur is not faded per-frame).
+        // v1.56.287: BG Blur — capture the rendered game behind the GUI, blur it
+        // and draw it fullscreen under the dim overlay.
+        // v1.56.299: the blur strength is multiplied by the eased open/close
+        // progress, so the backdrop unblurs smoothly on close and blurs in on
+        // open instead of popping (the capture's alpha is unreliable, so the
+        // fade rides the radius, not the alpha).
         if(eased > 0.0f && g_Config.m_KxUiSettingsOn != 0 && g_Config.m_KxUiBgBlur != 0)
-                RenderBlurBackground();
+                RenderBlurBackground(eased);
 
         // Background dimming: black overlay, alpha = BG_DIM_ALPHA * eased.
         // Drawn FIRST so panels appear on top of it. Fades in/out smoothly.
@@ -6054,17 +6080,24 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                 static float s_LastIndentY = -1.0f;
                 static float s_LastStartX = -1.0f;
                 static float s_LastStartY = -1.0f;
-                const float indentX = (float)g_Config.m_KxPanelsIndentX;
-                const float indentY = (float)g_Config.m_KxPanelsIndentY;
-                const float startXCfg = (float)g_Config.m_KxPanelsStartX;
-                const float startYCfg = (float)g_Config.m_KxPanelsStartY;
+                static int s_LastUiOn = -1;
+                static int s_LastDragSort = -1;
+                // v1.56.299: compare the EFFECTIVE values, so flipping the master
+                // toggle off (back to defaults) also re-homes the panels.
+                float indentX, indentY, startXCfg, startYCfg;
+                EffectivePanelLayout(startXCfg, startYCfg, indentX, indentY);
+                const int UiOn = g_Config.m_KxUiSettingsOn != 0;
+                const int DragSort = EffectiveDragToSort() ? 1 : 0;
                 if(s_LastIndentX != indentX || s_LastIndentY != indentY ||
-                        s_LastStartX != startXCfg || s_LastStartY != startYCfg)
+                        s_LastStartX != startXCfg || s_LastStartY != startYCfg ||
+                        s_LastUiOn != UiOn || s_LastDragSort != DragSort)
                 {
                         s_LastIndentX = indentX;
                         s_LastIndentY = indentY;
                         s_LastStartX = startXCfg;
                         s_LastStartY = startYCfg;
+                        s_LastUiOn = UiOn;
+                        s_LastDragSort = DragSort;
                         g_ForceRehome = true;
                 }
         }
@@ -6101,7 +6134,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                         m_aPanelPos[i].x + (m_aPanelTarget[i].x - m_aPanelPos[i].x) * dragFactor,
                         m_aPanelPos[i].y + (m_aPanelTarget[i].y - m_aPanelPos[i].y) * dragFactor);
         }
-        else if(g_Config.m_KxDragToSort || g_ForceRehome)
+        else if(EffectiveDragToSort() || g_ForceRehome)
         {
                 // Non-dragged panel: glide toward its slot home (supports drag-to-sort
                 // swaps, and re-layout after a Panels Start/Indent X/Y change). When

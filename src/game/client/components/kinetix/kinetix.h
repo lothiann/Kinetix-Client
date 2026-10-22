@@ -713,11 +713,10 @@ private:
         // grid-flow fallback.  Returns true while the plan owns the inputs.
         bool MoveToHelpersTarget(CGameClient *pGame, CNetObj_PlayerInput *pInput, int Dummy, CBotNetDummy &State,
                 int LocalID, int TargetID, const vec2 &MyPos, const vec2 &TPos, float dx, bool TargetIsRescue);
-        // Old AutoHook pulse: hook the target within range/LOS with no other
-        // tee in between.  Frozen targets are hooked only for rescue.
-        void UpdateHelpersHook(CGameClient *pGame, CNetObj_PlayerInput *pInput, int Dummy, CBotNetDummy &State,
-                int LocalID, int TargetID, const vec2 &MyPos, const vec2 &TPos, float Dist,
-                bool CanShoot, bool TargetIsRescue, bool tgtFrozen);
+        // Old AutoHook pulse: hook the target within range when the line is
+        // clear (LineBlocked == no wall and no other tee in between).
+        void UpdateHelpersHook(CNetObj_PlayerInput *pInput, CBotNetDummy &State, float Dist,
+                bool CanShoot, bool TargetIsRescue, bool tgtFrozen, bool LineBlocked);
         // Shared field-walker for targeting and idle safety: refreshes the
         // per-tile flow, replays/builds the physics plan toward (gtx, gty)
         // and falls back to grid flow.  JumpProbeDX gives the jump-over probe
