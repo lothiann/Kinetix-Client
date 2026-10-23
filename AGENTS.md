@@ -34,4 +34,17 @@ NINJA="C:/Program Files/Microsoft Visual Studio/18/Community/Common7/IDE/CommonE
 "$NINJA" -C "out/build/x64-Release"
 ```
 
+### Готовый батник
+
+В репозитории лежит `scripts/build.bat`: сам вызывает `vcvars64.bat` (ищет через `vswhere`, затем стандартные пути VS 18/2022) и сам находит `ninja.exe`. Запускать можно из обычного cmd/PowerShell, окружение VS поднимается внутри.
+
+```
+scripts/build.bat            инкрементальная сборка (по умолчанию)
+scripts/build.bat build      то же (-b, --build)
+scripts/build.bat rebuild    clean + полная пересборка (-r, --rebuild)
+scripts/build.bat clean      только clean (-c, --clean)
+```
+
+`rebuild` обязателен при изменении порядка полей в `.h`-файлах.
+
 
