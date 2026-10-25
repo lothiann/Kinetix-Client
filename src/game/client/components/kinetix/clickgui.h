@@ -46,6 +46,7 @@ public:
 
         int Sizeof() const override { return sizeof(*this); }
 
+        void OnInit() override;
         void OnReset() override;
         void OnRender() override;
         bool OnInput(const IInput::CEvent &Event) override;
@@ -226,6 +227,9 @@ private:
         };
         SLayoutCache m_aLayoutCache[NUM_PANELS];
         bool m_aLayoutCacheDirty[NUM_PANELS] = {true, true, true, true, true, true, true, true, true, true, true}; // v1.56.176: 10 panels (v1.56.282: + Dummy Manager, v1.56.286: + Search)
+        // v6.1: set during CClickGui::OnInit() to prebuild the Yoga layout
+        // caches at client startup, so the first ClickGUI open does not hitch.
+        bool m_bPreloadLayout = false;
 
         // v1.56.90: Dummies Send toggle state (per-dummy, ClickGUI-local).
         bool m_aDummySendEnabled[MAX_DUMMIES] = {};

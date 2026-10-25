@@ -437,7 +437,10 @@ void CGameClient::OnInit()
                 // try to render a frame after each component, also flushes GPU uploads
                 if(m_Menus.IsInit())
                 {
-                        str_format(aLoadingMessage, std::size(aLoadingMessage), "%s [%d/%d]", CompCounter == NumComponents ? pLoadingMessageComponentsSpecial : pLoadingMessageComponents, CompCounter, NumComponents);
+                        const char *pComponentLoadingMessage = pLoadingMessageComponents;
+                if(m_vpAll[i] == &m_ClickGui)
+                        pComponentLoadingMessage = "Initializing ClickGUI";
+                str_format(aLoadingMessage, std::size(aLoadingMessage), "%s [%d/%d]", CompCounter == NumComponents ? pLoadingMessageComponentsSpecial : pComponentLoadingMessage, CompCounter, NumComponents);
                         m_Menus.RenderLoading(pLoadingDDNetCaption, aLoadingMessage, SkippedComps);
                         SkippedComps = 1;
                 }

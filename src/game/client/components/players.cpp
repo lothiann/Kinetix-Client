@@ -1187,6 +1187,11 @@ void CPlayers::OnRender()
                 }
         }
 
+	// Map layers set their own (parallax) screen rects and do not restore the
+	// camera rect afterwards. Relying on the ambient mapping culled players
+	// against a stale rect anchored near the map origin, which is why players
+	// were invisible in spectator mode and only appeared when zooming out.
+	Graphics()->MapScreenToInterface(GameClient()->m_Camera.m_Center.x, GameClient()->m_Camera.m_Center.y, GameClient()->m_Camera.m_Zoom);
 	// get screen edges to avoid rendering offscreen
 	CScreenRect ScreenRect = Graphics()->GetScreen();
 	// expand the edges to prevent popping in/out onscreen

@@ -573,6 +573,11 @@ void CAimBot::OnRender()
         if(LocalId < 0 || !pGame->m_Snap.m_aCharacters[LocalId].m_Active)
                 return;
 
+        // Perf: nothing to draw when both visual helpers are disabled. Skip the
+        // projection setup and weapon lookup below in that case.
+        if(!g_Config.m_KxAimBot && !g_Config.m_KxTriggerBot)
+                return;
+
         vec2 MyPos = pGame->m_aClients[LocalId].m_RenderPos;
         vec2 LocalAim = pGame->m_Controls.m_aMousePos[g_Config.m_ClDummy];
         vec2 AimDir = normalize(LocalAim);

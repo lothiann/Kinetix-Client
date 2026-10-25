@@ -2044,6 +2044,8 @@ static bool DummiesChildVisible(const SRow *pChildren, int childCount, int idx)
         if(idx < 0 || idx >= childCount)
                 return false;
         const SRow &row = pChildren[idx];
+        if(!row.pName)
+                return true;
         if(str_comp(row.pName, "Switch to Main") == 0)
                 return g_Config.m_ClDummy != 0; // visible only when on a dummy
         return true;
@@ -2056,6 +2058,8 @@ static bool DummyManagerRowVisible(const SRow *pRows, int rowCount, int idx)
         if(idx < 0 || idx >= rowCount)
                 return false;
         const SRow &row = pRows[idx];
+        if(!row.pName)
+                return true;
         if(str_comp(row.pName, "Reconnect (Apply)") == 0)
                 return g_ProxyDirty;
         return true;
@@ -3048,6 +3052,47 @@ void CClickGui::UpdateDummyManagerRows()
 //          + version id DDNET_VERSION_NUMBER (shown as "X.Y / id")
 // Spoofed: g_Config.m_KxSpoofClientName / m_KxSpoofClientVersion /
 //          m_KxSpoofGitHash + m_KxVersionSpoofId
+// v1.56.284: EXE SHA-256 — computed once per session from the running executable.
+// Extracted so it can run during CClickGui::OnInit() (client loading stage)
+// instead of stalling the first ClickGUI open.
+static void KxComputeExeHash()
+{
+        static bool s_Done = false;
+        if(s_Done)
+                return;
+        s_Done = true;
+        str_copy(g_InfoDyn_ExeHash, "EXE SHA-256: n/a", sizeof(g_InfoDyn_ExeHash));
+        char aExePath[1024];
+        aExePath[0] = 0;
+#ifdef _WIN32
+        GetModuleFileNameA(nullptr, aExePath, (unsigned long)sizeof(aExePath));
+#endif
+        if(aExePath[0])
+        {
+                IOHANDLE File = io_open(aExePath, IOFLAG_READ);
+                if(File)
+                {
+                        const long FileSize = io_length(File);
+                        if(FileSize > 0 && FileSize < 512 * 1024 * 1024)
+                        {
+                                unsigned char *pData = (unsigned char *)malloc((size_t)FileSize);
+                                if(pData)
+                                {
+                                        if(io_read(File, pData, (unsigned)FileSize) == (unsigned)FileSize)
+                                        {
+                                                SHA256_DIGEST Digest = sha256(pData, (size_t)FileSize);
+                                                char aHashStr[SHA256_MAXSTRSIZE];
+                                                sha256_str(Digest, aHashStr, sizeof(aHashStr));
+                                                str_format(g_InfoDyn_ExeHash, sizeof(g_InfoDyn_ExeHash), "EXE SHA-256: %s", aHashStr);
+                                        }
+                                        free(pData);
+                                }
+                        }
+                        io_close(File);
+                }
+        }
+}
+
 void CClickGui::UpdateInfoRows()
 {
         // Update rolling average FPS via EMA (smoothing factor 0.05 ~ 1s window at 60fps).
@@ -3106,42 +3151,8 @@ void CClickGui::UpdateInfoRows()
         str_format(g_InfoDyn_Fps, sizeof(g_InfoDyn_Fps), "AVG FPS: %d", (int)(m_AvgFps + 0.5f));
 
         // v1.56.284: EXE SHA-256 — computed once per session from the running
-        // executable file.
-        static bool s_ExeHashDone = false;
-        if(!s_ExeHashDone)
-        {
-                s_ExeHashDone = true;
-                str_copy(g_InfoDyn_ExeHash, "EXE SHA-256: n/a", sizeof(g_InfoDyn_ExeHash));
-                char aExePath[1024];
-                aExePath[0] = 0;
-        #ifdef _WIN32
-                GetModuleFileNameA(nullptr, aExePath, (unsigned long)sizeof(aExePath));
-        #endif
-                if(aExePath[0])
-                {
-                        IOHANDLE File = io_open(aExePath, IOFLAG_READ);
-                        if(File)
-                        {
-                                const long FileSize = io_length(File);
-                                if(FileSize > 0 && FileSize < 512 * 1024 * 1024)
-                                {
-                                        unsigned char *pData = (unsigned char *)malloc((size_t)FileSize);
-                                        if(pData)
-                                        {
-                                                if(io_read(File, pData, (unsigned)FileSize) == (unsigned)FileSize)
-                                                {
-                                                        SHA256_DIGEST Digest = sha256(pData, (size_t)FileSize);
-                                                        char aHashStr[SHA256_MAXSTRSIZE];
-                                                        sha256_str(Digest, aHashStr, sizeof(aHashStr));
-                                                        str_format(g_InfoDyn_ExeHash, sizeof(g_InfoDyn_ExeHash), "EXE SHA-256: %s", aHashStr);
-                                                }
-                                                free(pData);
-                                        }
-                                }
-                                io_close(File);
-                        }
-                }
-        }
+        // executable file (precomputed during CClickGui::OnInit()).
+        KxComputeExeHash();
 }
 
 void CClickGui::UpdatePathfinderLabels()
@@ -3609,6 +3620,25 @@ void CClickGui::HandleFileBrowserClick(vec2 mousePos)
 // CClickGui — component lifecycle
 // ============================================================================
 
+void CClickGui::OnInit()
+{
+        // Preload the ClickGUI during the client loading stage so the first
+        // open does not hitch:
+        //  - Dummy Manager row tables (lazily built otherwise)
+        //  - blur framebuffers (two full-resolution FBOs; expensive with blur on)
+        //  - EXE SHA-256 (reads the whole executable once)
+        //  - Yoga layout caches for all panels (the 93 yoga::Node allocations)
+        InitDummyManagerRows();
+        UpdateDummyManagerRows();
+        EnsureBlurFbos();
+        KxComputeExeHash();
+
+        m_bPreloadLayout = true;
+        for(int i = 0; i < NUM_PANELS; ++i)
+                RenderPanel(i, vec2(0.0f, 0.0f), 0.0f);
+        m_bPreloadLayout = false;
+}
+
 void CClickGui::OnReset()
 {
         m_AnimProgress = 0.0f;
@@ -3810,6 +3840,13 @@ void CClickGui::OnRender()
 {
 	const bool isOpen = g_Config.m_ClClickGui != 0;
 
+	// Perf: when fully closed (including the close animation), there is nothing
+	// to update or draw. The heavy panel/UI sync below used to run every frame
+	// and only bail out at the very end of this function, burning ~0.4ms/frame
+	// even with the ClickGUI closed.
+	if(!isOpen && m_AnimProgress <= 0.0f)
+		return;
+
 	// v1.56.255: UI persistence — accent/panel colors + rainbow + blackout.
 	// Pull once after settings.cfg is loaded, push every frame so changes
 	// are written back and saved on exit.
@@ -3950,6 +3987,12 @@ void CClickGui::OnRender()
         // for each panel and initialize panel positions to home (if first open).
         if(isOpen && !m_WasOpen)
         {
+                // Rows are initialized lazily; with the early-out at the top of
+                // OnRender the per-frame sync at the end of the function no longer
+                // runs while closed, so make sure the Dummy Manager rows exist
+                // before the visibility pass below dereferences them.
+                UpdateDummyManagerRows();
+
                 const float sw = VScreenWidth();
                 const float sh = VScreenHeight();
                 for(int i = 0; i < NUM_PANELS; ++i)
@@ -9011,6 +9054,11 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                 for(int i = 0; i < rowCount; ++i)
                         rowNodes[i] = cache.aRowNodes[i];
         }
+
+        // Preload pass (CClickGui::OnInit): only the layout cache is needed,
+        // skip all drawing.
+        if(m_bPreloadLayout)
+                return;
 
 // v1.56.61: scale body height by the visibility (panel open/close).
 	// v1.56.284: the collapse anim is exponentially smoothed — use it raw
