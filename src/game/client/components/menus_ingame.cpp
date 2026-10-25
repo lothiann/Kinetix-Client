@@ -37,6 +37,7 @@
 #include <game/client/ui_scrollregion.h>
 #include <game/localization.h>
 
+#include <algorithm>
 #include <chrono>
 
 using namespace std::chrono_literals;
@@ -671,8 +672,7 @@ void CMenus::RenderServerInfo(CUIRect MainView)
         const float FontSizeTitle = 32.0f;
         const float FontSizeBody = 20.0f;
 
-        CServerInfo CurrentServerInfo;
-        Client()->GetServerInfo(&CurrentServerInfo);
+	const CServerInfo &CurrentServerInfo = Client()->ServerInfo();
 
         CUIRect ServerInfo, GameInfo, Motd;
         MainView.Draw(ms_ColorTabbarActive, IGraphics::CORNER_B, 10.0f);
@@ -808,43 +808,45 @@ void CMenus::RenderServerInfo(CUIRect MainView)
                 }
         }
 
-        if(GameClient()->m_GameInfo.m_DDRaceTeam)
-        {
-                const char *pTeamMode = nullptr;
-                switch(Config()->m_SvTeam)
-                {
-                case SV_TEAM_FORBIDDEN:
-                        pTeamMode = Localize("forbidden", "Team status");
-                        break;
-                case SV_TEAM_ALLOWED:
-                        if(g_Config.m_SvSoloServer)
-                                pTeamMode = Localize("solo", "Team status");
-                        else
-                                pTeamMode = Localize("allowed", "Team status");
-                        break;
-                case SV_TEAM_MANDATORY:
-                        pTeamMode = Localize("required", "Team status");
-                        break;
-                case SV_TEAM_FORCED_SOLO:
-                        pTeamMode = Localize("solo", "Team status");
-                        break;
-                default:
-                        dbg_assert_failed("unknown team mode");
-                }
-                if((Config()->m_SvTeam == SV_TEAM_ALLOWED || Config()->m_SvTeam == SV_TEAM_MANDATORY) && (Config()->m_SvMinTeamSize != DefaultConfig::SvMinTeamSize || Config()->m_SvMaxTeamSize != DefaultConfig::SvMaxTeamSize))
-                {
-                        if(Config()->m_SvMinTeamSize != DefaultConfig::SvMinTeamSize && Config()->m_SvMaxTeamSize != DefaultConfig::SvMaxTeamSize)
-                                str_format(aBuf, sizeof(aBuf), "%s: %s (%s %d, %s %d)", Localize("Teams"), pTeamMode, Localize("minimum", "Team size"), Config()->m_SvMinTeamSize, Localize("maximum", "Team size"), Config()->m_SvMaxTeamSize);
-                        else if(Config()->m_SvMinTeamSize != DefaultConfig::SvMinTeamSize)
-                                str_format(aBuf, sizeof(aBuf), "%s: %s (%s %d)", Localize("Teams"), pTeamMode, Localize("minimum", "Team size"), Config()->m_SvMinTeamSize);
-                        else
-                                str_format(aBuf, sizeof(aBuf), "%s: %s (%s %d)", Localize("Teams"), pTeamMode, Localize("maximum", "Team size"), Config()->m_SvMaxTeamSize);
-                }
-                else
-                        str_format(aBuf, sizeof(aBuf), "%s: %s", Localize("Teams"), pTeamMode);
-                GameInfo.HSplitTop(FontSizeBody, &Label, &GameInfo);
-                Ui()->DoLabel(&Label, aBuf, FontSizeBody, TEXTALIGN_ML);
-        }
+	if(GameClient()->m_GameInfo.m_DDRaceTeam)
+	{
+		const char *pTeamMode = nullptr;
+		switch(Config()->m_SvTeam)
+		{
+		case SV_TEAM_FORBIDDEN:
+			pTeamMode = Localize("forbidden", "Team status");
+			break;
+		case SV_TEAM_ALLOWED:
+			if(g_Config.m_SvSoloServer)
+				pTeamMode = Localize("solo", "Team status");
+			else
+				pTeamMode = Localize("allowed", "Team status");
+			break;
+		case SV_TEAM_MANDATORY:
+			pTeamMode = Localize("required", "Team status");
+			break;
+		case SV_TEAM_FORCED_SOLO:
+			pTeamMode = Localize("solo", "Team status");
+			break;
+		default:
+			dbg_assert_failed("unknown team mode");
+		}
+		int MinTeamSize = GameClient()->MinTeamSize();
+		int MaxTeamSize = GameClient()->MaxTeamSize();
+		if((Config()->m_SvTeam == SV_TEAM_ALLOWED || Config()->m_SvTeam == SV_TEAM_MANDATORY) && (MinTeamSize != DefaultConfig::SvMinTeamSize || MaxTeamSize != DefaultConfig::SvMaxTeamSize))
+		{
+			if(MinTeamSize != DefaultConfig::SvMinTeamSize && MaxTeamSize != DefaultConfig::SvMaxTeamSize)
+				str_format(aBuf, sizeof(aBuf), "%s: %s (%s %d, %s %d)", Localize("Teams"), pTeamMode, Localize("minimum", "Team size"), MinTeamSize, Localize("maximum", "Team size"), MaxTeamSize);
+			else if(MinTeamSize != DefaultConfig::SvMinTeamSize)
+				str_format(aBuf, sizeof(aBuf), "%s: %s (%s %d)", Localize("Teams"), pTeamMode, Localize("minimum", "Team size"), MinTeamSize);
+			else
+				str_format(aBuf, sizeof(aBuf), "%s: %s (%s %d)", Localize("Teams"), pTeamMode, Localize("maximum", "Team size"), MaxTeamSize);
+		}
+		else
+			str_format(aBuf, sizeof(aBuf), "%s: %s", Localize("Teams"), pTeamMode);
+		GameInfo.HSplitTop(FontSizeBody, &Label, &GameInfo);
+		Ui()->DoLabel(&Label, aBuf, FontSizeBody, TEXTALIGN_ML);
+	}
 
         GameInfo.HSplitTop(FontSizeBody, &Label, &GameInfo);
         str_format(aBuf, sizeof(aBuf), "%s: %d/%d", Localize("Players"), GameClient()->m_Snap.m_NumPlayers, CurrentServerInfo.m_MaxClients);
@@ -1234,18 +1236,39 @@ void CMenus::RenderInGameNetwork(CUIRect MainView)
         }
         GameClient()->m_Tooltips.DoToolTip(&s_FavoritesButton, &Button, Localize("Favorites"));
 
-        size_t FavoriteCommunityIndex = 0;
-        static CButtonContainer s_aFavoriteCommunityButtons[5];
-        static_assert(std::size(s_aFavoriteCommunityButtons) == (size_t)PAGE_FAVORITE_COMMUNITY_5 - PAGE_FAVORITE_COMMUNITY_1 + 1);
-        for(const CCommunity *pCommunity : ServerBrowser()->FavoriteCommunities())
-        {
-                TabBar.VSplitLeft(75.0f, &Button, &TabBar);
-                const int Page = PAGE_FAVORITE_COMMUNITY_1 + FavoriteCommunityIndex;
-                if(DoButton_MenuTab(&s_aFavoriteCommunityButtons[FavoriteCommunityIndex], FontIcon::ELLIPSIS, g_Config.m_UiPage == Page, &Button, IGraphics::CORNER_NONE, nullptr, nullptr, nullptr, nullptr, 10.0f, m_CommunityIcons.Find(pCommunity->Id())))
-                {
-                        NewPage = Page;
-                }
-                GameClient()->m_Tooltips.DoToolTip(&s_aFavoriteCommunityButtons[FavoriteCommunityIndex], &Button, pCommunity->Name());
+	const int MaxPage = PAGE_FAVORITES + ServerBrowser()->FavoriteCommunities().size();
+	if(
+		!Ui()->IsPopupOpen() &&
+		CLineInput::GetActiveInput() == nullptr &&
+		(g_Config.m_UiPage >= PAGE_INTERNET && g_Config.m_UiPage <= MaxPage) &&
+		(m_MenuPage >= PAGE_INTERNET && m_MenuPage <= PAGE_FAVORITE_COMMUNITY_5))
+	{
+		if(Input()->KeyPress(KEY_RIGHT))
+		{
+			NewPage = g_Config.m_UiPage + 1;
+			if(NewPage > MaxPage)
+				NewPage = PAGE_INTERNET;
+		}
+		if(Input()->KeyPress(KEY_LEFT))
+		{
+			NewPage = g_Config.m_UiPage - 1;
+			if(NewPage < PAGE_INTERNET)
+				NewPage = MaxPage;
+		}
+	}
+
+	size_t FavoriteCommunityIndex = 0;
+	static CButtonContainer s_aFavoriteCommunityButtons[5];
+	static_assert(std::size(s_aFavoriteCommunityButtons) == (size_t)PAGE_FAVORITE_COMMUNITY_5 - PAGE_FAVORITE_COMMUNITY_1 + 1);
+	for(const CCommunity *pCommunity : ServerBrowser()->FavoriteCommunities())
+	{
+		TabBar.VSplitLeft(75.0f, &Button, &TabBar);
+		const int Page = PAGE_FAVORITE_COMMUNITY_1 + FavoriteCommunityIndex;
+		if(DoButton_MenuTab(&s_aFavoriteCommunityButtons[FavoriteCommunityIndex], FontIcon::ELLIPSIS, g_Config.m_UiPage == Page, &Button, IGraphics::CORNER_NONE, nullptr, nullptr, nullptr, nullptr, 10.0f, m_CommunityIcons.Find(pCommunity->Id())))
+		{
+			NewPage = Page;
+		}
+		GameClient()->m_Tooltips.DoToolTip(&s_aFavoriteCommunityButtons[FavoriteCommunityIndex], &Button, pCommunity->Name());
 
                 ++FavoriteCommunityIndex;
                 if(FavoriteCommunityIndex >= std::size(s_aFavoriteCommunityButtons))
@@ -1625,13 +1648,15 @@ void CMenus::RenderGhost(CUIRect MainView)
 
         Status.VSplitRight(120.0f, &Status, &Button);
 
-        static CButtonContainer s_DeleteButton;
-        if(DoButton_Menu(&s_DeleteButton, Localize("Delete"), 0, &Button))
-        {
-                if(pGhost->Active())
-                        GameClient()->m_Ghost.Unload(pGhost->m_Slot);
-                DeleteGhostItem(s_SelectedIndex);
-        }
+	static CButtonContainer s_DeleteButton;
+	if(DoButton_Menu(&s_DeleteButton, Localize("Delete"), 0, &Button))
+	{
+		if(pGhost->Active())
+			GameClient()->m_Ghost.Unload(pGhost->m_Slot);
+		DeleteGhostItem(s_SelectedIndex);
+		s_SelectedIndex = std::min(s_SelectedIndex, (int)m_vGhosts.size() - 1);
+		return;
+	}
 
         Status.VSplitRight(5.0f, &Status, nullptr);
 
@@ -1651,9 +1676,9 @@ void CMenus::RenderIngameHint()
         if(g_Config.m_ClTouchControls)
                 return;
 
-        float Width = 300 * Graphics()->ScreenAspect();
-        Graphics()->MapScreen(0, 0, Width, 300);
-        TextRender()->TextColor(1, 1, 1, 1);
-        TextRender()->Text(5, 280, 5, Localize("Menu opened. Press Esc key again to close menu."), -1.0f);
-        Ui()->MapScreen();
+	float Width = 300 * Graphics()->ScreenAspect();
+	Graphics()->MapScreenToSize(Width, 300);
+	TextRender()->TextColor(1, 1, 1, 1);
+	TextRender()->Text(5, 280, 5, Localize("Menu opened. Press Esc key again to close menu."), -1.0f);
+	Ui()->MapScreen();
 }

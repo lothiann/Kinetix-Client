@@ -339,9 +339,10 @@ void CTas::OnRender()
 		Prev.m_AttackTick = Cur.m_AttackTick - 1;
 	}
 
+	const CScreenRect ScreenRect = Graphics()->GetScreen();
 	if(Cur.m_HookState > 0)
-		pGame->m_Players.RenderHook(&Prev, &Cur, &Info, -1, IntraAlpha);
-	pGame->m_Players.RenderPlayer(&Prev, &Cur, &Info, -1, IntraAlpha);
+		pGame->m_Players.RenderHook(ScreenRect, &Prev, &Cur, &Info, -1, IntraAlpha);
+	pGame->m_Players.RenderPlayer(ScreenRect, &Prev, &Cur, &Info, -1, IntraAlpha);
 }
 
 void CTas::RenderFreezeBar()

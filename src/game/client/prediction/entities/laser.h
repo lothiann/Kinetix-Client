@@ -27,7 +27,7 @@ public:
 	// Full state restore for the TAS rewind (the snapshot ctor only knows the
 	// net data — the live energy/direction/bounce state is private).
 	void Restore(const CLaserData &Data, vec2 Dir, vec2 PrevPos, float Energy, int Bounces, int Owner, bool ZeroEnergyBounce);
-	CLaser(CGameWorld *pGameWorld, int Id, CLaserData *pLaser);
+	CLaser(CGameWorld *pGameWorld, int Id, const CLaserData *pLaser);
 	bool Match(CLaser *pLaser);
 	CLaserData GetData() const;
 

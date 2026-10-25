@@ -61,21 +61,24 @@ public:
                 {
                         m_Active = false;
 
-                        m_aName[0] = '\0';
-                        m_aClan[0] = '\0';
-                        m_Country = 0;
-                        m_Team = 0;
-                        m_PlayerFlags7 = 0;
-                }
+			m_aName[0] = '\0';
+			m_aClan[0] = '\0';
+			m_Country = CountryCode::DEFAULT;
+			m_Team = 0;
+			m_PlayerFlags7 = 0;
+		}
 
                 bool m_Active;
 
-                char m_aName[MAX_NAME_LENGTH];
-                char m_aClan[MAX_CLAN_LENGTH];
-                int m_Country;
-                int m_Team;
-                int m_PlayerFlags7;
-        };
+		char m_aName[MAX_NAME_LENGTH];
+		char m_aClan[MAX_CLAN_LENGTH];
+		/**
+		 * Country code in ISO 3166-1 numeric.
+		 */
+		int m_Country;
+		int m_Team;
+		int m_PlayerFlags7;
+	};
 
         const protocol7::CNetObj_PlayerInfoRace *m_apPlayerInfosRace[MAX_CLIENTS];
         CClientData m_aClients[MAX_CLIENTS];

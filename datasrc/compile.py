@@ -1,8 +1,8 @@
 import argparse
-import content
-import network
 
 from datatypes import EmitDefinition, EmitTypeDeclaration
+import content
+import network
 
 
 def create_enum_table(names, num, start=0):
@@ -48,19 +48,18 @@ def gen_network_header():
 	print("#ifndef GENERATED_PROTOCOL_H")
 	print("#define GENERATED_PROTOCOL_H")
 	print("class CUnpacker;")
-	print("#include <base/cxx.h>")
 	print("#include <engine/message.h>")
 	print(network.RawHeader)
 
 	for e in network.Enums:
 		for line in create_enum_table([f"{e.name}_{v}" for v in e.values], f"NUM_{e.name}S", e.start):
 			print(line)
-		print("")
+		print()
 
 	for e in network.Flags:
 		for line in create_flags_table([f"{e.name}_{v}" for v in e.values]):
 			print(line)
-		print("")
+		print()
 
 	non_extended = [o for o in network.Objects if o.ex is None]
 	extended = [o for o in network.Objects if o.ex is not None]
@@ -68,21 +67,21 @@ def gen_network_header():
 		print(line)
 	for line in create_enum_table(["__NETOBJTYPE_UUID_HELPER=OFFSET_GAME_UUID-1"] + [o.enum_name for o in extended], "OFFSET_NETMSGTYPE_UUID"):
 		print(line)
-	print("")
+	print()
 
 	non_extended = [o for o in network.Messages if o.ex is None]
 	extended = [o for o in network.Messages if o.ex is not None]
 	for line in create_enum_table(["NETMSGTYPE_EX"] + [o.enum_name for o in non_extended], "NUM_NETMSGTYPES"):
 		print(line)
-	print("")
+	print()
 	for line in create_enum_table(["__NETMSGTYPE_UUID_HELPER=OFFSET_NETMSGTYPE_UUID-1"] + [o.enum_name for o in extended], "OFFSET_MAPITEMTYPE_UUID"):
 		print(line)
-	print("")
+	print()
 
 	for item in network.Objects + network.Messages:
 		for line in item.emit_declaration():
 			print(line)
-		print("")
+		print()
 
 	EmitEnum([f"SOUND_{i.name.value.upper()}" for i in content.container.sounds.items], "NUM_SOUNDS")
 	EmitEnum([f"WEAPON_{i.name.value.upper()}" for i in content.container.weapons.id.items], "NUM_WEAPONS")
@@ -312,13 +311,13 @@ void CNetObjHandler::DebugDumpSnapshot(const CSnapshot *pSnap) const
 		"""\
 void *CNetObjHandler::SecureUnpackObj(int Type, CUnpacker *pUnpacker)
 {
-	m_pObjFailedOn = 0;
+	m_pObjFailedOn = nullptr;
 	switch(Type)
 	{
 	case NETOBJTYPE_EX:
 	{
 		const unsigned char *pPtr = pUnpacker->GetRaw(sizeof(CUuid));
-		if(pPtr != 0)
+		if(pPtr != nullptr)
 		{
 			mem_copy(m_aUnpackedData, pPtr, sizeof(CUuid));
 		}
@@ -343,7 +342,7 @@ void *CNetObjHandler::SecureUnpackObj(int Type, CUnpacker *pUnpacker)
 		m_pObjFailedOn = "(unpack error)";
 
 	if(m_pObjFailedOn)
-		return 0;
+		return nullptr;
 	m_pObjFailedOn = "";
 	return m_aUnpackedData;
 }
@@ -357,7 +356,7 @@ void *CNetObjHandler::SecureUnpackObj(int Type, CUnpacker *pUnpacker)
 		"""\
 void *CNetObjHandler::SecureUnpackMsg(int Type, CUnpacker *pUnpacker)
 {
-	m_pMsgFailedOn = 0;
+	m_pMsgFailedOn = nullptr;
 	switch(Type)
 	{
 	"""
@@ -379,7 +378,7 @@ void *CNetObjHandler::SecureUnpackMsg(int Type, CUnpacker *pUnpacker)
 		m_pMsgFailedOn = "(unpack error)";
 
 	if(m_pMsgFailedOn)
-		return 0;
+		return nullptr;
 	m_pMsgFailedOn = "";
 	return m_aUnpackedData;
 }
@@ -449,8 +448,8 @@ def gen_common_content_types_header():
 		order = []
 		for line in contentlines:
 			line = line.strip()
-			if line[:6] == "class ".encode() and "(Struct)".encode() in line:
-				order += [line.split()[1].split("(".encode())[0].decode("ascii")]
+			if line[:6] == b"class " and b"(Struct)" in line:
+				order += [line.split()[1].split(b"(")[0].decode("ascii")]
 		for name in order:
 			EmitTypeDeclaration(content.__dict__[name])
 

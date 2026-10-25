@@ -137,7 +137,7 @@ void CMenus::RenderDemoPlayer(CUIRect MainView)
 	static_assert(SKIP_DURATIONS_SECONDS[DEFAULT_SKIP_DURATION_INDEX] == 5.0f);
 	static_assert(std::size(SKIP_DURATIONS_SECONDS) == std::size(SKIP_DURATIONS_STRINGS));
 
-	const int DemoLengthSeconds = TotalTicks / Client()->GameTickSpeed();
+	const float DemoLengthSeconds = TotalTicks / static_cast<float>(Client()->GameTickSpeed());
 	int NumDurationLabels = 0;
 	for(size_t i = 0; i < std::size(SKIP_DURATIONS_SECONDS); ++i)
 	{
@@ -145,8 +145,14 @@ void CMenus::RenderDemoPlayer(CUIRect MainView)
 			break;
 		NumDurationLabels = i + 1;
 	}
-	if(NumDurationLabels > 0 && m_SkipDurationIndex >= NumDurationLabels)
-		m_SkipDurationIndex = maximum(0, NumDurationLabels - 1);
+	if(NumDurationLabels < 2)
+	{
+		m_SkipDurationIndex = 0;
+	}
+	else if(m_SkipDurationIndex >= NumDurationLabels)
+	{
+		m_SkipDurationIndex = NumDurationLabels - 1;
+	}
 
 	// handle keyboard shortcuts independent of active menu
 	float PositionToSeek = -1.0f;
@@ -186,20 +192,38 @@ void CMenus::RenderDemoPlayer(CUIRect MainView)
 		if(Input()->KeyPress(KEY_LEFT) || Input()->KeyPress(KEY_J))
 		{
 			if(Input()->ModifierIsPressed())
+			{
 				PositionToSeek = FindPreviousMarkerPosition();
+			}
 			else if(Input()->ShiftIsPressed())
-				m_SkipDurationIndex = maximum(m_SkipDurationIndex - 1, 0);
+			{
+				if(m_SkipDurationIndex > 0)
+				{
+					--m_SkipDurationIndex;
+				}
+			}
 			else
+			{
 				TimeToSeek = -SKIP_DURATIONS_SECONDS[m_SkipDurationIndex];
+			}
 		}
 		else if(Input()->KeyPress(KEY_RIGHT) || Input()->KeyPress(KEY_L))
 		{
 			if(Input()->ModifierIsPressed())
+			{
 				PositionToSeek = FindNextMarkerPosition();
+			}
 			else if(Input()->ShiftIsPressed())
-				m_SkipDurationIndex = minimum(m_SkipDurationIndex + 1, NumDurationLabels - 1);
+			{
+				if(m_SkipDurationIndex < NumDurationLabels - 1)
+				{
+					++m_SkipDurationIndex;
+				}
+			}
 			else
+			{
 				TimeToSeek = SKIP_DURATIONS_SECONDS[m_SkipDurationIndex];
+			}
 		}
 
 		// seek to 0-90%
@@ -992,7 +1016,7 @@ void CMenus::DemolistPopulate()
 				CDemoItem Item;
 				str_copy(Item.m_aFilename, "demos");
 				Storage()->GetCompletePath(StorageType, "demos", Item.m_aName, sizeof(Item.m_aName));
-				str_append(Item.m_aName, "/", sizeof(Item.m_aName));
+				str_append(Item.m_aName, "/");
 				Item.m_InfosLoaded = false;
 				Item.m_Valid = false;
 				Item.m_Date = 0;
@@ -1697,12 +1721,19 @@ void CMenus::PopupConfirmPlayDemo()
 	}
 }
 
+void CMenus::DemolistSelectNeighbor()
+{
+	const int NeighborIndex = m_DemolistSelectedIndex + 1 < (int)m_vpFilteredDemos.size() ? m_DemolistSelectedIndex + 1 : m_DemolistSelectedIndex - 1;
+	str_copy(m_aCurrentDemoSelectionName, NeighborIndex >= 0 ? m_vpFilteredDemos[NeighborIndex]->m_aName : "");
+}
+
 void CMenus::PopupConfirmDeleteDemo()
 {
 	char aBuf[IO_MAX_PATH_LENGTH];
 	str_format(aBuf, sizeof(aBuf), "%s/%s", m_aCurrentDemoFolder, m_vpFilteredDemos[m_DemolistSelectedIndex]->m_aFilename);
 	if(Storage()->RemoveFile(aBuf, m_vpFilteredDemos[m_DemolistSelectedIndex]->m_StorageType))
 	{
+		DemolistSelectNeighbor();
 		DemolistPopulate();
 		DemolistOnUpdate(false);
 	}
@@ -1720,6 +1751,7 @@ void CMenus::PopupConfirmDeleteFolder()
 	str_format(aBuf, sizeof(aBuf), "%s/%s", m_aCurrentDemoFolder, m_vpFilteredDemos[m_DemolistSelectedIndex]->m_aFilename);
 	if(Storage()->RemoveFolder(aBuf, m_vpFilteredDemos[m_DemolistSelectedIndex]->m_StorageType))
 	{
+		DemolistSelectNeighbor();
 		DemolistPopulate();
 		DemolistOnUpdate(false);
 	}

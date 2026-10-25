@@ -57,7 +57,7 @@
 #include <engine/client/client.h>
 #include <base/vmath.h>
 #include <engine/http.h>
-#include <engine/shared/http.h>
+#include <engine/client/keyboard.h>
 
 #include <lua.hpp>
 #include <sol.hpp>
@@ -276,7 +276,7 @@ void CCodeExec::RegisterRawAPI()
 
         // ===================== CTeamsCore =====================
         lua.new_usertype<CTeamsCore>("CTeamsCore",
-                "m_IsDDRace16", &CTeamsCore::m_IsDDRace16,
+                "m_NumDDRaceTeams", &CTeamsCore::m_NumDDRaceTeams,
                 "SameTeam", &CTeamsCore::SameTeam,
                 "CanKeepHook", &CTeamsCore::CanKeepHook,
                 "CanCollide", &CTeamsCore::CanCollide,
@@ -1498,16 +1498,16 @@ void CCodeExec::RegisterRawAPI()
         //   net.get(url[, timeout]) / net.post(url, body[, timeout])
         //   net.post_json(url, json[, headers][, timeout])
         // -> job: job:done() job:status() job:result() job:code() job:abort()
-        auto NetPrep = [](const std::shared_ptr<CHttpRequest> &pReq, int TimeoutSec) {
+        auto NetPrep = [](const std::shared_ptr<IHttpRequest> &pReq, int TimeoutSec) {
                 pReq->WriteToMemory();
                 pReq->LogProgress(HTTPLOG::FAILURE);
                 pReq->FailOnErrorStatus(false);
                 pReq->MaxResponseSize(16 * 1024 * 1024);
                 pReq->Timeout(CTimeout{4000, TimeoutSec * 1000, 1, 30});
         };
-        lua.new_usertype<CHttpRequest>("NetJob",
-                "done", [](CHttpRequest &R) -> bool { return R.Done(); },
-                "status", [](CHttpRequest &R) -> std::string {
+        lua.new_usertype<IHttpRequest>("NetJob",
+                "done", [](IHttpRequest &R) -> bool { return R.Done(); },
+                "status", [](IHttpRequest &R) -> std::string {
                         const EHttpState St = R.State();
                         if(St == EHttpState::QUEUED)
                                 return "queued";
@@ -1519,7 +1519,7 @@ void CCodeExec::RegisterRawAPI()
                                 return "aborted";
                         return "error";
                 },
-                "result", [](CHttpRequest &R) -> std::string {
+                "result", [](IHttpRequest &R) -> std::string {
                         if(R.State() != EHttpState::DONE)
                                 return std::string();
                         unsigned char *pData = nullptr;
@@ -1527,29 +1527,29 @@ void CCodeExec::RegisterRawAPI()
                         R.Result(&pData, &Len);
                         return pData ? std::string((const char *)pData, Len) : std::string();
                 },
-                "code", [](CHttpRequest &R) -> int {
+                "code", [](IHttpRequest &R) -> int {
                         if(R.State() != EHttpState::DONE)
                                 return 0;
                         return R.StatusCode();
                 },
-                "abort", [](CHttpRequest &R) { R.Abort(); }
+                "abort", [](IHttpRequest &R) { R.Abort(); }
         );
         auto net = lua["net"].get_or_create<sol::table>();
-        net.set_function("get", [this, NetPrep](const std::string &Url, sol::optional<int> TimeoutSec) -> std::shared_ptr<CHttpRequest> {
-                auto pReq = std::make_shared<CHttpRequest>(Url.c_str());
+        net.set_function("get", [this, NetPrep](const std::string &Url, sol::optional<int> TimeoutSec) -> std::shared_ptr<IHttpRequest> {
+                std::shared_ptr<IHttpRequest> pReq = HttpGet(Url.c_str());
                 NetPrep(pReq, TimeoutSec.value_or(30));
                 Http()->Run(pReq);
                 return pReq;
         });
-        net.set_function("post", [this, NetPrep](const std::string &Url, const std::string &Body, sol::optional<int> TimeoutSec) -> std::shared_ptr<CHttpRequest> {
-                auto pReq = std::make_shared<CHttpRequest>(Url.c_str());
+        net.set_function("post", [this, NetPrep](const std::string &Url, const std::string &Body, sol::optional<int> TimeoutSec) -> std::shared_ptr<IHttpRequest> {
+                std::shared_ptr<IHttpRequest> pReq = HttpGet(Url.c_str());
                 NetPrep(pReq, TimeoutSec.value_or(30));
                 pReq->Post((const unsigned char *)Body.data(), Body.size());
                 Http()->Run(pReq);
                 return pReq;
         });
-        net.set_function("post_json", [this, NetPrep](const std::string &Url, const std::string &Json, sol::object Headers, sol::optional<int> TimeoutSec) -> std::shared_ptr<CHttpRequest> {
-                auto pReq = std::make_shared<CHttpRequest>(Url.c_str());
+        net.set_function("post_json", [this, NetPrep](const std::string &Url, const std::string &Json, sol::object Headers, sol::optional<int> TimeoutSec) -> std::shared_ptr<IHttpRequest> {
+                std::shared_ptr<IHttpRequest> pReq = HttpGet(Url.c_str());
                 NetPrep(pReq, TimeoutSec.value_or(30));
                 pReq->PostJson(Json.c_str());
                 if(Headers.is<sol::table>())
@@ -1774,17 +1774,16 @@ void CCodeExec::RegisterRawAPI()
         gfx.set_function("window_width", [this]() -> float { return (float)Graphics()->WindowWidth(); });
         gfx.set_function("window_height", [this]() -> float { return (float)Graphics()->WindowHeight(); });
         gfx.set_function("map_screen", [this](float X0, float Y0, float X1, float Y1) {
-                Graphics()->MapScreen(X0, Y0, X1, Y1);
+                Graphics()->MapScreen(CScreenRect(vec2(X0, Y0), vec2(X1, Y1)));
         });
         gfx.set_function("map_screen_to_world", [this, &lua](float CenterX, float CenterY, sol::optional<float> Zoom) -> sol::table {
-                float aPoints[4];
-                Graphics()->MapScreenToWorld(CenterX, CenterY, 100.0f, 100.0f, 100.0f, 0, 0, Graphics()->ScreenAspect(), Zoom.value_or(1.0f), aPoints);
-                Graphics()->MapScreen(aPoints[0], aPoints[1], aPoints[2], aPoints[3]);
+                const CScreenRect ScreenRect = Graphics()->MapScreenToWorld(CenterX, CenterY, 100.0f, 100.0f, 100.0f, 0, 0, Graphics()->ScreenAspect(), Zoom.value_or(1.0f));
+                Graphics()->MapScreen(ScreenRect);
                 auto t = lua.create_table();
-                t[1] = aPoints[0];
-                t[2] = aPoints[1];
-                t[3] = aPoints[2];
-                t[4] = aPoints[3];
+                t[1] = ScreenRect.m_TopLeft.x;
+                t[2] = ScreenRect.m_TopLeft.y;
+                t[3] = ScreenRect.m_BottomRight.x;
+                t[4] = ScreenRect.m_BottomRight.y;
                 return t;
         });
         gfx.set_function("draw_rect", [this](float X, float Y, float W, float H, float R, float G, float B, float A, sol::optional<int> Corners, sol::optional<float> Rounding) {
@@ -1885,7 +1884,7 @@ void CCodeExec::RegisterRawAPI()
         inp["KEY_MOUSE_WHEEL_UP"] = KEY_MOUSE_WHEEL_UP;
         inp["KEY_MOUSE_WHEEL_DOWN"] = KEY_MOUSE_WHEEL_DOWN;
         inp.set_function("pressed_this_frame", [this](int Key) -> bool { return Input()->KeyPress(Key); });
-        inp.set_function("key_name", [this](int Key) -> std::string { return std::string(Input()->KeyName(Key)); });
+        inp.set_function("key_name", [this](int Key) -> std::string { return std::string(KeyName(Key)); });
         inp.set_function("find_key", [this](const std::string &Name) -> int { return Input()->FindKeyByName(Name.c_str()); });
         inp.set_function("shift_pressed", [this]() -> bool { return Input()->ShiftIsPressed(); });
         inp.set_function("alt_pressed", [this]() -> bool { return Input()->AltIsPressed(); });

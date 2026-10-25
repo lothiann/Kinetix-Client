@@ -8,7 +8,6 @@
 #include <base/dbg.h>
 #include <base/io.h>
 #include <base/log.h>
-#include <base/math.h>
 #include <base/str.h>
 #include <base/time.h>
 
@@ -24,6 +23,8 @@
 
 #include <game/client/gameclient.h>
 #include <game/localization.h>
+
+#include <algorithm>
 
 const char *const CSkins7::ms_apSkinPartNames[protocol7::NUM_SKINPARTS] = {"body", "marking", "decoration", "hands", "feet", "eyes"};
 const char *const CSkins7::ms_apSkinPartNamesLocalized[protocol7::NUM_SKINPARTS] = {Localizable("Body", "skins"), Localizable("Marking", "skins"), Localizable("Decoration", "skins"), Localizable("Hands", "skins"), Localizable("Feet", "skins"), Localizable("Eyes", "skins")};
@@ -147,22 +148,22 @@ bool CSkins7::LoadSkinPart(int PartType, const char *pName, int DirType)
                 return false;
         }
 
-        CSkinPart Part;
-        Part.m_Type = PartType;
-        Part.m_Flags = 0;
-        if(IsSpecialSkin(pName))
-        {
-                Part.m_Flags |= SKINFLAG_SPECIAL;
-        }
-        if(DirType != IStorage::TYPE_SAVE)
-        {
-                Part.m_Flags |= SKINFLAG_STANDARD;
-        }
-        str_copy(Part.m_aName, pName, minimum<int>(PartNameSize + 1, sizeof(Part.m_aName)));
-        Part.m_OriginalTexture = Graphics()->LoadTextureRaw(Info, 0, aFilename);
-        Part.m_BloodColor = DetermineBloodColor(Part.m_Type, Info);
-        ConvertToGrayscale(Info);
-        Part.m_ColorableTexture = Graphics()->LoadTextureRawMove(Info, 0, aFilename);
+	CSkinPart Part;
+	Part.m_Type = PartType;
+	Part.m_Flags = 0;
+	if(IsSpecialSkin(pName))
+	{
+		Part.m_Flags |= SKINFLAG_SPECIAL;
+	}
+	if(DirType != IStorage::TYPE_SAVE)
+	{
+		Part.m_Flags |= SKINFLAG_STANDARD;
+	}
+	str_copy(Part.m_aName, pName, std::min(PartNameSize + 1, sizeof(Part.m_aName)));
+	Part.m_OriginalTexture = Graphics()->LoadTextureRaw(Info, 0, aFilename);
+	Part.m_BloodColor = DetermineBloodColor(Part.m_Type, Info);
+	ConvertToGrayscale(Info);
+	Part.m_ColorableTexture = Graphics()->LoadTextureRawMove(Info, 0, aFilename);
 
         if(Config()->m_Debug)
         {
@@ -181,39 +182,56 @@ public:
 
 int CSkins7::SkinScan(const char *pName, int IsDir, int DirType, void *pUser)
 {
-        if(IsDir || !str_endswith(pName, ".json"))
-                return 0;
+	if(IsDir)
+	{
+		return 0;
+	}
 
-        CSkinScanData *pScanData = static_cast<CSkinScanData *>(pUser);
-        pScanData->m_pThis->LoadSkin(pName, DirType);
-        pScanData->m_SkinLoadedCallback();
-        return 0;
+	const char *pSuffix = str_endswith(pName, ".json");
+	if(pSuffix == nullptr)
+	{
+		return 0;
+	}
+
+	char aSkinName[IO_MAX_PATH_LENGTH];
+	str_truncate(aSkinName, sizeof(aSkinName), pName, pSuffix - pName);
+	if(str_length(aSkinName) >= (int)sizeof(CSkin().m_aName) || !str_valid_filename(aSkinName))
+	{
+		log_error("skins7", "Skin name is not valid: %s", aSkinName);
+		log_error("skins7", "Skin names must be valid filenames shorter than %d characters.", (int)sizeof(CSkin().m_aName));
+		return 0;
+	}
+
+	CSkinScanData *pScanData = static_cast<CSkinScanData *>(pUser);
+	pScanData->m_pThis->LoadSkin(aSkinName, DirType);
+	pScanData->m_SkinLoadedCallback();
+	return 0;
 }
 
 bool CSkins7::LoadSkin(const char *pName, int DirType)
 {
-        char aFilename[IO_MAX_PATH_LENGTH];
-        str_format(aFilename, sizeof(aFilename), SKINS_DIR "/%s", pName);
-        void *pFileData;
-        unsigned JsonFileSize;
-        if(!Storage()->ReadFile(aFilename, DirType, &pFileData, &JsonFileSize))
-        {
-                log_error("skins7", "Failed to read skin json file '%s'", aFilename);
-                return false;
-        }
+	char aFilename[IO_MAX_PATH_LENGTH];
+	str_format(aFilename, sizeof(aFilename), SKINS_DIR "/%s.json", pName);
+	void *pFileData;
+	unsigned JsonFileSize;
+	if(!Storage()->ReadFile(aFilename, DirType, &pFileData, &JsonFileSize))
+	{
+		log_error("skins7", "Failed to read skin json file '%s'", aFilename);
+		return false;
+	}
 
-        CSkin Skin;
-        str_copy(Skin.m_aName, pName, 1 + str_length(pName) - str_length(".json"));
-        const bool SpecialSkin = IsSpecialSkin(Skin.m_aName);
-        Skin.m_Flags = 0;
-        if(SpecialSkin)
-        {
-                Skin.m_Flags |= SKINFLAG_SPECIAL;
-        }
-        if(DirType != IStorage::TYPE_SAVE)
-        {
-                Skin.m_Flags |= SKINFLAG_STANDARD;
-        }
+	CSkin Skin;
+	str_copy(Skin.m_aName, pName);
+	const bool SpecialSkin = IsSpecialSkin(Skin.m_aName);
+	Skin.m_Flags = 0;
+	if(SpecialSkin)
+	{
+		Skin.m_Flags |= SKINFLAG_SPECIAL;
+	}
+	if(DirType != IStorage::TYPE_SAVE)
+	{
+		Skin.m_Flags |= SKINFLAG_STANDARD;
+	}
 
         json_settings JsonSettings{};
         char aError[256];

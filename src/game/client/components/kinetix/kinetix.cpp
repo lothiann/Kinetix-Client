@@ -508,7 +508,7 @@ void CBotNet::UpdateAdminAlarm()
                 const int L = pGame->m_aClients[i].m_Active ? pGame->m_aClients[i].m_AuthLevel : 0;
                 if(L >= 1)
                 {
-                        const int Idx = minimum(L, 3) - 1; // helper(1)→0, mod(2)→1, admin(3+)→2
+                        const int Idx = std::min(L, 3) - 1; // helper(1)→0, mod(2)→1, admin(3+)→2
                         aAnyAdmin[Idx] = true;
                         if(aAdminId[Idx] < 0)
                                 aAdminId[Idx] = i;
@@ -544,7 +544,7 @@ void CBotNet::UpdateAdminAlarm()
                 }
                 else if(aAnyAdmin[L] && Repeat)
                 {
-                        const int IntervalTicks = maximum(1, (IntervalMs * Client()->GameTickSpeed()) / 1000);
+                        const int IntervalTicks = std::max(1, (IntervalMs * Client()->GameTickSpeed()) / 1000);
                         if(CurTick - s_aLastAlarmTick[L] >= IntervalTicks)
                         {
                                 fire = true;

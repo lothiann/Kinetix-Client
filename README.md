@@ -5,7 +5,7 @@
 [![TikTok](https://img.shields.io/badge/TikTok-@KinetixClient-000000?style=for-the-badge&logo=tiktok)](https://tiktok.com/@KinetixClient)
 [![Telegram](https://img.shields.io/badge/Telegram-@KinetixClient-26A5E4?style=for-the-badge&logo=telegram)](https://t.me/KinetixClient)
 
-- **Version:** `KINETIX_VERSION` = `v6`
+- **Version:** `v6.0` (release line `KINETIX_VERSION` = `v6`)
 - **Base:** [DDNet](https://github.com/ddnet/ddnet)
 - **Build guide:** [docs/BUILDING.md](docs/BUILDING.md)
 

@@ -1150,9 +1150,6 @@ Team %d
 Some map images could not be loaded. Check the local console for details.
 == Mõnda kaardi pilti ei suudetud laadida. Vaadake kohalikku konsooli lisateabe saamiseks.
 
-Uploading map data to GPU
-== Kaardi info üleslaadimine GPU-le
-
 Some map sounds could not be loaded. Check the local console for details.
 == Mõnda kaardi heli ei suudetud laadida. Vaadake kohalikku konsooli lisateabe saamiseks.
 
@@ -1799,6 +1796,12 @@ Team %d (%d/%d)
 English translation by the DDNet Team
 == Estonian translation by Cammodude
 
+Add clan
+== Lisa klann
+
+Add friend
+== Lisa sõber
+
 [Graphics error]
 Out of VRAM. Try setting 'cl_skins_loaded_max' to a lower value or remove custom assets (skins, entities, etc.), especially those with high resolution.
 == 
@@ -1874,6 +1877,10 @@ AUTO
 == 
 
 [Important alert message]
+Tap to dismiss…
+== 
+
+[Important alert message]
 Press Esc or Tab to dismiss…
 == 
 
@@ -1890,6 +1897,9 @@ Server could not be started
 == 
 
 Loading map
+== 
+
+Initializing layers
 == 
 
 Joining Tutorial server
@@ -1976,12 +1986,6 @@ Add friends by entering their name below or by clicking their name in the player
 Add clanmates by entering their clan below and leaving the name blank.
 == 
 
-Add clan
-== 
-
-Add friend
-== 
-
 [Demo playback]
 Live
 == 
@@ -1999,13 +2003,13 @@ Map size
 Refresh the demo list
 == 
 
-Are you sure that you want to disconnect and play this demo?
-== 
-
 Open the selected folder
 == 
 
 Play the selected demo
+== 
+
+Are you sure that you want to disconnect and play this demo?
 == 
 
 Dummy is not allowed on this server
@@ -2218,6 +2222,10 @@ Aim
 == 
 
 [Direct touch input]
+Relative aim
+== 
+
+[Direct touch input]
 Fire
 == 
 
@@ -2365,6 +2373,10 @@ Joystick Aim
 == 
 
 [Predefined touch button behaviors]
+Joystick Relative Aim
+== 
+
+[Predefined touch button behaviors]
 Joystick Fire
 == 
 
@@ -2405,6 +2417,9 @@ Virtual joystick which uses the active action.
 Virtual joystick which only aims without using an action.
 == 
 
+Virtual joystick which only aims and moves the mouse pointer relatively.
+== 
+
 Virtual joystick which always uses fire.
 == 
 
@@ -2435,38 +2450,7 @@ Demo player is currently active.
 The extra menu with the given number is activated.
 == 
 
-[Hertz]
-Hz
-== 
-
-Update Rate
-== 
-
-Save power by lowering update rate (higher input latency)
-== 
-
-Saves file
-== 
-
-Open the saves file
-== 
-
-This skin name cannot be used.
-== 
-
-Skin could not be loaded due to an error. Check the local console for details.
-== 
-
-Skin could not be found.
-== 
-
-No skins match your filter criteria
-== 
-
-Show FPS
-== 
-
-Renders your frame rate in the top right
+Credits
 == 
 
 Show spectator cursor
@@ -2586,6 +2570,12 @@ Dragger Outline Color
 Dragger Inner Color
 == 
 
+Scoreboard cursor
+== 
+
+Custom
+== 
+
 Show background quads
 == 
 
@@ -2595,10 +2585,59 @@ Prediction margin
 Predict events (experimental)
 == 
 
-Basic
+[AntiPing: predict other players]
+Off
 == 
 
-Custom
+[AntiPing: predict other players]
+All
+== 
+
+[AntiPing: predict other players]
+Interact
+== 
+
+Always predict frozen players
+== 
+
+[Hertz]
+Hz
+== 
+
+Update Rate
+== 
+
+Save power by lowering update rate (higher input latency)
+== 
+
+Saves file
+== 
+
+Open the saves file
+== 
+
+Show FPS
+== 
+
+Renders your frame rate in the top right
+== 
+
+No country flags match your filter criteria
+== 
+
+This skin name cannot be used.
+== 
+
+Skin could not be loaded due to an error. Check the local console for details.
+== 
+
+Skin could not be found.
+== 
+
+No skins match your filter criteria
+== 
+
+Basic
 == 
 
 Are you sure that you want to delete '%s'?
@@ -2610,10 +2649,16 @@ Delete skin
 Unable to delete skin
 == 
 
-Scoreboard cursor
+Join
 == 
 
 Download
+== 
+
+'%s' not bound.
+== 
+
+Press '%s' to show cursor.
 == 
 
 Unmute

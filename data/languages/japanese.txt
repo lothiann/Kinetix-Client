@@ -1095,6 +1095,9 @@ Feet
 Eyes
 == 目
 
+Add friend
+== 友達追加
+
 [Graphics error]
 Failed during initialization. Try to change gfx_backend to OpenGL or Vulkan in settings_ddnet.cfg in the config directory and try again.
 == 
@@ -1302,6 +1305,10 @@ AUTO
 == 
 
 [Important alert message]
+Tap to dismiss…
+== 
+
+[Important alert message]
 Press Esc or Tab to dismiss…
 == 
 
@@ -1329,7 +1336,7 @@ Some map images could not be loaded. Check the local console for details.
 Loading map
 == 
 
-Uploading map data to GPU
+Initializing layers
 == 
 
 Some map sounds could not be loaded. Check the local console for details.
@@ -1558,9 +1565,6 @@ Are you sure that you want to remove the clan '%s' from your friends list?
 Add clan
 == 
 
-Add friend
-== 
-
 Server filter
 == 
 
@@ -1683,13 +1687,13 @@ Refresh the demo list
 Open the directory that contains the demo files
 == 
 
-Are you sure that you want to disconnect and play this demo?
-== 
-
 Open the selected folder
 == 
 
 Play the selected demo
+== 
+
+Are you sure that you want to disconnect and play this demo?
 == 
 
 Are you sure that you want to delete the folder '%s'?
@@ -1938,6 +1942,10 @@ Aim
 == 
 
 [Direct touch input]
+Relative aim
+== 
+
+[Direct touch input]
 Fire
 == 
 
@@ -2085,6 +2093,10 @@ Joystick Aim
 == 
 
 [Predefined touch button behaviors]
+Joystick Relative Aim
+== 
+
+[Predefined touch button behaviors]
 Joystick Fire
 == 
 
@@ -2125,6 +2137,9 @@ Virtual joystick which uses the active action.
 Virtual joystick which only aims without using an action.
 == 
 
+Virtual joystick which only aims and moves the mouse pointer relatively.
+== 
+
 Virtual joystick which always uses fire.
 == 
 
@@ -2155,95 +2170,13 @@ Demo player is currently active.
 The extra menu with the given number is activated.
 == 
 
-[Hertz]
-Hz
-== 
-
-Update Rate
-== 
-
-Save power by lowering update rate (higher input latency)
-== 
-
-Settings file
-== 
-
-Open the settings file
-== 
-
-Saves file
-== 
-
-Open the saves file
-== 
-
-Config directory
-== 
-
-Open the directory that contains the configuration and user files
-== 
-
-Open the directory to add custom themes
-== 
-
-Player info change cooldown
-== 
-
-Download community skins
-== 
-
-This skin name cannot be used.
-== 
-
-Skin could not be loaded due to an error. Check the local console for details.
-== 
-
-Skin could not be found.
-== 
-
-Create a random skin
-== 
-
-Choose default eyes when joining a server
-== 
-
-No skins match your filter criteria
-== 
-
-Open the directory to add custom skins
-== 
-
-Windowed fullscreen
-== 
-
-Allows maps to render with more detail
-== 
-
-Show FPS
-== 
-
-Renders your frame rate in the top right
-== 
-
-Renderer
-== 
-
-default
-== 
-
-custom
-== 
-
-Graphics card
-== 
-
-auto
-== 
-
 Tee
 == 
 
 Appearance
+== 
+
+Credits
 == 
 
 Name Plate
@@ -2486,66 +2419,6 @@ Dragger Inner Color
 Set all to Rifle
 == 
 
-Enable ghost
-== 
-
-When you cross the start line, show a ghost tee replicating the movements of your best time
-== 
-
-Opacity
-== 
-
-Only save improvements
-== 
-
-Adjust the opacity of entities belonging to other teams, such as tees and name plates
-== 
-
-Show background quads
-== 
-
-Quads are used for background decoration
-== 
-
-Prediction margin
-== 
-
-Predict events (experimental)
-== 
-
-Tries to predict other entities to give a feel of low latency
-== 
-
-Regular background color
-== 
-
-Entities background color
-== 
-
-Run on join
-== 
-
-Chat command (e.g. showall 1)
-== 
-
-Unregister protocol and file extensions
-== 
-
-Basic
-== 
-
-Custom
-== 
-
-Are you sure that you want to delete '%s'?
-== 
-
-Delete skin
-== 
-
-Unable to delete skin
-== 
-
 Extras
 == 
 
@@ -2568,6 +2441,9 @@ Mouse
 == 
 
 Controller
+== 
+
+Custom
 == 
 
 Ingame mouse sens.
@@ -2611,7 +2487,170 @@ Status
 Aim bind
 == 
 
+Enable ghost
+== 
+
+When you cross the start line, show a ghost tee replicating the movements of your best time
+== 
+
+Opacity
+== 
+
+Only save improvements
+== 
+
+Adjust the opacity of entities belonging to other teams, such as tees and name plates
+== 
+
+Show background quads
+== 
+
+Quads are used for background decoration
+== 
+
+Prediction margin
+== 
+
+Predict events (experimental)
+== 
+
+Tries to predict other entities to give a feel of low latency
+== 
+
+[AntiPing: predict other players]
+Off
+== 
+
+[AntiPing: predict other players]
+All
+== 
+
+[AntiPing: predict other players]
+Interact
+== 
+
+Always predict frozen players
+== 
+
+Regular background color
+== 
+
+Entities background color
+== 
+
+Run on join
+== 
+
+Chat command (e.g. showall 1)
+== 
+
+Unregister protocol and file extensions
+== 
+
+[Hertz]
+Hz
+== 
+
+Update Rate
+== 
+
+Save power by lowering update rate (higher input latency)
+== 
+
+Settings file
+== 
+
+Open the settings file
+== 
+
+Saves file
+== 
+
+Open the saves file
+== 
+
+Config directory
+== 
+
+Open the directory that contains the configuration and user files
+== 
+
+Open the directory to add custom themes
+== 
+
+Windowed fullscreen
+== 
+
+Allows maps to render with more detail
+== 
+
+Show FPS
+== 
+
+Renders your frame rate in the top right
+== 
+
+Renderer
+== 
+
+default
+== 
+
+custom
+== 
+
+Graphics card
+== 
+
+auto
+== 
+
+Player info change cooldown
+== 
+
+No country flags match your filter criteria
+== 
+
+Download community skins
+== 
+
+This skin name cannot be used.
+== 
+
+Skin could not be loaded due to an error. Check the local console for details.
+== 
+
+Skin could not be found.
+== 
+
+Create a random skin
+== 
+
+Choose default eyes when joining a server
+== 
+
+No skins match your filter criteria
+== 
+
+Open the directory to add custom skins
+== 
+
+Basic
+== 
+
+Are you sure that you want to delete '%s'?
+== 
+
+Delete skin
+== 
+
+Unable to delete skin
+== 
+
 Tutorial
+== 
+
+Join
 == 
 
 Download
@@ -2632,6 +2671,12 @@ Super
 == 
 
 Team %d (%d/%d)
+== 
+
+'%s' not bound.
+== 
+
+Press '%s' to show cursor.
 == 
 
 Unmute

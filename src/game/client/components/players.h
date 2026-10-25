@@ -15,26 +15,27 @@ class CPlayers : public CComponent
         void RenderHand6(const CTeeRenderInfo *pInfo, vec2 HandPos, float HandAngle, float Alpha);
         void RenderHand7(const CTeeRenderInfo *pInfo, vec2 HandPos, float HandAngle, float Alpha);
 
-        void RenderHand(const CTeeRenderInfo *pInfo, vec2 CenterPos, vec2 Dir, float AngleOffset, vec2 PostRotOffset, float Alpha);
-        void RenderPlayer(
-                const CNetObj_Character *pPrevChar,
-                const CNetObj_Character *pPlayerChar,
-                const CTeeRenderInfo *pRenderInfo,
-                int ClientId,
-                float Intra = 0.f);
-        void RenderHook(
-                const CNetObj_Character *pPrevChar,
-                const CNetObj_Character *pPlayerChar,
-                const CTeeRenderInfo *pRenderInfo,
-                int ClientId,
-                float Intra = 0.f);
-        void RenderHookCollLine(
-                const CNetObj_Character *pPrevChar,
-                const CNetObj_Character *pPlayerChar,
-                int ClientId);
-        // v1.56.178: RenderTrajectory() removed — moved to CTrajectory component
-        // (GameClient()->m_Trajectory.OnRender) which supports per-type prediction.
-        bool IsPlayerInfoAvailable(int ClientId) const;
+	void RenderHand(const CTeeRenderInfo *pInfo, vec2 CenterPos, vec2 Dir, float AngleOffset, vec2 PostRotOffset, float Alpha);
+	void RenderPlayer(
+		const CScreenRect &ScreenRect,
+		const CNetObj_Character *pPrevChar,
+		const CNetObj_Character *pPlayerChar,
+		const CTeeRenderInfo *pRenderInfo,
+		int ClientId,
+		float Intra = 0.f);
+	void RenderHook(
+		const CScreenRect &ScreenRect,
+		const CNetObj_Character *pPrevChar,
+		const CNetObj_Character *pPlayerChar,
+		const CTeeRenderInfo *pRenderInfo,
+		int ClientId,
+		float Intra = 0.f);
+	void RenderHookCollLine(
+		const CScreenRect &ScreenRect,
+		const CNetObj_Character *pPrevChar,
+		const CNetObj_Character *pPlayerChar,
+		int ClientId);
+	bool IsPlayerInfoAvailable(int ClientId) const;
 
         int m_WeaponEmoteQuadContainerIndex;
         int m_aWeaponSpriteMuzzleQuadContainerIndex[NUM_WEAPONS];

@@ -50,7 +50,7 @@ public:
         void OnRender() override;
         bool OnInput(const IInput::CEvent &Event) override;
         bool OnCursorMove(float x, float y, IInput::ECursorType CursorType) override;
-        bool OnTouchState(const std::vector<IInput::CTouchFingerState> &vTouchFingerStates) override;
+        bool OnTouchState(std::vector<IInput::CTouchFingerState> &vTouchFingerStates) override;
 
         static constexpr int NUM_PANELS = 11; // v1.56.286: + Search (last panel)
 

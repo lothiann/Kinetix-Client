@@ -7,6 +7,7 @@
 #include <base/mem.h>
 #include <base/str.h>
 
+#include <engine/client/keyboard.h>
 #include <engine/config.h>
 #include <engine/console.h>
 #include <engine/shared/config.h>
@@ -567,7 +568,9 @@ void CBinds::ConBinds(IConsole::IResult *pResult, void *pUserData)
 		else
 		{
 			if(!pBinds->m_aapKeyBindings[BindSlot.m_ModifierMask][BindSlot.m_Key])
+			{
 				log_info_color(BIND_PRINT_COLOR, "binds", "%s is not bound", pKeyName);
+			}
 			else
 			{
 				char *pBuf = pBinds->GetKeyBindCommand(BindSlot.m_ModifierMask, BindSlot.m_Key);
@@ -633,7 +636,11 @@ CBindSlot CBinds::GetBindSlot(const char *pBindString) const
 			return EMPTY_BIND_SLOT;
 
 		if(str_find(pKey + 1, "+"))
+		{
 			pKey = str_next_token(pKey + 1, "+", aMod, sizeof(aMod));
+			if(pKey == nullptr)
+				return EMPTY_BIND_SLOT;
+		}
 		else
 			break;
 	}
@@ -674,7 +681,7 @@ void CBinds::GetKeyBindName(int Key, int ModifierMask, char *pBuf, size_t BufSiz
 			str_append(pBuf, "+", BufSize);
 		}
 	}
-	str_append(pBuf, Input()->KeyName(Key), BufSize);
+	str_append(pBuf, KeyName(Key), BufSize);
 }
 
 char *CBinds::GetKeyBindCommand(int ModifierCombination, int Key) const
@@ -749,5 +756,10 @@ void CBinds::SetDDRaceBinds(bool FreeOnly)
 		Bind(KEY_LALT, "toggle_scoreboard_cursor", FreeOnly);
 	}
 
-	g_Config.m_ClDDRaceBindsSet = 2;
+	if(g_Config.m_ClDDRaceBindsSet < 3)
+	{
+		Bind(KEY_W, "+jump", FreeOnly);
+	}
+
+	g_Config.m_ClDDRaceBindsSet = 3;
 }

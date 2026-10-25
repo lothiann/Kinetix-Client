@@ -15,7 +15,7 @@
 #include <sys/utsname.h> // uname, utsname
 #include <unistd.h> // _exit, execlp, fork
 
-#if defined(CONF_PLATFORM_MACOS)
+#if defined(CONF_PLATFORM_MACOS) || defined(CONF_PLATFORM_IOS)
 #include <CoreFoundation/CoreFoundation.h>
 #endif
 #elif defined(CONF_FAMILY_WINDOWS)
@@ -34,7 +34,7 @@ void cmdline_fix(int *argc, const char ***argv)
 #if defined(CONF_FAMILY_WINDOWS)
 	int wide_argc = 0;
 	WCHAR **wide_argv = CommandLineToArgvW(GetCommandLineW(), &wide_argc);
-	dbg_assert(wide_argv != NULL, "CommandLineToArgvW failure");
+	dbg_assert(wide_argv != nullptr, "CommandLineToArgvW failure");
 	dbg_assert(wide_argc > 0, "Invalid argc value");
 
 	int total_size = 0;
@@ -84,7 +84,7 @@ int os_open_link(const char *link)
 	SHELLEXECUTEINFOW info;
 	mem_zero(&info, sizeof(SHELLEXECUTEINFOW));
 	info.cbSize = sizeof(SHELLEXECUTEINFOW);
-	info.lpVerb = nullptr; // NULL to use the default verb, as "open" may not be available
+	info.lpVerb = nullptr; // nullptr to use the default verb, as "open" may not be available
 	info.lpFile = wide_link.c_str();
 	info.nShow = SW_SHOWNORMAL;
 	// The SEE_MASK_NOASYNC flag ensures that the ShellExecuteEx function
@@ -233,7 +233,7 @@ void os_locale_str(char *locale, size_t length)
 	const std::optional<std::string> buffer = windows_wide_to_utf8(wide_buffer);
 	dbg_assert(buffer.has_value(), "GetUserDefaultLocaleName returned invalid UTF-16");
 	str_copy(locale, buffer.value().c_str(), length);
-#elif defined(CONF_PLATFORM_MACOS)
+#elif defined(CONF_PLATFORM_MACOS) || defined(CONF_PLATFORM_IOS)
 	CFLocaleRef locale_ref = CFLocaleCopyCurrent();
 	CFStringRef locale_identifier_ref = static_cast<CFStringRef>(CFLocaleGetValue(locale_ref, kCFLocaleIdentifier));
 
@@ -269,7 +269,7 @@ void os_locale_str(char *locale, size_t length)
 	// Ensure RFC 3066 format:
 	// - use hyphens instead of underscores
 	// - truncate locale string after first non-standard letter
-	for(int i = 0; i < str_length(locale); ++i)
+	for(int i = 0; locale[i] != '\0'; ++i)
 	{
 		if(locale[i] == '_')
 		{

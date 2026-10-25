@@ -5,6 +5,7 @@
 
 #include "eventhandler.h"
 #include "gameworld.h"
+#include "playermapping.h"
 #include "teehistorian.h"
 
 #include <base/types.h>
@@ -53,6 +54,7 @@ class CHeap;
 class CPlayer;
 class CScore;
 class CUnpacker;
+class CRconRole;
 class IAntibot;
 class IGameController;
 class IMap;
@@ -71,7 +73,7 @@ struct CSnapContext
 
 	int GetClientVersion() const { return m_ClientVersion; }
 	bool IsSixup() const { return m_Sixup; }
-	bool ClientId() const { return m_ClientId; }
+	int ClientId() const { return m_ClientId; }
 
 private:
 	int m_ClientVersion;
@@ -135,6 +137,7 @@ class CGameContext : public IGameServer
 
 	bool m_Resetting;
 
+	static std::optional<std::vector<int>> ClientsForVictim(int ClientId, const char *pVictim, void *pUser);
 	static void CommandCallback(int ClientId, int FlagMask, const char *pCmd, IConsole::IResult *pResult, void *pUser);
 	static void TeeHistorianWrite(const void *pData, int DataSize, void *pUser);
 
@@ -159,7 +162,6 @@ class CGameContext : public IGameServer
 	static void ConBroadcast(IConsole::IResult *pResult, void *pUserData);
 	static void ConSay(IConsole::IResult *pResult, void *pUserData);
 	static void ConSetTeam(IConsole::IResult *pResult, void *pUserData);
-	static void ConSetTeamAll(IConsole::IResult *pResult, void *pUserData);
 	static void ConHotReload(IConsole::IResult *pResult, void *pUserData);
 	static void ConAddVote(IConsole::IResult *pResult, void *pUserData);
 	static void ConRemoveVote(IConsole::IResult *pResult, void *pUserData);
@@ -180,13 +182,15 @@ class CGameContext : public IGameServer
 	void AddVote(const char *pDescription, const char *pCommand);
 	static int MapScan(const char *pName, int IsDir, int DirType, void *pUserData);
 
-	struct CPersistentData
+	class CPersistentData
 	{
+	public:
 		CUuid m_PrevGameUuid;
 	};
 
-	struct CPersistentClientData
+	class CPersistentClientData
 	{
+	public:
 		bool m_IsSpectator;
 		bool m_IsAfk;
 		int m_LastWhisperTo;
@@ -230,6 +234,7 @@ public:
 
 	IGameController *m_pController;
 	CGameWorld m_World;
+	CPlayerMapping m_PlayerMapping;
 
 	// helper functions
 	CCharacter *GetPlayerChar(int ClientId);
@@ -314,17 +319,26 @@ public:
 	void SendMotd(int ClientId) const;
 	void SendSettings(int ClientId) const;
 	void SendServerAlert(const char *pMessage);
-	void SendModeratorAlert(const char *pMessage, int ToClientId);
+	void SendModeratorAlert(int ToClientId, const char *pMessage);
 	void SendBroadcast(const char *pText, int ClientId, bool IsImportant = true);
+
+	/**
+	 * The 0.7 protocol does not support renaming connected clients (or changing clan/country).
+	 * But the 0.6 protocol does allow that. And the server supports both.
+	 * So when a 0.6 client renames we update the state for 0.7 clients
+	 * by reconnecting the renamed client. This is abstracted away by this method.
+	 * During the reconnect also other properties than name are being resent and potentially
+	 * updated. Those are: name, country, clan, team and skin
+	 *
+	 * @param ClientId This is the id of the client that will be updated. Not the id that will receive the message. The message gets broadcasted to all 0.7 clients.
+	 */
+	void SendRename7(int ClientId);
 	void SendSkinChange7(int ClientId);
 
 	void List(int ClientId, const char *pFilter);
 
-	//
-	void CheckPureTuning();
 	void SendTuningParams(int ClientId, int Zone = 0);
 
-	const CVoteOptionServer *GetVoteOption(int Index) const;
 	void ProgressVoteOptions(int ClientId);
 
 	//
@@ -341,8 +355,6 @@ public:
 	void OnTick() override;
 	void OnSnap(int ClientId, bool GlobalSnap, bool RecordingDemo) override;
 	void OnPostGlobalSnap() override;
-
-	void UpdatePlayerMaps();
 
 	void *PreProcessMsg(int *pMsgId, CUnpacker *pUnpacker, int ClientId);
 	void CensorMessage(char *pCensoredMessage, const char *pMessage, int Size);
@@ -367,6 +379,7 @@ public:
 	void OnClientConnected(int ClientId, void *pData) override;
 	void OnClientEnter(int ClientId) override;
 	void OnClientDrop(int ClientId, const char *pReason) override;
+	void OnClientInfoChange(int ClientId) override;
 	void OnClientPrepareInput(int ClientId, void *pInput) override;
 	void OnClientDirectInput(int ClientId, const void *pInput) override;
 	void OnClientPredictedInput(int ClientId, const void *pInput) override;
@@ -381,7 +394,7 @@ public:
 	void TeehistorianRecordPlayerName(int ClientId, const char *pName) override;
 	void TeehistorianRecordPlayerFinish(int ClientId, int TimeTicks) override;
 	void TeehistorianRecordTeamFinish(int TeamId, int TimeTicks) override;
-	void TeehistorianRecordAuthLogin(int ClientId, int Level, const char *pAuthName) override;
+	void TeehistorianRecordAuthLogin(int ClientId, const char *pRoleName, const char *pAuthName) override;
 
 	bool IsClientReady(int ClientId) const override;
 	bool IsClientPlayer(int ClientId) const override;
@@ -392,6 +405,7 @@ public:
 
 	CUuid GameUuid() const override;
 	const char *GameType() const override;
+	char m_aVersionString[32];
 	const char *Version() const override;
 	const char *NetVersion() const override;
 
@@ -481,7 +495,6 @@ private:
 	void Teleport(CCharacter *pChr, vec2 Pos);
 	static void ConTeleport(IConsole::IResult *pResult, void *pUserData);
 
-	static void ConCredits(IConsole::IResult *pResult, void *pUserData);
 	static void ConInfo(IConsole::IResult *pResult, void *pUserData);
 	static void ConHelp(IConsole::IResult *pResult, void *pUserData);
 	static void ConSettings(IConsole::IResult *pResult, void *pUserData);
@@ -607,6 +620,7 @@ private:
 	static void ConVoteMutes(IConsole::IResult *pResult, void *pUserData);
 
 	void Whisper(int ClientId, char *pStr);
+	int WhisperRecordFlag(int ClientId) const;
 	void WhisperId(int ClientId, int VictimId, const char *pMessage);
 	void Converse(int ClientId, char *pStr);
 	bool IsVersionBanned(int Version);
@@ -655,7 +669,12 @@ public:
 	void SendRecord(int ClientId);
 	void SendFinish(int ClientId, float Time, std::optional<float> PreviousBestTime);
 	void SendSaveCode(int Team, int TeamSize, int State, const char *pError, const char *pSaveRequester, const char *pServerName, const char *pGeneratedCode, const char *pCode);
-	void OnSetAuthed(int ClientId, int Level) override;
+	// `pRole` being `nullptr` signifies logout.
+	void OnSetAuthed(int ClientId, CRconRole *pRole) override;
+	void ReinitPlayerMap(int ClientId, bool Timeout) override;
+	void OnClientRejoin(int ClientId) override;
+
+	void SendStartMessages(int ClientId);
 
 	void ResetTuning();
 };

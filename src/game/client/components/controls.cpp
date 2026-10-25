@@ -3,7 +3,6 @@
 #include "controls.h"
 
 #include <base/dbg.h>
-#include <base/math.h>
 #include <base/mem.h>
 #include <base/str.h>
 #include <base/time.h>
@@ -23,6 +22,8 @@
 #include <game/client/components/scoreboard.h>
 #include <game/client/gameclient.h>
 #include <game/collision.h>
+
+#include <algorithm>
 
 // bot_control integration
 #include <game/client/components/kinetix/avoid_freeze.h>
@@ -44,8 +45,7 @@ void CControls::OnReset()
         for(int D = 0; D < MAX_DUMMIES; D++)
                 ResetInput(D);
 
-        for(int &AmmoCount : m_aAmmoCount)
-                AmmoCount = 0;
+	std::fill(std::begin(m_aAmmoCount), std::end(m_aAmmoCount), 0);
 
         m_LastSendTime = 0;
 }
@@ -66,8 +66,7 @@ void CControls::ResetInput(int Dummy)
 
 void CControls::OnPlayerDeath()
 {
-        for(int &AmmoCount : m_aAmmoCount)
-                AmmoCount = 0;
+	std::fill(std::begin(m_aAmmoCount), std::end(m_aAmmoCount), 0);
 }
 
 struct CInputState
@@ -209,14 +208,14 @@ void CControls::OnConsoleInit()
 
 void CControls::OnMessage(int Msg, void *pRawMsg)
 {
-        if(Msg == NETMSGTYPE_SV_WEAPONPICKUP)
-        {
-                CNetMsg_Sv_WeaponPickup *pMsg = (CNetMsg_Sv_WeaponPickup *)pRawMsg;
-                if(g_Config.m_ClAutoswitchWeapons)
-                        m_aInputData[g_Config.m_ClDummy].m_WantedWeapon = pMsg->m_Weapon + 1;
-                // We don't really know ammo count, until we'll switch to that weapon, but any non-zero count will suffice here
-                m_aAmmoCount[maximum(0, pMsg->m_Weapon % NUM_WEAPONS)] = 10;
-        }
+	if(Msg == NETMSGTYPE_SV_WEAPONPICKUP)
+	{
+		CNetMsg_Sv_WeaponPickup *pMsg = (CNetMsg_Sv_WeaponPickup *)pRawMsg;
+		if(g_Config.m_ClAutoswitchWeapons)
+			m_aInputData[g_Config.m_ClDummy].m_WantedWeapon = pMsg->m_Weapon + 1;
+		// We don't really know ammo count, until we'll switch to that weapon, but any non-zero count will suffice here
+		m_aAmmoCount[std::max(0, pMsg->m_Weapon % NUM_WEAPONS)] = 10;
+	}
 }
 
 int CControls::SnapInput(int *pData)
@@ -1362,7 +1361,7 @@ void CControls::OnRender()
         if(g_Config.m_ClAutoswitchWeaponsOutOfAmmo && !GameClient()->m_GameInfo.m_UnlimitedAmmo && GameClient()->m_Snap.m_pLocalCharacter)
         {
                 // Keep track of ammo count, we know weapon ammo only when we switch to that weapon, this is tracked on server and protocol does not track that
-                m_aAmmoCount[maximum(0, GameClient()->m_Snap.m_pLocalCharacter->m_Weapon % NUM_WEAPONS)] = GameClient()->m_Snap.m_pLocalCharacter->m_AmmoCount;
+                m_aAmmoCount[std::max(0, GameClient()->m_Snap.m_pLocalCharacter->m_Weapon % NUM_WEAPONS)] = GameClient()->m_Snap.m_pLocalCharacter->m_AmmoCount;
                 // Autoswitch weapon if we're out of ammo
                 if(m_aInputData[g_Config.m_ClDummy].m_Fire % 2 != 0 &&
                         GameClient()->m_Snap.m_pLocalCharacter->m_AmmoCount == 0 &&
@@ -1506,9 +1505,9 @@ float CControls::GetMinMouseDistance() const
 
 float CControls::GetMaxMouseDistance() const
 {
-        float CameraMaxDistance = 200.0f;
-        float FollowFactor = (g_Config.m_ClDyncam ? g_Config.m_ClDyncamFollowFactor : g_Config.m_ClMouseFollowfactor) / 100.0f;
-        float DeadZone = g_Config.m_ClDyncam ? g_Config.m_ClDyncamDeadzone : g_Config.m_ClMouseDeadzone;
-        float MaxDistance = g_Config.m_ClDyncam ? g_Config.m_ClDyncamMaxDistance : g_Config.m_ClMouseMaxDistance;
-        return minimum((FollowFactor != 0 ? CameraMaxDistance / FollowFactor + DeadZone : MaxDistance), MaxDistance);
+	float CameraMaxDistance = 200.0f;
+	float FollowFactor = (g_Config.m_ClDyncam ? g_Config.m_ClDyncamFollowFactor : g_Config.m_ClMouseFollowfactor) / 100.0f;
+	float DeadZone = g_Config.m_ClDyncam ? g_Config.m_ClDyncamDeadzone : g_Config.m_ClMouseDeadzone;
+	float MaxDistance = g_Config.m_ClDyncam ? g_Config.m_ClDyncamMaxDistance : g_Config.m_ClMouseMaxDistance;
+	return std::min(FollowFactor != 0.0f ? CameraMaxDistance / FollowFactor + DeadZone : MaxDistance, MaxDistance);
 }

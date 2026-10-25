@@ -153,41 +153,65 @@ public:
         // There are 50 ticks per second, by default we only send snapshot on
         // every second tick.
 
-        // Tick of the second to most recently received snapshot (usually 2
-        // less than `GameTick`).
-        int PrevGameTick(int Conn) const { return m_aPrevGameTick[Conn]; }
-        // Tick of most recently received snapshot.
-        int GameTick(int Conn) const { return m_aCurGameTick[Conn]; }
-        // The tick we should predict to. Comes from a magic black box called
-        // "smooth time".
-        int PredGameTick(int Conn) const { return m_aPredTick[Conn]; }
-        // Linear interpolation parameter between `PrevGameTick` (0) and
-        // `GameTick` (1). Can be outside the interval [0, 1].
-        float IntraGameTick(int Conn) const { return m_aGameIntraTick[Conn]; }
-        // Linear interpolation parameter between `PredGameTick - 1` (0) and
-        // `PredGameTick` (1). Can be outside the interval [0, 1].
-        float PredIntraGameTick(int Conn) const { return m_aPredIntraTick[Conn]; }
-        // (Fractional) ticks since `PrevGameTick`.
-        float IntraGameTickSincePrev(int Conn) const { return m_aGameIntraTickSincePrev[Conn]; }
-        // Time in seconds since the second to most recently received snapshot.
-        float GameTickTime(int Conn) const { return m_aGameTickTime[Conn]; }
-        // 50
-        int GameTickSpeed() const { return SERVER_TICK_SPEED; }
+	/**
+	 * Tick of the second to most recently received snapshot (usually 2
+	 * less than `GameTick`).
+	 */
+	int PrevGameTick(int Conn) const { return m_aPrevGameTick[Conn]; }
+	/**
+	 * Tick of most recently received snapshot.
+	 */
+	int GameTick(int Conn) const { return m_aCurGameTick[Conn]; }
+	/**
+	 * The tick we should predict to. Comes from a magic black box called
+	 * "smooth time".
+	 */
+	int PredGameTick(int Conn) const { return m_aPredTick[Conn]; }
+	/**
+	 * Linear interpolation parameter between `PrevGameTick` (0) and
+	 * `GameTick` (1). Can be outside the interval [0, 1].
+	 */
+	float IntraGameTick(int Conn) const { return m_aGameIntraTick[Conn]; }
+	/**
+	 * Linear interpolation parameter between `PredGameTick - 1` (0) and
+	 * `PredGameTick` (1). Can be outside the interval [0, 1].
+	 */
+	float PredIntraGameTick(int Conn) const { return m_aPredIntraTick[Conn]; }
+	/**
+	 * (Fractional) ticks since `PrevGameTick`.
+	 */
+	float IntraGameTickSincePrev(int Conn) const { return m_aGameIntraTickSincePrev[Conn]; }
+	/**
+	 * Time in seconds since the second to most recently received snapshot.
+	 */
+	float GameTickTime(int Conn) const { return m_aGameTickTime[Conn]; }
+	/**
+	 * 50
+	 */
+	int GameTickSpeed() const { return SERVER_TICK_SPEED; }
 
         // Other time.
 
-        // Time in seconds since a map was joined, or `GlobalTime` if that
-        // hasn't happened yet.
-        float LocalTime() const { return m_LocalTime; }
-        // Time in seconds since the client was opened.
-        float GlobalTime() const { return m_GlobalTime; }
+	/**
+	 * Time in seconds since a map was joined, or `GlobalTime` if that
+	 * hasn't happened yet.
+	 */
+	float LocalTime() const { return m_LocalTime; }
+	/**
+	 * Time in seconds since the client was opened.
+	 */
+	float GlobalTime() const { return m_GlobalTime; }
 
         // Render statistics.
 
-        // Duration in seconds of the previous render cycle.
-        float RenderFrameTime() const { return m_RenderFrameTime; }
-        // Exponentially weighted average of frame times.
-        float FrameTimeAverage() const { return m_FrameTimeAverage; }
+	/**
+	 * Duration in seconds of the previous render cycle.
+	 */
+	float RenderFrameTime() const { return m_RenderFrameTime; }
+	/**
+	 * Exponentially weighted average of frame times.
+	 */
+	float FrameTimeAverage() const { return m_FrameTimeAverage; }
 
         // actions
         virtual void Connect(const char *pAddress, const char *pPassword = nullptr) = 0;
@@ -259,9 +283,9 @@ public:
         virtual float GotMaplistPercentage() const = 0;
         virtual const std::vector<std::string> &MaplistEntries() const = 0;
 
-        // server info
-        virtual void GetServerInfo(class CServerInfo *pServerInfo) const = 0;
-        virtual bool ServerCapAnyPlayerFlag() const = 0;
+	// server info
+	virtual const class CServerInfo &ServerInfo() const = 0;
+	virtual bool ServerCapAnyPlayerFlag() const = 0;
 
         virtual int GetPredictionTime() = 0;
         virtual int GetPredictionTick() = 0;
@@ -352,26 +376,28 @@ public:
         virtual CChecksumData *ChecksumData() = 0;
         virtual int UdpConnectivity(int NetType) = 0;
 
-        /**
-         * Opens a link in the browser.
-         *
-         * @param pLink The link to open in a browser.
-         *
-         * @return `true` on success, `false` on failure.
-         *
-         * @remark This may not be called with untrusted input or it'll result in arbitrary code execution, especially on Windows.
-         */
-        virtual bool ViewLink(const char *pLink) = 0;
-        /**
-         * Opens a file or directory with the default program.
-         *
-         * @param pFilename The file or folder to open with the default program.
-         *
-         * @return `true` on success, `false` on failure.
-         *
-         * @remark This may not be called with untrusted input or it'll result in arbitrary code execution, especially on Windows.
-         */
-        virtual bool ViewFile(const char *pFilename) = 0;
+	/**
+	 * Opens a link in the browser.
+	 *
+	 * @param pLink The link to open in a browser.
+	 *
+	 * @return `true` on success, `false` on failure.
+	 *
+	 * @remark This may not be called with untrusted input or it'll result in arbitrary code execution, especially on Windows.
+	 */
+	virtual bool ViewLink(const char *pLink) = 0;
+	/**
+	 * Opens a file or directory with the default program.
+	 *
+	 * @param pFilename The file or folder to open with the default program.
+	 *
+	 * @return `true` on success, `false` on failure.
+	 *
+	 * @remark This may not be called with untrusted input or it'll result in arbitrary code execution, especially on Windows.
+	 *
+	 * @remark On iOS the file or directory is shown in the Files app.
+	 */
+	virtual bool ViewFile(const char *pFilename) = 0;
 
 #if defined(CONF_FAMILY_WINDOWS)
         virtual void ShellRegister() = 0;

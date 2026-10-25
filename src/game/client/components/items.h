@@ -11,10 +11,11 @@
 
 class CProjectileData;
 class CLaserData;
+class CScreenRect;
 
 class CItems : public CComponent
 {
-	void RenderProjectile(const CProjectileData *pCurrent, int ItemId);
+	void RenderProjectile(const CProjectileData *pCurrent, int ItemId, const CScreenRect &ScreenRect);
 	void RenderFlags();
 	void RenderFlag(const CNetObj_Flag *pPrev, const CNetObj_Flag *pCurrent, const CNetObj_GameData *pPrevGameData, const CNetObj_GameData *pCurGameData);
 	void RenderLaser(const CLaserData *pCurrent, bool IsPredicted = false);
@@ -35,6 +36,7 @@ private:
 	int m_RedFlagOffset;
 	int m_PickupHealthOffset;
 	int m_PickupArmorOffset;
+	int m_PickupFreezeOffset;
 	int m_aPickupWeaponOffset[NUM_WEAPONS];
 	int m_PickupNinjaOffset;
 	int m_aPickupWeaponArmorOffset[4];

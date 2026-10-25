@@ -21,8 +21,7 @@ TEST(CVariableInt, RoundtripPackUnpack)
 TEST(CVariableInt, UnpackInvalid)
 {
 	unsigned char aPacked[CVariableInt::MAX_BYTES_PACKED];
-	for(auto &Byte : aPacked)
-		Byte = 0xFF;
+	std::fill(std::begin(aPacked), std::end(aPacked), 0xFF);
 
 	int Result;
 	EXPECT_EQ(CVariableInt::Unpack(aPacked, &Result, sizeof(aPacked)) - aPacked, (ptrdiff_t)CVariableInt::MAX_BYTES_PACKED);
@@ -37,17 +36,16 @@ TEST(CVariableInt, UnpackInvalid)
 TEST(CVariableInt, PackBufferTooSmall)
 {
 	unsigned char aPacked[CVariableInt::MAX_BYTES_PACKED / 2]; // too small
-	EXPECT_EQ(CVariableInt::Pack(aPacked, 2147483647, sizeof(aPacked)), (const unsigned char *)0x0);
+	EXPECT_EQ(CVariableInt::Pack(aPacked, 2147483647, sizeof(aPacked)), nullptr);
 }
 
 TEST(CVariableInt, UnpackBufferTooSmall)
 {
 	unsigned char aPacked[CVariableInt::MAX_BYTES_PACKED / 2];
-	for(auto &Byte : aPacked)
-		Byte = 0xFF; // extended bits are set, but buffer ends too early
+	std::fill(std::begin(aPacked), std::end(aPacked), 0xFF); // extended bits are set, but buffer ends too early
 
 	int UnusedResult;
-	EXPECT_EQ(CVariableInt::Unpack(aPacked, &UnusedResult, sizeof(aPacked)), (const unsigned char *)0x0);
+	EXPECT_EQ(CVariableInt::Unpack(aPacked, &UnusedResult, sizeof(aPacked)), nullptr);
 }
 
 TEST(CVariableInt, RoundtripCompressDecompress)

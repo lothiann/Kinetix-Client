@@ -1,50 +1,66 @@
 # AGENTS.md
 
-## Правила работы
+## About the project
 
-- **Коммиты** — только по явной просьбе пользователя. Никогда не коммитить самостоятельно после выполнения задачи: сделал правки → сообщил → ждёшь.
-- **Названия коммитов** — короткие, одна строка вида «v1.56.XXX: краткое описание». Не писать гигантские перечисления всех изменений.
-- **Сборка** — по умолчанию не собирать самому: после правок сообщать, что готово к сборке и проверке. Но если пользователь явно сказал «скомпилируй» (или «собери»/«пересобери») — компилировать можно и нужно.
-- **Порядок переменных в header-файлах** — если изменил порядок переменных (полей) в .h-файле, инкрементальной пересборки недостаточно: нужна полная перекомпиляция (Rebuild All).
+**Kinetix** is a feature-rich client-side fork of **DDNet** (a DDRace mod for Teeworlds). It adds an in-game overlay (ClickGUI), a multi-dummy toolkit, movement bots, pathfinding, TAS tooling, Lua scripting and much more. Everything runs on the client; no server-side support is required.
 
-## Сборка
+- **Current upstream base:** DDNet **20.1.1**
+- **Kinetix code:** all Kinetix-specific logic lives in `src/game/client/components/kinetix`
+- **Current release line:** `KINETIX_VERSION` (`src/game/client/components/kinetix/clickgui.cpp`)
 
-Конфигурация VS — **x64-Release** (генератор Ninja, `CMAKE_BUILD_TYPE=RelWithDebInfo`), корень сборки `out/build/x64-Release`.
+## Versioning
 
-**Сборка только в окружении VS** — иначе `ninja` падает с `LNK1104: cannot open file "shlwapi.lib"` (вне окружения пустые `LIB`/`INCLUDE`). Перед сборкой:
+Commit versions use the scheme `v{KINETIX_VERSION}.{NUMBER}`, for example `v6.0`, `v6.1`, `v7.15`, `v7.100`.
+
+- `KINETIX_VERSION` is the release version taken directly from the `KINETIX_VERSION` macro. Do not duplicate it elsewhere.
+- `NUMBER` is the subversion and must be **unique among current commits**. Deleted/reverted commits are not counted, and neither are commits on other branches.
+- `NUMBER` is always the previous commit's number **+ 1**. The only exception is a change of `KINETIX_VERSION`, in which case numbering starts from `0`.
+- Never put `beta`/`alpha`/etc. in the first number (the release version).
+
+## Rules
+
+- **Commits** — only on an explicit request from the user. Never commit on your own after finishing a task: make the changes, report, and wait.
+- **Commit messages** — short, one line, in the form `v6.0: short description`. Do not write huge lists of every change.
+- **Commit language** — every commit message must be written in English only.
+- **Builds** — do not build by default: after changes, report that everything is ready for building and verification. If the user explicitly says "compile"/"build"/"rebuild", then build.
+- **Field order in header files** — if you changed the order of fields in a `.h` file, an incremental rebuild is not enough: run a full rebuild (Rebuild All).
+
+## Build
+
+The VS configuration is **x64-Release** (Ninja generator, `CMAKE_BUILD_TYPE=RelWithDebInfo`), build root `out/build/x64-Release`.
+
+**Build only inside the Visual Studio environment** — otherwise `ninja` fails with `LNK1104: cannot open file "shlwapi.lib"` (empty `LIB`/`INCLUDE` outside the VS environment). Before building:
 
 ```
 call "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat"
 ```
 
-`ninja.exe` из Visual Studio:
+`ninja.exe` from Visual Studio:
 `C:/Program Files/Microsoft Visual Studio/18/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe`
 
-### Собрать всё (Build All)
+### Build All
 
 ```bash
 NINJA="C:/Program Files/Microsoft Visual Studio/18/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe"
 "$NINJA" -C "out/build/x64-Release"
 ```
 
-### Перестроить всё (Rebuild All)
+### Rebuild All
 
 ```bash
 "$NINJA" -C "out/build/x64-Release" -t clean
 "$NINJA" -C "out/build/x64-Release"
 ```
 
-### Готовый батник
+### Ready-made batch script
 
-В репозитории лежит `scripts/build.bat`: сам вызывает `vcvars64.bat` (ищет через `vswhere`, затем стандартные пути VS 18/2022) и сам находит `ninja.exe`. Запускать можно из обычного cmd/PowerShell, окружение VS поднимается внутри.
+The repository contains `scripts/build.bat`: it calls `vcvars64.bat` itself (found via `vswhere`, then the standard VS 18/2022 paths) and locates `ninja.exe` itself. It can be run from a normal cmd/PowerShell; the VS environment is set up inside.
 
 ```
-scripts/build.bat            инкрементальная сборка (по умолчанию)
-scripts/build.bat build      то же (-b, --build)
-scripts/build.bat rebuild    clean + полная пересборка (-r, --rebuild)
-scripts/build.bat clean      только clean (-c, --clean)
+scripts/build.bat            incremental build (default)
+scripts/build.bat build      same (-b, --build)
+scripts/build.bat rebuild    clean + full rebuild (-r, --rebuild)
+scripts/build.bat clean      clean only (-c, --clean)
 ```
 
-`rebuild` обязателен при изменении порядка полей в `.h`-файлах.
-
-
+`rebuild` is required when the order of fields in `.h` files changes.

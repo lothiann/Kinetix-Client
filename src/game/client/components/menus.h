@@ -4,6 +4,7 @@
 #define GAME_CLIENT_COMPONENTS_MENUS_H
 
 #include <base/bytes.h>
+#include <base/str.h>
 #include <base/types.h>
 #include <base/vmath.h>
 
@@ -27,7 +28,6 @@
 #include <game/voting.h>
 
 #include <chrono>
-#include <deque>
 #include <optional>
 #include <vector>
 
@@ -45,9 +45,12 @@ class CMenus : public CComponent
         static ColorRGBA ms_ColorTabbarHover;
 
 public:
-        int DoButton_Toggle(const void *pId, int Checked, const CUIRect *pRect, bool Active, unsigned Flags = BUTTONFLAG_LEFT);
-        int DoButton_Menu(CButtonContainer *pButtonContainer, const char *pText, int Checked, const CUIRect *pRect, unsigned Flags = BUTTONFLAG_LEFT, const char *pImageName = nullptr, int Corners = IGraphics::CORNER_ALL, float Rounding = 5.0f, float FontFactor = 0.0f, ColorRGBA Color = ColorRGBA(1.0f, 1.0f, 1.0f, 0.5f));
-        int DoButton_MenuTab(CButtonContainer *pButtonContainer, const char *pText, int Checked, const CUIRect *pRect, int Corners, SUIAnimator *pAnimator = nullptr, const ColorRGBA *pDefaultColor = nullptr, const ColorRGBA *pActiveColor = nullptr, const ColorRGBA *pHoverColor = nullptr, float EdgeRounding = 10.0f, const CCommunityIcon *pCommunityIcon = nullptr);
+	// Width of the image in DoButton_Menu, relative to the button height
+	static constexpr float BUTTON_IMAGE_WIDTH_FACTOR = 4.0f;
+
+	int DoButton_Toggle(const void *pId, int Checked, const CUIRect *pRect, bool Active, unsigned Flags = BUTTONFLAG_LEFT);
+	int DoButton_Menu(CButtonContainer *pButtonContainer, const char *pText, int Checked, const CUIRect *pRect, unsigned Flags = BUTTONFLAG_LEFT, const char *pImageName = nullptr, int Corners = IGraphics::CORNER_ALL, float Rounding = 5.0f, float FontFactor = 0.0f, ColorRGBA Color = ColorRGBA(1.0f, 1.0f, 1.0f, 0.5f), const void *pImageHotId = nullptr);
+	int DoButton_MenuTab(CButtonContainer *pButtonContainer, const char *pText, int Checked, const CUIRect *pRect, int Corners, SUIAnimator *pAnimator = nullptr, const ColorRGBA *pDefaultColor = nullptr, const ColorRGBA *pActiveColor = nullptr, const ColorRGBA *pHoverColor = nullptr, float EdgeRounding = 10.0f, const CCommunityIcon *pCommunityIcon = nullptr);
 
         int DoButton_CheckBox_Common(const void *pId, const char *pText, const char *pBoxText, const CUIRect *pRect, unsigned Flags);
         int DoButton_CheckBox(const void *pId, const char *pText, int Checked, const CUIRect *pRect);
@@ -61,13 +64,11 @@ private:
         ColorHSLA DoLine_ColorPicker(CButtonContainer *pResetId, float LineSize, float LabelSize, float BottomMargin, CUIRect *pMainRect, const char *pText, unsigned int *pColorValue, ColorRGBA DefaultColor, bool CheckBoxSpacing = true, int *pCheckBoxValue = nullptr, bool Alpha = false);
         ColorHSLA DoButton_ColorPicker(const CUIRect *pRect, unsigned int *pHslaColor, bool Alpha);
 
-        void DoLaserPreview(const CUIRect *pRect, ColorHSLA OutlineColor, ColorHSLA InnerColor, int LaserType);
-        int DoButton_GridHeader(const void *pId, const char *pText, int Checked, const CUIRect *pRect, int Align = TEXTALIGN_ML);
-        int DoButton_Favorite(const void *pButtonId, const void *pParentId, bool Checked, const CUIRect *pRect);
+	int DoButton_GridHeader(const void *pId, const char *pText, int Checked, const CUIRect *pRect, int Align = TEXTALIGN_ML);
+	int DoButton_Favorite(const void *pButtonId, const void *pParentId, bool Checked, const CUIRect *pRect);
 
-        bool m_SkinListScrollToSelected = false;
-        std::optional<std::chrono::nanoseconds> m_SkinList7LastRefreshTime;
-        std::optional<std::chrono::nanoseconds> m_SkinPartsList7LastRefreshTime;
+	std::optional<std::chrono::nanoseconds> m_SkinList7LastRefreshTime;
+	std::optional<std::chrono::nanoseconds> m_SkinPartsList7LastRefreshTime;
 
         int m_DirectionQuadContainerIndex;
 
@@ -239,21 +240,12 @@ protected:
         static float ms_ListheaderHeight;
         static float ms_ListitemAdditionalHeight;
 
-        // for settings
-        bool m_NeedRestartGraphics;
-        bool m_NeedRestartSound;
-        bool m_NeedRestartUpdate;
-        bool m_NeedSendinfo;
-        bool m_NeedSendDummyinfo;
-        int m_SettingPlayerPage;
-
-        // 0.7 skins
-        bool m_CustomSkinMenu = false;
-        int m_TeePartSelected = protocol7::SKINPART_BODY;
-        const CSkins7::CSkin *m_pSelectedSkin = nullptr;
-        CLineInputBuffered<protocol7::MAX_SKIN_ARRAY_SIZE, protocol7::MAX_SKIN_LENGTH> m_SkinNameInput;
-        bool m_SkinPartListNeedsUpdate = false;
-        void PopupConfirmDeleteSkin7();
+	// for settings
+	bool m_NeedRestartGraphics;
+	bool m_NeedRestartSound;
+	bool m_NeedRestartUpdate;
+	bool m_NeedSendinfo;
+	bool m_NeedSendDummyinfo;
 
         // for map download popup
         int64_t m_DownloadLastCheckTime;
@@ -362,8 +354,9 @@ protected:
 
         std::chrono::nanoseconds m_DemoPopulateStartTime{0};
 
-        void DemolistOnUpdate(bool Reset);
-        static int DemolistFetchCallback(const CFsFileInfo *pInfo, int IsDir, int StorageType, void *pUser);
+	void DemolistOnUpdate(bool Reset);
+	void DemolistSelectNeighbor();
+	static int DemolistFetchCallback(const CFsFileInfo *pInfo, int IsDir, int StorageType, void *pUser);
 
         // friends
         class CFriendItem
@@ -524,73 +517,109 @@ protected:
         bool RenderServerControlServer(CUIRect MainView, bool UpdateScroll);
         void RenderIngameHint();
 
-        // found in menus_browser.cpp
-        int m_SelectedIndex;
-        bool m_ServerBrowserShouldRevealSelection;
-        std::vector<CUIElement *> m_avpServerBrowserUiElements[IServerBrowser::NUM_TYPES];
-        void RenderServerbrowserServerList(CUIRect View, bool &WasListboxItemActivated);
-        void RenderServerbrowserStatusBox(CUIRect StatusBox, bool WasListboxItemActivated);
-        void Connect(const char *pAddress);
-        void PopupConfirmSwitchServer();
-        void RenderServerbrowserFilters(CUIRect View);
-        void ResetServerbrowserFilters();
-        void RenderServerbrowserDDNetFilter(CUIRect View,
-                IFilterList &Filter,
-                float ItemHeight, int MaxItems, int ItemsPerRow,
-                CScrollRegion &ScrollRegion, std::vector<unsigned char> &vItemIds,
-                bool UpdateCommunityCacheOnChange,
-                const std::function<const char *(int ItemIndex)> &GetItemName,
-                const std::function<void(int ItemIndex, CUIRect Item, const void *pItemId, bool Active)> &RenderItem);
-        void RenderServerbrowserCommunitiesFilter(CUIRect View);
-        void RenderServerbrowserCountriesFilter(CUIRect View);
-        void RenderServerbrowserTypesFilter(CUIRect View);
-        struct SPopupCountrySelectionContext
-        {
-                CMenus *m_pMenus;
-                int m_Selection;
-                bool m_New;
-        };
-        static CUi::EPopupMenuFunctionResult PopupCountrySelection(void *pContext, CUIRect View, bool Active);
-        void RenderServerbrowserInfo(CUIRect View);
-        void RenderServerbrowserInfoScoreboard(CUIRect View, const CServerInfo *pSelectedServer);
-        void RenderServerbrowserFriends(CUIRect View);
-        void FriendlistOnUpdate();
-        void PopupConfirmRemoveFriend();
-        void RenderServerbrowserTabBar(CUIRect TabBar);
-        void RenderServerbrowserToolBox(CUIRect ToolBox);
-        void RenderServerbrowser(CUIRect MainView);
-        template<typename F>
-        bool PrintHighlighted(const char *pName, F &&PrintFn);
-        CTeeRenderInfo GetTeeRenderInfo(vec2 Size, const char *pSkinName, bool CustomSkinColors, int CustomSkinColorBody, int CustomSkinColorFeet) const;
-        static void ConchainFriendlistUpdate(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData);
-        static void ConchainFavoritesUpdate(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData);
-        static void ConchainCommunitiesUpdate(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData);
-        static void ConchainUiPageUpdate(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData);
-        void UpdateCommunityCache(bool Force);
+	// found in menus_browser.cpp
+	int m_SelectedIndex;
+	bool m_ServerBrowserShouldRevealSelection;
+	std::vector<CUIElement *> m_avpServerBrowserUiElements[IServerBrowser::NUM_TYPES];
+	void RenderServerbrowserServerList(CUIRect View, bool &WasListboxItemActivated);
+	void RenderServerbrowserStatusBox(CUIRect StatusBox, bool WasListboxItemActivated);
+	void PopupConfirmSwitchServer();
+	void RenderServerbrowserFilters(CUIRect View);
+	void ResetServerbrowserFilters();
+	void RenderServerbrowserDDNetFilter(CUIRect View,
+		IFilterList &Filter,
+		float ItemHeight, int MaxItems, int ItemsPerRow,
+		CScrollRegion &ScrollRegion, std::vector<unsigned char> &vItemIds,
+		bool UpdateCommunityCacheOnChange,
+		const std::function<const char *(int ItemIndex)> &GetItemName,
+		const std::function<void(int ItemIndex, CUIRect Item, const void *pItemId, bool Active)> &RenderItem);
+	void RenderServerbrowserCommunitiesFilter(CUIRect View);
+	void RenderServerbrowserCountriesFilter(CUIRect View);
+	void RenderServerbrowserTypesFilter(CUIRect View);
+	struct SPopupCountrySelectionContext
+	{
+		CMenus *m_pMenus;
+		int m_Selection;
+		bool m_New;
+	};
+	static CUi::EPopupMenuFunctionResult PopupCountrySelection(void *pContext, CUIRect View, bool Active);
+	void RenderServerbrowserInfo(CUIRect View);
+	void RenderServerbrowserInfoScoreboard(CUIRect View, const CServerInfo *pSelectedServer);
+	void RenderServerbrowserFriends(CUIRect View);
+	void FriendlistOnUpdate();
+	void PopupConfirmRemoveFriend();
+	void RenderServerbrowserTabBar(CUIRect TabBar);
+	void RenderServerbrowserToolBox(CUIRect ToolBox);
+	void RenderServerbrowser(CUIRect MainView);
+	template<typename F>
+	bool PrintHighlighted(const char *pName, F &&PrintFn);
+	CTeeRenderInfo GetTeeRenderInfo(vec2 Size, const char *pSkinName, bool CustomSkinColors, int CustomSkinColorBody, int CustomSkinColorFeet) const;
+	static void ConchainFriendlistUpdate(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData);
+	static void ConchainFavoritesUpdate(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData);
+	static void ConchainCommunitiesUpdate(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData);
+	static void ConchainUiPageUpdate(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData);
+	void UpdateCommunityCache(bool Force);
 
-        // found in menus_settings.cpp
-        void RenderLanguageSettings(CUIRect MainView);
-        bool RenderLanguageSelection(CUIRect MainView);
-        void RenderThemeSelection(CUIRect MainView);
-        void RenderSettingsGeneral(CUIRect MainView);
-        void RenderSettingsPlayer(CUIRect MainView);
-        void RenderSettingsTee(CUIRect MainView);
-        void RenderSettingsTee7(CUIRect MainView);
-        void RenderSettingsTeeCustom7(CUIRect MainView);
-        void RenderSkinSelection7(CUIRect MainView);
-        void RenderSkinPartSelection7(CUIRect MainView);
-        void RenderSettingsGraphics(CUIRect MainView);
-        void RenderSettingsSound(CUIRect MainView);
-        void RenderSettings(CUIRect MainView);
-        void RenderSettingsCustom(CUIRect MainView);
+	// found in menus_settings.cpp
+	void RenderSettings(CUIRect MainView);
+	bool RenderHslaScrollbars(CUIRect *pRect, unsigned int *pColor, bool Alpha, float DarkestLight);
+
+	// found in menus_settings_assets.cpp
+	void RenderSettingsAssets(CUIRect MainView);
+
+	// found in menus_settings_appearance.cpp
+	void RenderSettingsAppearance(CUIRect MainView);
+	void DoLaserPreview(const CUIRect *pRect, ColorHSLA OutlineColor, ColorHSLA InnerColor, int LaserType);
 
         // found in menus_settings_controls.cpp
         // TODO: Change PopupConfirm to avoid using a function pointer to a CMenus
         //       member function, to move this function to CMenusSettingsControls
         void ResetSettingsControls();
 
-        std::vector<CButtonContainer> m_vButtonContainersNamePlateShow = {{}, {}, {}, {}};
-        std::vector<CButtonContainer> m_vButtonContainersNamePlateKeyPresses = {{}, {}, {}, {}};
+	// found in menus_settings_credits.cpp
+	void RenderSettingsCredits(CUIRect MainView);
+
+	// found in menus_settings_ddnet.cpp
+	void RenderSettingsDDNet(CUIRect MainView);
+
+	// found in menus_settings_general.cpp
+	void RenderSettingsGeneral(CUIRect MainView);
+	void RenderThemeSelection(CUIRect MainView);
+
+	// found in menus_settings_graphics.cpp
+	void RenderSettingsGraphics(CUIRect MainView);
+
+	// found in menus_settings_language.cpp
+	void RenderLanguageSettings(CUIRect MainView);
+	bool RenderLanguageSelection(CUIRect MainView);
+
+	// found in menus_settings_player.cpp
+	void RenderSettingsPlayer(CUIRect MainView);
+
+	// found in menus_settings_sound.cpp
+	void RenderSettingsSound(CUIRect MainView);
+
+	// found in menus_settings_tee.cpp
+	void RenderSettingsTee(CUIRect MainView);
+	bool m_SkinListScrollToSelected = false;
+
+	// found in menus_settings_tee7.cpp
+	void RenderSettingsTee7(CUIRect MainView);
+	void PopupConfirmDeleteSkin7();
+	void RenderSettingsTeeCustom7(CUIRect MainView);
+	void RenderSkinSelection7(CUIRect MainView);
+	void RenderSkinPartSelection7(CUIRect MainView);
+	bool m_CustomSkinMenu = false;
+	int m_TeePartSelected = protocol7::SKINPART_BODY;
+	const CSkins7::CSkin *m_pSelectedSkin = nullptr;
+	int m_SelectedSkinIndex7 = -1;
+	int m_DeletedSkinIndex7 = -1;
+	CLineInputBuffered<protocol7::MAX_SKIN_ARRAY_SIZE, protocol7::MAX_SKIN_LENGTH> m_SkinNameInput;
+	bool m_SkinPartListNeedsUpdate = false;
+
+	std::vector<CButtonContainer> m_vButtonContainersNamePlateShow = {{}, {}, {}, {}};
+	std::vector<CButtonContainer> m_vButtonContainersNamePlateKeyPresses = {{}, {}, {}, {}};
+	std::vector<CButtonContainer> m_vButtonContainersAntiPingPlayers = {{}, {}, {}};
 
         class CMapListItem
         {
@@ -633,8 +662,9 @@ public:
         CMenus();
         int Sizeof() const override { return sizeof(*this); }
 
-        void RenderLoading(const char *pCaption, const char *pContent, int IncreaseCounter);
-        void FinishLoading();
+	void RenderLoadingDirect(const char *pCaption, const char *pContent, std::optional<float> Progress);
+	void RenderLoading(const char *pCaption, const char *pContent, int IncreaseCounter);
+	void FinishLoading();
 
         bool IsInit() const { return m_IsInit; }
 
@@ -674,18 +704,19 @@ public:
                 PAGE_LENGTH,
         };
 
-        enum
-        {
-                SETTINGS_LANGUAGE = 0,
-                SETTINGS_GENERAL,
-                SETTINGS_PLAYER,
-                SETTINGS_TEE,
-                SETTINGS_APPEARANCE,
-                SETTINGS_CONTROLS,
-                SETTINGS_GRAPHICS,
-                SETTINGS_SOUND,
-                SETTINGS_DDNET,
-                SETTINGS_ASSETS,
+	enum
+	{
+		SETTINGS_LANGUAGE = 0,
+		SETTINGS_GENERAL,
+		SETTINGS_PLAYER,
+		SETTINGS_TEE,
+		SETTINGS_APPEARANCE,
+		SETTINGS_CONTROLS,
+		SETTINGS_GRAPHICS,
+		SETTINGS_SOUND,
+		SETTINGS_DDNET,
+		SETTINGS_ASSETS,
+		SETTINGS_CREDITS,
 
                 SETTINGS_LENGTH,
         };
@@ -834,19 +865,20 @@ public:
                 POPUP_SAVE_SKIN,
         };
 
-        enum
-        {
-                // demo player states
-                DEMOPLAYER_NONE = 0,
-                DEMOPLAYER_SLICE_SAVE,
-        };
+	enum
+	{
+		// demo player states
+		DEMOPLAYER_NONE = 0,
+		DEMOPLAYER_SLICE_SAVE,
+	};
 
-        void SetMenuPage(int NewPage);
-        void RefreshBrowserTab(bool Force);
-        void ForceRefreshLanPage();
-        void SetShowStart(bool ShowStart);
-        void ShowQuitPopup();
-        void JoinTutorial();
+	void SetMenuPage(int NewPage);
+	void RefreshBrowserTab(bool Force);
+	void ForceRefreshLanPage();
+	void SetShowStart(bool ShowStart);
+	void ShowQuitPopup();
+	void JoinTutorial();
+	void Connect(const char *pAddress);
 
 private:
         CCommunityIcons m_CommunityIcons;
@@ -858,13 +890,8 @@ private:
 
         static int GhostlistFetchCallback(const CFsFileInfo *pInfo, int IsDir, int StorageType, void *pUser);
 
-        // found in menus_ingame.cpp
-        void RenderInGameNetwork(CUIRect MainView);
-        void RenderGhost(CUIRect MainView);
-
-        // found in menus_settings.cpp
-        void RenderSettingsDDNet(CUIRect MainView);
-        void RenderSettingsAppearance(CUIRect MainView);
-        bool RenderHslaScrollbars(CUIRect *pRect, unsigned int *pColor, bool Alpha, float DarkestLight);
+	// found in menus_ingame.cpp
+	void RenderInGameNetwork(CUIRect MainView);
+	void RenderGhost(CUIRect MainView);
 };
 #endif

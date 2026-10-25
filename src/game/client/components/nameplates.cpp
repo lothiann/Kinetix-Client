@@ -27,29 +27,29 @@ enum class EHookStrongWeakState
 class CNamePlateData
 {
 public:
-        bool m_InGame;
-        ColorRGBA m_Color;
-        bool m_ShowName;
-        char m_aName[std::max<size_t>(MAX_NAME_LENGTH, protocol7::MAX_NAME_ARRAY_SIZE)];
-        bool m_ShowFriendMark;
-        bool m_ShowClientId;
-        int m_ClientId;
-        float m_FontSizeClientId;
-        bool m_ClientIdSeparateLine;
-        float m_FontSize;
-        bool m_ShowClan;
-        char m_aClan[std::max<size_t>(MAX_CLAN_LENGTH, protocol7::MAX_CLAN_ARRAY_SIZE)];
-        float m_FontSizeClan;
-        bool m_ShowDirection;
-        bool m_DirLeft;
-        bool m_DirJump;
-        bool m_DirRight;
-        float m_FontSizeDirection;
-        bool m_ShowHookStrongWeak;
-        EHookStrongWeakState m_HookStrongWeakState;
-        bool m_ShowHookStrongWeakId;
-        int m_HookStrongWeakId;
-        float m_FontSizeHookStrongWeak;
+	bool m_InGame;
+	ColorRGBA m_Color;
+	bool m_ShowName;
+	char m_aName[std::max((size_t)MAX_NAME_LENGTH, (size_t)protocol7::MAX_NAME_ARRAY_SIZE)];
+	bool m_ShowFriendMark;
+	bool m_ShowClientId;
+	int m_ClientId;
+	float m_FontSizeClientId;
+	bool m_ClientIdSeparateLine;
+	float m_FontSize;
+	bool m_ShowClan;
+	char m_aClan[std::max((size_t)MAX_CLAN_LENGTH, (size_t)protocol7::MAX_CLAN_ARRAY_SIZE)];
+	float m_FontSizeClan;
+	bool m_ShowDirection;
+	bool m_DirLeft;
+	bool m_DirJump;
+	bool m_DirRight;
+	float m_FontSizeDirection;
+	bool m_ShowHookStrongWeak;
+	EHookStrongWeakState m_HookStrongWeakState;
+	bool m_ShowHookStrongWeakId;
+	int m_HookStrongWeakId;
+	float m_FontSizeHookStrongWeak;
 };
 
 // Part Types
@@ -106,20 +106,19 @@ public:
                         Flags |= ETextRenderFlags::TEXT_RENDER_FLAG_NO_PIXEL_ALIGNMENT; // Prevent jittering from rounding
                 This.TextRender()->SetRenderFlags(Flags);
 
-                if(Data.m_InGame)
-                {
-                        // Create text at standard zoom
-                        float ScreenX0, ScreenY0, ScreenX1, ScreenY1;
-                        This.Graphics()->GetScreen(&ScreenX0, &ScreenY0, &ScreenX1, &ScreenY1);
-                        This.Graphics()->MapScreenToInterface(This.m_Camera.m_Center.x, This.m_Camera.m_Center.y);
-                        This.TextRender()->DeleteTextContainer(m_TextContainerIndex);
-                        UpdateText(This, Data);
-                        This.Graphics()->MapScreen(ScreenX0, ScreenY0, ScreenX1, ScreenY1);
-                }
-                else
-                {
-                        UpdateText(This, Data);
-                }
+		if(Data.m_InGame)
+		{
+			// Create text at standard zoom
+			CScreenRect ScreenRect = This.Graphics()->GetScreen();
+			This.Graphics()->MapScreenToInterface(This.m_Camera.m_Center.x, This.m_Camera.m_Center.y);
+			This.TextRender()->DeleteTextContainer(m_TextContainerIndex);
+			UpdateText(This, Data);
+			This.Graphics()->MapScreen(ScreenRect);
+		}
+		else
+		{
+			UpdateText(This, Data);
+		}
 
                 This.TextRender()->SetRenderFlags(0);
 
@@ -342,53 +341,53 @@ public:
 class CNamePlatePartName : public CNamePlatePartText
 {
 private:
-        char m_aText[std::max<size_t>(MAX_NAME_LENGTH, protocol7::MAX_NAME_ARRAY_SIZE) + 16] = "";
-        char m_aName[std::max<size_t>(MAX_NAME_LENGTH, protocol7::MAX_NAME_ARRAY_SIZE)] = "";
-        float m_FontSize = -INFINITY;
-        bool m_IsIrcUser = false;
+	char m_aText[std::max((size_t)MAX_NAME_LENGTH, (size_t)protocol7::MAX_NAME_ARRAY_SIZE) + 16] = "";
+	char m_aName[std::max((size_t)MAX_NAME_LENGTH, (size_t)protocol7::MAX_NAME_ARRAY_SIZE)] = "";
+	float m_FontSize = -INFINITY;
+	bool m_IsIrcUser = false;
 
 protected:
-        bool UpdateNeeded(CGameClient &This, const CNamePlateData &Data) override
-        {
-                m_Visible = Data.m_ShowName;
-                if(!m_Visible)
-                        return false;
-                m_Color = Data.m_Color;
+	bool UpdateNeeded(CGameClient &This, const CNamePlateData &Data) override
+	{
+		m_Visible = Data.m_ShowName;
+		if(!m_Visible)
+			return false;
+		m_Color = Data.m_Color;
 
-                const char *pPrefix = nullptr;
-                if(g_Config.m_KxIrcEnabled && g_Config.m_KxIrcNameplateTag)
-                {
-                        pPrefix = This.m_IRC.GetClientPrefix(Data.m_ClientId);
-                }
-                bool HasPrefix = (pPrefix != nullptr);
+		const char *pPrefix = nullptr;
+		if(g_Config.m_KxIrcEnabled && g_Config.m_KxIrcNameplateTag)
+		{
+			pPrefix = This.m_IRC.GetClientPrefix(Data.m_ClientId);
+		}
+		bool HasPrefix = (pPrefix != nullptr);
 
-                return m_FontSize != Data.m_FontSize || str_comp(m_aName, Data.m_aName) != 0 || m_IsIrcUser != HasPrefix;
-        }
-        void UpdateText(CGameClient &This, const CNamePlateData &Data) override
-        {
-                m_FontSize = Data.m_FontSize;
-                str_copy(m_aName, Data.m_aName, sizeof(m_aName));
+		return m_FontSize != Data.m_FontSize || str_comp(m_aName, Data.m_aName) != 0 || m_IsIrcUser != HasPrefix;
+	}
+	void UpdateText(CGameClient &This, const CNamePlateData &Data) override
+	{
+		m_FontSize = Data.m_FontSize;
+		str_copy(m_aName, Data.m_aName, sizeof(m_aName));
 
-                const char *pPrefix = nullptr;
-                if(g_Config.m_KxIrcEnabled && g_Config.m_KxIrcNameplateTag)
-                {
-                        pPrefix = This.m_IRC.GetClientPrefix(Data.m_ClientId);
-                }
-                m_IsIrcUser = (pPrefix != nullptr);
+		const char *pPrefix = nullptr;
+		if(g_Config.m_KxIrcEnabled && g_Config.m_KxIrcNameplateTag)
+		{
+			pPrefix = This.m_IRC.GetClientPrefix(Data.m_ClientId);
+		}
+		m_IsIrcUser = (pPrefix != nullptr);
 
-                if(pPrefix)
-                {
-                        str_format(m_aText, sizeof(m_aText), "[%s] %s", pPrefix, Data.m_aName);
-                }
-                else
-                {
-                        str_copy(m_aText, Data.m_aName, sizeof(m_aText));
-                }
+		if(pPrefix)
+		{
+			str_format(m_aText, sizeof(m_aText), "[%s] %s", pPrefix, Data.m_aName);
+		}
+		else
+		{
+			str_copy(m_aText, Data.m_aName, sizeof(m_aText));
+		}
 
-                CTextCursor Cursor;
-                Cursor.m_FontSize = m_FontSize;
-                This.TextRender()->CreateOrAppendTextContainer(m_TextContainerIndex, &Cursor, m_aText);
-        }
+		CTextCursor Cursor;
+		Cursor.m_FontSize = m_FontSize;
+		This.TextRender()->CreateOrAppendTextContainer(m_TextContainerIndex, &Cursor, m_aText);
+	}
 
 public:
         CNamePlatePartName(CGameClient &This) :
@@ -398,26 +397,26 @@ public:
 class CNamePlatePartClan : public CNamePlatePartText
 {
 private:
-        char m_aText[std::max<size_t>(MAX_CLAN_LENGTH, protocol7::MAX_CLAN_ARRAY_SIZE)] = "";
-        float m_FontSize = -INFINITY;
+	char m_aText[std::max((size_t)MAX_CLAN_LENGTH, (size_t)protocol7::MAX_CLAN_ARRAY_SIZE)] = "";
+	float m_FontSize = -INFINITY;
 
 protected:
-        bool UpdateNeeded(CGameClient &This, const CNamePlateData &Data) override
-        {
-                m_Visible = Data.m_ShowClan;
-                if(!m_Visible && Data.m_aClan[0] != '\0')
-                        return false;
-                m_Color = Data.m_Color;
-                return m_FontSize != Data.m_FontSizeClan || str_comp(m_aText, Data.m_aClan) != 0;
-        }
-        void UpdateText(CGameClient &This, const CNamePlateData &Data) override
-        {
-                m_FontSize = Data.m_FontSizeClan;
-                str_copy(m_aText, Data.m_aClan, sizeof(m_aText));
-                CTextCursor Cursor;
-                Cursor.m_FontSize = m_FontSize;
-                This.TextRender()->CreateOrAppendTextContainer(m_TextContainerIndex, &Cursor, m_aText);
-        }
+	bool UpdateNeeded(CGameClient &This, const CNamePlateData &Data) override
+	{
+		m_Visible = Data.m_ShowClan;
+		if(!m_Visible && Data.m_aClan[0] != '\0')
+			return false;
+		m_Color = Data.m_Color;
+		return m_FontSize != Data.m_FontSizeClan || str_comp(m_aText, Data.m_aClan) != 0;
+	}
+	void UpdateText(CGameClient &This, const CNamePlateData &Data) override
+	{
+		m_FontSize = Data.m_FontSizeClan;
+		str_copy(m_aText, Data.m_aClan, sizeof(m_aText));
+		CTextCursor Cursor;
+		Cursor.m_FontSize = m_FontSize;
+		This.TextRender()->CreateOrAppendTextContainer(m_TextContainerIndex, &Cursor, m_aText);
+	}
 
 public:
         CNamePlatePartClan(CGameClient &This) :
@@ -654,16 +653,15 @@ public:
 
 void CNamePlates::RenderNamePlateGame(vec2 Position, const CNetObj_PlayerInfo *pPlayerInfo, float Alpha)
 {
-        // Get screen edges to avoid rendering offscreen
-        float ScreenX0, ScreenY0, ScreenX1, ScreenY1;
-        Graphics()->GetScreen(&ScreenX0, &ScreenY0, &ScreenX1, &ScreenY1);
+	// Get screen edges to avoid rendering offscreen
+	CScreenRect ScreenRect = Graphics()->GetScreen();
 
-        // Assume that the name plate fits into a 800x800 box placed directly above the tee
-        ScreenX0 -= 400;
-        ScreenX1 += 400;
-        ScreenY1 += 800;
-        if(!(in_range(Position.x, ScreenX0, ScreenX1) && in_range(Position.y, ScreenY0, ScreenY1)))
-                return;
+	// Assume that the name plate fits into a 800x800 box placed directly above the tee
+	ScreenRect.m_TopLeft.x -= 400;
+	ScreenRect.m_BottomRight.x += 400;
+	ScreenRect.m_BottomRight.y += 800;
+	if(!ScreenRect.Inside(Position))
+		return;
 
         CNamePlateData Data;
 
@@ -787,20 +785,22 @@ void CNamePlates::RenderNamePlateGame(vec2 Position, const CNetObj_PlayerInfo *p
                 const CGameClient::CSnapState::CCharacterInfo &Selected = GameClient()->m_Snap.m_aCharacters[SelectedId];
                 const CGameClient::CSnapState::CCharacterInfo &Other = GameClient()->m_Snap.m_aCharacters[pPlayerInfo->m_ClientId];
 
-                if((Selected.m_HasExtendedData || GameClient()->m_aClients[SelectedId].m_SpecCharPresent) && Other.m_HasExtendedData)
-                {
-                        int SelectedStrongWeakId = Selected.m_HasExtendedData ? Selected.m_ExtendedData.m_StrongWeakId : 0;
-                        Data.m_HookStrongWeakId = Other.m_ExtendedData.m_StrongWeakId;
-                        Data.m_ShowHookStrongWeakId = g_Config.m_Debug || g_Config.m_ClNamePlatesStrong == 2;
-                        if(SelectedId == pPlayerInfo->m_ClientId)
-                                Data.m_ShowHookStrongWeak = Data.m_ShowHookStrongWeakId;
-                        else
-                        {
-                                Data.m_HookStrongWeakState = SelectedStrongWeakId > Other.m_ExtendedData.m_StrongWeakId ? EHookStrongWeakState::STRONG : EHookStrongWeakState::WEAK;
-                                Data.m_ShowHookStrongWeak = g_Config.m_Debug || g_Config.m_ClNamePlatesStrong > 0;
-                        }
-                }
-        }
+		if((Selected.m_HasExtendedData || GameClient()->m_aClients[SelectedId].m_SpecCharPresent) && Other.m_HasExtendedData)
+		{
+			int SelectedStrongWeakId = Selected.m_HasExtendedData ? Selected.m_ExtendedData.m_StrongWeakId : 0;
+			Data.m_HookStrongWeakId = Other.m_ExtendedData.m_StrongWeakId;
+			Data.m_ShowHookStrongWeakId = g_Config.m_Debug || g_Config.m_ClNamePlatesStrong == 2;
+			if(SelectedId == pPlayerInfo->m_ClientId)
+			{
+				Data.m_ShowHookStrongWeak = Data.m_ShowHookStrongWeakId;
+			}
+			else
+			{
+				Data.m_HookStrongWeakState = SelectedStrongWeakId > Other.m_ExtendedData.m_StrongWeakId ? EHookStrongWeakState::STRONG : EHookStrongWeakState::WEAK;
+				Data.m_ShowHookStrongWeak = g_Config.m_Debug || g_Config.m_ClNamePlatesStrong > 0;
+			}
+		}
+	}
 
         // Check if the nameplate is actually on screen
         CNamePlate &NamePlate = m_pData->m_aNamePlates[pPlayerInfo->m_ClientId];
@@ -874,19 +874,19 @@ void CNamePlates::RenderNamePlatePreview(vec2 Position, int Dummy)
         }
         TeeRenderInfo.m_Size = 64.0f;
 
-        CNamePlate NamePlate(*GameClient(), Data);
-        Position.y += NamePlate.Size().y / 2.0f;
-        Position.y += (float)g_Config.m_ClNamePlatesOffset / 2.0f;
-        // tee looking towards cursor, and it is happy when you touch it
-        const vec2 DeltaPosition = Ui()->MousePos() - Position;
-        const float Distance = length(DeltaPosition);
-        const float InteractionDistance = 20.0f;
-        const vec2 TeeDirection = Distance < InteractionDistance ? normalize(vec2(DeltaPosition.x, maximum(DeltaPosition.y, 0.5f))) : normalize(DeltaPosition);
-        const int TeeEmote = Distance < InteractionDistance ? EMOTE_HAPPY : (Dummy ? g_Config.m_ClDummyDefaultEyes : g_Config.m_ClPlayerDefaultEyes);
-        RenderTools()->RenderTee(CAnimState::GetIdle(), &TeeRenderInfo, TeeEmote, TeeDirection, Position);
-        Position.y -= (float)g_Config.m_ClNamePlatesOffset;
-        NamePlate.Render(*GameClient(), Position);
-        NamePlate.Reset(*GameClient());
+	CNamePlate NamePlate(*GameClient(), Data);
+	Position.y += NamePlate.Size().y / 2.0f;
+	Position.y += (float)g_Config.m_ClNamePlatesOffset / 2.0f;
+	// tee looking towards cursor, and it is happy when you touch it
+	const vec2 DeltaPosition = Ui()->MousePos() - Position;
+	const float Distance = length(DeltaPosition);
+	const float InteractionDistance = 20.0f;
+	const vec2 TeeDirection = Distance < InteractionDistance ? normalize(vec2(DeltaPosition.x, std::max(DeltaPosition.y, 0.5f))) : normalize(DeltaPosition);
+	const int TeeEmote = Distance < InteractionDistance ? EMOTE_HAPPY : (Dummy ? g_Config.m_ClDummyDefaultEyes : g_Config.m_ClPlayerDefaultEyes);
+	RenderTools()->RenderTee(CAnimState::GetIdle(), &TeeRenderInfo, TeeEmote, TeeDirection, Position);
+	Position.y -= (float)g_Config.m_ClNamePlatesOffset;
+	NamePlate.Render(*GameClient(), Position);
+	NamePlate.Reset(*GameClient());
 }
 
 void CNamePlates::ResetNamePlates()
@@ -907,8 +907,8 @@ void CNamePlates::OnRender()
         if(IVideo::Current())
                 ShowDirection = g_Config.m_ClVideoShowDirection;
 #endif
-        if(!g_Config.m_ClNamePlates && ShowDirection == 0)
-                return;
+	if(!g_Config.m_ClNamePlates && !g_Config.m_ClNamePlatesOwn && ShowDirection == 0)
+		return;
 
         for(int i = 0; i < MAX_CLIENTS; i++)
         {

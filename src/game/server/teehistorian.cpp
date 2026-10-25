@@ -1,6 +1,7 @@
 #include "teehistorian.h"
 
 #include <base/dbg.h>
+#include <base/log.h>
 #include <base/mem.h>
 #include <base/str.h>
 #include <base/time.h>
@@ -27,7 +28,7 @@ private:
 static const char TEEHISTORIAN_NAME[] = "teehistorian@ddnet.tw";
 static const CUuid TEEHISTORIAN_UUID = CalculateUuid(TEEHISTORIAN_NAME);
 static const char TEEHISTORIAN_VERSION[] = "2";
-static const char TEEHISTORIAN_VERSION_MINOR[] = "22";
+static const char TEEHISTORIAN_VERSION_MINOR[] = "23";
 
 #define UUID(id, name) static const CUuid UUID_##id = CalculateUuid(name);
 #include <engine/shared/teehistorian_ex_chunks.h>
@@ -439,18 +440,6 @@ void CTeeHistorian::BeginInputs()
 	m_State = STATE_INPUTS;
 }
 
-template<class T>
-static rust::Slice<const int32_t> AsSlice(const T *pObject)
-{
-	return rust::Slice((const int32_t *)pObject, sizeof(*pObject) / sizeof(int32_t));
-}
-
-template<class T>
-static rust::Slice<int32_t> AsMutSlice(T *pObject)
-{
-	return rust::Slice((int32_t *)pObject, sizeof(*pObject) / sizeof(int32_t));
-}
-
 void CTeeHistorian::RecordPlayerInput(int ClientId, uint32_t UniqueClientId, const CNetObj_PlayerInput *pInput)
 {
 	CTeehistorianPacker Buffer;
@@ -467,7 +456,7 @@ void CTeeHistorian::RecordPlayerInput(int ClientId, uint32_t UniqueClientId, con
 		Buffer.Reset();
 
 		Buffer.AddInt(-TEEHISTORIAN_INPUT_DIFF);
-		CSnapshotDelta_DiffItem(AsSlice(&pPrev->m_Input), AsSlice(pInput), AsMutSlice(&DiffInput));
+		CSnapshotDelta::DiffItem((int *)&pPrev->m_Input, (int *)pInput, (int *)&DiffInput, sizeof(DiffInput) / sizeof(int32_t));
 		if(m_Debug)
 		{
 			const int *pData = (const int *)&DiffInput;
@@ -784,36 +773,36 @@ void CTeeHistorian::RecordDDNetVersion(int ClientId, CUuid ConnectionId, int DDN
 	WriteExtra(UUID_TEEHISTORIAN_DDNETVER, Buffer.Data(), Buffer.Size());
 }
 
-void CTeeHistorian::RecordAuthInitial(int ClientId, int Level, const char *pAuthName)
+void CTeeHistorian::RecordAuthInitial(int ClientId, const char *pRoleName, const char *pAuthName)
 {
 	CTeehistorianPacker Buffer;
 	Buffer.Reset();
 	Buffer.AddInt(ClientId);
-	Buffer.AddInt(Level);
+	Buffer.AddString(pRoleName, 0);
 	Buffer.AddString(pAuthName, 0);
 
 	if(m_Debug)
 	{
-		dbg_msg("teehistorian", "auth_init cid=%d level=%d auth_name=%s", ClientId, Level, pAuthName);
+		log_debug("teehistorian", "auth_init cid=%d role=%s auth_name=%s", ClientId, pRoleName, pAuthName);
 	}
 
-	WriteExtra(UUID_TEEHISTORIAN_AUTH_INIT, Buffer.Data(), Buffer.Size());
+	WriteExtra(UUID_TEEHISTORIAN_AUTH_INIT_ROLE, Buffer.Data(), Buffer.Size());
 }
 
-void CTeeHistorian::RecordAuthLogin(int ClientId, int Level, const char *pAuthName)
+void CTeeHistorian::RecordAuthLogin(int ClientId, const char *pRoleName, const char *pAuthName)
 {
 	CTeehistorianPacker Buffer;
 	Buffer.Reset();
 	Buffer.AddInt(ClientId);
-	Buffer.AddInt(Level);
+	Buffer.AddString(pRoleName, 0);
 	Buffer.AddString(pAuthName, 0);
 
 	if(m_Debug)
 	{
-		dbg_msg("teehistorian", "auth_login cid=%d level=%d auth_name=%s", ClientId, Level, pAuthName);
+		log_debug("teehistorian", "auth_login cid=%d role=%s auth_name=%s", ClientId, pRoleName, pAuthName);
 	}
 
-	WriteExtra(UUID_TEEHISTORIAN_AUTH_LOGIN, Buffer.Data(), Buffer.Size());
+	WriteExtra(UUID_TEEHISTORIAN_AUTH_LOGIN_ROLE, Buffer.Data(), Buffer.Size());
 }
 
 void CTeeHistorian::RecordAuthLogout(int ClientId)

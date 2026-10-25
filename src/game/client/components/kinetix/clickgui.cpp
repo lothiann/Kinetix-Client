@@ -106,7 +106,7 @@ enum class ERowType
 
 // v1.56.176: Kinetix client version string (shown in Info panel).
 // Bumped manually per release. Matches the commit-message version scheme.
-#define KINETIX_VERSION "v6 Alpha"
+#define KINETIX_VERSION "v6"
 
 struct SRow
 {
@@ -3711,14 +3711,13 @@ void CClickGui::RenderBlurBackground(float Fade)
 		return; // no blur requested: leave the screen untouched
 
 	// save the current projection (restored below for the panel rendering)
-	float OldTLX = 0.0f, OldTLY = 0.0f, OldBRX = 0.0f, OldBRY = 0.0f;
-	Graphics()->GetScreen(&OldTLX, &OldTLY, &OldBRX, &OldBRY);
+	const CScreenRect OldScreen = Graphics()->GetScreen();
 
 	const float screenW = VScreenWidth();
 	const float screenH = VScreenHeight();
 	if(screenW <= 0.0f || screenH <= 0.0f)
 	{
-		Graphics()->MapScreen(OldTLX, OldTLY, OldBRX, OldBRY);
+		Graphics()->MapScreen(OldScreen);
 		return;
 	}
 
@@ -3735,7 +3734,7 @@ void CClickGui::RenderBlurBackground(float Fade)
 	const float Sigma = std::max(0.01f, (Radius / 100.0f) * MinDim * 0.013f);
 	const float SigmaTex = Sigma * UiScale;
 
-	Graphics()->MapScreen(0.0f, 0.0f, screenW, screenH);
+	Graphics()->MapScreenToSize(screenW, screenH);
 	Graphics()->WrapClamp();
 	const IGraphics::CQuadItem FullQuad(0.0f, 0.0f, screenW, screenH);
 
@@ -3804,7 +3803,7 @@ void CClickGui::RenderBlurBackground(float Fade)
 	Graphics()->BlendNormal();
 	Graphics()->WrapNormal();
 	Graphics()->TextureClear();
-	Graphics()->MapScreen(OldTLX, OldTLY, OldBRX, OldBRY);
+	Graphics()->MapScreen(OldScreen);
 }
 
 void CClickGui::OnRender()
@@ -5991,7 +5990,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
         // at the same physical size on every resolution.
         const float screenW = VScreenWidth();
         const float screenH = VScreenHeight();
-        Graphics()->MapScreen(0.0f, 0.0f, screenW, screenH);
+        Graphics()->MapScreenToSize(screenW, screenH);
 
         Graphics()->TextureClear();
 
@@ -6319,7 +6318,7 @@ bool CClickGui::OnCursorMove(float x, float y, IInput::ECursorType CursorType)
 // the finger moves it becomes a scroll gesture instead of an accidental tap.
 // Presses on headers (panel drag), sliders, dropdowns and while editing an
 // input field fire immediately like on desktop.
-bool CClickGui::OnTouchState(const std::vector<IInput::CTouchFingerState> &vTouchFingerStates)
+bool CClickGui::OnTouchState(std::vector<IInput::CTouchFingerState> &vTouchFingerStates)
 {
         const bool isOpen = g_Config.m_ClClickGui != 0 || m_AnimProgress > 0.0f;
         if(!isOpen)

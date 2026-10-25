@@ -25,6 +25,7 @@
 
 #include <gtest/gtest.h>
 
+#include <limits>
 #include <memory>
 #include <thread>
 
@@ -33,13 +34,14 @@ bool IsInterrupted()
 	return false;
 }
 
-std::vector<std::string> FakeQueue;
+#if defined(CONF_PLATFORM_ANDROID)
 std::vector<std::string> FetchAndroidServerCommandQueue()
 {
-	return FakeQueue;
+	return {};
 }
+#endif
 
-class CTestGameWorld : public ::testing::Test
+class GameWorld : public ::testing::Test // NOLINT(readability-identifier-naming)
 {
 public:
 	IGameServer *m_pGameServer = nullptr;
@@ -47,14 +49,17 @@ public:
 	std::unique_ptr<IKernel> m_pKernel;
 	CTestInfo m_TestInfo;
 	std::unique_ptr<IStorage> m_pStorage;
+	CConfig m_ConfigBackup;
 
-	CGameContext *GameServer()
+	CGameContext *GameServer() // NOLINT(readability-make-member-function-const)
 	{
 		return (CGameContext *)m_pGameServer;
 	}
 
-	CTestGameWorld()
+	GameWorld()
 	{
+		m_ConfigBackup = g_Config;
+
 		CServer *pServer = CreateServer();
 		m_pServer = pServer;
 
@@ -126,16 +131,35 @@ public:
 		pServer->InitMaplist();
 	}
 
-	~CTestGameWorld() override
+	~GameWorld() override
 	{
 		m_pServer->m_Econ.Shutdown();
 		m_pServer->m_Fifo.Shutdown();
 		m_pGameServer->OnShutdown(nullptr);
 		m_pServer->DbPool()->OnShutdown();
+
+		g_Config = m_ConfigBackup;
 	}
 };
 
-TEST_F(CTestGameWorld, ClosestCharacter)
+TEST_F(GameWorld, DebugDummiesConnectAndDrop)
+{
+	g_Config.m_DbgDummies = 2;
+	m_pServer->UpdateDebugDummies(false);
+
+	const int FirstDummy = m_pServer->MaxClients() - 1;
+	const int SecondDummy = m_pServer->MaxClients() - 2;
+	EXPECT_TRUE(m_pServer->ClientIngame(FirstDummy));
+	EXPECT_TRUE(m_pServer->ClientIngame(SecondDummy));
+
+	g_Config.m_DbgDummies = 1;
+	m_pServer->UpdateDebugDummies(false);
+
+	EXPECT_TRUE(m_pServer->ClientIngame(FirstDummy));
+	EXPECT_FALSE(m_pServer->ClientIngame(SecondDummy));
+}
+
+TEST_F(GameWorld, ClosestCharacter)
 {
 	CNetObj_PlayerInput Input = {};
 	CCharacter *pChr1 = new(0) CCharacter(&GameServer()->m_World, Input);
@@ -150,7 +174,7 @@ TEST_F(CTestGameWorld, ClosestCharacter)
 	EXPECT_EQ(pClosest, pChr1);
 }
 
-TEST_F(CTestGameWorld, IntersectEntity)
+TEST_F(GameWorld, IntersectEntity)
 {
 	CNetObj_PlayerInput Input = {};
 	CCharacter *pChrLeft = new(0) CCharacter(&GameServer()->m_World, Input);
@@ -251,7 +275,7 @@ TEST_F(CTestGameWorld, IntersectEntity)
 	EXPECT_EQ(pIntersectedChar, pChrRight);
 }
 
-TEST_F(CTestGameWorld, BasicTick)
+TEST_F(GameWorld, BasicTick)
 {
 	int ClientId = 0;
 	bool Afk = true;
@@ -262,7 +286,7 @@ TEST_F(CTestGameWorld, BasicTick)
 	GameServer()->OnTick();
 }
 
-TEST_F(CTestGameWorld, CharacterEmote)
+TEST_F(GameWorld, CharacterEmote)
 {
 	int ClientId = 0;
 	bool Afk = true;
@@ -305,4 +329,14 @@ TEST_F(CTestGameWorld, CharacterEmote)
 	// /emote angry 3 chat command and frozen
 	pChr->Freeze(10);
 	ASSERT_EQ(pChr->DetermineEyeEmote(), EMOTE_ANGRY);
+}
+
+TEST(Tunings, OutOfRangeBecomesIntMin)
+{
+	const float IntMin = std::numeric_limits<int>::min() / 100.0f;
+	CTuneParam Param;
+	EXPECT_EQ((float)(Param = 555555555555555.0f), IntMin);
+	EXPECT_EQ((float)(Param = -555555555555555.0f), IntMin);
+	EXPECT_EQ((float)(Param = std::numeric_limits<float>::quiet_NaN()), IntMin);
+	EXPECT_EQ((float)(Param = 0.5f), 0.5f);
 }

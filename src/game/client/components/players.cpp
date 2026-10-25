@@ -25,6 +25,7 @@
 #include <game/client/gameclient.h>
 #include <game/client/prediction/gameworld.h>
 #include <game/client/prediction/entities/character.h>
+#include <game/collision.h>
 #include <game/gamecore.h>
 #include <game/mapitems.h>
 
@@ -207,9 +208,10 @@ float CPlayers::GetPlayerTargetAngle(
 }
 
 void CPlayers::RenderHookCollLine(
-        const CNetObj_Character *pPrevChar,
-        const CNetObj_Character *pPlayerChar,
-        int ClientId)
+	const CScreenRect &ScreenRect,
+	const CNetObj_Character *pPrevChar,
+	const CNetObj_Character *pPlayerChar,
+	int ClientId)
 {
         CNetObj_Character Prev;
         CNetObj_Character Player;
@@ -297,10 +299,8 @@ void CPlayers::RenderHookCollLine(
         float Intra = GameClient()->m_aClients[ClientId].m_IsPredicted ? Client()->PredIntraGameTick(g_Config.m_ClDummy) : Client()->IntraGameTick(g_Config.m_ClDummy);
         float Angle = GetPlayerTargetAngle(&Prev, &Player, ClientId, Intra);
 
-        vec2 Direction = direction(Angle);
-        vec2 Position = GameClient()->m_aClients[ClientId].m_RenderPos;
-
-        static constexpr float HOOK_START_DISTANCE = CCharacterCore::PhysicalSize() * 1.5f;
+	vec2 Position = GameClient()->m_aClients[ClientId].m_RenderPos;
+	vec2 Direction = direction(Angle);
 
         // When the other player isn't predicted, we don't know their tunes.
         // Use our own tunes instead. This is wrong, but a good heuristic.
@@ -308,9 +308,26 @@ void CPlayers::RenderHookCollLine(
         float HookLength = PlayerCore.m_Tuning.m_HookLength;
         float HookFireSpeed = PlayerCore.m_Tuning.m_HookFireSpeed;
 
-        // janky physics
-        if(HookLength < HOOK_START_DISTANCE || HookFireSpeed <= 0.0f)
-                return;
+	// Check, if the player is outside the screen-rect
+	// If the map contains hook teleports, we are out of luck since we don't know if it will enter the screen at any point.
+	if(!Collision()->HasHookTeleIns())
+	{
+		const float MaxHookReach = HookLength + HookFireSpeed;
+
+		if(Position.x < ScreenRect.m_TopLeft.x - (Direction.x >= 0 ? MaxHookReach : 0) ||
+			Position.x > ScreenRect.m_BottomRight.x + (Direction.x <= 0 ? MaxHookReach : 0) ||
+			Position.y < ScreenRect.m_TopLeft.y - (Direction.y >= 0 ? MaxHookReach : 0) ||
+			Position.y > ScreenRect.m_BottomRight.y + (Direction.y <= 0 ? MaxHookReach : 0))
+		{
+			return;
+		}
+	}
+
+	static constexpr float HOOK_START_DISTANCE = CCharacterCore::PhysicalSize() * 1.5f;
+
+	// janky physics
+	if(HookLength < HOOK_START_DISTANCE || HookFireSpeed <= 0.0f)
+		return;
 
         vec2 QuantizedDirection = Direction;
         vec2 StartOffset = Direction * HOOK_START_DISTANCE;
@@ -326,21 +343,25 @@ void CPlayers::RenderHookCollLine(
         auto AddHookPlayerSegment = [&](const vec2 &StartPos, const vec2 &EndPos, const vec2 &HookablePlayerPosition, const vec2 &HitPos) {
                 HookCollColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClHookCollColorTeeColl));
 
-                // stop hookline at player circle so it looks better
-                vec2 aIntersections[2];
-                int NumIntersections = intersect_line_circle(StartPos, EndPos, HookablePlayerPosition, CCharacterCore::PhysicalSize() * 1.45f / 2.0f, aIntersections);
-                if(NumIntersections == 2)
-                {
-                        if(distance(Position, aIntersections[0]) < distance(Position, aIntersections[1]))
-                                vLineSegments.emplace_back(StartPos, aIntersections[0]);
-                        else
-                                vLineSegments.emplace_back(StartPos, aIntersections[1]);
-                }
-                else if(NumIntersections == 1)
-                        vLineSegments.emplace_back(StartPos, aIntersections[0]);
-                else
-                        vLineSegments.emplace_back(StartPos, HitPos);
-        };
+		// stop hookline at player circle so it looks better
+		vec2 aIntersections[2];
+		int NumIntersections = intersect_line_circle(StartPos, EndPos, HookablePlayerPosition, CCharacterCore::PhysicalSize() * 1.45f / 2.0f, aIntersections);
+		if(NumIntersections == 2)
+		{
+			if(distance(Position, aIntersections[0]) < distance(Position, aIntersections[1]))
+				vLineSegments.emplace_back(StartPos, aIntersections[0]);
+			else
+				vLineSegments.emplace_back(StartPos, aIntersections[1]);
+		}
+		else if(NumIntersections == 1)
+		{
+			vLineSegments.emplace_back(StartPos, aIntersections[0]);
+		}
+		else
+		{
+			vLineSegments.emplace_back(StartPos, HitPos);
+		}
+	};
 
         // simulate the hook into the future
         int HookTick;
@@ -537,11 +558,12 @@ void CPlayers::RenderHookCollLine(
 }
 
 void CPlayers::RenderHook(
-        const CNetObj_Character *pPrevChar,
-        const CNetObj_Character *pPlayerChar,
-        const CTeeRenderInfo *pRenderInfo,
-        int ClientId,
-        float Intra)
+	const CScreenRect &ScreenRect,
+	const CNetObj_Character *pPrevChar,
+	const CNetObj_Character *pPlayerChar,
+	const CTeeRenderInfo *pRenderInfo,
+	int ClientId,
+	float Intra)
 {
         if(pPlayerChar->m_HookState <= 0)
                 return;
@@ -598,8 +620,14 @@ void CPlayers::RenderHook(
         else
                 HookPos = mix(vec2(Prev.m_HookX, Prev.m_HookY), vec2(Player.m_HookX, Player.m_HookY), Intra);
 
-        float d = distance(Pos, HookPos);
-        vec2 Dir = normalize(Pos - HookPos);
+	if((Pos.x < ScreenRect.m_TopLeft.x && HookPos.x < ScreenRect.m_TopLeft.x) ||
+		(Pos.x > ScreenRect.m_BottomRight.x && HookPos.x > ScreenRect.m_BottomRight.x) ||
+		(Pos.y < ScreenRect.m_TopLeft.y && HookPos.y < ScreenRect.m_TopLeft.y) ||
+		(Pos.y > ScreenRect.m_BottomRight.y && HookPos.y > ScreenRect.m_BottomRight.y))
+		return;
+
+	float d = distance(Pos, HookPos);
+	vec2 Dir = normalize(Pos - HookPos);
 
         Graphics()->TextureSet(GameClient()->m_GameSkin.m_SpriteHookHead);
         Graphics()->QuadsSetRotation(angle(Dir) + pi);
@@ -630,18 +658,28 @@ void CPlayers::RenderHook(
 }
 
 void CPlayers::RenderPlayer(
-        const CNetObj_Character *pPrevChar,
-        const CNetObj_Character *pPlayerChar,
-        const CTeeRenderInfo *pRenderInfo,
-        int ClientId,
-        float Intra)
+	const CScreenRect &ScreenRect,
+	const CNetObj_Character *pPrevChar,
+	const CNetObj_Character *pPlayerChar,
+	const CTeeRenderInfo *pRenderInfo,
+	int ClientId,
+	float Intra)
 {
         CNetObj_Character Prev;
         CNetObj_Character Player;
         Prev = *pPrevChar;
         Player = *pPlayerChar;
 
-        CTeeRenderInfo RenderInfo = *pRenderInfo;
+	vec2 Position;
+	if(in_range(ClientId, MAX_CLIENTS - 1))
+		Position = GameClient()->m_aClients[ClientId].m_RenderPos;
+	else
+		Position = mix(vec2(Prev.m_X, Prev.m_Y), vec2(Player.m_X, Player.m_Y), Intra);
+
+	if(!ScreenRect.Inside(Position))
+		return;
+
+	CTeeRenderInfo RenderInfo = *pRenderInfo;
 
         // v1.56.260: Visuals rainbow — tee body and legs colors.
         if(g_Config.m_KxRainbowTee)
@@ -701,17 +739,12 @@ void CPlayers::RenderPlayer(
         }
         float AttackTicksPassed = AttackTime * (float)Client()->GameTickSpeed();
 
-        float Angle = GetPlayerTargetAngle(&Prev, &Player, ClientId, Intra);
+	float Angle = GetPlayerTargetAngle(&Prev, &Player, ClientId, Intra);
 
-        vec2 Direction = direction(Angle);
-        vec2 Position;
-        if(in_range(ClientId, MAX_CLIENTS - 1))
-                Position = GameClient()->m_aClients[ClientId].m_RenderPos;
-        else
-                Position = mix(vec2(Prev.m_X, Prev.m_Y), vec2(Player.m_X, Player.m_Y), Intra);
-        vec2 Vel = mix(vec2(Prev.m_VelX / 256.0f, Prev.m_VelY / 256.0f), vec2(Player.m_VelX / 256.0f, Player.m_VelY / 256.0f), Intra);
+	vec2 Direction = direction(Angle);
+	vec2 Vel = mix(vec2(Prev.m_VelX / 256.0f, Prev.m_VelY / 256.0f), vec2(Player.m_VelX / 256.0f, Player.m_VelY / 256.0f), Intra);
 
-        GameClient()->m_Flow.Add(Position, Vel * 100.0f, 10.0f);
+	GameClient()->m_Flow.Add(Position, Vel * 100.0f, 10.0f);
 
         RenderInfo.m_GotAirJump = Player.m_Jumped & 2 ? false : true;
 
@@ -735,6 +768,29 @@ void CPlayers::RenderPlayer(
 
         CAnimState State;
         State.Set(&g_pData->m_aAnimations[ANIM_BASE], 0.0f);
+	if(InAir)
+	{
+		State.Add(&g_pData->m_aAnimations[ANIM_INAIR], 0.0f, 1.0f); // TODO: some sort of time here
+	}
+	else if(Stationary)
+	{
+		if(Inactive)
+		{
+			State.Add(Direction.x < 0.0f ? &g_pData->m_aAnimations[ANIM_SIT_LEFT] : &g_pData->m_aAnimations[ANIM_SIT_RIGHT], 0.0f, 1.0f); // TODO: some sort of time here
+			RenderInfo.m_FeetFlipped = true;
+		}
+		else
+		{
+			State.Add(&g_pData->m_aAnimations[ANIM_IDLE], 0.0f, 1.0f); // TODO: some sort of time here
+		}
+	}
+	else if(!WantOtherDir)
+	{
+		if(Running)
+			State.Add(Player.m_VelX < 0 ? &g_pData->m_aAnimations[ANIM_RUN_LEFT] : &g_pData->m_aAnimations[ANIM_RUN_RIGHT], RunTime, 1.0f);
+		else
+			State.Add(&g_pData->m_aAnimations[ANIM_WALK], WalkTime, 1.0f);
+	}
 
         if(InAir)
                 State.Add(&g_pData->m_aAnimations[ANIM_INAIR], 0.0f, 1.0f); // TODO: some sort of time here
@@ -900,7 +956,7 @@ void CPlayers::RenderPlayer(
                                         if(AttackTicksPassed < g_pData->m_Weapons.m_aId[CurrentWeapon].m_Muzzleduration + 3.0f)
                                         {
                                                 float t = AttackTicksPassed / g_pData->m_Weapons.m_aId[CurrentWeapon].m_Muzzleduration;
-                                                AlphaMuzzle = mix(2.0f, 0.0f, minimum(1.0f, maximum(0.0f, t)));
+                                                AlphaMuzzle = mix(2.0f, 0.0f, std::min(1.0f, std::max(0.0f, t)));
                                         }
 
                                         int IteX = rand() % g_pData->m_Weapons.m_aId[CurrentWeapon].m_NumSpriteMuzzles;
@@ -1131,34 +1187,30 @@ void CPlayers::OnRender()
                 }
         }
 
-        // get screen edges to avoid rendering offscreen
-        float ScreenX0, ScreenY0, ScreenX1, ScreenY1;
-        Graphics()->GetScreen(&ScreenX0, &ScreenY0, &ScreenX1, &ScreenY1);
-        // expand the edges to prevent popping in/out onscreen
-        //
-        // it is assumed that the tee, all its weapons, and emotes fit into a 200x200 box centered on the tee
-        // this may need to be changed or calculated differently in the future
-        float BorderBuffer = 100;
-        ScreenX0 -= BorderBuffer;
-        ScreenX1 += BorderBuffer;
-        ScreenY0 -= BorderBuffer;
-        ScreenY1 += BorderBuffer;
+	// get screen edges to avoid rendering offscreen
+	CScreenRect ScreenRect = Graphics()->GetScreen();
+	// expand the edges to prevent popping in/out onscreen
+	//
+	// it is assumed that the tee, all its weapons, and emotes fit into a 200x200 box centered on the tee
+	// this may need to be changed or calculated differently in the future
+	constexpr float PlayerBorderBuffer = 100.0f;
+	ScreenRect.Expand(PlayerBorderBuffer);
 
-        // render everyone else's hook, then our own
-        const int LocalClientId = GameClient()->m_Snap.m_LocalClientId;
-        for(int ClientId = 0; ClientId < MAX_CLIENTS; ClientId++)
-        {
-                if(ClientId == LocalClientId || !IsPlayerInfoAvailable(ClientId))
-                {
-                        continue;
-                }
-                RenderHook(&GameClient()->m_aClients[ClientId].m_RenderPrev, &GameClient()->m_aClients[ClientId].m_RenderCur, &aRenderInfo[ClientId], ClientId);
-        }
-        if(LocalClientId != -1 && IsPlayerInfoAvailable(LocalClientId))
-        {
-                const CGameClient::CClientData *pLocalClientData = &GameClient()->m_aClients[LocalClientId];
-                RenderHook(&pLocalClientData->m_RenderPrev, &pLocalClientData->m_RenderCur, &aRenderInfo[LocalClientId], LocalClientId);
-        }
+	// render everyone else's hook, then our own
+	const int LocalClientId = GameClient()->m_Snap.m_LocalClientId;
+	for(int ClientId = 0; ClientId < MAX_CLIENTS; ClientId++)
+	{
+		if(ClientId == LocalClientId || !IsPlayerInfoAvailable(ClientId))
+		{
+			continue;
+		}
+		RenderHook(ScreenRect, &GameClient()->m_aClients[ClientId].m_RenderPrev, &GameClient()->m_aClients[ClientId].m_RenderCur, &aRenderInfo[ClientId], ClientId);
+	}
+	if(LocalClientId != -1 && IsPlayerInfoAvailable(LocalClientId))
+	{
+		const CGameClient::CClientData *pLocalClientData = &GameClient()->m_aClients[LocalClientId];
+		RenderHook(ScreenRect, &pLocalClientData->m_RenderPrev, &pLocalClientData->m_RenderCur, &aRenderInfo[LocalClientId], LocalClientId);
+	}
 
         // render spectating players
         for(const auto &Client : GameClient()->m_aClients)
@@ -1168,14 +1220,16 @@ void CPlayers::OnRender()
                         continue;
                 }
 
-                const int ClientId = Client.ClientId();
-                float Alpha = (GameClient()->IsOtherTeam(ClientId) || ClientId < 0) ? g_Config.m_ClShowOthersAlpha / 100.f : 1.f;
-                if(ClientId == -2) // ghost
-                {
-                        Alpha = g_Config.m_ClRaceGhostAlpha / 100.f;
-                }
-                RenderTools()->RenderTee(CAnimState::GetIdle(), &SpectatorTeeRenderInfo()->TeeRenderInfo(), EMOTE_BLINK, vec2(1, 0), Client.m_SpecChar, Alpha);
-        }
+		const int ClientId = Client.ClientId();
+		float Alpha = (GameClient()->IsOtherTeam(ClientId) || ClientId < 0) ? g_Config.m_ClShowOthersAlpha / 100.f : 1.f;
+		if(ClientId == -2) // ghost
+		{
+			Alpha = g_Config.m_ClRaceGhostAlpha / 100.f;
+		}
+		if(!ScreenRect.Inside(Client.m_SpecChar))
+			continue;
+		RenderTools()->RenderTee(CAnimState::GetIdle(), &SpectatorTeeRenderInfo()->TeeRenderInfo(), EMOTE_BLINK, vec2(1, 0), Client.m_SpecChar, Alpha);
+	}
 
         // render everyone else's tee, then either our own or the tee we are spectating.
         const int RenderLastId = (GameClient()->m_Snap.m_SpecInfo.m_SpectatorId != SPEC_FREEVIEW && GameClient()->m_Snap.m_SpecInfo.m_Active) ? GameClient()->m_Snap.m_SpecInfo.m_SpectatorId : LocalClientId;
@@ -1187,20 +1241,15 @@ void CPlayers::OnRender()
                         continue;
                 }
 
-                RenderHookCollLine(&GameClient()->m_aClients[ClientId].m_RenderPrev, &GameClient()->m_aClients[ClientId].m_RenderCur, ClientId);
-
-                if(!in_range(GameClient()->m_aClients[ClientId].m_RenderPos.x, ScreenX0, ScreenX1) || !in_range(GameClient()->m_aClients[ClientId].m_RenderPos.y, ScreenY0, ScreenY1))
-                {
-                        continue;
-                }
-                RenderPlayer(&GameClient()->m_aClients[ClientId].m_RenderPrev, &GameClient()->m_aClients[ClientId].m_RenderCur, &aRenderInfo[ClientId], ClientId);
-        }
-        if(RenderLastId != -1 && IsPlayerInfoAvailable(RenderLastId))
-        {
-                const CGameClient::CClientData *pClientData = &GameClient()->m_aClients[RenderLastId];
-                RenderHookCollLine(&pClientData->m_RenderPrev, &pClientData->m_RenderCur, RenderLastId);
-                RenderPlayer(&pClientData->m_RenderPrev, &pClientData->m_RenderCur, &aRenderInfo[RenderLastId], RenderLastId);
-        }
+		RenderHookCollLine(ScreenRect, &GameClient()->m_aClients[ClientId].m_RenderPrev, &GameClient()->m_aClients[ClientId].m_RenderCur, ClientId);
+		RenderPlayer(ScreenRect, &GameClient()->m_aClients[ClientId].m_RenderPrev, &GameClient()->m_aClients[ClientId].m_RenderCur, &aRenderInfo[ClientId], ClientId);
+	}
+	if(RenderLastId != -1 && IsPlayerInfoAvailable(RenderLastId))
+	{
+		const CGameClient::CClientData *pClientData = &GameClient()->m_aClients[RenderLastId];
+		RenderHookCollLine(ScreenRect, &pClientData->m_RenderPrev, &pClientData->m_RenderCur, RenderLastId);
+		RenderPlayer(ScreenRect, &pClientData->m_RenderPrev, &pClientData->m_RenderCur, &aRenderInfo[RenderLastId], RenderLastId);
+	}
 
         // v1.56.178: trajectory prediction moved to CTrajectory component
         // (GameClient()->m_Trajectory.OnRender) — called from gameclient render order.
@@ -1261,21 +1310,23 @@ void CPlayers::OnInit()
         }
         Graphics()->QuadContainerUpload(m_WeaponEmoteQuadContainerIndex);
 
-        for(int i = 0; i < NUM_WEAPONS; ++i)
-        {
-                m_aWeaponSpriteMuzzleQuadContainerIndex[i] = Graphics()->CreateQuadContainer(false);
-                for(int n = 0; n < g_pData->m_Weapons.m_aId[i].m_NumSpriteMuzzles; ++n)
-                {
-                        if(g_pData->m_Weapons.m_aId[i].m_aSpriteMuzzles[n])
-                        {
-                                if(i == WEAPON_GUN || i == WEAPON_SHOTGUN)
-                                {
-                                        // TODO: hardcoded for now to get the same particle size as before
-                                        Graphics()->GetSpriteScaleImpl(96, 64, ScaleX, ScaleY);
-                                }
-                                else
-                                        Graphics()->GetSpriteScale(g_pData->m_Weapons.m_aId[i].m_aSpriteMuzzles[n], ScaleX, ScaleY);
-                        }
+	for(int i = 0; i < NUM_WEAPONS; ++i)
+	{
+		m_aWeaponSpriteMuzzleQuadContainerIndex[i] = Graphics()->CreateQuadContainer(false);
+		for(int n = 0; n < g_pData->m_Weapons.m_aId[i].m_NumSpriteMuzzles; ++n)
+		{
+			if(g_pData->m_Weapons.m_aId[i].m_aSpriteMuzzles[n])
+			{
+				if(i == WEAPON_GUN || i == WEAPON_SHOTGUN)
+				{
+					// TODO: hardcoded for now to get the same particle size as before
+					Graphics()->GetSpriteScaleImpl(96, 64, ScaleX, ScaleY);
+				}
+				else
+				{
+					Graphics()->GetSpriteScale(g_pData->m_Weapons.m_aId[i].m_aSpriteMuzzles[n], ScaleX, ScaleY);
+				}
+			}
 
                         float SWidth = (g_pData->m_Weapons.m_aId[i].m_VisualSize * ScaleX) * (4.0f / 3.0f);
                         float SHeight = g_pData->m_Weapons.m_aId[i].m_VisualSize * ScaleY;

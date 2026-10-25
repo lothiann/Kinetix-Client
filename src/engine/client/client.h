@@ -18,10 +18,10 @@
 #include <engine/client/updater.h>
 #include <engine/editor.h>
 #include <engine/graphics.h>
+#include <engine/http.h>
 #include <engine/shared/config.h>
 #include <engine/shared/demo.h>
 #include <engine/shared/fifo.h>
-#include <engine/shared/http.h>
 #include <engine/shared/network.h>
 #include <engine/textrender.h>
 #include <engine/warning.h>
@@ -79,21 +79,17 @@ class CClient : public IClient, public CDemoPlayer::IListener
         IEngineTextRender *m_pTextRender = nullptr;
         IUpdater *m_pUpdater = nullptr;
 
-        rust::Box<CSnapshotDelta> m_pSnapshotDelta;
-        rust::Box<CSnapshotDelta> m_pSnapshotDeltaSixup;
-        CSnapshotDelta *SnapshotDelta();
-
-        CNetClient m_aNetClient[NUM_CONNS];
-        CDemoPlayer m_DemoPlayer;
-        CDemoRecorder m_aDemoRecorders[RECORDER_MAX];
-        CDemoRecorder m_aDemoRecordersSixup[RECORDER_MAX];
-        CDemoEditor m_DemoEditor;
-        CGhostRecorder m_GhostRecorder;
-        CGhostLoader m_GhostLoader;
-        CServerBrowser m_ServerBrowser;
-        CUpdater m_Updater;
-        CFriends m_Friends;
-        CFriends m_Foes;
+	CNetClient m_aNetClient[NUM_CONNS];
+	CDemoPlayer m_DemoPlayer;
+	CDemoRecorder m_aDemoRecorders[RECORDER_MAX];
+	CDemoRecorder m_aDemoRecordersSixup[RECORDER_MAX];
+	CDemoEditor m_DemoEditor;
+	CGhostRecorder m_GhostRecorder;
+	CGhostLoader m_GhostLoader;
+	CServerBrowser m_ServerBrowser;
+	CUpdater m_Updater;
+	CFriends m_Friends;
+	CFriends m_Foes;
 
         char m_aConnectAddressStr[MAX_SERVER_ADDRESSES * NETADDR_MAXSTRSIZE] = "";
 
@@ -145,18 +141,18 @@ class CClient : public IClient, public CDemoPlayer::IListener
         char m_aCmdPlayDemo[IO_MAX_PATH_LENGTH] = "";
         char m_aCmdEditMap[IO_MAX_PATH_LENGTH] = "";
 
-        // map download
-        char m_aMapDownloadUrl[256] = "";
-        std::shared_ptr<CHttpRequest> m_pMapdownloadTask = nullptr;
-        char m_aMapdownloadFilename[256] = "";
-        char m_aMapdownloadFilenameTemp[256] = "";
-        char m_aMapdownloadName[256] = "";
-        IOHANDLE m_MapdownloadFileTemp = nullptr;
-        int m_MapdownloadChunk = 0;
-        int m_MapdownloadCrc = 0;
-        int m_MapdownloadAmount = -1;
-        int m_MapdownloadTotalsize = -1;
-        std::optional<SHA256_DIGEST> m_MapdownloadSha256;
+	// map download
+	char m_aMapDownloadUrl[256] = "";
+	std::shared_ptr<IHttpRequest> m_pMapdownloadTask = nullptr;
+	char m_aMapdownloadFilename[256] = "";
+	char m_aMapdownloadFilenameTemp[256] = "";
+	char m_aMapdownloadName[256] = "";
+	IOHANDLE m_MapdownloadFileTemp = nullptr;
+	int m_MapdownloadChunk = 0;
+	int m_MapdownloadCrc = 0;
+	int m_MapdownloadAmount = -1;
+	int m_MapdownloadTotalsize = -1;
+	std::optional<SHA256_DIGEST> m_MapdownloadSha256;
 
         class CMapDetails
         {
@@ -169,8 +165,8 @@ class CClient : public IClient, public CDemoPlayer::IListener
         };
         std::optional<CMapDetails> m_MapDetails;
 
-        EInfoState m_InfoState = EInfoState::ERROR;
-        std::shared_ptr<CHttpRequest> m_pDDNetInfoTask = nullptr;
+	EInfoState m_InfoState = EInfoState::ERROR;
+	std::shared_ptr<IHttpRequest> m_pDDNetInfoTask = nullptr;
 
         // time
         CSmoothTime m_aGameTime[MAX_DUMMIES];
@@ -194,6 +190,9 @@ class CClient : public IClient, public CDemoPlayer::IListener
         float m_aLastDummyConnectTime[MAX_DUMMIES] = {};
         bool m_aDummyReconnectOnReload[MAX_DUMMIES] = {};
         bool m_aDummyDeactivateOnReconnect[MAX_DUMMIES] = {};
+#if defined(CONF_PLATFORM_IOS)
+	bool m_DummyReconnectOnResume = false;
+#endif
 
         // Kinetix Dummy Manager (v1.56.282): per-dummy SOCKS5 proxies + limit.
         // Slot 0 = main connection, 1..MAX_DUMMIES-1 = dummies.
@@ -217,6 +216,10 @@ class CClient : public IClient, public CDemoPlayer::IListener
 
         CSnapshotStorage::CHolder m_aDemorecSnapshotHolders[NUM_SNAPSHOT_TYPES];
         CSnapshotBuffer m_aaDemorecSnapshotData[NUM_SNAPSHOT_TYPES][2];
+
+	CSnapshotDelta m_SnapshotDelta;
+	CSnapshotDelta m_SnapshotDeltaSixup;
+	CSnapshotDelta *SnapshotDelta();
 
         std::deque<std::shared_ptr<CDemoEdit>> m_EditJobs;
 
@@ -366,7 +369,8 @@ public:
         void SetDummyLimit(int Limit) override;
         int DummyLimit() const override { return m_DummyLimit; }
 
-        void GetServerInfo(CServerInfo *pServerInfo) const override;
+	const CServerInfo &ServerInfo() const override;
+
         void ServerInfoRequest();
         void SetCurrentServerInfo(const CServerInfo &ServerInfo);
 
@@ -385,6 +389,9 @@ public:
         void Render();
         void RenderDebug();
         void RenderGraphs();
+#if defined(CONF_PLATFORM_IOS)
+	void RecreateBrokenSockets();
+#endif
 
         void Restart() override;
         void Quit() override;
@@ -399,7 +406,7 @@ public:
 
         int TranslateSysMsg(int *pMsgId, bool System, CUnpacker *pUnpacker, CPacker *pPacker, CNetChunk *pPacket, bool *pIsExMsg);
 
-        void PreprocessConnlessPacket7(CNetChunk *pPacket);
+        bool PreprocessConnlessPacket7(CNetChunk *pPacket);
         void ProcessConnlessPacket(CNetChunk *pPacket);
         void ProcessServerInfo(int Type, NETADDR *pFrom, const void *pData, int DataSize);
         void ProcessServerPacket(CNetChunk *pPacket, int Conn, bool Dummy);
