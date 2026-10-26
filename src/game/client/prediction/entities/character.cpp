@@ -595,6 +595,76 @@ void CCharacter::ResetHook()
 	m_Core.m_HookPos = m_Core.m_Pos;
 }
 
+void CCharacter::SaveFullState(CCharacterFullState *pState) const
+{
+	pState->m_LatestPrevInput = m_LatestPrevInput;
+	pState->m_LatestInput = m_LatestInput;
+	pState->m_PrevInput = m_PrevInput;
+	pState->m_Input = m_Input;
+	pState->m_SavedInput = m_SavedInput;
+	mem_copy(pState->m_aHitObjects, m_aHitObjects, sizeof(m_aHitObjects));
+	pState->m_NumObjectsHit = m_NumObjectsHit;
+	pState->m_LastWeapon = m_LastWeapon;
+	pState->m_QueuedWeapon = m_QueuedWeapon;
+	pState->m_ReloadTimer = m_ReloadTimer;
+	pState->m_AttackTick = m_AttackTick;
+	pState->m_MoveRestrictions = m_MoveRestrictions;
+	pState->m_PainSoundTimer = m_PainSoundTimer;
+	pState->m_NumInputs = m_NumInputs;
+	pState->m_TuneZone = m_TuneZone;
+	pState->m_TuneZoneOverride = m_TuneZoneOverride;
+	pState->m_StrongWeakId = m_StrongWeakId;
+	pState->m_LastWeaponSwitchTick = m_LastWeaponSwitchTick;
+	pState->m_LastTuneZoneTick = m_LastTuneZoneTick;
+	pState->m_GameTeam = m_GameTeam;
+	pState->m_LastSnapWeapon = m_LastSnapWeapon;
+	pState->m_TeleCheckpoint = m_TeleCheckpoint;
+	pState->m_FreezeTime = m_FreezeTime;
+	pState->m_Interfering = m_Interfering;
+	pState->m_NinjaJetpack = m_NinjaJetpack;
+	pState->m_FrozenLastTick = m_FrozenLastTick;
+	pState->m_LastRefillJumps = m_LastRefillJumps;
+	pState->m_CanMoveInFreeze = m_CanMoveInFreeze;
+	pState->m_KeepHooked = m_KeepHooked;
+	pState->m_PrevPos = m_PrevPos;
+	pState->m_PrevPrevPos = m_PrevPrevPos;
+}
+
+void CCharacter::LoadFullState(const CCharacterFullState &State)
+{
+	m_LatestPrevInput = State.m_LatestPrevInput;
+	m_LatestInput = State.m_LatestInput;
+	m_PrevInput = State.m_PrevInput;
+	m_Input = State.m_Input;
+	m_SavedInput = State.m_SavedInput;
+	mem_copy(m_aHitObjects, State.m_aHitObjects, sizeof(m_aHitObjects));
+	m_NumObjectsHit = State.m_NumObjectsHit;
+	m_LastWeapon = State.m_LastWeapon;
+	m_QueuedWeapon = State.m_QueuedWeapon;
+	m_ReloadTimer = State.m_ReloadTimer;
+	m_AttackTick = State.m_AttackTick;
+	m_MoveRestrictions = State.m_MoveRestrictions;
+	m_PainSoundTimer = State.m_PainSoundTimer;
+	m_NumInputs = State.m_NumInputs;
+	m_TuneZone = State.m_TuneZone;
+	m_TuneZoneOverride = State.m_TuneZoneOverride;
+	m_StrongWeakId = State.m_StrongWeakId;
+	m_LastWeaponSwitchTick = State.m_LastWeaponSwitchTick;
+	m_LastTuneZoneTick = State.m_LastTuneZoneTick;
+	m_GameTeam = State.m_GameTeam;
+	m_LastSnapWeapon = State.m_LastSnapWeapon;
+	m_TeleCheckpoint = State.m_TeleCheckpoint;
+	m_FreezeTime = State.m_FreezeTime;
+	m_Interfering = State.m_Interfering;
+	m_NinjaJetpack = State.m_NinjaJetpack;
+	m_FrozenLastTick = State.m_FrozenLastTick;
+	m_LastRefillJumps = State.m_LastRefillJumps;
+	m_CanMoveInFreeze = State.m_CanMoveInFreeze;
+	m_KeepHooked = State.m_KeepHooked;
+	m_PrevPos = State.m_PrevPos;
+	m_PrevPrevPos = State.m_PrevPrevPos;
+}
+
 void CCharacter::ResetInput()
 {
 	m_Input.m_Direction = 0;

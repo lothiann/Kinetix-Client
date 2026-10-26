@@ -9,6 +9,8 @@
 #include <base/log_color.h>
 #include <base/time.h>
 
+#include <algorithm>
+
 #include <engine/editor.h>
 #include <engine/graphics.h>
 #include <engine/keys.h>
@@ -26,6 +28,7 @@
 #include <game/client/components/sounds.h>
 #include <game/client/gameclient.h>
 #include <game/client/components/kinetix/irc.h>
+#include <game/client/components/kinetix/tas.h>
 #include <game/localization.h>
 
 char CChat::ms_aDisplayText[MAX_CHAT_LENGTH] = "";
@@ -667,7 +670,23 @@ void CChat::StoreSave(const char *pText)
 
 void CChat::AddLine(int ClientId, int Team, const char *pLine)
 {
-        if(*pLine == 0 ||
+	// v6.2: while the playground chat is shown, real-world lines are parked in
+	// the saved buffer (they reappear when the playground is left).
+	if(m_TasVirtual && !m_TasVirtualAdd)
+	{
+		if(*pLine == 0)
+			return;
+		if(m_vTasSaved.size() >= 512)
+			m_vTasSaved.erase(m_vTasSaved.begin());
+		STasSavedLine Saved;
+		Saved.m_ClientId = ClientId;
+		Saved.m_Team = Team;
+		str_copy(Saved.m_aText, pLine);
+		m_vTasSaved.push_back(Saved);
+		return;
+	}
+
+	if(*pLine == 0 ||
                 (ClientId == SERVER_MSG && !g_Config.m_ClShowChatSystem) ||
                 (ClientId >= 0 && (GameClient()->m_aClients[ClientId].m_aName[0] == '\0' || // unknown client
                                           GameClient()->m_aClients[ClientId].m_ChatIgnore ||
@@ -1373,6 +1392,32 @@ void CChat::EnsureCoherentWidth() const
 
 void CChat::SendChat(int Team, const char *pLine)
 {
+	// v6.2: TAS playground virtual chat — everything except whispers stays in
+	// the playground (its buffer + practice commands), so nothing leaks to the
+	// real server while the sandbox is shown.
+	if(m_TasVirtual && !str_startswith(pLine, "/w ") && !str_startswith(pLine, "/whisper "))
+	{
+		CTas &Tas = GameClient()->m_Tas;
+		m_LastChatSend = time();
+		if(pLine[0] == '/')
+		{
+			char aMsg[256];
+			if(Tas.PgChatHandleCommand(pLine, aMsg, sizeof(aMsg)) && aMsg[0])
+			{
+				m_TasVirtualAdd = true;
+				AddLine(CLIENT_MSG, Team, aMsg);
+				m_TasVirtualAdd = false;
+			}
+			return;
+		}
+		const int LocalId = GameClient()->m_Snap.m_LocalClientId;
+		Tas.PgChatAddLine(LocalId, Team, "", pLine);
+		m_TasVirtualAdd = true;
+		AddLine(LocalId, Team, pLine);
+		m_TasVirtualAdd = false;
+		return;
+	}
+
         // don't send empty messages
         if(*str_utf8_skip_whitespaces(pLine) == '\0')
                 return;
@@ -1394,6 +1439,70 @@ void CChat::SendChat(int Team, const char *pLine)
 	Msg.m_Team = Team;
 	Msg.m_pMessage = pLine;
 	Client()->SendPackMsgActive(&Msg, MSGFLAG_VITAL);
+}
+
+// v6.2: swaps the visible chat buffer to/from the playground one. The buffer
+// that is currently hidden is captured as plain text (client id + team + text)
+// and rebuilt through AddLine when it is shown again, so each line keeps the
+// text containers of the buffer that owns it.
+void CChat::TasSetVirtual(bool On)
+{
+	if(m_TasVirtual == On)
+		return;
+
+	CTas &Tas = GameClient()->m_Tas;
+
+	auto Capture = [&](std::vector<STasSavedLine> &vOut) {
+		vOut.clear();
+		std::vector<std::pair<int64_t, STasSavedLine>> vSorted;
+		for(int i = 0; i < MAX_LINES; ++i)
+		{
+			CLine &Line = m_aLines[i];
+			if(!Line.m_Initialized)
+				continue;
+			STasSavedLine Saved;
+			Saved.m_ClientId = Line.m_ClientId;
+			Saved.m_Team = Line.m_Team;
+			str_copy(Saved.m_aText, Line.m_aText);
+			vSorted.emplace_back(Line.m_Time, Saved);
+		}
+		std::sort(vSorted.begin(), vSorted.end(),
+			[](const std::pair<int64_t, STasSavedLine> &A, const std::pair<int64_t, STasSavedLine> &B) { return A.first < B.first; });
+		for(const auto &Entry : vSorted)
+			vOut.push_back(Entry.second);
+	};
+	auto ClearVisible = [&]() {
+		for(int i = 0; i < MAX_LINES; ++i)
+		{
+			if(m_aLines[i].m_Initialized)
+				m_aLines[i].Reset(*this);
+		}
+		m_CurrentLine = 0;
+	};
+
+	if(On)
+	{
+		Capture(m_vTasSaved);
+		ClearVisible();
+		m_TasVirtual = true;
+		m_TasVirtualAdd = true;
+		for(const CTas::SPgChatLine &Line : Tas.PgChatLines())
+			AddLine(Line.m_ClientId, Line.m_Team, Line.m_aText);
+		m_TasVirtualAdd = false;
+	}
+	else
+	{
+		std::vector<STasSavedLine> vVirtual;
+		Capture(vVirtual);
+		Tas.PgChatClear();
+		for(const STasSavedLine &Line : vVirtual)
+			Tas.PgChatAddLine(Line.m_ClientId, Line.m_Team, "", Line.m_aText);
+		ClearVisible();
+		m_TasVirtual = false;
+		for(const STasSavedLine &Line : m_vTasSaved)
+			AddLine(Line.m_ClientId, Line.m_Team, Line.m_aText);
+		m_vTasSaved.clear();
+	}
 }
 
 void CChat::SendChatFrom(int Dummy, int Team, const char *pLine)

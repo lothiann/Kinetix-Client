@@ -808,6 +808,66 @@ void CNamePlates::RenderNamePlateGame(vec2 Position, const CNetObj_PlayerInfo *p
         NamePlate.Render(*GameClient(), Position - vec2(0.0f, (float)g_Config.m_ClNamePlatesOffset));
 }
 
+void CNamePlates::RenderNamePlateGameCustom(vec2 Position, int Slot, const char *pName, const char *pClan,
+	int ClientId, bool Local, int HookStrongWeakId, bool Strong, bool ShowDirection,
+	bool DirLeft, bool DirJump, bool DirRight, float Alpha)
+{
+	// Same culling box as the regular game name plates.
+	CScreenRect ScreenRect = Graphics()->GetScreen();
+	ScreenRect.m_TopLeft.x -= 400;
+	ScreenRect.m_BottomRight.x += 400;
+	ScreenRect.m_BottomRight.y += 800;
+	if(!ScreenRect.Inside(Position))
+		return;
+
+	CNamePlateData Data;
+	Data.m_InGame = true;
+
+	Data.m_ShowName = Local ? g_Config.m_ClNamePlatesOwn : g_Config.m_ClNamePlates;
+	str_copy(Data.m_aName, pName);
+	Data.m_ShowFriendMark = false;
+	Data.m_ShowClientId = Data.m_ShowName && (g_Config.m_Debug || g_Config.m_ClNamePlatesIds);
+	Data.m_FontSize = 18.0f + 20.0f * g_Config.m_ClNamePlatesSize / 100.0f;
+
+	Data.m_ClientId = ClientId;
+	Data.m_ClientIdSeparateLine = g_Config.m_ClNamePlatesIdsSeparateLine;
+	Data.m_FontSizeClientId = Data.m_ClientIdSeparateLine ? (18.0f + 20.0f * g_Config.m_ClNamePlatesIdsSize / 100.0f) : Data.m_FontSize;
+
+	Data.m_ShowClan = Data.m_ShowName && g_Config.m_ClNamePlatesClan;
+	str_copy(Data.m_aClan, pClan ? pClan : "");
+	Data.m_FontSizeClan = 18.0f + 20.0f * g_Config.m_ClNamePlatesClanSize / 100.0f;
+
+	Data.m_FontSizeHookStrongWeak = 18.0f + 20.0f * g_Config.m_ClNamePlatesStrongSize / 100.0f;
+	Data.m_FontSizeDirection = 18.0f + 20.0f * g_Config.m_ClDirectionSize / 100.0f;
+
+	Data.m_Color = ColorRGBA(1.0f, 1.0f, 1.0f);
+	Data.m_Color.a = Alpha;
+
+	Data.m_ShowDirection = ShowDirection;
+	Data.m_DirLeft = DirLeft;
+	Data.m_DirJump = DirJump;
+	Data.m_DirRight = DirRight;
+
+	Data.m_ShowHookStrongWeakId = g_Config.m_Debug || g_Config.m_ClNamePlatesStrong == 2;
+	Data.m_HookStrongWeakId = HookStrongWeakId;
+	Data.m_ShowHookStrongWeak = false;
+	Data.m_HookStrongWeakState = EHookStrongWeakState::NEUTRAL;
+	if(Local)
+	{
+		// Own tee never compares itself against itself, only shows its id.
+		Data.m_ShowHookStrongWeak = Data.m_ShowHookStrongWeakId;
+	}
+	else
+	{
+		Data.m_HookStrongWeakState = Strong ? EHookStrongWeakState::STRONG : EHookStrongWeakState::WEAK;
+		Data.m_ShowHookStrongWeak = g_Config.m_Debug || g_Config.m_ClNamePlatesStrong > 0;
+	}
+
+	CNamePlate &NamePlate = m_pData->m_aNamePlates[Slot % MAX_CLIENTS];
+	NamePlate.Update(*GameClient(), Data);
+	NamePlate.Render(*GameClient(), Position - vec2(0.0f, (float)g_Config.m_ClNamePlatesOffset));
+}
+
 void CNamePlates::RenderNamePlatePreview(vec2 Position, int Dummy)
 {
         const float FontSize = 18.0f + 20.0f * g_Config.m_ClNamePlatesSize / 100.0f;

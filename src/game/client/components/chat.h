@@ -68,6 +68,19 @@ class CChat : public CComponent
 	CLine m_aLines[MAX_LINES];
 	int m_CurrentLine;
 
+	// v6.2: virtual chat state. While m_TasVirtual is on, m_aLines holds the
+	// playground chat and every real-server line is parked in m_vTasSaved
+	// (restored when the playground is left).
+	bool m_TasVirtual = false;
+	bool m_TasVirtualAdd = false;
+	struct STasSavedLine
+	{
+		int m_ClientId = -1;
+		int m_Team = 0;
+		char m_aText[MAX_CHAT_LENGTH] = "";
+	};
+	std::vector<STasSavedLine> m_vTasSaved;
+
 
 	enum
 	{
@@ -185,6 +198,13 @@ public:
 	};
 	// Fills pLines with up to MaxLines recent lines, oldest first. Returns count written.
 	int GetRecentLines(CChatLineInfo *pLines, int MaxLines) const;
+
+	// ---- v6.2: TAS playground virtual chat ----
+	// Swaps the visible chat buffer between the real chat and the playground
+	// buffer owned by CTas. Both sides keep their content, so toggling back and
+	// forth restores exactly what was there.
+	void TasSetVirtual(bool On);
+	bool TasVirtual() const { return m_TasVirtual; }
 
 	void OnWindowResize() override;
 	void OnConsoleInit() override;

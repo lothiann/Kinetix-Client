@@ -220,6 +220,13 @@ void CControls::OnMessage(int Msg, void *pRawMsg)
 
 int CControls::SnapInput(int *pData)
 {
+        // Fake Aim (and every sub-feature built on top of the sent aim) is fully
+        // skipped while spectating: in freeview the input target IS the view
+        // position the server uses for snapshot filtering, so any fake aim
+        // rewrite moves the server-side view (see the dist_center incident —
+        // it pinned the view around the map origin and tees vanished).
+        const bool SpecActive = GameClient()->m_Snap.m_SpecInfo.m_Active;
+
         // update player state
         if(GameClient()->m_Chat.IsActive())
                 m_aInputData[g_Config.m_ClDummy].m_PlayerFlags = PLAYERFLAG_CHATTING;
@@ -885,7 +892,7 @@ int CControls::SnapInput(int *pData)
         static vec2 s_RobotAim = vec2(0, 0);
         static bool s_RobotInit = false;
 
-        if(g_Config.m_KxFakeAim && !GameClient()->m_Tas.IsRealPlaying())
+        if(g_Config.m_KxFakeAim && !SpecActive && !GameClient()->m_Tas.IsRealPlaying())
         {
                 // Detect weapon fire via 1-tick prediction.
                 // This catches EVERY real shot (not just the rising edge of
@@ -975,7 +982,7 @@ int CControls::SnapInput(int *pData)
         // aim running while replaying a take WITHOUT fake aim — conflicting
         // with the replay. Same for the fire-detection, mask-hold and Predict
         // guards below.
-        if(g_Config.m_KxFakeAim && !GameClient()->m_Tas.IsRealPlaying())
+        if(g_Config.m_KxFakeAim && !SpecActive && !GameClient()->m_Tas.IsRealPlaying())
         {
                 // Decide: real or fake
                 // v1.56.279: no silent-channel bypass — the AimBot's silent aim is
@@ -1122,7 +1129,10 @@ int CControls::SnapInput(int *pData)
         // fakeOffset is generated). Rescales the aim to exactly
         // kx_fake_aim_dist_center units from (0,0), preserving direction.
         // 0 = off. Skipped during TAS real replay and RT pathfinder playback so both replay as-is.
-        if(g_Config.m_KxFakeAimDistCenter > 0 && !GameClient()->m_Tas.IsRealPlaying() && GameClient()->m_BotNet.m_RtPfState != 1)
+        // Gated on the Fake Aim master: this is a fake-aim sub-feature, with the
+        // master off it must do nothing (it previously ran on its own cvar and
+        // pinned the server-side spec view around the map origin).
+        if(g_Config.m_KxFakeAimDistCenter > 0 && g_Config.m_KxFakeAim && !SpecActive && !GameClient()->m_Tas.IsRealPlaying() && GameClient()->m_BotNet.m_RtPfState != 1)
         {
                 vec2 SendTarget((float)m_aInputData[g_Config.m_ClDummy].m_TargetX, (float)m_aInputData[g_Config.m_ClDummy].m_TargetY);
                 float SendLen = length(SendTarget);
@@ -1180,7 +1190,7 @@ int CControls::SnapInput(int *pData)
         //     live m_aMousePos.
         // The aim actually sent to the server (m_aInputData / pData) is not
         // touched here — this only affects the rendered character angle.
-        if(g_Config.m_KxFakeAim && s_HaveLastFake && !GameClient()->m_Tas.IsRealPlaying())
+        if(g_Config.m_KxFakeAim && s_HaveLastFake && !SpecActive && !GameClient()->m_Tas.IsRealPlaying())
         {
                 // Figure out whether this tick is a release tick.
                 // Real (5) never masks — with the silent channel in action there
@@ -1215,7 +1225,7 @@ int CControls::SnapInput(int *pData)
         // fakeActive and the local fakeShowForMe stay false (Fake Aim generation
         // is skipped for them), yet the aim SENT is exactly that component's aim —
         // precisely what this toggle must reveal. Gate on the CVAR, not the local.
-        if(g_Config.m_KxFakeAim && g_Config.m_KxFakeAimShowServerSide && g_Config.m_KxFakeAimShowForMe)
+        if(g_Config.m_KxFakeAim && g_Config.m_KxFakeAimShowServerSide && g_Config.m_KxFakeAimShowForMe && !SpecActive)
         {
                 m_FakeAimRenderActive = true;
                 m_FakeAimRenderOffset = vec2((float)m_aInputData[g_Config.m_ClDummy].m_TargetX,

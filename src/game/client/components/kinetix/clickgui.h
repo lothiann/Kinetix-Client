@@ -55,6 +55,7 @@ public:
 
         static constexpr int NUM_PANELS = 11; // v1.56.286: + Search (last panel)
 
+
 private:
         // Animation state: 0.0 = fully closed, 1.0 = fully open.
         float m_AnimProgress = 0.0f;

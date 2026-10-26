@@ -21,6 +21,7 @@ enum
 };
 
 class CConsoleLogger;
+class CTas;
 
 class CGameConsole : public CComponent
 {
@@ -200,6 +201,9 @@ public:
 	int Sizeof() const override { return sizeof(*this); }
 
 	void PrintLine(int Type, const char *pLine);
+	// v6.2: TAS playground access for the console instances (virtual rcon).
+	CTas &Tas();
+	void ClearRemoteBacklog() { m_RemoteConsole.ClearBacklog(); }
 	void RequireUsername(bool UsernameReq);
 
 	void OnStateChange(int NewState, int OldState) override;

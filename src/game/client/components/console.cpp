@@ -26,6 +26,7 @@
 #include <generated/client_data.h>
 
 #include <game/client/gameclient.h>
+#include <game/client/components/kinetix/tas.h>
 #include <game/client/ui.h>
 #include <game/localization.h>
 #include <game/version.h>
@@ -446,6 +447,17 @@ void CGameConsole::CInstance::ExecuteLine(const char *pLine)
 	}
 	else
 	{
+		// v6.2: TAS playground virtual rcon — no login, the line runs locally
+		// against the sandbox. With the virtual rcon off, the real one keeps
+		// working exactly as before.
+		CTas &Tas = m_pGameConsole->Tas();
+		if(Tas.IsJoined() && Tas.PgMaster() && Tas.PgVirtualRcon())
+		{
+			// The console already printed "> line"; record it and run it.
+			Tas.PgRconLogCommand(pLine);
+			Tas.PgRconExecute(pLine);
+			return;
+		}
 		if(m_pGameConsole->Client()->RconAuthed())
 		{
 			m_pGameConsole->Client()->Rcon(pLine);
@@ -1779,6 +1791,11 @@ void CGameConsole::RequireUsername(bool UsernameReq)
 		m_RemoteConsole.m_aUser[0] = '\0';
 		m_RemoteConsole.m_UserGot = false;
 	}
+}
+
+CTas &CGameConsole::Tas()
+{
+	return GameClient()->m_Tas;
 }
 
 void CGameConsole::PrintLine(int Type, const char *pLine)

@@ -182,6 +182,27 @@ void CGameWorld::RemoveCharacter(CCharacter *pChar)
 	}
 }
 
+// v6.2: rebuilds the id -> character map from the entity list (same recipe as
+// the tail of CGameWorld::Tick). Used by the TAS spawner, which inserts and
+// removes characters outside the world tick.
+void CGameWorld::RefreshCharacterIds()
+{
+	for(int i = 0; i < MAX_CLIENTS; i++)
+	{
+		m_apCharacters[i] = nullptr;
+		m_Core.m_apCharacters[i] = nullptr;
+	}
+	for(CCharacter *pChar = (CCharacter *)FindFirst(ENTTYPE_CHARACTER); pChar; pChar = (CCharacter *)pChar->TypeNext())
+	{
+		int Id = pChar->GetCid();
+		if(Id >= 0 && Id < MAX_CLIENTS)
+		{
+			m_apCharacters[Id] = pChar;
+			m_Core.m_apCharacters[Id] = &pChar->m_Core;
+		}
+	}
+}
+
 void CGameWorld::RemoveEntities()
 {
 	// destroy objects marked for destruction

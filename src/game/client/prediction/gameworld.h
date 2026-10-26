@@ -47,6 +47,9 @@ public:
 	void InsertEntity(CEntity *pEntity, bool Last = false);
 	void RemoveEntity(CEntity *pEntity);
 	void RemoveCharacter(CCharacter *pChar);
+	// Rebuilds the id → character map from the entity list (used by the TAS
+	// spawner after inserting/removing characters outside a world tick).
+	void RefreshCharacterIds();
 	void Tick();
 
 	// DDRace
@@ -107,6 +110,9 @@ public:
 
 	const CTuningParams *TuningList() const { return m_pTuningList; }
 	CTuningParams *TuningList() { return m_pTuningList; }
+	// v6.2: lets the TAS playground swap in its own private tuning list, so
+	// virtual-rcon "tune" never modifies the real world's tuning.
+	void SetTuningList(CTuningParams *pTuningList) { m_pTuningList = pTuningList; }
 	const CTuningParams *GlobalTuning() const { return &TuningList()[0]; }
 	CTuningParams *GlobalTuning() { return &TuningList()[0]; }
 	const CTuningParams *GetTuning(int i) const { return &TuningList()[i]; }

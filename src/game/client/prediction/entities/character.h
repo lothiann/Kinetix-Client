@@ -20,11 +20,52 @@ enum
 	FAKETUNE_NOHAMMER = 1 << 6,
 };
 
+// Full per-tick character state. The TAS playground rewinds a tee exactly, and
+// the core snapshot alone is not enough: the input queues (used to detect
+// presses), the weapon switch state and the hammer hit list all leak across a
+// rewind, which made the fake tee swing or re-hit after an auto-rewind.
+struct CCharacterFullState
+{
+	CNetObj_PlayerInput m_LatestPrevInput{};
+	CNetObj_PlayerInput m_LatestInput{};
+	CNetObj_PlayerInput m_PrevInput{};
+	CNetObj_PlayerInput m_Input{};
+	CNetObj_PlayerInput m_SavedInput{};
+	int m_aHitObjects[MAX_CLIENTS]{};
+	int m_NumObjectsHit = 0;
+	int m_LastWeapon = 0;
+	int m_QueuedWeapon = 0;
+	int m_ReloadTimer = 0;
+	int m_AttackTick = 0;
+	int m_MoveRestrictions = 0;
+	int m_PainSoundTimer = 0;
+	int m_NumInputs = 0;
+	int m_TuneZone = 0;
+	int m_TuneZoneOverride = 0;
+	int m_StrongWeakId = 0;
+	int m_LastWeaponSwitchTick = 0;
+	int m_LastTuneZoneTick = 0;
+	int m_GameTeam = 0;
+	int m_LastSnapWeapon = 0;
+	int m_TeleCheckpoint = 0;
+	int m_FreezeTime = 0;
+	bool m_Interfering = false;
+	bool m_NinjaJetpack = false;
+	bool m_FrozenLastTick = false;
+	bool m_LastRefillJumps = false;
+	bool m_CanMoveInFreeze = false;
+	bool m_KeepHooked = false;
+	vec2 m_PrevPos = vec2(0.0f, 0.0f);
+	vec2 m_PrevPrevPos = vec2(0.0f, 0.0f);
+};
+
 class CCharacter : public CEntity
 {
 	friend class CGameWorld;
 
 public:
+	void SaveFullState(CCharacterFullState *pState) const;
+	void LoadFullState(const CCharacterFullState &State);
 	~CCharacter() override;
 
 	void PreTick() override;

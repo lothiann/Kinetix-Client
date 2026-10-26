@@ -20,6 +20,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <regex>
+#include <string>
 #include <utility>
 
 #include <base/color.h>
@@ -133,6 +134,10 @@ struct SRow
         // of the row shows pToolTip, the right half shows pToolTip2 (falls back
         // to pToolTip when null). Lets the two buttons describe different things.
         const char *pToolTip2 = nullptr;
+        // v6.1: optional override for the slider value chip text. When set
+        // (e.g. Spawner Entity/Tile ID), the slider shows this string instead
+        // of the numeric value. Ignored by non-slider rows.
+        const char *pValueLabel = nullptr;
         // v1.56.43: mutable input buffer (so edited text persists).
         // Lazy-initialized from pInputValue on first render.
         char m_aInputBuf[256] = {};
@@ -142,6 +147,8 @@ struct SRow
         //               lerps toward (row.expanded ? 1.0 : 0.0) each frame.
         //               0 = children fully hidden (collapsed), 1 = fully shown.
 	float m_AnimExpand = 0.0f;
+	// v6.2: wrapped line count for Label rows (computed in the layout pass).
+	int m_LabelLines = 1;
 	// v1.56.286: search state (recomputed by SearchUpdateMatches() when the
 	// query or a filter toggle changes). m_SearchChildMatch is only set on
 	// top-level expandables (any direct child matched).
@@ -1194,13 +1201,187 @@ static bool g_TasFilePicked = false;
                         "Draw the TAS trajectory."},
         };
 
+// ---------- Spawner (child of the TAS panel, .tas v2.0) ----------
+static char g_TasDyn_EntityName[48] = "";
+static char g_TasDyn_TileName[48] = "";
+static char g_TasDyn_Loop[40] = "Loop Spawn";
+static const char *const g_TasSpawnerModeOpts[] = {"Entity", "Tile"};
+static const char *const g_TasSpawnerHookModeOpts[] = {"Strong", "Weak"};
+static const char *const g_TasSpawnerCoordOpts[] = {"Cursor", "Coordinates", "Previous Spawn"};
+static const char *const g_TasSpawnerCoordOptsNoPrev[] = {"Cursor", "Coordinates"};
+// v6.2: direction presets for the non-tee entities (index = m_Dir).
+static const char *const g_TasSpawnerDirOpts[] = {"East", "North-East", "North", "North-West", "West", "South-West", "South", "South-East"};
+
+// Indices into g_TasSpawnerChildren (order below must match).
+enum
+{
+	TAS_SPAWN_ROW_MODE = 0,
+	TAS_SPAWN_ROW_ENTITY_ID,
+	TAS_SPAWN_ROW_NAME,
+	TAS_SPAWN_ROW_CLAN,
+	TAS_SPAWN_ROW_ID,
+	TAS_SPAWN_ROW_SKIN,
+	TAS_SPAWN_ROW_CC_TEE,
+	TAS_SPAWN_ROW_TEE_COLOR,
+	TAS_SPAWN_ROW_CC_LEGS,
+	TAS_SPAWN_ROW_LEGS_COLOR,
+	TAS_SPAWN_ROW_HOOK_STRENGTH,
+	TAS_SPAWN_ROW_HOOK_MODE,
+	TAS_SPAWN_ROW_HAMMER,
+	TAS_SPAWN_ROW_PISTOL,
+	TAS_SPAWN_ROW_SHOTGUN,
+	TAS_SPAWN_ROW_GRENADE,
+	TAS_SPAWN_ROW_LASER,
+	TAS_SPAWN_ROW_NINJA,
+	TAS_SPAWN_ROW_PRACTICE,
+	TAS_SPAWN_ROW_WEAPON_ID,
+	TAS_SPAWN_ROW_APPLY_PHYSICS,
+	TAS_SPAWN_ROW_PREV_X,
+	TAS_SPAWN_ROW_PREV_Y,
+	TAS_SPAWN_ROW_TIMELINE,
+	TAS_SPAWN_ROW_TILE_ID,
+	TAS_SPAWN_ROW_TILE_PHYSICS,
+	TAS_SPAWN_ROW_TILE_TIMELINE,
+	TAS_SPAWN_ROW_COORD_MODE,
+	TAS_SPAWN_ROW_X,
+	TAS_SPAWN_ROW_Y,
+	TAS_SPAWN_ROW_SNAP,
+	TAS_SPAWN_ROW_SPAWN,
+	TAS_SPAWN_ROW_KILL,
+	TAS_SPAWN_ROW_LOOP_DELAY,
+	TAS_SPAWN_ROW_LOOP,
+	// v6.2: physics fields for the non-tee entities.
+	TAS_SPAWN_ROW_DIR,
+	TAS_SPAWN_ROW_VEL_X,
+	TAS_SPAWN_ROW_VEL_Y,
+	TAS_SPAWN_ROW_LIFESPAN,
+	TAS_SPAWN_ROW_LASER_REACH,
+	TAS_SPAWN_ROW_LASER_LENGTH,
+	TAS_SPAWN_ROW_DRAGGER_STRENGTH,
+	TAS_SPAWN_ROW_COUNT,
+};
+
+static SRow g_TasSpawnerChildren[TAS_SPAWN_ROW_COUNT] = {
+	{ERowType::Dropdown, "Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TasSpawnerModeOpts, 2, 0, nullptr, 0,
+		"Spawn an entity or a tile in the playground."},
+	{ERowType::Slider, "Entity ID", nullptr, false, false, 0.0f, (float)(TAS_SPAWN_ENT_COUNT - 1), 1.0f, 0.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Entity type to spawn (the name is shown instead of the number)."},
+	{ERowType::Input, "Name", nullptr, false, false, 0, 0, 0, 0, nullptr, "Spawned", "name...", nullptr, 0, 0, nullptr, 0,
+		"Spawned tee name."},
+	{ERowType::Input, "Clan", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "clan...", nullptr, 0, 0, nullptr, 0,
+		"Spawned tee clan."},
+	{ERowType::Input, "ID", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0,
+		"Client id used by the spawned tee."},
+	{ERowType::Input, "Skin ID", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "skin...", nullptr, 0, 0, nullptr, 0,
+		"Skin name of the spawned tee."},
+	{ERowType::Toggle, "Custom Color Tee", nullptr, true, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Use a custom body color for the spawned tee."},
+	{ERowType::Input, "Tee Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "hex...", nullptr, 0, 0, nullptr, 0,
+		"Spawned tee body color (hex RGB)."},
+	{ERowType::Toggle, "Custom Color Legs", nullptr, true, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Use a custom feet color for the spawned tee."},
+	{ERowType::Input, "Legs Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "hex...", nullptr, 0, 0, nullptr, 0,
+		"Spawned tee feet color (hex RGB)."},
+	{ERowType::Slider, "Hook Strength", nullptr, false, false, 0.0f, 100.0f, 1.0f, 10.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Strong/weak hook id of the spawned tee (0-100)."},
+	{ERowType::Dropdown, "Hook Strength", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TasSpawnerHookModeOpts, 2, 1, nullptr, 0,
+		"Strong or weak hook for the spawned tee."},
+	{ERowType::Toggle, "Hammer", nullptr, true, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Give the spawned tee a hammer."},
+	{ERowType::Toggle, "Pistol", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Give the spawned tee a pistol."},
+	{ERowType::Toggle, "Shotgun", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Give the spawned tee a shotgun."},
+	{ERowType::Toggle, "Grenade", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Give the spawned tee a grenade launcher."},
+	{ERowType::Toggle, "Laser", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Give the spawned tee a laser rifle."},
+	{ERowType::Toggle, "Ninja", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Give the spawned tee a ninja sword."},
+	{ERowType::Toggle, "Practice Particles", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Draw the practice (super) particles around the spawned tee."},
+	{ERowType::Slider, "Weapon ID", nullptr, false, false, 0.0f, 5.0f, 1.0f, 0.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Active weapon of the spawned tee."},
+	{ERowType::Toggle, "Apply Physics", nullptr, true, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Apply physics to the spawned entity (off = hangs in the air, no collision)."},
+	{ERowType::Input, "PrevPos X (Delta)", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "x...", nullptr, 0, 0, nullptr, 0,
+		"Offset of the spawned tee's previous position (physics kick)."},
+	{ERowType::Input, "PrevPos Y (Delta)", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "y...", nullptr, 0, 0, nullptr, 0,
+		"Offset of the spawned tee's previous position (physics kick)."},
+	{ERowType::Input, "Timeline Tick", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "tick...", nullptr, 0, 0, nullptr, 0,
+		"Playground tick the entity is treated as spawned at."},
+	{ERowType::Slider, "Tile ID", nullptr, false, false, 0.0f, (float)(TAS_SPAWNER_TILE_COUNT - 1), 1.0f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Tile to spawn (the name is shown instead of the number)."},
+	{ERowType::Toggle, "Apply Physics", nullptr, true, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Make the spawned tile solid (off = visual only)."},
+	{ERowType::Input, "Timeline Tick", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "tick...", nullptr, 0, 0, nullptr, 0,
+		"Playground tick the tile is treated as spawned at."},
+	{ERowType::Dropdown, "Coordinates Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TasSpawnerCoordOpts, 3, 0, nullptr, 0,
+		"Where to spawn: at the cursor, at absolute X/Y, or at the previous spawn."},
+	{ERowType::Input, "X", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "x...", nullptr, 0, 0, nullptr, 0,
+		"Absolute world X coordinate."},
+	{ERowType::Input, "Y", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "y...", nullptr, 0, 0, nullptr, 0,
+		"Absolute world Y coordinate."},
+	{ERowType::Toggle, "Snap Coordinates", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Snap the spawn coordinates to the 32-unit tile grid."},
+	{ERowType::Button, "Spawn", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Spawn the configured entity or tile."},
+	{ERowType::Button, "Kill", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Remove the spawned entity or tile at the target coordinates."},
+	{ERowType::Slider, "Loop Spawn Delay", nullptr, false, false, 0.0f, 10000.0f, 20.0f, 1000.0f, "ms", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Delay between automatic spawns."},
+	{ERowType::Button, g_TasDyn_Loop, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Start / stop spawning at the configured delay."},
+	// v6.2: physics fields for the non-tee entities.
+	{ERowType::Dropdown, "Direction", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TasSpawnerDirOpts, 8, 0, nullptr, 0,
+		"Direction the spawned entity is launched / aimed in."},
+	{ERowType::Input, "Vel X", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "x...", nullptr, 0, 0, nullptr, 0,
+		"Extra velocity added along the direction (units/tick)."},
+	{ERowType::Input, "Vel Y", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "y...", nullptr, 0, 0, nullptr, 0,
+		"Extra velocity added along the direction (units/tick)."},
+	{ERowType::Input, "Lifespan", nullptr, false, false, 0, 0, 0, 0, nullptr, "-1", "ticks...", nullptr, 0, 0, nullptr, 0,
+		"Projectile lifespan in ticks (-1 = never expires)."},
+	{ERowType::Input, "Laser Reach", nullptr, false, false, 0, 0, 0, 0, nullptr, "800", "units...", nullptr, 0, 0, nullptr, 0,
+		"Laser reach of the spawned rifle beam."},
+	{ERowType::Input, "Door Length", nullptr, false, false, 0, 0, 0, 0, nullptr, "64", "units...", nullptr, 0, 0, nullptr, 0,
+		"Length of the spawned door / dragger / plasma."},
+	{ERowType::Input, "Dragger Strength", nullptr, false, false, 0, 0, 0, 0, nullptr, "1", "0-255...", nullptr, 0, 0, nullptr, 0,
+		"Pull strength of the spawned dragger."},
+};
+
+// v6.2: Playground Settings — virtual RCON / virtual chat / practice inside
+// the TAS playground. The header checkbox is the master switch of the group.
+static char g_TasDyn_RconCmd[256] = "";
+static char g_TasDyn_ChatMsg[256] = "";
+enum
+{
+	TAS_PG_ROW_VIRTUAL_RCON = 0,
+	TAS_PG_ROW_RCON_COMMAND,
+	TAS_PG_ROW_VIRTUAL_CHAT,
+	TAS_PG_ROW_CHAT,
+	TAS_PG_ROW_PRACTICE,
+	TAS_PG_ROW_COUNT,
+};
+static SRow g_TasPgChildren[TAS_PG_ROW_COUNT] = {
+	{ERowType::Toggle, "Virtual RCON", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Run rcon commands (F2 console, the rcon command or the field below) against the playground."},
+	{ERowType::Input, "RCON Command", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "command...  (Enter to run)", nullptr, 0, 0, nullptr, 0,
+		"Command executed in the virtual rcon on Enter (the field clears afterwards)."},
+	{ERowType::Toggle, "Virtual Chat", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Keep chat inside the playground (whispers still go to the real server)."},
+	{ERowType::Input, "Chat", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "message...  (Enter to send)", nullptr, 0, 0, nullptr, 0,
+		"Message sent to the virtual chat on Enter."},
+	{ERowType::Toggle, "Practice", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Enable practice commands (/tc, telecursor) in the virtual chat and rcon."},
+};
+
 static SRow g_TasRows[] = {
 	{ERowType::Dropdown, "Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TasModeOpts, 2, 0, nullptr, 0,
 		"Play a recorded TAS or record a new one."},
 	{ERowType::DoubleButton, "Pick File", "Unpick File", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Pick a TAS file to load.", "Unpick the current TAS file."},
-	{ERowType::Button, g_TasDyn_Action, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-		"Start / stop the current action (Play or Record)."},
+	{ERowType::DoubleButton, g_TasDyn_Action, "Reset Record", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Start / stop the current action (Play or Record).", "Clear the record/saved buffer and unload the picked .tas file."},
 	{ERowType::Input, "Map", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "map...", nullptr, 0, 0, nullptr, 0,
 		"Map name saved with the TAS."},
 	{ERowType::Input, "Name", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "name...", nullptr, 0, 0, nullptr, 0,
@@ -1208,10 +1389,12 @@ static SRow g_TasRows[] = {
 	{ERowType::Input, "Author", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "author...", nullptr, 0, 0, nullptr, 0,
 		"TAS author."},
 	{ERowType::Label, g_TasDyn_SaveCreated, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+	{ERowType::Label, "TAS Version: v2.0", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Version of the .tas file format used by this client."},
 	{ERowType::Button, "Save", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Save the recorded TAS to a file."},
-	{ERowType::Button, g_TasDyn_Join, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-		"Join the TAS playground server."},
+	{ERowType::DoubleButton, g_TasDyn_Join, "Reset Playground", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Join / leave the TAS playground.", "Drop every spawned object, tile and chat line in the playground."},
         {ERowType::Slider, "TPS", nullptr, false, false, 1.0f, 50.0f, 1.0f, 50.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Ticks per second used during playback."},
         {ERowType::Toggle, "Pause", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
@@ -1222,10 +1405,12 @@ static SRow g_TasRows[] = {
                 "Spoof the rendered aim during playback."},
         {ERowType::Expandable, "Visuals", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TasVisualsChildren, 4,
                 "TAS visualization toggles."},
-        {ERowType::Button, "Forward", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Step the TAS forward one tick."},
-        {ERowType::Button, "Rewind", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Step the TAS back one tick."},
+        {ERowType::Expandable, "Playground Settings", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TasPgChildren, TAS_PG_ROW_COUNT,
+                "Virtual RCON, virtual chat and practice inside the playground."},
+        {ERowType::Expandable, "Spawner", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TasSpawnerChildren, TAS_SPAWN_ROW_COUNT,
+                "Spawn entities and tiles in the TAS playground."},
+        {ERowType::DoubleButton, "Rewind", "Forward", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Step the TAS back one tick.", "Step the TAS forward one tick."},
 	{ERowType::Label, g_TasDyn_Status, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 
@@ -1695,6 +1880,81 @@ static bool TasVisualsChildVisible(const SRow *pChildren, int childCount, int id
                 }
                 return showAnyPath;
         }
+        return true;
+}
+
+// Spawner children: entity rows only in Entity mode, Tee rows only for the Tee
+// entity, tile rows only in Tile mode, X/Y only in Coordinates mode.
+static bool TasSpawnerChildVisible(const SRow *pChildren, int childCount, int idx)
+{
+        if(idx < 0 || idx >= childCount)
+                return false;
+        const int Mode = pChildren[TAS_SPAWN_ROW_MODE].valueIdx;
+        const int Entity = (int)(pChildren[TAS_SPAWN_ROW_ENTITY_ID].value + 0.5f);
+        const int Coord = pChildren[TAS_SPAWN_ROW_COORD_MODE].valueIdx;
+        const bool IsEntity = Mode == 0;
+        const bool IsTile = Mode == 1;
+        const bool IsTee = Entity == TAS_SPAWN_ENT_TEE;
+
+        switch(idx)
+        {
+        case TAS_SPAWN_ROW_ENTITY_ID:
+        case TAS_SPAWN_ROW_APPLY_PHYSICS:
+        case TAS_SPAWN_ROW_PREV_X:
+        case TAS_SPAWN_ROW_PREV_Y:
+        case TAS_SPAWN_ROW_TIMELINE:
+                return IsEntity;
+        case TAS_SPAWN_ROW_TILE_ID:
+        case TAS_SPAWN_ROW_TILE_PHYSICS:
+        case TAS_SPAWN_ROW_TILE_TIMELINE:
+                return IsTile;
+        case TAS_SPAWN_ROW_NAME:
+        case TAS_SPAWN_ROW_CLAN:
+        case TAS_SPAWN_ROW_ID:
+        case TAS_SPAWN_ROW_SKIN:
+        case TAS_SPAWN_ROW_CC_TEE:
+        case TAS_SPAWN_ROW_TEE_COLOR:
+        case TAS_SPAWN_ROW_CC_LEGS:
+        case TAS_SPAWN_ROW_LEGS_COLOR:
+        case TAS_SPAWN_ROW_HOOK_STRENGTH:
+        case TAS_SPAWN_ROW_HOOK_MODE:
+        case TAS_SPAWN_ROW_HAMMER:
+        case TAS_SPAWN_ROW_PISTOL:
+        case TAS_SPAWN_ROW_SHOTGUN:
+        case TAS_SPAWN_ROW_GRENADE:
+        case TAS_SPAWN_ROW_LASER:
+        case TAS_SPAWN_ROW_NINJA:
+        case TAS_SPAWN_ROW_PRACTICE:
+        case TAS_SPAWN_ROW_WEAPON_ID:
+                return IsEntity && IsTee;
+        case TAS_SPAWN_ROW_X:
+        case TAS_SPAWN_ROW_Y:
+                return Coord == 1;
+        // v6.2: physics fields of the non-tee entities.
+        case TAS_SPAWN_ROW_DIR:
+                return IsEntity && !IsTee && Entity != TAS_SPAWN_ENT_PICKUP;
+        case TAS_SPAWN_ROW_VEL_X:
+        case TAS_SPAWN_ROW_VEL_Y:
+        case TAS_SPAWN_ROW_LIFESPAN:
+                return IsEntity && Entity == TAS_SPAWN_ENT_PROJECTILE;
+        case TAS_SPAWN_ROW_LASER_REACH:
+                return IsEntity && Entity == TAS_SPAWN_ENT_LASER;
+        case TAS_SPAWN_ROW_LASER_LENGTH:
+                return IsEntity && (Entity == TAS_SPAWN_ENT_DOOR || Entity == TAS_SPAWN_ENT_DRAGGER || Entity == TAS_SPAWN_ENT_PLASMA);
+        case TAS_SPAWN_ROW_DRAGGER_STRENGTH:
+                return IsEntity && Entity == TAS_SPAWN_ENT_DRAGGER;
+        default:
+                return true;
+        }
+}
+
+// Unified child-visibility dispatcher for the TAS panel's expandables.
+static bool TasRowChildrenVisible(const SRow &row, int c)
+{
+        if(str_comp(row.pName, "Visuals") == 0)
+                return TasVisualsChildVisible(row.pChildren, row.childCount, c);
+        if(str_comp(row.pName, "Spawner") == 0)
+                return TasSpawnerChildVisible(row.pChildren, row.childCount, c);
         return true;
 }
 
@@ -2548,6 +2808,18 @@ static constexpr float SUB_LIST_INDENT = 22.0f;
 // Offscreen margin: how far outside the visible screen panels fly when hidden.
 static constexpr float OFFSCREEN_MARGIN = 100.0f;
 
+// v6.2: "visual" expandables have no checkbox — clicking them only expands or
+// collapses (they are pure containers, not on/off switches).
+static bool IsVisualExpandableName(const char *pName)
+{
+        return str_comp(pName, "Visuals") == 0 ||
+                str_comp(pName, "Line rendering") == 0 ||
+                str_comp(pName, "TAS") == 0 ||
+                str_comp(pName, "Settings") == 0 ||
+                str_comp(pName, "Binds") == 0 ||
+                str_comp(pName, "Spawner") == 0;
+}
+
 static float RowHeight(ERowType t)
 {
         switch(t)
@@ -2571,6 +2843,59 @@ static float RowHeight(ERowType t)
                 return ROW_H_TOGGLE; // v1.56.176: Label uses same height as a toggle row
         }
         return ROW_H_TOGGLE;
+}
+
+// v6.2: greedy word wrap for Label rows. The glyph width is estimated instead
+// of calling ITextRender: the same layout pass also runs during the ClickGUI
+// startup preload (CClickGui::OnInit), where touching the font system hangs
+// the loading screen. ~8 px per glyph matches the 16 px font closely enough
+// for informational labels.
+static void KxWrapText(const char *pText, float MaxWidth, std::vector<std::string> &vOut)
+{
+        vOut.clear();
+        if(!pText || !pText[0])
+        {
+                vOut.push_back("");
+                return;
+        }
+        const float GlyphWidth = 8.0f;
+        std::string Line;
+        const char *p = pText;
+        while(*p)
+        {
+                while(*p == ' ')
+                        ++p;
+                if(!*p)
+                        break;
+                const char *pStart = p;
+                while(*p && *p != ' ')
+                        ++p;
+                const std::string Word(pStart, p);
+                const std::string Try = Line.empty() ? Word : Line + " " + Word;
+                if(!Line.empty() && (float)str_length(Try.c_str()) * GlyphWidth > MaxWidth)
+                {
+                        vOut.push_back(Line);
+                        Line = Word;
+                }
+                else
+                        Line = Try;
+        }
+        vOut.push_back(Line);
+}
+
+static int KxLabelLineCount(const char *pText, float MaxWidth)
+{
+        std::vector<std::string> vLines;
+        KxWrapText(pText, MaxWidth, vLines);
+        return (int)vLines.size();
+}
+
+// Row height taking the wrapped Label height into account.
+static float RowHeightForRow(const SRow &row)
+{
+        if(row.type != ERowType::Label)
+                return RowHeight(row.type);
+        return std::max(ROW_H_TOGGLE, 10.0f + 20.0f * (float)std::max(1, row.m_LabelLines));
 }
 
 } // anonymous namespace
@@ -3197,6 +3522,158 @@ void CClickGui::UpdateCodeExecRows()
         str_copy(g_ExecDyn_Btn, CE.GetState() == CCodeExec::STATE_RUNNING ? "Stop" : "Execute", sizeof(g_ExecDyn_Btn));
 }
 
+static void TasSpawnerEnsureInput(SRow &Row)
+{
+        if(Row.m_InputInitialized)
+                return;
+        if(Row.pInputValue)
+                str_copy(Row.m_aInputBuf, Row.pInputValue, sizeof(Row.m_aInputBuf));
+        Row.m_InputInitialized = true;
+}
+
+static float TasSpawnerReadFloat(SRow &Row)
+{
+        TasSpawnerEnsureInput(Row);
+        return (float)atof(Row.m_aInputBuf);
+}
+
+static int TasSpawnerReadInt(SRow &Row)
+{
+        TasSpawnerEnsureInput(Row);
+        return atoi(Row.m_aInputBuf);
+}
+
+// Pushes the Spawner panel rows into CTas::SpawnerSettings() and updates the
+// dynamic labels / conditional dropdown entries. The rows are the source of
+// truth, so this runs every frame while the ClickGUI is open (and again right
+// before a Spawn/Kill click).
+static void SyncTasSpawnerRows(CTas &Tas)
+{
+        SRow *pRows = g_TasSpawnerChildren;
+        STasSpawnerSettings &S = Tas.SpawnerSettings();
+
+        // "Previous Spawn" is only offered after at least one spawn — fix the
+        // option list before reading the selection.
+        const bool HasPrev = Tas.SpawnerHasPrevious();
+        pRows[TAS_SPAWN_ROW_COORD_MODE].pOptions = HasPrev ? g_TasSpawnerCoordOpts : g_TasSpawnerCoordOptsNoPrev;
+        pRows[TAS_SPAWN_ROW_COORD_MODE].optionCount = HasPrev ? 3 : 2;
+        if(pRows[TAS_SPAWN_ROW_COORD_MODE].valueIdx >= pRows[TAS_SPAWN_ROW_COORD_MODE].optionCount)
+                pRows[TAS_SPAWN_ROW_COORD_MODE].valueIdx = 0;
+
+        S.m_Mode = pRows[TAS_SPAWN_ROW_MODE].valueIdx == 1 ? TAS_SPAWN_MODE_TILE : TAS_SPAWN_MODE_ENTITY;
+
+        const int EntityCount = CTas::SpawnerEntityCount();
+        SRow &EntityRow = pRows[TAS_SPAWN_ROW_ENTITY_ID];
+        EntityRow.value = std::clamp(EntityRow.value, 0.0f, (float)(EntityCount - 1));
+        S.m_Entity = (int)(EntityRow.value + 0.5f);
+        if(S.m_Entity < 0 || S.m_Entity >= EntityCount)
+                S.m_Entity = 0;
+
+        TasSpawnerEnsureInput(pRows[TAS_SPAWN_ROW_NAME]);
+        TasSpawnerEnsureInput(pRows[TAS_SPAWN_ROW_CLAN]);
+        TasSpawnerEnsureInput(pRows[TAS_SPAWN_ROW_SKIN]);
+        TasSpawnerEnsureInput(pRows[TAS_SPAWN_ROW_TEE_COLOR]);
+        TasSpawnerEnsureInput(pRows[TAS_SPAWN_ROW_LEGS_COLOR]);
+        str_copy(S.m_aName, pRows[TAS_SPAWN_ROW_NAME].m_aInputBuf, sizeof(S.m_aName));
+        str_copy(S.m_aClan, pRows[TAS_SPAWN_ROW_CLAN].m_aInputBuf, sizeof(S.m_aClan));
+        S.m_Id = TasSpawnerReadInt(pRows[TAS_SPAWN_ROW_ID]);
+        str_copy(S.m_aSkin, pRows[TAS_SPAWN_ROW_SKIN].m_aInputBuf, sizeof(S.m_aSkin));
+        str_copy(S.m_aColorBody, pRows[TAS_SPAWN_ROW_CC_TEE].on ? pRows[TAS_SPAWN_ROW_TEE_COLOR].m_aInputBuf : "", sizeof(S.m_aColorBody));
+        str_copy(S.m_aColorFeet, pRows[TAS_SPAWN_ROW_CC_LEGS].on ? pRows[TAS_SPAWN_ROW_LEGS_COLOR].m_aInputBuf : "", sizeof(S.m_aColorFeet));
+
+        S.m_HookStrength = (int)SnapSliderStep(pRows[TAS_SPAWN_ROW_HOOK_STRENGTH]);
+        S.m_HookStrengthMode = pRows[TAS_SPAWN_ROW_HOOK_MODE].valueIdx;
+        for(int w = 0; w < NUM_WEAPONS; ++w)
+                S.m_aWeapon[w] = pRows[TAS_SPAWN_ROW_HAMMER + w].on;
+        S.m_PracticeParticles = pRows[TAS_SPAWN_ROW_PRACTICE].on;
+        S.m_WeaponId = (int)SnapSliderStep(pRows[TAS_SPAWN_ROW_WEAPON_ID]);
+
+        S.m_EntityPhysics = pRows[TAS_SPAWN_ROW_APPLY_PHYSICS].on;
+        S.m_PrevPosX = TasSpawnerReadFloat(pRows[TAS_SPAWN_ROW_PREV_X]);
+        S.m_PrevPosY = TasSpawnerReadFloat(pRows[TAS_SPAWN_ROW_PREV_Y]);
+        S.m_EntityTimelineTick = TasSpawnerReadInt(pRows[TAS_SPAWN_ROW_TIMELINE]);
+
+        SRow &TileRow = pRows[TAS_SPAWN_ROW_TILE_ID];
+        TileRow.value = std::clamp(TileRow.value, 0.0f, (float)(CTas::SpawnerTileCount() - 1));
+        S.m_Tile = CTas::SpawnerTileId((int)(TileRow.value + 0.5f));
+        S.m_TilePhysics = pRows[TAS_SPAWN_ROW_TILE_PHYSICS].on;
+        S.m_TileTimelineTick = TasSpawnerReadInt(pRows[TAS_SPAWN_ROW_TILE_TIMELINE]);
+
+        S.m_CoordsMode = pRows[TAS_SPAWN_ROW_COORD_MODE].valueIdx;
+        S.m_X = TasSpawnerReadFloat(pRows[TAS_SPAWN_ROW_X]);
+        S.m_Y = TasSpawnerReadFloat(pRows[TAS_SPAWN_ROW_Y]);
+        S.m_Snap = pRows[TAS_SPAWN_ROW_SNAP].on;
+        S.m_LoopDelay = (int)SnapSliderStep(pRows[TAS_SPAWN_ROW_LOOP_DELAY]);
+
+        // v6.2: physics fields of the non-tee entities.
+        TasSpawnerEnsureInput(pRows[TAS_SPAWN_ROW_VEL_X]);
+        TasSpawnerEnsureInput(pRows[TAS_SPAWN_ROW_VEL_Y]);
+        TasSpawnerEnsureInput(pRows[TAS_SPAWN_ROW_LIFESPAN]);
+        TasSpawnerEnsureInput(pRows[TAS_SPAWN_ROW_LASER_REACH]);
+        TasSpawnerEnsureInput(pRows[TAS_SPAWN_ROW_LASER_LENGTH]);
+        TasSpawnerEnsureInput(pRows[TAS_SPAWN_ROW_DRAGGER_STRENGTH]);
+        S.m_Dir = pRows[TAS_SPAWN_ROW_DIR].valueIdx;
+        S.m_VelX = TasSpawnerReadFloat(pRows[TAS_SPAWN_ROW_VEL_X]);
+        S.m_VelY = TasSpawnerReadFloat(pRows[TAS_SPAWN_ROW_VEL_Y]);
+        S.m_LifeSpan = TasSpawnerReadInt(pRows[TAS_SPAWN_ROW_LIFESPAN]);
+        S.m_LaserReach = TasSpawnerReadInt(pRows[TAS_SPAWN_ROW_LASER_REACH]);
+        S.m_LaserLength = TasSpawnerReadInt(pRows[TAS_SPAWN_ROW_LASER_LENGTH]);
+        S.m_DraggerStrength = TasSpawnerReadInt(pRows[TAS_SPAWN_ROW_DRAGGER_STRENGTH]);
+
+        // Engine -> UI (dynamic value labels and the loop button).
+        str_format(g_TasDyn_EntityName, sizeof(g_TasDyn_EntityName), "%s", CTas::SpawnerEntityName(S.m_Entity));
+        str_format(g_TasDyn_TileName, sizeof(g_TasDyn_TileName), "%s", CTas::SpawnerTileName((int)(TileRow.value + 0.5f)));
+        pRows[TAS_SPAWN_ROW_ENTITY_ID].pValueLabel = g_TasDyn_EntityName;
+        pRows[TAS_SPAWN_ROW_TILE_ID].pValueLabel = g_TasDyn_TileName;
+        str_copy(g_TasDyn_Loop, Tas.SpawnerLoopActive() ? "Stop Loop Spawn" : "Loop Spawn", sizeof(g_TasDyn_Loop));
+}
+
+// v6.2: Playground Settings rows <-> CTas. The header checkbox is the master
+// switch of the whole group: with it off every virtual subsystem is disabled
+// (the individual toggles keep their state and come back with the master).
+static void SyncTasPgRows(CTas &Tas)
+{
+        SRow *pRows = g_TasPgChildren;
+        SRow *pMaster = nullptr;
+        for(int r = 0; r < (int)(sizeof(g_TasRows) / sizeof(g_TasRows[0])); ++r)
+                if(str_comp(g_TasRows[r].pName, "Playground Settings") == 0)
+                {
+                        pMaster = &g_TasRows[r];
+                        break;
+                }
+        if(!pMaster)
+                return;
+
+        // v6.3: PlaygroundReset() wipes the world; mirror that in the rows so
+        // the virtual switches do not immediately re-enable themselves (which
+        // kept the Reset Playground button visible after pressing it).
+        static int s_PgResetSerial = -1;
+        if(s_PgResetSerial != Tas.PgResetSerial())
+        {
+                s_PgResetSerial = Tas.PgResetSerial();
+                pMaster->on = false;
+                pRows[TAS_PG_ROW_VIRTUAL_RCON].on = false;
+                pRows[TAS_PG_ROW_VIRTUAL_CHAT].on = false;
+                pRows[TAS_PG_ROW_PRACTICE].on = false;
+        }
+
+        static bool s_PgInit = false;
+        if(!s_PgInit)
+        {
+                s_PgInit = true;
+                pMaster->on = Tas.PgMaster();
+                pRows[TAS_PG_ROW_VIRTUAL_RCON].on = Tas.PgVirtualRcon();
+                pRows[TAS_PG_ROW_VIRTUAL_CHAT].on = Tas.PgVirtualChat();
+                pRows[TAS_PG_ROW_PRACTICE].on = Tas.PgPractice();
+        }
+
+        Tas.SetPgMaster(pMaster->on);
+        const bool Master = pMaster->on;
+        Tas.SetPgVirtualRcon(Master && pRows[TAS_PG_ROW_VIRTUAL_RCON].on);
+        Tas.SetPgVirtualChat(Master && pRows[TAS_PG_ROW_VIRTUAL_CHAT].on);
+        Tas.SetPgPractice(Master && pRows[TAS_PG_ROW_PRACTICE].on);
+}
+
 void CClickGui::UpdateTasRows()
 {
         SPanel *pPanel = nullptr;
@@ -3213,6 +3690,12 @@ void CClickGui::UpdateTasRows()
 
 	// Push UI -> engine (the panel owns TPS / Pause / Mode).
 	CTas &Tas = GameClient()->m_Tas;
+
+	// Spawner rows -> engine settings (and dynamic labels back into the rows).
+	SyncTasSpawnerRows(Tas);
+	// v6.2: Playground Settings (virtual rcon / chat / practice).
+	SyncTasPgRows(Tas);
+
 	// One-time pull of persisted settings into the static rows: without this
 	// the zero-initialized rows would push their defaults over the cvars
 	// restored from settings.cfg on every startup.
@@ -3223,11 +3706,12 @@ void CClickGui::UpdateTasRows()
 		for(int r = 0; r < pPanel->rowCount; ++r)
 		{
 			SRow &Row = pPanel->pRows[r];
-			if(str_comp(Row.pName, "Auto Rewind/Forward") == 0)
-			{
-				Row.on = Tas.AutoRfEnabled();
-				Row.expanded = Row.on;
-				for(int c = 0; c < Row.childCount; ++c)
+				if(str_comp(Row.pName, "Auto Rewind/Forward") == 0)
+				{
+					// v6.2: enabling the master toggle no longer pops the
+					// expandable open — expanding stays a separate action.
+					Row.on = Tas.AutoRfEnabled();
+					for(int c = 0; c < Row.childCount; ++c)
 				{
 					SRow &Child = Row.pChildren[c];
 					if(str_comp(Child.pName, "Mode") == 0)
@@ -3239,11 +3723,10 @@ void CClickGui::UpdateTasRows()
 					}
 				}
 			}
-			else if(str_comp(Row.pName, "Fake Aim") == 0)
-			{
-				Row.on = Tas.FakeAimEnabled();
-				Row.expanded = Row.on;
-				if(Row.pChildren)
+				else if(str_comp(Row.pName, "Fake Aim") == 0)
+				{
+					Row.on = Tas.FakeAimEnabled();
+					if(Row.pChildren)
 					for(int c = 0; c < Row.childCount; ++c)
 						if(str_comp(Row.pChildren[c].pName, "Mode") == 0)
 							Row.pChildren[c].valueIdx = Tas.FakeAimMode();
@@ -4116,7 +4599,7 @@ void CClickGui::OnRender()
                                 for(int c = 0; c < row.childCount; ++c)
                                 {
                                         SRow &child = row.pChildren[c];
-                                if(str_comp(row.pName, "Visuals") == 0 && !TasVisualsChildVisible(row.pChildren, row.childCount, c))
+                                if(!TasRowChildrenVisible(row, c))
                                         continue;
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;
@@ -6643,9 +7126,7 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 // Visual expandables (Visuals) cannot be
                                 // toggled off — only expand/collapse. Click on name = expand toggle.
                                 const bool isVisualExpandable = (pTarget->type == ERowType::Expandable) &&
-                                        (str_comp(pTarget->pName, "Visuals") == 0 ||
-                                         str_comp(pTarget->pName, "Line rendering") == 0 ||
-                                         str_comp(pTarget->pName, "TAS") == 0 || str_comp(pTarget->pName, "Settings") == 0 || str_comp(pTarget->pName, "Binds") == 0);
+                                        IsVisualExpandableName(pTarget->pName);
                                          // v1.56.281: Future Limit is a master toggle now (click dispatch below).
                                 // Click on check area or name area → toggle on/off (or expand for visual).
                                 const float toggleEndX = rx + rw - (pTarget->type == ERowType::Expandable ? ARROW_W + 4.0f : (pTarget->type == ERowType::ToggleDropdown ? DROPDOWN_W + 4.0f : 0.0f));
@@ -7248,22 +7729,47 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 else if(pTarget->pName == g_TasDyn_Action)
                                 {
                                         CTas &Tas = GameClient()->m_Tas;
-                                        if(Tas.Mode() == 1)
+                                        // v6.3: right half = "Reset Record" (shown only when
+                                        // the take buffer holds something or a file is loaded).
+                                        const float btnW = (rw - 6.0f) * 0.5f;
+                                        if(Tas.RecordDirty() && pTarget->type == ERowType::DoubleButton && mousePos.x >= rx + 2.0f + btnW)
+                                                Tas.ResetRecord();
+                                        else if(Tas.Mode() == 1)
                                                 Tas.ToggleRecord();
                                         else
                                                 Tas.TogglePlay();
                                 }
+                                else if(str_comp(row.pName, "Spawner") == 0 && pTarget->type == ERowType::Button)
+                                {
+                                        CTas &Tas = GameClient()->m_Tas;
+                                        SyncTasSpawnerRows(Tas);
+                                        if(str_comp(pTarget->pName, "Spawn") == 0)
+                                                Tas.SpawnerSpawn();
+                                        else if(str_comp(pTarget->pName, "Kill") == 0)
+                                                Tas.SpawnerKill();
+                                        else if(str_comp(pTarget->pName, g_TasDyn_Loop) == 0)
+                                                Tas.SpawnerToggleLoop();
+                                }
                                 else if(pTarget->pName == g_TasDyn_Join)
                                 {
-                                        GameClient()->m_Tas.JoinLeavePlayground();
+                                        CTas &Tas = GameClient()->m_Tas;
+                                        // v6.2: the right half is "Reset Playground",
+                                        // shown only while joined and something exists to drop.
+                                        const bool ResetVisible = Tas.PlaygroundDirty();
+                                        const float btnW = (rw - 6.0f) * 0.5f;
+                                        if(ResetVisible && pTarget->type == ERowType::DoubleButton && mousePos.x >= rx + 2.0f + btnW)
+                                                Tas.PlaygroundReset();
+                                        else
+                                                Tas.JoinLeavePlayground();
                                 }
-                                else if(str_comp(pTarget->pName, "Forward") == 0 && pTarget->type == ERowType::Button)
+                                // v6.2: Rewind | Forward in one row.
+                                else if(str_comp(pTarget->pName, "Rewind") == 0 && pTarget->type == ERowType::DoubleButton)
                                 {
-                                        GameClient()->m_Tas.StepForward();
-                                }
-                                else if(str_comp(pTarget->pName, "Rewind") == 0 && pTarget->type == ERowType::Button)
-                                {
-                                        GameClient()->m_Tas.StepRewind();
+                                        const float btnW = (rw - 6.0f) * 0.5f;
+                                        if(mousePos.x >= rx + 2.0f + btnW)
+                                                GameClient()->m_Tas.StepForward();
+                                        else
+                                                GameClient()->m_Tas.StepRewind();
                                 }
                                 else if(str_comp(pTarget->pName, "Pick File") == 0 && pTarget->type == ERowType::DoubleButton)
                                 {
@@ -7841,7 +8347,7 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
 			continue;
 		if(str_comp(panel.pTitle, "TAS") == 0 && !TasRowVisible(panel.pRows, panel.rowCount, r))
 			continue;
-                const float rh = RowHeight(row.type);
+                const float rh = RowHeightForRow(row);
                 if(r == m_DropdownRow && m_DropdownChild < 0)
                 {
                         // Found the row. Dropdown box is at right side.
@@ -7947,7 +8453,7 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                         for(int c = 0; c < row.childCount; ++c)
                         {
                                 SRow &child = row.pChildren[c];
-                                if(str_comp(row.pName, "Visuals") == 0 && !TasVisualsChildVisible(row.pChildren, row.childCount, c))
+                                if(!TasRowChildrenVisible(row, c))
                                         continue;
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;
@@ -7971,7 +8477,7 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
         continue;
 if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
-                                const float crh = RowHeight(child.type);
+                                const float crh = RowHeightForRow(child);
                                 if(r == m_DropdownRow && c == m_DropdownChild)
                                 {
                                         const float rw = PANEL_WIDTH - BODY_PADDING * 2;
@@ -8257,7 +8763,7 @@ void CClickGui::RenderDropdownPopup(float alpha)
 			continue;
 if(!SearchKeepsRow(row))
                                         continue;
-                                const float rh = RowHeight(row.type);
+                                const float rh = RowHeightForRow(row);
                 if(r == m_DropdownRow && m_DropdownChild < 0)
                 {
                         const float rw = PANEL_WIDTH - BODY_PADDING * 2;
@@ -8272,7 +8778,7 @@ if(!SearchKeepsRow(row))
                         for(int c = 0; c < row.childCount; ++c)
                         {
                                 SRow &child = row.pChildren[c];
-                                if(str_comp(row.pName, "Visuals") == 0 && !TasVisualsChildVisible(row.pChildren, row.childCount, c))
+                                if(!TasRowChildrenVisible(row, c))
                                         continue;
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;
@@ -8296,7 +8802,7 @@ if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.
         continue;
 if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
-                                const float crh = RowHeight(child.type);
+                                const float crh = RowHeightForRow(child);
                                 if(r == m_DropdownRow && c == m_DropdownChild)
                                 {
                                         const float rw = PANEL_WIDTH - BODY_PADDING * 2;
@@ -8368,6 +8874,34 @@ void CClickGui::HandleTextInput(const IInput::CEvent &Event)
                 {
                         CommitToRow();
                         m_InputEditing = false; Input()->StopTextInput();
+                        // v6.2: Enter submits the Playground Settings RCON/chat
+                        // fields (they clear afterwards, like a real console).
+                        if(m_InputPanel >= 0 && m_InputPanel < NUM_PANELS && m_InputRow >= 0)
+                        {
+                                SPanel &Panel = g_Panels[m_InputPanel];
+                                if(str_comp(Panel.pTitle, "TAS") == 0 && m_InputRow < Panel.rowCount)
+                                {
+                                        SRow &Row = Panel.pRows[m_InputRow];
+                                        if(str_comp(Row.pName, "Playground Settings") == 0 && m_InputChild >= 0 && m_InputChild < Row.childCount)
+                                        {
+                                                SRow &Child = Row.pChildren[m_InputChild];
+                                                if(str_comp(Child.pName, "RCON Command") == 0 && Child.m_aInputBuf[0])
+                                                {
+                                                        GameClient()->m_Tas.PgRconEcho(Child.m_aInputBuf);
+                                                        GameClient()->m_Tas.PgRconExecute(Child.m_aInputBuf);
+                                                        Child.m_aInputBuf[0] = '\0';
+                                                        Child.m_InputInitialized = true;
+                                                }
+                                                else if(str_comp(Child.pName, "Chat") == 0 && Child.m_aInputBuf[0])
+                                                {
+                                                        if(GameClient()->m_Chat.TasVirtual())
+                                                                GameClient()->m_Chat.SendChat(0, Child.m_aInputBuf);
+                                                        Child.m_aInputBuf[0] = '\0';
+                                                        Child.m_InputInitialized = true;
+                                                }
+                                        }
+                                }
+                        }
                         return;
                 }
                 if(Event.m_Key == KEY_BACKSPACE)
@@ -8508,7 +9042,7 @@ bool CClickGui::HitTestRow(vec2 mousePos, int panelIdx, int &outRow, int &outChi
 			continue;
 		if((str_comp(g_Panels[panelIdx].pTitle, "TAS") == 0 && !TasRowVisible(g_Panels[panelIdx].pRows, g_Panels[panelIdx].rowCount, r)) || (str_comp(g_Panels[panelIdx].pTitle, "Dummy Manager") == 0 && !DummyManagerRowVisible(g_Panels[panelIdx].pRows, g_Panels[panelIdx].rowCount, r)))
 			continue;
-                const float rh = RowHeight(row.type);
+                const float rh = RowHeightForRow(row);
                 const float rw = PANEL_WIDTH - BODY_PADDING * 2;
                 if(PointInRect(mousePos, bodyX, cursorY, rw, rh))
                 {
@@ -8529,7 +9063,7 @@ bool CClickGui::HitTestRow(vec2 mousePos, int panelIdx, int &outRow, int &outChi
                         for(int c = 0; c < row.childCount; ++c)
                         {
                                 SRow &child = row.pChildren[c];
-                                if(str_comp(row.pName, "Visuals") == 0 && !TasVisualsChildVisible(row.pChildren, row.childCount, c))
+                                if(!TasRowChildrenVisible(row, c))
                                         continue;
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;
@@ -8555,7 +9089,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
         continue;
                                 if(!SearchKeepsChild(child))
                                         continue;
-                                const float crh = RowHeight(child.type);
+                                const float crh = RowHeightForRow(child);
                                 const float crw = rw - SUB_LIST_INDENT;
                                 if(PointInRect(mousePos, bodyX + SUB_LIST_INDENT, cursorY, crw, crh))
                                 {
@@ -8919,7 +9453,7 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                 {
                         for(int c = 0; c < row.childCount; ++c)
                         {
-                                if(str_comp(row.pName, "Visuals") == 0 && !TasVisualsChildVisible(row.pChildren, row.childCount, c))
+                                if(!TasRowChildrenVisible(row, c))
                                         continue;
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;
@@ -8975,11 +9509,16 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                         YGNodeStyleSetOverflow(bodyRoot, YGOverflowHidden);
 
                         constexpr int MAX_ROWS = 256;
-                        auto addRowNode = [&](const SRow &row, bool isChild) {
+                        auto addRowNode = [&](SRow &row, bool isChild) {
                                 if(cache.rowCount >= MAX_ROWS)
                                         return;
                                 YGNodeRef n = YGNodeNew();
-                                YGNodeStyleSetHeight(n, RowHeight(row.type));
+                                if(row.type == ERowType::Label)
+                                {
+                                        const float LabelW = PANEL_WIDTH - BODY_PADDING * 2.0f - (isChild ? SUB_LIST_INDENT : 0.0f) - 8.0f;
+                                        row.m_LabelLines = KxLabelLineCount(row.pName, LabelW);
+                                }
+                                YGNodeStyleSetHeight(n, RowHeightForRow(row));
                                 if(isChild)
                                         YGNodeStyleSetMargin(n, YGEdgeLeft, SUB_LIST_INDENT);
                                 YGNodeInsertChild(bodyRoot, n, (size_t)cache.rowCount);
@@ -9006,7 +9545,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 {
                                         for(int c = 0; c < row.childCount; ++c)
                                         {
-                                                if(str_comp(row.pName, "Visuals") == 0 && !TasVisualsChildVisible(row.pChildren, row.childCount, c))
+                                                if(!TasRowChildrenVisible(row, c))
                                                         continue;
                                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                                         continue;
@@ -9098,7 +9637,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                         int visibleCount = 0;
                         for(int c = 0; c < row.childCount; ++c)
                         {
-                                if(str_comp(row.pName, "Visuals") == 0 && !TasVisualsChildVisible(row.pChildren, row.childCount, c))
+                                if(!TasRowChildrenVisible(row, c))
                                         continue;
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;
@@ -9381,13 +9920,14 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 else
                                         str_format(valBuf, sizeof(valBuf), "%.*f", StepDec, ShownVal);
                         }
-                        const float valW = TextRender()->TextWidth(17.0f, valBuf) + 10.0f;
+                        const char *pValueText = row.pValueLabel ? row.pValueLabel : valBuf;
+                        const float valW = TextRender()->TextWidth(17.0f, pValueText) + 10.0f;
                         const float valX = rx + rw - valW - 2.0f;
                         const float valY = ry + 1.0f;
                         DrawRoundedRect(valX, valY, valW, 18.0f, 2.0f,
                                 IGraphics::CORNER_ALL,
                                 ColorRGBA(COL_VALUE_BG, true).WithAlpha(alpha));
-                        DrawText(valX + 6.0f, valY + 3.0f, 17.0f, valBuf, textCol);
+                        DrawText(valX + 6.0f, valY + 3.0f, 17.0f, pValueText, textCol);
 
                         // Track.
                         const float trackX = rx + 2.0f;
@@ -9549,13 +10089,19 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                 case ERowType::Expandable:
                 {
                         // [✕ or empty] [name] [▶ or ▼]
-                        DrawRoundedRect(rx + 1.0f, ry + 3.0f, CHECK_W, CHECK_W, 3.0f,
-                                IGraphics::CORNER_ALL,
-                                ColorRGBA(COL_CHECK_SQUARE, true).WithAlpha(alpha));
-                        if(row.on)
-                                DrawText(rx + 1.0f + CHECK_W * 0.5f, ry + 3.0f - 2.0f, 24.0f, "\xe2\x9c\x95",
-                                        ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha), TEXTALIGN_CENTER);
-                        DrawText(rx + CHECK_W + 4.0f, ry + 5.0f, 18.0f, row.pName,
+                        // v6.2: visual expandables (Spawner, Visuals, ...) have no
+                        // checkbox — the row only opens/closes.
+                        const bool VisualRow = IsVisualExpandableName(row.pName);
+                        if(!VisualRow)
+                        {
+                                DrawRoundedRect(rx + 1.0f, ry + 3.0f, CHECK_W, CHECK_W, 3.0f,
+                                        IGraphics::CORNER_ALL,
+                                        ColorRGBA(COL_CHECK_SQUARE, true).WithAlpha(alpha));
+                                if(row.on)
+                                        DrawText(rx + 1.0f + CHECK_W * 0.5f, ry + 3.0f - 2.0f, 24.0f, "\xe2\x9c\x95",
+                                                ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha), TEXTALIGN_CENTER);
+                        }
+                        DrawText(rx + (VisualRow ? 4.0f : CHECK_W + 4.0f), ry + 5.0f, 18.0f, row.pName,
                                 row.on ? ColorRGBA(COL_ROW_TEXT_ON, true).WithAlpha(alpha) : textCol);
                         // Arrow on the right (▶ collapsed, ▼ expanded).
                         const char *pArrow = row.expanded ? "\xe2\x96\xbc" : "\xe2\x96\xb6";
@@ -9633,6 +10179,15 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 else
                                         btnCol = ColorRGBA(0xff3da35a, true).WithAlpha(alpha); // green (Join)
                         }
+                        // v6.2: Spawner action colors — Spawn/Loop green, Kill/Stop red.
+                        else if(str_comp(row.pName, "Spawn") == 0)
+                                btnCol = ColorRGBA(0xff3da35a, true).WithAlpha(alpha);
+                        else if(str_comp(row.pName, "Kill") == 0)
+                                btnCol = ColorRGBA(0xffc43d3d, true).WithAlpha(alpha);
+                        else if(str_comp(row.pName, g_TasDyn_Loop) == 0)
+                                btnCol = GameClient()->m_Tas.SpawnerLoopActive()
+                                        ? ColorRGBA(0xffc43d3d, true).WithAlpha(alpha)
+                                        : ColorRGBA(0xff3da35a, true).WithAlpha(alpha);
                         // Button background (full row width, centered).
                         DrawRoundedRect(rx + 2.0f, ry + 2.0f, rw - 4.0f, rh - 4.0f, 4.0f,
                                 IGraphics::CORNER_ALL, btnCol);
@@ -9818,15 +10373,108 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                 ColorRGBA(0xffffffff, true).WithAlpha(alpha));
                                 }
                         }
+                        // v6.2: Join/Leave Playground + Reset Playground (the reset
+                        // half appears only when there is something to drop).
+                        else if(str_comp(row.pName, g_TasDyn_Join) == 0)
+                        {
+                                CTas &Tas = GameClient()->m_Tas;
+                                const bool Joined = Tas.IsJoined();
+                                const ColorRGBA leftCol = Joined
+                                        ? ColorRGBA(0xffc43d3d, true).WithAlpha(alpha)
+                                        : ColorRGBA(0xff3da35a, true).WithAlpha(alpha);
+                                const char *pLeftLabel = Joined ? "Leave Playground" : "Join Playground";
+                                // v6.2: the Reset half shows whenever the playground
+                                // has any content — even outside the playground.
+                                if(!Tas.PlaygroundDirty())
+                                {
+                                        DrawRoundedRect(rx + 2.0f, ry + 2.0f, rw - 4.0f, rh - 4.0f, 4.0f,
+                                                IGraphics::CORNER_ALL, leftCol);
+                                        const float lw = TextRender()->TextWidth(15.0f, pLeftLabel);
+                                        DrawText(rx + (rw - lw) * 0.5f, ry + 8.0f, 15.0f, pLeftLabel,
+                                                ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                                }
+                                else
+                                {
+                                        const float btnW = (rw - 6.0f) * 0.5f;
+                                        DrawRoundedRect(rx + 2.0f, ry + 2.0f, btnW, rh - 4.0f, 4.0f,
+                                                IGraphics::CORNER_ALL, leftCol);
+                                        const float lw = TextRender()->TextWidth(12.0f, pLeftLabel);
+                                        DrawText(rx + 2.0f + (btnW - lw) * 0.5f, ry + 8.0f, 12.0f, pLeftLabel,
+                                                ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                                        const float rx2 = rx + 2.0f + btnW + 2.0f;
+                                        DrawRoundedRect(rx2, ry + 2.0f, btnW, rh - 4.0f, 4.0f,
+                                                IGraphics::CORNER_ALL, ColorRGBA(0xffc43d3d, true).WithAlpha(alpha));
+                                        const float rw2 = TextRender()->TextWidth(12.0f, "Reset Playground");
+                                        DrawText(rx2 + (btnW - rw2) * 0.5f, ry + 8.0f, 12.0f, "Reset Playground",
+                                                ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                                }
+                        }
+                        // v6.2: Rewind (left) + Forward (right) in one row.
+                        else if(str_comp(row.pName, "Rewind") == 0)
+                        {
+                                const float btnW = (rw - 6.0f) * 0.5f;
+                                DrawRoundedRect(rx + 2.0f, ry + 2.0f, btnW, rh - 4.0f, 4.0f,
+                                        IGraphics::CORNER_ALL, ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha));
+                                const float lw = TextRender()->TextWidth(15.0f, "Rewind");
+                                DrawText(rx + 2.0f + (btnW - lw) * 0.5f, ry + 8.0f, 15.0f, "Rewind",
+                                        ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                                const float rx2 = rx + 2.0f + btnW + 2.0f;
+                                DrawRoundedRect(rx2, ry + 2.0f, btnW, rh - 4.0f, 4.0f,
+                                        IGraphics::CORNER_ALL, ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha));
+                                const float rw2 = TextRender()->TextWidth(15.0f, "Forward");
+                                DrawText(rx2 + (btnW - rw2) * 0.5f, ry + 8.0f, 15.0f, "Forward",
+                                        ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                        }
+                        // v6.3: Play/Record + Reset Record (reset half only when the
+                        // take buffer holds ticks or a .tas file is loaded).
+                        else if(str_comp(row.pName, g_TasDyn_Action) == 0)
+                        {
+                                CTas &Tas = GameClient()->m_Tas;
+                                const bool Active = Tas.IsPlaying() || Tas.IsRealPlaying() || Tas.IsRecording();
+                                const ColorRGBA leftCol = Active
+                                        ? ColorRGBA(0xffc43d3d, true).WithAlpha(alpha)
+                                        : ColorRGBA(0xff3da35a, true).WithAlpha(alpha);
+                                const char *pLeftLabel = row.pName;
+                                if(!Tas.RecordDirty())
+                                {
+                                        DrawRoundedRect(rx + 2.0f, ry + 2.0f, rw - 4.0f, rh - 4.0f, 4.0f,
+                                                IGraphics::CORNER_ALL, leftCol);
+                                        const float lw = TextRender()->TextWidth(16.0f, pLeftLabel);
+                                        DrawText(rx + (rw - lw) * 0.5f, ry + 8.0f, 16.0f, pLeftLabel,
+                                                ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                                }
+                                else
+                                {
+                                        const float btnW = (rw - 6.0f) * 0.5f;
+                                        DrawRoundedRect(rx + 2.0f, ry + 2.0f, btnW, rh - 4.0f, 4.0f,
+                                                IGraphics::CORNER_ALL, leftCol);
+                                        const float lw = TextRender()->TextWidth(14.0f, pLeftLabel);
+                                        DrawText(rx + 2.0f + (btnW - lw) * 0.5f, ry + 8.0f, 14.0f, pLeftLabel,
+                                                ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                                        const float rx2 = rx + 2.0f + btnW + 2.0f;
+                                        DrawRoundedRect(rx2, ry + 2.0f, btnW, rh - 4.0f, 4.0f,
+                                                IGraphics::CORNER_ALL, ColorRGBA(0xffc43d3d, true).WithAlpha(alpha));
+                                        const float rw2 = TextRender()->TextWidth(13.0f, "Reset Record");
+                                        DrawText(rx2 + (btnW - rw2) * 0.5f, ry + 8.0f, 13.0f, "Reset Record",
+                                                ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                                }
+                        }
                         break;
                 }
                 case ERowType::Label:
                 {
                         // v1.56.176: Label — non-interactive text row (Info panel).
-                        // Just draw the text left-aligned, no background, no checkbox.
-                        // Slightly dimmer than toggle row text to read as "info, not clickable".
-                        DrawText(rx + 4.0f, ry + 5.0f, 16.0f, row.pName,
-                                ColorRGBA(0xffb8b8c8, true).WithAlpha(alpha));
+                        // v6.2: wrapped to the row width; the row height comes from
+                        // the wrapped line count computed in the layout pass.
+                        std::vector<std::string> vLines;
+                        KxWrapText(row.pName, rw - 8.0f, vLines);
+                        float LabelY = ry + 5.0f;
+                        for(const std::string &Line : vLines)
+                        {
+                                DrawText(rx + 4.0f, LabelY, 16.0f, Line.c_str(),
+                                        ColorRGBA(0xffb8b8c8, true).WithAlpha(alpha));
+                                LabelY += 20.0f;
+                        }
                         break;
                 }
                 }
@@ -9886,7 +10534,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 // subsequent rows read the correct Yoga nodes.
                                 for(int c = 0; c < row.childCount; ++c)
                                 {
-                                        if(str_comp(row.pName, "Visuals") == 0 && !TasVisualsChildVisible(row.pChildren, row.childCount, c))
+                                        if(!TasRowChildrenVisible(row, c))
                                                 continue;
                                         if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                                 continue;
@@ -9935,7 +10583,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                         int preIdx = rowIdx;
                         for(int c = 0; c < row.childCount; ++c)
                         {
-                                if(str_comp(row.pName, "Visuals") == 0 && !TasVisualsChildVisible(row.pChildren, row.childCount, c))
+                                if(!TasRowChildrenVisible(row, c))
                                         continue;
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c)) continue;
                                 if(str_comp(row.pName, "Auto Triple Fly") == 0 && !TripleFlyChildVisible(row.pChildren, row.childCount, c))
@@ -9977,7 +10625,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                         for(int c = 0; c < row.childCount; ++c)
                         {
                                 SRow &child = row.pChildren[c];
-                                if(str_comp(row.pName, "Visuals") == 0 && !TasVisualsChildVisible(row.pChildren, row.childCount, c))
+                                if(!TasRowChildrenVisible(row, c))
                                         continue;
                                 if(str_comp(row.pName, "Fake Aim") == 0 && !FakeAimChildVisible(row.pChildren, row.childCount, c))
                                         continue;
@@ -10063,12 +10711,13 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                 else
                                                         str_format(vbuf, sizeof(vbuf), "%.*f", cDec, cShown);
                                         }
-                                        const float vw = TextRender()->TextWidth(17.0f, vbuf) + 10.0f;
+                                        const char *pVText = child.pValueLabel ? child.pValueLabel : vbuf;
+                                        const float vw = TextRender()->TextWidth(17.0f, pVText) + 10.0f;
                                         const float vx = crx + crw - vw - 2.0f;
                                         DrawRoundedRect(vx, cry + 1.0f, vw, 18.0f, 2.0f,
                                                 IGraphics::CORNER_ALL,
                                                 ColorRGBA(COL_VALUE_BG, true).WithAlpha(alpha));
-                                        DrawText(vx + 6.0f, cry + 2.0f, 17.0f, vbuf, cText);
+                                        DrawText(vx + 6.0f, cry + 2.0f, 17.0f, pVText, cText);
                                         const float trx = crx + 2.0f;
                                         const float trY = cry + crh - SLIDER_TRACK_H - 4.0f;
                                         const float trW = crw - 4.0f;
@@ -10271,6 +10920,15 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                         // Connected/active state → green tint.
                                         if(child.on)
                                                 btnCol = ColorRGBA(0xff3da35a, true).WithAlpha(alpha);
+                                        // v6.2: Spawner action colors — Spawn/Loop green, Kill/Stop red.
+                                        if(str_comp(child.pName, "Spawn") == 0)
+                                                btnCol = ColorRGBA(0xff3da35a, true).WithAlpha(alpha);
+                                        else if(str_comp(child.pName, "Kill") == 0)
+                                                btnCol = ColorRGBA(0xffc43d3d, true).WithAlpha(alpha);
+                                        else if(str_comp(child.pName, g_TasDyn_Loop) == 0)
+                                                btnCol = GameClient()->m_Tas.SpawnerLoopActive()
+                                                        ? ColorRGBA(0xffc43d3d, true).WithAlpha(alpha)
+                                                        : ColorRGBA(0xff3da35a, true).WithAlpha(alpha);
                                         DrawRoundedRect(crx + 2.0f, cry + 2.0f, crw - 4.0f, crh - 4.0f, 4.0f,
                                                 IGraphics::CORNER_ALL, btnCol);
                                         const float labelW = TextRender()->TextWidth(15.0f, pLabel);
@@ -10280,9 +10938,17 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 }
                                 case ERowType::Label:
                                 {
-                                        // v1.56.258: Label child (Block "Dists:") — non-interactive text.
-                                        DrawText(crx + 4.0f, cry + 5.0f, 15.0f, child.pName,
-                                                ColorRGBA(0xffb8b8c8, true).WithAlpha(alpha));
+                                        // v1.56.258: Label child — non-interactive text.
+                                        // v6.2: wrapped like every other label.
+                                        std::vector<std::string> vLines;
+                                        KxWrapText(child.pName, crw - 8.0f, vLines);
+                                        float LabelY = cry + 5.0f;
+                                        for(const std::string &Line : vLines)
+                                        {
+                                                DrawText(crx + 4.0f, LabelY, 15.0f, Line.c_str(),
+                                                        ColorRGBA(0xffb8b8c8, true).WithAlpha(alpha));
+                                                LabelY += 20.0f;
+                                        }
                                         break;
                                 }
                                 case ERowType::DoubleButton:

@@ -42,6 +42,7 @@
 #include <game/client/projectile_data.h>
 
 #include <algorithm>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -67,11 +68,17 @@ struct CLaserState
 	bool ZeroEnergyBounce = false;
 };
 
+struct SSpawnedEntSnapshot;
+
 // Complete physics state of the playground at one tick.
 struct CTasState
 {
 	int Tick = 0;
 	CCharacterCore Core;
+	// Full character snapshot: input queues, weapon switch state, hammer hit
+	// list, tune zone, ... Without it a rewind leaks the presses of the undone
+	// ticks (the fake tee swings/re-hits right after an auto-rewind).
+	CCharacterFullState Char{};
 	int FreezeTime = 0;
 	int ReloadTimer = 0;
 	int AttackTick = 0;
@@ -83,6 +90,9 @@ struct CTasState
 	std::vector<CProjectileData> vProjectiles;
 	std::vector<CLaserState> vLasers;
 	std::vector<CPickupState> vPickups;
+	// v6.3: state of every Spawner-owned entity at this tick (tees, spawner
+	// projectiles and spawner lasers), so Rewind moves them back too.
+	std::vector<SSpawnedEntSnapshot> vSpawnedEnts;
 };
 
 // One recorded tick: input used + physics state after the tick.
@@ -93,6 +103,125 @@ struct CTasTick
 	CCharacterCore Core;
 	int FreezeTime = 0;
 	std::vector<CProjectileData> vProjectiles;
+};
+
+// ---------------------------------------------------------------------------
+// Spawner (TAS playground only, .tas v2.0)
+// ---------------------------------------------------------------------------
+
+enum
+{
+	TAS_SPAWN_MODE_ENTITY = 0,
+	TAS_SPAWN_MODE_TILE = 1,
+};
+
+// Spawnable entity kinds, in the order shown by the "Entity ID" slider.
+enum
+{
+	TAS_SPAWN_ENT_TEE = 0,
+	TAS_SPAWN_ENT_PROJECTILE,
+	TAS_SPAWN_ENT_LASER,
+	TAS_SPAWN_ENT_PICKUP,
+	TAS_SPAWN_ENT_DOOR,
+	TAS_SPAWN_ENT_DRAGGER,
+	TAS_SPAWN_ENT_PLASMA,
+	TAS_SPAWN_ENT_COUNT,
+};
+
+enum
+{
+	TAS_SPAWN_COORD_CURSOR = 0,
+	TAS_SPAWN_COORD_COORDS = 1,
+	TAS_SPAWN_COORD_PREVIOUS = 2,
+};
+
+// Number of entries in the ClickGUI tile slider (kept in sync with the table
+// in tas.cpp by a static_assert there).
+enum
+{
+	TAS_SPAWNER_TILE_COUNT = 34,
+};
+
+// Everything the Spawner panel can configure. The ClickGUI rows write into
+// this struct every frame (see SyncTasSpawnerRows) and the engine reads it
+// when spawning. Plain POD so it can be mem_copy'd into the .tas file.
+struct STasSpawnerSettings
+{
+	int m_Mode = TAS_SPAWN_MODE_ENTITY;
+	int m_Entity = TAS_SPAWN_ENT_TEE;
+	// Tee-only fields.
+	char m_aName[64] = "Spawned";
+	char m_aClan[64] = "";
+	int m_Id = 0;
+	char m_aSkin[64] = "";
+	char m_aColorBody[8] = "";
+	char m_aColorFeet[8] = "";
+	int m_HookStrength = 10;
+	int m_HookStrengthMode = 1; // 0 = Strong, 1 = Weak
+	bool m_aWeapon[NUM_WEAPONS] = {};
+	bool m_PracticeParticles = false;
+	int m_WeaponId = 0;
+	// Entity physics / rewind helpers.
+	bool m_EntityPhysics = true;
+	float m_PrevPosX = 0.0f;
+	float m_PrevPosY = 0.0f;
+	int m_EntityTimelineTick = 0;
+	// Non-tee entity physics (v6.2): direction / velocity / lifetime for
+	// projectiles, reach / length for lasers, strength for draggers.
+	int m_Dir = 0; // direction preset index (0=E, 1=NE, ... 7=SE), see g_aTasSpawnerDirs
+	float m_VelX = 0.0f; // extra velocity along the direction (units/tick)
+	float m_VelY = 0.0f;
+	int m_LifeSpan = -1; // projectile lifespan in ticks (-1 = default)
+	int m_LaserReach = 800; // laser/dragger reach
+	int m_LaserLength = 800; // door length
+	int m_DraggerStrength = 1; // dragger pull strength
+	// Tile.
+	int m_Tile = 1; // TILE_SOLID
+	bool m_TilePhysics = true;
+	int m_TileTimelineTick = 0;
+	// Placement.
+	int m_CoordsMode = TAS_SPAWN_COORD_CURSOR;
+	float m_X = 0.0f;
+	float m_Y = 0.0f;
+	bool m_Snap = false;
+	int m_LoopDelay = 1000;
+};
+
+// One spawn action, recorded for the .tas file (v2.0).
+struct STasSpawnerRecord
+{
+	int m_Tick = 0;
+	int m_Mode = TAS_SPAWN_MODE_ENTITY;
+	int m_Entity = TAS_SPAWN_ENT_TEE;
+	int m_Tile = 0;
+	bool m_Physics = true;
+	vec2 m_Pos = vec2(0.0f, 0.0f);
+	STasSpawnerSettings m_Settings{};
+};
+
+// v6.3: one Spawner-owned entity inside a rewind snapshot. Tees need their
+// full core + freeze/prev-pos state; spawner projectiles and lasers carry
+// their own data so the exact trajectory/beam is restored.
+struct SSpawnedEntSnapshot
+{
+	int m_Entity = 0;
+	// Client slot of a spawned tee, restored exactly (hooking/collision uses it).
+	int m_Id = 0;
+	int m_Tick = 0;
+	vec2 m_Pos = vec2(0.0f, 0.0f);
+	bool m_Inserted = false;
+	STasSpawnerSettings m_Settings{};
+	// Tee.
+	CCharacterCore Core{};
+	int FreezeTime = 0;
+	int ReloadTimer = 0;
+	int AttackTick = 0;
+	vec2 PrevPos = vec2(0.0f, 0.0f);
+	vec2 PrevPrevPos = vec2(0.0f, 0.0f);
+	// Spawner projectile.
+	CProjectileData ProjData{};
+	// Spawner laser.
+	CLaserState Laser{};
 };
 
 class CTas : public CComponent
@@ -195,13 +324,87 @@ public:
 	void UnpickFile();
 	void SaveTake(const char *pMap, const char *pName, const char *pAuthor);
 
+	// v6.3: "Reset Record" — clears the record/saved take and unloads the
+	// picked .tas file. The playground world is NOT touched.
+	bool RecordDirty() const { return !m_vRecord.empty() || !m_vSaved.empty() || m_FilePicked; }
+	void ResetRecord();
+
+	// ---- Spawner (TAS playground only) ----
+	STasSpawnerSettings &SpawnerSettings() { return m_Spawner; }
+	const STasSpawnerSettings &SpawnerSettings() const { return m_Spawner; }
+	bool SpawnerSpawn();
+	bool SpawnerKill();
+	void SpawnerToggleLoop();
+	bool SpawnerLoopActive() const { return m_SpawnerLoop; }
+	bool SpawnerHasPrevious() const { return m_SpawnerHasPrev; }
+	int SpawnerRecordCount() const { return (int)m_vSpawnerRecords.size(); }
+	static int SpawnerEntityCount() { return TAS_SPAWN_ENT_COUNT; }
+	static const char *SpawnerEntityName(int Index);
+	static int SpawnerTileCount() { return TAS_SPAWNER_TILE_COUNT; }
+	static const char *SpawnerTileName(int Index);
+	static int SpawnerTileId(int Index);
+
+	// ---- Playground settings (v6.2) ----
+	// Virtual RCON / Virtual Chat / Practice: client-side rcon+chat inside the
+	// playground. The buffers survive toggling and are saved in the .tas file.
+	void SetPgVirtualRcon(bool On);
+	bool PgVirtualRcon() const { return m_PgVirtualRcon; }
+	void SetPgVirtualChat(bool On);
+	bool PgVirtualChat() const { return m_PgVirtualChat; }
+	void SetPgPractice(bool On);
+	bool PgPractice() const { return m_PgPractice; }
+	// One line of the playground chat buffer.
+	struct SPgChatLine
+	{
+		int m_Team = 0; // 0 = all, 1 = team
+		int m_ClientId = -1; // -1 = server/system line
+		char m_aName[64] = "";
+		char m_aText[512] = "";
+	};
+	// Appends a line to the virtual chat buffer (if Virtual Chat is on, the
+	// real chat component routes here instead of the real buffer).
+	void PgChatAddLine(int ClientId, int Team, const char *pName, const char *pText);
+	const std::vector<SPgChatLine> &PgChatLines() const { return m_vPgChat; }
+	void PgChatClear() { m_vPgChat.clear(); }
+	// Handles a "/command" typed in the playground chat. Returns true when the
+	// command was consumed here (pOut receives an optional status line).
+	bool PgChatHandleCommand(const char *pLine, char *pOut, int OutSize);
+	// Executes a line in the virtual rcon (practice commands like telecursor).
+	// It never echoes the command itself — callers that do not print the line
+	// (the rcon console command, the ClickGUI field) use PgRconEcho first.
+	void PgRconExecute(const char *pLine);
+	// Records "> line" in the backlog without printing (the F2 console already
+	// printed it) / records and prints it (rcon command + GUI field).
+	void PgRconLogCommand(const char *pLine);
+	void PgRconEcho(const char *pLine);
+	// Virtual rcon backlog ("> cmd" + responses), for the remote console.
+	const std::vector<std::string> &PgRconLog() const { return m_vPgRcon; }
+	// Master switch of the whole Playground Settings group.
+	void SetPgMaster(bool On);
+	bool PgMaster() const { return m_PgMaster; }
+	// /spec (PAUSE_SPEC): the tee stays paused in the world and the camera is
+	// detached to the spectator view.
+	bool IsSpec() const { return m_PgSpec; }
+	// Teleports the playground tee to the current spawn target (cursor).
+	void PgTeleCursor();
+	// Pass-through to the real server rcon (used by the shadowed console command).
+	void SendRealRcon(const char *pLine);
+	// True when the playground has spawner objects / recordings / chat that a
+	// Reset would drop (drives the "Reset Playground" button visibility).
+	bool PlaygroundDirty() const;
+	// Drops everything the Spawner created (objects, tiles, records, loop) and
+	// clears the virtual chat buffer — the playground becomes pristine again.
+	void PlaygroundReset();
+	// Incremented by PlaygroundReset so the ClickGUI can reset its rows.
+	int PgResetSerial() const { return m_PgResetSerial; }
+
 	static constexpr int MAX_HISTORY = 20000; // rewind depth cap (steps)
 	static constexpr int TRIM_CHUNK = 5000; // entries dropped when the cap is hit
 
 private:
 	void JoinPlayground();
 	void LeavePlayground();
-	CNetObj_PlayerInput LiveInput() const;
+	CNetObj_PlayerInput LiveInput();
 	CTasState CaptureState();
 	void RestoreState(const CTasState &State);
 	void StepWorld(const CNetObj_PlayerInput &Input);
@@ -216,6 +419,103 @@ private:
 	void RenderVisuals();
 	bool LoadTakeFile(const char *pPath);
 	bool WriteTakeFile(const char *pPath, const char *pMap, const char *pName, const char *pAuthor, const char *pCreated);
+
+	// Playground command core (shared by the virtual chat and the virtual rcon).
+	// Returns true when the command was understood; vOut receives the status
+	// lines (multi-line commands like "tunes" print one line per tuning).
+	bool PgRunCommand(const char *pCmdLine, std::vector<std::string> &vOut);
+	void PgRconPrint(const char *pText);
+	void PgRespawn();
+	void PgGiveWeapon(int Weapon);
+
+	// Spawner internals.
+	bool SpawnerSpawnAt(const STasSpawnerSettings &Settings, vec2 Pos, int Tick, bool Record);
+	bool SpawnerSpawnEntity(const STasSpawnerSettings &Settings, vec2 Pos, int Tick, bool Record);
+	bool SpawnerSpawnTile(const STasSpawnerSettings &Settings, vec2 Pos, int Tick, bool Record);
+	void SpawnerClearLive();
+	// Leaving the playground destroys the world, but the Spawner state (settings,
+	// spawned objects, tiles, loop) must survive it: detach the entities without
+	// touching the records and re-create them on the next join.
+	void SpawnerDetachLive();
+	void SpawnerReattachLive();
+	void SpawnerApplyRecords();
+	// The playground deletes entities it destroys (death tiles, expired
+	// projectiles); drop the ones that no longer exist so we never touch a
+	// freed pointer or double-delete.
+	void SpawnerPruneRemoved();
+	bool SpawnerOwnsEntity(const CEntity *pEnt) const;
+	void RenderSpawned();
+	void RenderPlaygroundHookColl();
+	vec2 SpawnerTargetPos();
+
+	struct SSpawnedEnt
+	{
+		CEntity *m_pEnt = nullptr;
+		bool m_Inserted = false;
+		int m_Entity = 0;
+		int m_Tick = 0;
+		vec2 m_Pos = vec2(0.0f, 0.0f);
+		// Previous / current tick positions, tracked by the renderer so the
+		// spawned tee glides between ticks instead of jumping.
+		vec2 m_RenderPrevPos = vec2(0.0f, 0.0f);
+		vec2 m_RenderCurPos = vec2(0.0f, 0.0f);
+		CLaserData m_LaserData{};
+		STasSpawnerSettings m_Settings{};
+	};
+	struct SSpawnedTile
+	{
+		int m_Index = -1;
+		int m_OldTile = 0;
+		int m_Tile = 0;
+		bool m_Physics = true;
+		int m_Tick = 0;
+		vec2 m_Pos = vec2(0.0f, 0.0f);
+	};
+
+	std::vector<SSpawnedEnt> m_vSpawnedEnts;
+	std::vector<SSpawnedTile> m_vSpawnedTiles;
+	std::vector<STasSpawnerRecord> m_vSpawnerRecords;
+	STasSpawnerSettings m_Spawner;
+	bool m_SpawnerHasPrev = false;
+	vec2 m_SpawnerPrevPos = vec2(0.0f, 0.0f);
+	bool m_SpawnerLoop = false;
+	float m_SpawnerLoopMs = 0.0f;
+	// Playground tick the spawned render positions were last refreshed for.
+	int m_SpawnerRenderTick = -1;
+	// Set whenever spawned tiles were written to (or restored in) the map's
+	// game layer: the map renderer keeps pre-built buffers, so they must be
+	// rebuilt for the change to be visible.
+	bool m_TileVisualDirty = false;
+
+	// ---- Playground settings state (v6.2) ----
+	bool m_PgMaster = false;
+	bool m_PgVirtualRcon = false;
+	bool m_PgVirtualChat = false;
+	bool m_PgPractice = false;
+	// Practice cheats state.
+	bool m_PgInvincible = false;
+	bool m_PgSuper = false;
+	// /pause and /spec: the player is paused (tee stands still), the world keeps
+	// ticking — the engine's ConTogglePause semantics, not a world pause.
+	bool m_PgPaused = false;
+	// /spec (PAUSE_SPEC): the tee stays paused in the world and the camera is
+	// detached to the spectator view.
+	bool m_PgSpec = false;
+	// True once m_aPgTuning has been seeded from the client tuning list. It is
+	// reset on map change / Reset, so leaving and re-entering the playground
+	// keeps every tune the user applied (v6.2.1 fix).
+	bool m_PgTuningInit = false;
+	bool m_PgTuningDirty = false;
+	int m_PgResetSerial = 0;
+	// Private tuning list for the playground: virtual rcon "tune" writes here
+	// so the real world's tuning is never touched.
+	CTuningParams m_aPgTuning[TuneZone::NUM];
+	// Virtual chat buffer: written while Virtual Chat is ON, kept (frozen)
+	// while OFF, saved/loaded with the .tas file.
+	std::vector<SPgChatLine> m_vPgChat;
+	// Virtual rcon backlog ("> line" + command echoes), shown in the remote
+	// console while Virtual RCON is ON.
+	std::vector<std::string> m_vPgRcon;
 
 	CGameWorld m_Playground;
 	bool m_Joined = false;
@@ -254,9 +554,13 @@ private:
 	// Rewind rebasing of the global client counters (fire / weapon switch):
 	// clicks undone by a rewind stay baked into m_aInputData, so LiveInput
 	// subtracts these offsets and the fake timeline sees no ghost presses.
-	int m_FireRebase = 0;
-	int m_NextWeaponRebase = 0;
-	int m_PrevWeaponRebase = 0;
+	// Fire is derived from the physical held bit in LiveInput() (an absolute
+	// rebase could flip that bit and invert the bind). Weapon-switch counters
+	// are pure press counters: accumulate the real edge deltas instead.
+	int m_FakeNextWeapon = 0;
+	int m_FakePrevWeapon = 0;
+	int m_LastLiveNextWeapon = 0;
+	int m_LastLivePrevWeapon = 0;
 
 	// Auto Rewind/Forward state (settings in the KxTasAutoRf* config vars;
 	// m_AutoRfTile is the tile being edited in the UI).
