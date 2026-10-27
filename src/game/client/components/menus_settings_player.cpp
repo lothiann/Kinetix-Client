@@ -18,29 +18,43 @@
 
 void CMenus::RenderSettingsPlayer(CUIRect MainView)
 {
-	CUIRect TabBar, PlayerTab, DummyTab, ChangeInfo, QuickSearch;
+	CUIRect TabBar, PlayerTab, ChangeInfo, QuickSearch;
 	MainView.HSplitTop(20.0f, &TabBar, &MainView);
 	TabBar.VSplitMid(&TabBar, &ChangeInfo, 20.f);
-	TabBar.VSplitMid(&PlayerTab, &DummyTab);
+	PlayerTab = TabBar; // v1.56.282: the "Dummy" subtab was removed
 	MainView.HSplitTop(10.0f, nullptr, &MainView);
 
+	// v1.56.282: dynamic tab — while a Dummy Profiles session is active the
+	// "Player" tab renames to "Dummy N" (localized) and edits that dummy's
+	// profile. Clicking the active tab ends the session (save + revert).
+	char aTabLabel[64];
+	const bool Session = m_DummyEditSlot >= 1 && !m_DummyEditIsTee;
+	if(Session)
+	{
+		if(m_DummyEditScope == 0)
+			str_format(aTabLabel, sizeof(aTabLabel), "%s %d", Localize("Dummy"), m_DummyEditSlot);
+		else
+			str_format(aTabLabel, sizeof(aTabLabel), "%s (%s)", Localize("Dummy"), m_DummyEditScope == 1 ? Localize("All") : Localize("Targets"));
+	}
+	else
+		str_copy(aTabLabel, Localize("Player"), sizeof(aTabLabel));
+
+	// 20.1.1 draws a checked tab darker than an unchecked one, so the session
+	// tab is rendered in the normal (unchecked) style — the "Dummy N" label
+	// already tells it apart, and clicking it ends the session.
 	static CButtonContainer s_PlayerTabButton;
-	if(DoButton_MenuTab(&s_PlayerTabButton, Localize("Player"), !m_Dummy, &PlayerTab, IGraphics::CORNER_L, nullptr, nullptr, nullptr, nullptr, 4.0f))
+	if(DoButton_MenuTab(&s_PlayerTabButton, aTabLabel, 0, &PlayerTab, IGraphics::CORNER_ALL, nullptr, nullptr, nullptr, nullptr, 4.0f))
 	{
-		m_Dummy = false;
+		if(Session)
+			EndDummyEdit();
 	}
 
-	static CButtonContainer s_DummyTabButton;
-	if(DoButton_MenuTab(&s_DummyTabButton, Localize("Dummy"), m_Dummy, &DummyTab, IGraphics::CORNER_R, nullptr, nullptr, nullptr, nullptr, 4.0f))
-	{
-		m_Dummy = true;
-	}
-
+	const int EditSlot = Session ? m_DummyEditSlot : 0;
 	if(Client()->State() == IClient::STATE_ONLINE &&
-		GameClient()->m_aNextChangeInfo[m_Dummy] > Client()->GameTick(m_Dummy))
+		GameClient()->m_aNextChangeInfo[EditSlot] > Client()->GameTick(EditSlot))
 	{
 		char aChangeInfo[128], aTimeLeft[32];
-		str_format(aTimeLeft, sizeof(aTimeLeft), Localize("%ds left"), (GameClient()->m_aNextChangeInfo[m_Dummy] - Client()->GameTick(m_Dummy) + Client()->GameTickSpeed() - 1) / Client()->GameTickSpeed());
+		str_format(aTimeLeft, sizeof(aTimeLeft), Localize("%ds left"), (GameClient()->m_aNextChangeInfo[EditSlot] - Client()->GameTick(EditSlot) + Client()->GameTickSpeed() - 1) / Client()->GameTickSpeed());
 		str_format(aChangeInfo, sizeof(aChangeInfo), "%s: %s", Localize("Player info change cooldown"), aTimeLeft);
 		Ui()->DoLabel(&ChangeInfo, aChangeInfo, 10.f, TEXTALIGN_ML);
 	}
@@ -49,19 +63,22 @@ void CMenus::RenderSettingsPlayer(CUIRect MainView)
 	static CLineInput s_ClanInput;
 
 	int *pCountry;
-	if(!m_Dummy)
+	if(Session)
+	{
+		// Dummy profile session: bind to the dummy's profile (single) or
+		// to the scratch profile (All/Targets scopes).
+		SDummyProfile *pProfile = m_DummyEditScope == 0 ? &GameClient()->m_BotNet.m_Dummy.m_aProfiles[m_DummyEditSlot] : nullptr;
+		pCountry = pProfile ? &pProfile->m_Country : &m_DummyEditScratchCountry;
+		s_NameInput.SetBuffer(pProfile ? pProfile->m_aName : m_aDummyEditScratchName, sizeof(SDummyProfile::m_aName));
+		s_NameInput.SetEmptyText(Client()->DummyName());
+		s_ClanInput.SetBuffer(pProfile ? pProfile->m_aClan : m_aDummyEditScratchClan, sizeof(SDummyProfile::m_aClan));
+	}
+	else
 	{
 		pCountry = &g_Config.m_PlayerCountry;
 		s_NameInput.SetBuffer(g_Config.m_PlayerName, sizeof(g_Config.m_PlayerName));
 		s_NameInput.SetEmptyText(Client()->PlayerName());
 		s_ClanInput.SetBuffer(g_Config.m_PlayerClan, sizeof(g_Config.m_PlayerClan));
-	}
-	else
-	{
-		pCountry = &g_Config.m_ClDummyCountry;
-		s_NameInput.SetBuffer(g_Config.m_ClDummyName, sizeof(g_Config.m_ClDummyName));
-		s_NameInput.SetEmptyText(Client()->DummyName());
-		s_ClanInput.SetBuffer(g_Config.m_ClDummyClan, sizeof(g_Config.m_ClDummyClan));
 	}
 
 	// player name

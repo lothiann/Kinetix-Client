@@ -211,8 +211,10 @@ void CGameClient::OnConsoleInit()
                                               &m_Statboard,
                                               &m_Motd,
                                               &m_CodeExec,
-                                              &m_ClickGui,
                                               &m_Menus,
+                                              // v6.3: ClickGUI renders AFTER the menus so it is
+                                              // visible (and clickable) in the main menu too.
+                                              &m_ClickGui,
                                               &m_Tooltips,
                                               &m_KeyBinder,
                                               &m_GameConsole,

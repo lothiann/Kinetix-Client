@@ -6883,6 +6883,32 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
 
 bool CClickGui::OnInput(const IInput::CEvent &Event)
 {
+        // The ClickGUI toggle bind must also work while the menu is open: CMenus
+        // consumes all input when active, so the event never reaches the bind
+        // chain (m_Binds sits after m_Menus). Handle the toggle here instead —
+        // but ONLY in that case, so in game the normal bind path runs unchanged
+        // (binds may contain more commands than just the toggle). The console
+        // check matters because ClickGUI sits before m_GameConsole in the input
+        // chain: typing a key bound to cl_clickgui into the console must not
+        // toggle the GUI. Every press flips the config, exactly like the bind
+        // itself — including mid-animation, so a second press reverses the
+        // animation instead of being swallowed.
+        if(GameClient()->m_Menus.IsActive() && !GameClient()->m_GameConsole.IsActive() &&
+                (Event.m_Flags & IInput::FLAG_PRESS))
+        {
+                // Same lookup as CBinds::OnInput: a modifier key (e.g. RSHIFT) is
+                // bound in the slot WITHOUT its own modifier bit, so it must be
+                // excluded from the current modifier mask or the lookup misses.
+                const int KeyModifierMask = CBinds::GetModifierMaskOfKey(Event.m_Key);
+                const int ModifierMask = CBinds::GetModifierMask(Input()) & ~KeyModifierMask;
+                const char *pBind = GameClient()->m_Binds.Get(Event.m_Key, ModifierMask);
+                if(pBind && str_find(pBind, "cl_clickgui"))
+                {
+                        g_Config.m_ClClickGui = g_Config.m_ClClickGui ? 0 : 1;
+                        return true;
+                }
+        }
+
         if(g_Config.m_ClClickGui == 0 && m_AnimProgress <= 0.0f)
                 return false;
 
@@ -7965,8 +7991,10 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         const bool Tee = str_comp(row.pName, "Dummy Tee") == 0;
                                         if(str_comp(pTarget->pName, "Open Main Profile") == 0 || str_comp(pTarget->pName, "Open Main Tee") == 0)
                                         {
-                                                // Main = vanilla player profile — no session, just open the tab.
+                                                // Main = vanilla player profile — end any active dummy
+                                                // session first, otherwise the tab stays on "Dummy N".
                                                 g_Config.m_ClClickGui = 0;
+                                                GameClient()->m_Menus.EndDummyEdit();
                                                 GameClient()->m_Menus.OpenDummySettingsPage(Tee);
                                         }
                                         else if(str_comp(pTarget->pName, "Open All Profile") == 0 || str_comp(pTarget->pName, "Open All Tee") == 0)

@@ -31,7 +31,12 @@ void CKinetixLines::OnReset()
 
 void CKinetixLines::OnRender()
 {
-        // v1.56.204: update per-component rainbow hue each frame.
+	// Spawned tele/speedup tiles (maps without those layers) render here —
+	// this component sits right after m_MapLayersForeground in the render
+	// order, so the tiles stack like native entity layers: ABOVE players.
+	GameClient()->m_Tas.RenderSpawnedTilesOverlay();
+
+	// v1.56.204: update per-component rainbow hue each frame.
         // Use RenderFrameTime() for framerate-independent rotation (same as Rainbow Color in clickgui.cpp).
         // The old fixed 1/60 dt caused speed to scale with FPS (100x too fast at 6000fps).
         KxLineUpdateRainbow(Client()->RenderFrameTime());

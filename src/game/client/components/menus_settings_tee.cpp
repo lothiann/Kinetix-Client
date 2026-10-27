@@ -26,31 +26,44 @@
 
 void CMenus::RenderSettingsTee(CUIRect MainView)
 {
-	CUIRect TabBar, PlayerTab, DummyTab, ChangeInfo;
+	CUIRect TabBar, PlayerTab, ChangeInfo;
 	MainView.HSplitTop(20.0f, &TabBar, &MainView);
 	TabBar.VSplitMid(&TabBar, &ChangeInfo, 20.f);
-	TabBar.VSplitMid(&PlayerTab, &DummyTab);
+	PlayerTab = TabBar; // v1.56.282: the "Dummy" subtab was removed
 	MainView.HSplitTop(10.0f, nullptr, &MainView);
 
+	// v1.56.282: dynamic tab — while a Dummy Tee session is active the tab
+	// renames to "Dummy N" (localized) and edits that dummy's skin profile.
+	// Clicking the active tab ends the session (save + revert).
+	char aTabLabel[64];
+	const bool Session = m_DummyEditSlot >= 1 && m_DummyEditIsTee;
+	if(Session)
+	{
+		if(m_DummyEditScope == 0)
+			str_format(aTabLabel, sizeof(aTabLabel), "%s %d", Localize("Dummy"), m_DummyEditSlot);
+		else
+			str_format(aTabLabel, sizeof(aTabLabel), "%s (%s)", Localize("Dummy"), m_DummyEditScope == 1 ? Localize("All") : Localize("Targets"));
+	}
+	else
+		str_copy(aTabLabel, Localize("Player"), sizeof(aTabLabel));
+
+	// 20.1.1 draws a checked tab darker than an unchecked one, so the session
+	// tab is rendered in the normal (unchecked) style — the "Dummy N" label
+	// already tells it apart, and clicking it ends the session.
 	static CButtonContainer s_PlayerTabButton;
-	if(DoButton_MenuTab(&s_PlayerTabButton, Localize("Player"), !m_Dummy, &PlayerTab, IGraphics::CORNER_L, nullptr, nullptr, nullptr, nullptr, 4.0f))
+	if(DoButton_MenuTab(&s_PlayerTabButton, aTabLabel, 0, &PlayerTab, IGraphics::CORNER_ALL, nullptr, nullptr, nullptr, nullptr, 4.0f))
 	{
-		m_Dummy = false;
+		if(Session)
+			EndDummyEdit();
 		m_SkinListScrollToSelected = true;
 	}
 
-	static CButtonContainer s_DummyTabButton;
-	if(DoButton_MenuTab(&s_DummyTabButton, Localize("Dummy"), m_Dummy, &DummyTab, IGraphics::CORNER_R, nullptr, nullptr, nullptr, nullptr, 4.0f))
-	{
-		m_Dummy = true;
-		m_SkinListScrollToSelected = true;
-	}
-
+	const int EditSlot = Session ? m_DummyEditSlot : 0;
 	if(Client()->State() == IClient::STATE_ONLINE &&
-		GameClient()->m_aNextChangeInfo[m_Dummy] > Client()->GameTick(m_Dummy))
+		GameClient()->m_aNextChangeInfo[EditSlot] > Client()->GameTick(EditSlot))
 	{
 		char aChangeInfo[128], aTimeLeft[32];
-		str_format(aTimeLeft, sizeof(aTimeLeft), Localize("%ds left"), (GameClient()->m_aNextChangeInfo[m_Dummy] - Client()->GameTick(m_Dummy) + Client()->GameTickSpeed() - 1) / Client()->GameTickSpeed());
+		str_format(aTimeLeft, sizeof(aTimeLeft), Localize("%ds left"), (GameClient()->m_aNextChangeInfo[EditSlot] - Client()->GameTick(EditSlot) + Client()->GameTickSpeed() - 1) / Client()->GameTickSpeed());
 		str_format(aChangeInfo, sizeof(aChangeInfo), "%s: %s", Localize("Player info change cooldown"), aTimeLeft);
 		Ui()->DoLabel(&ChangeInfo, aChangeInfo, 10.f, TEXTALIGN_ML);
 	}
@@ -70,7 +83,19 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 	unsigned *pColorBody;
 	unsigned *pColorFeet;
 	int *pEmote;
-	if(!m_Dummy)
+	if(Session)
+	{
+		// Dummy tee session: bind to the dummy's profile (single) or to
+		// the scratch profile (All/Targets scopes).
+		SDummyProfile *pProfile = m_DummyEditScope == 0 ? &GameClient()->m_BotNet.m_Dummy.m_aProfiles[m_DummyEditSlot] : nullptr;
+		pSkinName = pProfile ? pProfile->m_aSkin : m_aDummyEditScratchSkin;
+		SkinNameSize = sizeof(SDummyProfile::m_aSkin);
+		pUseCustomColor = pProfile ? &pProfile->m_UseCustomColor : &m_DummyEditScratchUseCustomColor;
+		pColorBody = pProfile ? &pProfile->m_ColorBody : &m_aDummyEditScratchColorBody;
+		pColorFeet = pProfile ? &pProfile->m_ColorFeet : &m_aDummyEditScratchColorFeet;
+		pEmote = pProfile ? &pProfile->m_DefaultEyes : &m_DummyEditScratchEyes;
+	}
+	else
 	{
 		pSkinName = g_Config.m_ClPlayerSkin;
 		SkinNameSize = sizeof(g_Config.m_ClPlayerSkin);
@@ -78,15 +103,6 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 		pColorBody = &g_Config.m_ClPlayerColorBody;
 		pColorFeet = &g_Config.m_ClPlayerColorFeet;
 		pEmote = &g_Config.m_ClPlayerDefaultEyes;
-	}
-	else
-	{
-		pSkinName = g_Config.m_ClDummySkin;
-		SkinNameSize = sizeof(g_Config.m_ClDummySkin);
-		pUseCustomColor = &g_Config.m_ClDummyUseCustomColor;
-		pColorBody = &g_Config.m_ClDummyColorBody;
-		pColorFeet = &g_Config.m_ClDummyColorFeet;
-		pEmote = &g_Config.m_ClDummyDefaultEyes;
 	}
 
 	const float EyeButtonSize = 40.0f;
@@ -274,9 +290,29 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 	static int s_CurrentDie = rand() % std::size(s_apDice);
 	TextRender()->SetFontPreset(EFontPreset::ICON_FONT);
 	TextRender()->SetRenderFlags(ETextRenderFlags::TEXT_RENDER_FLAG_ONLY_ADVANCE_WIDTH | ETextRenderFlags::TEXT_RENDER_FLAG_NO_X_BEARING | ETextRenderFlags::TEXT_RENDER_FLAG_NO_Y_BEARING | ETextRenderFlags::TEXT_RENDER_FLAG_NO_PIXEL_ALIGNMENT | ETextRenderFlags::TEXT_RENDER_FLAG_NO_OVERSIZE);
-	if(DoButton_Menu(&s_RandomSkinButton, s_apDice[s_CurrentDie], 0, &RandomSkinButton, BUTTONFLAG_LEFT, nullptr, IGraphics::CORNER_ALL, 5.0f, -0.2f))
+		if(DoButton_Menu(&s_RandomSkinButton, s_apDice[s_CurrentDie], 0, &RandomSkinButton, BUTTONFLAG_LEFT, nullptr, IGraphics::CORNER_ALL, 5.0f, -0.2f))
 	{
-		GameClient()->m_Skins.RandomizeSkin(m_Dummy);
+		if(Session)
+		{
+			// Randomize into the shared dummy config vars, copy the
+			// result into the session target, restore the shared vars.
+			const int BakUCC = g_Config.m_ClDummyUseCustomColor;
+			const unsigned BakBody = g_Config.m_ClDummyColorBody;
+			const unsigned BakFeet = g_Config.m_ClDummyColorFeet;
+			char aBakSkin[sizeof(g_Config.m_ClDummySkin)];
+			str_copy(aBakSkin, g_Config.m_ClDummySkin, sizeof(aBakSkin));
+			GameClient()->m_Skins.RandomizeSkin(1);
+			str_copy(pSkinName, g_Config.m_ClDummySkin, SkinNameSize);
+			*pUseCustomColor = g_Config.m_ClDummyUseCustomColor;
+			*pColorBody = g_Config.m_ClDummyColorBody;
+			*pColorFeet = g_Config.m_ClDummyColorFeet;
+			str_copy(g_Config.m_ClDummySkin, aBakSkin, sizeof(g_Config.m_ClDummySkin));
+			g_Config.m_ClDummyUseCustomColor = BakUCC;
+			g_Config.m_ClDummyColorBody = BakBody;
+			g_Config.m_ClDummyColorFeet = BakFeet;
+		}
+		else
+			GameClient()->m_Skins.RandomizeSkin(0);
 		SetNeedSendInfo();
 		m_SkinListScrollToSelected = true;
 		s_CurrentDie = rand() % std::size(s_apDice);
@@ -369,8 +405,13 @@ void CMenus::RenderSettingsTee(CUIRect MainView)
 		CSkins::CSkinListEntry &SkinListEntry = vSkinList[i];
 		const CSkins::CSkinContainer *pSkinContainer = vSkinList[i].SkinContainer();
 
-		if(!m_Dummy ? SkinListEntry.IsSelectedMain() : SkinListEntry.IsSelectedDummy())
-		{
+			// Session editing compares against the bound profile skin;
+			// otherwise the main player skin is selected in the list.
+			const bool SkinSelected = Session ?
+				str_comp(pSkinContainer->Name(), pSkinName) == 0 :
+				SkinListEntry.IsSelectedMain();
+			if(SkinSelected)
+			{
 			OldSelected = i;
 			if(m_SkinListScrollToSelected)
 			{

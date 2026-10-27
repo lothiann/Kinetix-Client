@@ -308,108 +308,6 @@ void CTas::OnRender()
 
 	Graphics()->MapScreenToInterface(pGame->m_Camera.m_Center.x, pGame->m_Camera.m_Center.y, pGame->m_Camera.m_Zoom);
 
-	// Speedup arrows for maps without a speedup layer: the native renderer has
-	// no layer to draw them from, so draw the arrow here (the physics still
-	// works through the collision fallback layer).
-	for(const SSpawnedTile &T : m_vSpawnedTiles)
-	{
-		if(!T.m_SpeedupSet || !T.m_SpeedupSelfDraw)
-			continue;
-		int Type = 0, Force = 0, MaxSpeed = 0, Angle = 0;
-		m_Playground.Collision()->GetSpeedupTileAt(T.m_Pos.x + 16.0f, T.m_Pos.y + 16.0f, &Type, &Force, &MaxSpeed, &Angle);
-		if(!Force && !MaxSpeed)
-			continue;
-		// Exactly what CRenderMap::RenderSpeedupOverlay draws for native tiles:
-		// the speedup arrow sprite from the game data, rotated by the angle.
-		Graphics()->TextureClear();
-		Graphics()->TextureSet(g_pData->m_aImages[IMAGE_SPEEDUP_ARROW].m_Id);
-		Graphics()->QuadsBegin();
-		Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
-		Graphics()->SelectSprite(SPRITE_SPEEDUP_ARROW);
-		Graphics()->QuadsSetRotation(Angle * (pi / 180.0f));
-		Graphics()->DrawSprite(T.m_Pos.x + 16.0f, T.m_Pos.y + 16.0f, 35.0f);
-		Graphics()->QuadsEnd();
-	}
-
-	// Tele tiles for maps without a tele layer: draw with the NATIVE entity
-	// texture using the exact CRenderMap::RenderTelemap atlas math (same
-	// sprites, same top-left anchored quads → same alignment).
-	{
-		const bool TexArrays = Graphics()->HasTextureArraysSupport();
-		const CScreenRect ScreenRect = Graphics()->GetScreen();
-		const float TilePixelSize = 1024 / 32.0f;
-		const float FinalTileSize = 32.0f / ScreenRect.Width() * Graphics()->ScreenWidth();
-		const float FinalTilesetScale = FinalTileSize / TilePixelSize;
-		const float TexSize = 1024.0f;
-		const float Frac = (1.25f / TexSize) * (1 / FinalTilesetScale);
-		const float Nudge = (0.5f / TexSize) * (1 / FinalTilesetScale);
-		Graphics()->TextureSet(pGame->m_MapImages.GetEntities(MAP_IMAGE_ENTITY_LAYER_TYPE_ALL_EXCEPT_SWITCH));
-		if(TexArrays)
-			Graphics()->QuadsTex3DBegin();
-		else
-			Graphics()->QuadsBegin();
-		Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
-		for(const SSpawnedTile &T : m_vSpawnedTiles)
-		{
-			if(!T.m_TeleSet || !T.m_TeleSelfDraw || !T.m_Tile)
-				continue;
-			const int Index = T.m_Tile;
-			const int tx = Index % 16;
-			const int ty = Index / 16;
-			const int Px0 = tx * (1024 / 16);
-			const int Py0 = ty * (1024 / 16);
-			const int Px1 = Px0 + (1024 / 16) - 1;
-			const int Py1 = Py0 + (1024 / 16) - 1;
-			float x0 = Nudge + Px0 / TexSize + Frac;
-			float y0 = Nudge + Py0 / TexSize + Frac;
-			float x1 = Nudge + Px1 / TexSize - Frac;
-			float y1 = Nudge + Py0 / TexSize + Frac;
-			float x2 = Nudge + Px1 / TexSize - Frac;
-			float y2 = Nudge + Py1 / TexSize - Frac;
-			float x3 = Nudge + Px0 / TexSize + Frac;
-			float y3 = Nudge + Py1 / TexSize - Frac;
-			if(TexArrays)
-			{
-				x0 = 0;
-				y0 = 0;
-				x1 = x0 + 1;
-				y1 = y0;
-				x2 = x0 + 1;
-				y2 = y0 + 1;
-				x3 = x0;
-				y3 = y0 + 1;
-			}
-			const IGraphics::CQuadItem QuadItem(T.m_Pos.x, T.m_Pos.y, 32.0f, 32.0f);
-			if(TexArrays)
-			{
-				Graphics()->QuadsSetSubsetFree(x0, y0, x1, y1, x2, y2, x3, y3, Index);
-				Graphics()->QuadsTex3DDrawTL(&QuadItem, 1);
-			}
-			else
-			{
-				Graphics()->QuadsSetSubsetFree(x0, y0, x1, y1, x2, y2, x3, y3);
-				Graphics()->QuadsDrawTL(&QuadItem, 1);
-			}
-		}
-		if(TexArrays)
-			Graphics()->QuadsTex3DEnd();
-		else
-			Graphics()->QuadsEnd();
-
-		// Number overlay on top, centered like the native tele overlay.
-		for(const SSpawnedTile &T : m_vSpawnedTiles)
-		{
-			if(!T.m_TeleSet || !T.m_TeleSelfDraw || !T.m_Number)
-				continue;
-			char aBuf[16];
-			str_format(aBuf, sizeof(aBuf), "%d", T.m_Number);
-			const float Width = TextRender()->TextWidth(10.0f, aBuf, -1);
-			TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
-			TextRender()->Text(T.m_Pos.x + 16.0f - Width / 2.0f, T.m_Pos.y + 16.0f - 5.0f, 10.0f, aBuf, -1.0f);
-			TextRender()->TextColor(TextRender()->DefaultTextColor());
-		}
-	}
-
 	const CCharacterCore *pCore = pChar->Core();
 
 	// Intra-tick interpolation: at TPS < 50 the world steps discretely, so
@@ -605,6 +503,117 @@ void CTas::OnRender()
 			LocalClient.m_aName, LocalClient.m_aClan, m_LocalId, true, LocalStrongWeakId, false,
 			ShowDir, m_LastInput.m_Direction == -1, m_LastInput.m_Jump == 1, m_LastInput.m_Direction == 1,
 			1.0f);
+	}
+}
+
+// Spawned tele/speedup tiles for maps without those layers. Called from
+// CKinetixLines::OnRender — i.e. AFTER m_MapLayersForeground — so the tiles
+// stack like the native entity layers: ABOVE players and items.
+void CTas::RenderSpawnedTilesOverlay()
+{
+	if(!m_Joined)
+		return;
+	CGameClient *pGame = GameClient();
+
+	// Speedup arrows: exactly what CRenderMap::RenderSpeedupOverlay draws for
+	// native tiles — the speedup arrow sprite from the game data, rotated.
+	for(const SSpawnedTile &T : m_vSpawnedTiles)
+	{
+		if(!T.m_SpeedupSet || !T.m_SpeedupSelfDraw)
+			continue;
+		int Type = 0, Force = 0, MaxSpeed = 0, Angle = 0;
+		m_Playground.Collision()->GetSpeedupTileAt(T.m_Pos.x + 16.0f, T.m_Pos.y + 16.0f, &Type, &Force, &MaxSpeed, &Angle);
+		if(!Force && !MaxSpeed)
+			continue;
+		Graphics()->MapScreenToInterface(pGame->m_Camera.m_Center.x, pGame->m_Camera.m_Center.y, pGame->m_Camera.m_Zoom);
+		Graphics()->TextureClear();
+		Graphics()->TextureSet(g_pData->m_aImages[IMAGE_SPEEDUP_ARROW].m_Id);
+		Graphics()->QuadsBegin();
+		Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
+		Graphics()->SelectSprite(SPRITE_SPEEDUP_ARROW);
+		Graphics()->QuadsSetRotation(Angle * (pi / 180.0f));
+		Graphics()->DrawSprite(T.m_Pos.x + 16.0f, T.m_Pos.y + 16.0f, 35.0f);
+		Graphics()->QuadsEnd();
+	}
+
+	// Tele tiles: draw with the NATIVE entity texture using the exact
+	// CRenderMap::RenderTelemap atlas math (same sprites, same top-left
+	// anchored quads → same alignment).
+	{
+		const bool TexArrays = Graphics()->HasTextureArraysSupport();
+		const CScreenRect ScreenRect = Graphics()->GetScreen();
+		const float TilePixelSize = 1024 / 32.0f;
+		const float FinalTileSize = 32.0f / ScreenRect.Width() * Graphics()->ScreenWidth();
+		const float FinalTilesetScale = FinalTileSize / TilePixelSize;
+		const float TexSize = 1024.0f;
+		const float Frac = (1.25f / TexSize) * (1 / FinalTilesetScale);
+		const float Nudge = (0.5f / TexSize) * (1 / FinalTilesetScale);
+		Graphics()->MapScreenToInterface(pGame->m_Camera.m_Center.x, pGame->m_Camera.m_Center.y, pGame->m_Camera.m_Zoom);
+		Graphics()->TextureSet(pGame->m_MapImages.GetEntities(MAP_IMAGE_ENTITY_LAYER_TYPE_ALL_EXCEPT_SWITCH));
+		if(TexArrays)
+			Graphics()->QuadsTex3DBegin();
+		else
+			Graphics()->QuadsBegin();
+		Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
+		for(const SSpawnedTile &T : m_vSpawnedTiles)
+		{
+			if(!T.m_TeleSet || !T.m_TeleSelfDraw || !T.m_Tile)
+				continue;
+			const int Index = T.m_Tile;
+			const int tx = Index % 16;
+			const int ty = Index / 16;
+			const int Px0 = tx * (1024 / 16);
+			const int Py0 = ty * (1024 / 16);
+			const int Px1 = Px0 + (1024 / 16) - 1;
+			const int Py1 = Py0 + (1024 / 16) - 1;
+			float x0 = Nudge + Px0 / TexSize + Frac;
+			float y0 = Nudge + Py0 / TexSize + Frac;
+			float x1 = Nudge + Px1 / TexSize - Frac;
+			float y1 = Nudge + Py0 / TexSize + Frac;
+			float x2 = Nudge + Px1 / TexSize - Frac;
+			float y2 = Nudge + Py1 / TexSize - Frac;
+			float x3 = Nudge + Px0 / TexSize + Frac;
+			float y3 = Nudge + Py1 / TexSize - Frac;
+			if(TexArrays)
+			{
+				x0 = 0;
+				y0 = 0;
+				x1 = x0 + 1;
+				y1 = y0;
+				x2 = x0 + 1;
+				y2 = y0 + 1;
+				x3 = x0;
+				y3 = y0 + 1;
+			}
+			const IGraphics::CQuadItem QuadItem(T.m_Pos.x, T.m_Pos.y, 32.0f, 32.0f);
+			if(TexArrays)
+			{
+				Graphics()->QuadsSetSubsetFree(x0, y0, x1, y1, x2, y2, x3, y3, Index);
+				Graphics()->QuadsTex3DDrawTL(&QuadItem, 1);
+			}
+			else
+			{
+				Graphics()->QuadsSetSubsetFree(x0, y0, x1, y1, x2, y2, x3, y3);
+				Graphics()->QuadsDrawTL(&QuadItem, 1);
+			}
+		}
+		if(TexArrays)
+			Graphics()->QuadsTex3DEnd();
+		else
+			Graphics()->QuadsEnd();
+
+		// Number overlay on top, centered like the native tele overlay.
+		for(const SSpawnedTile &T : m_vSpawnedTiles)
+		{
+			if(!T.m_TeleSet || !T.m_TeleSelfDraw || !T.m_Number)
+				continue;
+			char aBuf[16];
+			str_format(aBuf, sizeof(aBuf), "%d", T.m_Number);
+			const float Width = TextRender()->TextWidth(10.0f, aBuf, -1);
+			TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
+			TextRender()->Text(T.m_Pos.x + 16.0f - Width / 2.0f, T.m_Pos.y + 16.0f - 5.0f, 10.0f, aBuf, -1.0f);
+			TextRender()->TextColor(TextRender()->DefaultTextColor());
+		}
 	}
 }
 

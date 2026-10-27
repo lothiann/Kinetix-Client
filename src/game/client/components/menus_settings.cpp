@@ -52,7 +52,11 @@ void CMenus::OpenDummySettingsPage(bool Tee)
 {
         SetActive(true);
         m_GamePage = PAGE_SETTINGS;
-        m_MenuPage = PAGE_SETTINGS;
+        // v6.4 (20.1.1): the main menu is a separate start screen (m_ShowStart);
+        // switching m_MenuPage under it is invisible. Leave the start screen
+        // and switch the page the same way the start menu's own buttons do.
+        SetShowStart(false);
+        SetMenuPage(PAGE_SETTINGS);
         g_Config.m_UiSettingsPage = Tee ? SETTINGS_TEE : SETTINGS_PLAYER;
 }
 
@@ -72,6 +76,32 @@ void CMenus::BeginDummyEdit(int Slot, int Scope, bool Tee, const bool *pTargets)
         {
                 for(int D = 0; D < MAX_DUMMIES; D++)
                         m_aDummyEditTargets[D] = false;
+        }
+
+        // Single-dummy session: materialize the inherited (shared dummy_*)
+        // values into the profile, so the editor shows what the dummy actually
+        // uses instead of empty "inherit" fields. After this the profile owns
+        // the values and stops following the shared config.
+        if(Scope == 0 && Slot >= 1)
+        {
+                SDummyProfile &P = GameClient()->m_BotNet.m_Dummy.m_aProfiles[Slot];
+                if(!P.m_aName[0])
+                        str_copy(P.m_aName, g_Config.m_ClDummyName, sizeof(P.m_aName));
+                if(!P.m_aClan[0])
+                        str_copy(P.m_aClan, g_Config.m_ClDummyClan, sizeof(P.m_aClan));
+                if(P.m_Country < 0)
+                        P.m_Country = g_Config.m_ClDummyCountry;
+                if(!P.m_aSkin[0])
+                        str_copy(P.m_aSkin, g_Config.m_ClDummySkin, sizeof(P.m_aSkin));
+                if(P.m_UseCustomColor < 0)
+                        P.m_UseCustomColor = g_Config.m_ClDummyUseCustomColor;
+                if(P.m_ColorBody == 0xFFFFFFFF)
+                        P.m_ColorBody = (unsigned)g_Config.m_ClDummyColorBody;
+                if(P.m_ColorFeet == 0xFFFFFFFF)
+                        P.m_ColorFeet = (unsigned)g_Config.m_ClDummyColorFeet;
+                if(P.m_DefaultEyes < 0)
+                        P.m_DefaultEyes = g_Config.m_ClDummyDefaultEyes;
+                GameClient()->m_BotNet.m_Dummy.Save();
         }
 
         // Prefill the scratch profile from the first target (All/Targets scopes),

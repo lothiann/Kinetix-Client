@@ -308,6 +308,9 @@ public:
 	// Playground freeze bar: called from CFreezeBars::OnRender so the bar renders
 	// on the same layer as the real freeze bars.
 	void RenderFreezeBar();
+	// Spawned tele/speedup tile self-draw, rendered after m_MapLayersForeground
+	// (called from CKinetixLines) so it stacks like native entity layers.
+	void RenderSpawnedTilesOverlay();
 	// Playground access for the Trajectory Tee prediction inside the playground.
 	CGameWorld *Playground() { return &m_Playground; }
 	int PlaygroundLocalId() const { return m_LocalId; }
