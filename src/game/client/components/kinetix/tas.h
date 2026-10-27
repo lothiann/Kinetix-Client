@@ -40,8 +40,11 @@
 #include <game/client/prediction/entities/character.h>
 #include <game/client/prediction/gameworld.h>
 #include <game/client/projectile_data.h>
+#include <game/client/render.h>
 
 #include <algorithm>
+#include <map>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -139,7 +142,7 @@ enum
 // in tas.cpp by a static_assert there).
 enum
 {
-	TAS_SPAWNER_TILE_COUNT = 34,
+	TAS_SPAWNER_TILE_COUNT = 39,
 };
 
 // Everything the Spawner panel can configure. The ClickGUI rows write into
@@ -158,27 +161,40 @@ struct STasSpawnerSettings
 	char m_aColorFeet[8] = "";
 	int m_HookStrength = 10;
 	int m_HookStrengthMode = 1; // 0 = Strong, 1 = Weak
-	bool m_aWeapon[NUM_WEAPONS] = {};
-	bool m_PracticeParticles = false;
+	// Weapon loadout: -1 = bare tee (no weapons at all), 0-5 = owns exactly
+	// that weapon (0 hammer, 1 gun, 2 shotgun, 3 grenade, 4 laser, 5 ninja).
 	int m_WeaponId = 0;
+	bool m_PracticeParticles = false;
 	// Entity physics / rewind helpers.
 	bool m_EntityPhysics = true;
-	float m_PrevPosX = 0.0f;
-	float m_PrevPosY = 0.0f;
-	int m_EntityTimelineTick = 0;
+	float m_PrevPosX = 0.0f; // Tee only: delta X of the previous position (physics kick).
+	float m_PrevPosY = 0.0f; // Tee only: delta Y of the previous position (physics kick).
+	int m_EntityTimelineTick = 0; // Tee only: playground tick the tee is treated as spawned at.
 	// Non-tee entity physics (v6.2): direction / velocity / lifetime for
-	// projectiles, reach / length for lasers, strength for draggers.
+	// projectiles, reach for lasers, length for doors.
 	int m_Dir = 0; // direction preset index (0=E, 1=NE, ... 7=SE), see g_aTasSpawnerDirs
 	float m_VelX = 0.0f; // extra velocity along the direction (units/tick)
 	float m_VelY = 0.0f;
 	int m_LifeSpan = -1; // projectile lifespan in ticks (-1 = default)
 	int m_LaserReach = 800; // laser/dragger reach
-	int m_LaserLength = 800; // door length
+	int m_LaserLength = 800; // door length (only the door entity uses it)
 	int m_DraggerStrength = 1; // dragger pull strength
+	// v6.3: per-entity parameters.
+	bool m_ProjectileFreeze = false; // freeze projectiles
+	bool m_ProjectileExplosive = false; // explosive projectiles (grenades are always explosive)
+	bool m_ProjectileSound = true; // play the fire sound
+	int m_LaserType = 0; // 0 = rifle, 1 = shotgun (freeze laser)
+	int m_PickupType = 0; // 0 = health, 1 = armor, 2 = weapon, 3 = ninja
+	int m_Subtype = 0; // pickup: weapon id / armor amount; plasma: 1 = explosive, 2 = freeze, 3 = both
+	int m_SwitchNumber = 0; // door / dragger / plasma / pickup switch layer number (0 = always active)
+	// v6.3: speedup tile parameters (speedup layer).
+	int m_SpeedupForce = 50; // acceleration strength
+	int m_SpeedupMaxSpeed = 0; // 0 = unlimited
+	int m_SpeedupAngle = 0; // push direction in degrees (0 = right, 90 = down)
 	// Tile.
 	int m_Tile = 1; // TILE_SOLID
+	int m_TileNumber = 0; // tile number: tune zone / tele number
 	bool m_TilePhysics = true;
-	int m_TileTimelineTick = 0;
 	// Placement.
 	int m_CoordsMode = TAS_SPAWN_COORD_CURSOR;
 	float m_X = 0.0f;
@@ -334,6 +350,9 @@ public:
 	const STasSpawnerSettings &SpawnerSettings() const { return m_Spawner; }
 	bool SpawnerSpawn();
 	bool SpawnerKill();
+	// Removes every spawned entity (or tile, in tile mode) of the current
+	// spawner mode, including the records.
+	void SpawnerKillAll();
 	void SpawnerToggleLoop();
 	bool SpawnerLoopActive() const { return m_SpawnerLoop; }
 	bool SpawnerHasPrevious() const { return m_SpawnerHasPrev; }
@@ -447,6 +466,13 @@ private:
 	void RenderSpawned();
 	void RenderPlaygroundHookColl();
 	vec2 SpawnerTargetPos();
+	// The current aim (crosshair) point in world coordinates, regardless of
+	// the spawner Coordinates Mode. Used by /tc (telecursor).
+	vec2 SpawnerAimPos();
+	// Render info of a spawned tee: honors the custom skin name (loaded like
+	// any community skin) and the custom body/feet colors; falls back to the
+	// local player's look.
+	CTeeRenderInfo SpawnerTeeRenderInfo(const STasSpawnerSettings &S);
 
 	struct SSpawnedEnt
 	{
@@ -467,12 +493,33 @@ private:
 		int m_Index = -1;
 		int m_OldTile = 0;
 		int m_Tile = 0;
+		int m_Number = 0; // tune zone (TILE_TUNE) / tele number (tele tiles)
 		bool m_Physics = true;
+		// Tune layer state (TILE_TUNE spawns rewrite the tune zone here).
+		bool m_TuneSet = false;
+		int m_OldTuneType = 0;
+		int m_OldTuneNumber = 0;
+		// Tele layer state (tele tile spawns). The tile is drawn by the TAS
+		// renderer itself when the map has no tele layer.
+		bool m_TeleSet = false;
+		bool m_TeleSelfDraw = false;
+		int m_OldTeleType = 0;
+		int m_OldTeleNumber = 0;
+		// Speedup layer state (TILE_SPEED_BOOST spawns). The arrow is drawn by
+		// the TAS renderer itself when the map has no speedup layer.
+		bool m_SpeedupSet = false;
+		bool m_SpeedupSelfDraw = false;
+		int m_OldSpeedupType = 0;
+		int m_OldSpeedupForce = 0;
+		int m_OldSpeedupMaxSpeed = 0;
+		int m_OldSpeedupAngle = 0;
 		int m_Tick = 0;
 		vec2 m_Pos = vec2(0.0f, 0.0f);
 	};
 
 	std::vector<SSpawnedEnt> m_vSpawnedEnts;
+	// Cached managed skins for spawned tees, keyed by "skin|body|feet".
+	std::map<std::string, std::shared_ptr<class CManagedTeeRenderInfo>> m_SpawnerSkinCache;
 	std::vector<SSpawnedTile> m_vSpawnedTiles;
 	std::vector<STasSpawnerRecord> m_vSpawnerRecords;
 	STasSpawnerSettings m_Spawner;

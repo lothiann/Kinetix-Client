@@ -145,6 +145,44 @@ void CCollision::Init(class CLayers *pLayers)
 	}
 }
 
+void CCollision::RebuildTeleData()
+{
+	m_TeleIns.clear();
+	m_TeleOuts.clear();
+	m_TeleCheckOuts.clear();
+	m_TeleOthers.clear();
+	m_HasHookTeleIns = false;
+	if(!m_pTele)
+		return;
+	for(int i = 0; i < m_Width * m_Height; i++)
+	{
+		const unsigned char Number = m_pTele[i].m_Number;
+		const unsigned char Type = m_pTele[i].m_Type;
+		if(Number && Type)
+		{
+			const vec2 TelePos = vec2(i % m_Width * 32.0f + 16.0f, i / m_Width * 32.0f + 16.0f);
+			if(Type == TILE_TELEIN)
+			{
+				m_TeleIns[Number - 1].push_back(TelePos);
+			}
+			else if(Type == TILE_TELEOUT)
+			{
+				m_TeleOuts[Number - 1].push_back(TelePos);
+			}
+			else if(Type == TILE_TELECHECKOUT)
+			{
+				m_TeleCheckOuts[Number - 1].push_back(TelePos);
+			}
+			else
+			{
+				m_TeleOthers[Number - 1].push_back(TelePos);
+				if(Type == TILE_TELEINHOOK)
+					m_HasHookTeleIns = true;
+			}
+		}
+	}
+}
+
 void CCollision::Unload()
 {
 	m_pTiles = nullptr;
@@ -160,7 +198,11 @@ void CCollision::Unload()
 	m_TeleOthers.clear();
 
 	m_pTele = nullptr;
+	delete[] m_pTeleFallback;
+	m_pTeleFallback = nullptr;
 	m_pSpeedup = nullptr;
+	delete[] m_pSpeedupFallback;
+	m_pSpeedupFallback = nullptr;
 	m_pFront = nullptr;
 	m_pSwitch = nullptr;
 	m_pTune = nullptr;
@@ -1086,6 +1128,148 @@ void CCollision::SetCollisionAt(float x, float y, int Index)
 	int Ny = std::clamp(round_to_int(y) / 32, 0, m_Height - 1);
 
 	m_pTiles[Ny * m_Width + Nx].m_Index = Index;
+}
+
+void CCollision::SetTuneZoneAt(float x, float y, int Zone)
+{
+	if(!m_pTune)
+		return;
+	int Nx = std::clamp(round_to_int(x) / 32, 0, m_Width - 1);
+	int Ny = std::clamp(round_to_int(y) / 32, 0, m_Height - 1);
+
+	CTuneTile &Tile = m_pTune[Ny * m_Width + Nx];
+	Tile.m_Type = TILE_TUNE + ENTITY_OFFSET;
+	Tile.m_Number = std::clamp(Zone, 0, 255);
+}
+
+int CCollision::GetTuneZoneAt(float x, float y) const
+{
+	if(!m_pTune)
+		return 0;
+	int Nx = std::clamp(round_to_int(x) / 32, 0, m_Width - 1);
+	int Ny = std::clamp(round_to_int(y) / 32, 0, m_Height - 1);
+	return m_pTune[Ny * m_Width + Nx].m_Type ? m_pTune[Ny * m_Width + Nx].m_Number : 0;
+}
+
+void CCollision::RestoreTuneTileAt(float x, float y, int Type, int Number)
+{
+	if(!m_pTune)
+		return;
+	int Nx = std::clamp(round_to_int(x) / 32, 0, m_Width - 1);
+	int Ny = std::clamp(round_to_int(y) / 32, 0, m_Height - 1);
+
+	CTuneTile &Tile = m_pTune[Ny * m_Width + Nx];
+	Tile.m_Type = Type;
+	Tile.m_Number = Number;
+}
+
+void CCollision::SetTeleTileAt(float x, float y, int Type, int Number)
+{
+	// Maps without a tele layer have no m_pTele at all — allocate a zeroed
+	// fallback buffer so spawned teleports work on any map.
+	if(!m_pTele)
+	{
+		if(m_Width <= 0 || m_Height <= 0)
+			return;
+		m_pTeleFallback = new CTeleTile[m_Width * m_Height];
+		mem_zero(m_pTeleFallback, (size_t)m_Width * m_Height * sizeof(CTeleTile));
+		m_pTele = m_pTeleFallback;
+	}
+	int Nx = std::clamp(round_to_int(x) / 32, 0, m_Width - 1);
+	int Ny = std::clamp(round_to_int(y) / 32, 0, m_Height - 1);
+
+	CTeleTile &Tile = m_pTele[Ny * m_Width + Nx];
+	Tile.m_Type = (unsigned char)std::clamp(Type, 0, 255);
+	Tile.m_Number = (unsigned char)std::clamp(Number, 0, 255);
+	// The prediction resolves teleports through the load-time tables, not the
+	// layer — refresh them so the spawned tile is actually used.
+	RebuildTeleData();
+}
+
+int CCollision::GetTeleTileTypeAt(float x, float y) const
+{
+	if(!m_pTele)
+		return 0;
+	int Nx = std::clamp(round_to_int(x) / 32, 0, m_Width - 1);
+	int Ny = std::clamp(round_to_int(y) / 32, 0, m_Height - 1);
+	return m_pTele[Ny * m_Width + Nx].m_Type;
+}
+
+void CCollision::RestoreTeleTileAt(float x, float y, int Type, int Number)
+{
+	if(!m_pTele)
+		return;
+	int Nx = std::clamp(round_to_int(x) / 32, 0, m_Width - 1);
+	int Ny = std::clamp(round_to_int(y) / 32, 0, m_Height - 1);
+
+	CTeleTile &Tile = m_pTele[Ny * m_Width + Nx];
+	Tile.m_Type = (unsigned char)std::clamp(Type, 0, 255);
+	Tile.m_Number = (unsigned char)std::clamp(Number, 0, 255);
+	RebuildTeleData();
+}
+
+void CCollision::SetSpeedupAt(float x, float y, int Force, int MaxSpeed, int Angle)
+{
+	// Maps without a speedup layer have no m_pSpeedup at all — allocate a
+	// zeroed fallback buffer so the physics (IsSpeedup/GetSpeedup) still sees
+	// the spawned tile.
+	if(!m_pSpeedup)
+	{
+		if(m_Width <= 0 || m_Height <= 0)
+			return;
+		m_pSpeedupFallback = new CSpeedupTile[m_Width * m_Height];
+		mem_zero(m_pSpeedupFallback, (size_t)m_Width * m_Height * sizeof(CSpeedupTile));
+		m_pSpeedup = m_pSpeedupFallback;
+	}
+	int Nx = std::clamp(round_to_int(x) / 32, 0, m_Width - 1);
+	int Ny = std::clamp(round_to_int(y) / 32, 0, m_Height - 1);
+
+	CSpeedupTile &Tile = m_pSpeedup[Ny * m_Width + Nx];
+	// Plain tile id: the map format stores the speedup type WITHOUT the entity
+	// offset and both the physics and the renderer compare it directly.
+	Tile.m_Type = TILE_SPEED_BOOST;
+	Tile.m_Force = (unsigned char)std::clamp(Force, 0, 255);
+	Tile.m_MaxSpeed = (unsigned char)std::clamp(MaxSpeed, 0, 255);
+	Tile.m_Angle = (short)std::clamp(Angle, 0, 359);
+}
+
+void CCollision::GetSpeedupTileAt(float x, float y, int *pType, int *pForce, int *pMaxSpeed, int *pAngle) const
+{
+	if(pType)
+		*pType = 0;
+	if(pForce)
+		*pForce = 0;
+	if(pMaxSpeed)
+		*pMaxSpeed = 0;
+	if(pAngle)
+		*pAngle = 0;
+	if(!m_pSpeedup)
+		return;
+	int Nx = std::clamp(round_to_int(x) / 32, 0, m_Width - 1);
+	int Ny = std::clamp(round_to_int(y) / 32, 0, m_Height - 1);
+	const CSpeedupTile &Tile = m_pSpeedup[Ny * m_Width + Nx];
+	if(pType)
+		*pType = Tile.m_Type; // raw layer value, restore writes it back as-is
+	if(pForce)
+		*pForce = Tile.m_Force;
+	if(pMaxSpeed)
+		*pMaxSpeed = Tile.m_MaxSpeed;
+	if(pAngle)
+		*pAngle = Tile.m_Angle;
+}
+
+void CCollision::RestoreSpeedupAt(float x, float y, int Type, int Force, int MaxSpeed, int Angle)
+{
+	if(!m_pSpeedup)
+		return;
+	int Nx = std::clamp(round_to_int(x) / 32, 0, m_Width - 1);
+	int Ny = std::clamp(round_to_int(y) / 32, 0, m_Height - 1);
+
+	CSpeedupTile &Tile = m_pSpeedup[Ny * m_Width + Nx];
+	Tile.m_Type = (unsigned char)std::clamp(Type, 0, 255);
+	Tile.m_Force = (unsigned char)std::clamp(Force, 0, 255);
+	Tile.m_MaxSpeed = (unsigned char)std::clamp(MaxSpeed, 0, 255);
+	Tile.m_Angle = (short)std::clamp(Angle, 0, 359);
 }
 
 void CCollision::SetDoorCollisionAt(float x, float y, unsigned char Type, unsigned char Flags, unsigned char Number)

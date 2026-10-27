@@ -943,7 +943,9 @@ static SRow g_ClickGuiSettingsChildren[] = {
         {ERowType::Input, "Main Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "9d4edd", "hex...", nullptr, 0, 0, nullptr, 0, "Accent color of the GUI (hex RGB). Setting a manual color turns the rainbow off."},
         {ERowType::Toggle, "Rainbow Main Color", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Continuously cycle the accent color hue."},
         {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Rainbow hue rotation speed."},
+        {ERowType::Slider, "Main Opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Opacity of the accent color."},
         {ERowType::Input, "Panel Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "161622", "hex...", nullptr, 0, 0, nullptr, 0, "Background color of the panels (hex RGB)."},
+        {ERowType::Slider, "Panel Opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Opacity of the panel background."},
         {ERowType::Slider, "BG Blackout", nullptr, false, false, 0.0f, 100.0f, 1.0f, 30.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Darkens the game behind the panels (0-100%)."},
         // v1.56.287: BG Blur — blurs the game behind the panels (FBO-based).
         {ERowType::Toggle, "BG Blur", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Blurs the game behind the ClickGUI panels."},
@@ -959,7 +961,7 @@ static SRow g_ClickGuiSettingsChildren[] = {
         {ERowType::Toggle, "Drag-To-Sort", nullptr, true, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Drag a panel header onto another slot to swap their positions."},
 };
 static SRow g_SettingsRows[] = {
-        {ERowType::Expandable, "ClickGUI Settings", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ClickGuiSettingsChildren, 16, "Master switch: off = built-in default look."},
+        {ERowType::Expandable, "ClickGUI Settings", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ClickGuiSettingsChildren, 18, "Master switch: off = built-in default look."},
         {ERowType::Expandable, "Line rendering", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LineRenderingChildren, 9,
                 "Global line-render settings shared by all features."},
         {ERowType::Expandable, "IRC", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_IrcChildren, 2,
@@ -1211,6 +1213,8 @@ static const char *const g_TasSpawnerCoordOpts[] = {"Cursor", "Coordinates", "Pr
 static const char *const g_TasSpawnerCoordOptsNoPrev[] = {"Cursor", "Coordinates"};
 // v6.2: direction presets for the non-tee entities (index = m_Dir).
 static const char *const g_TasSpawnerDirOpts[] = {"East", "North-East", "North", "North-West", "West", "South-West", "South", "South-East"};
+static const char *const g_TasSpawnerLaserTypeOpts[] = {"Rifle", "Shotgun (Freeze)"};
+static const char *const g_TasSpawnerPickupTypeOpts[] = {"Health", "Armor", "Weapon", "Ninja"};
 
 // Indices into g_TasSpawnerChildren (order below must match).
 enum
@@ -1227,21 +1231,35 @@ enum
 	TAS_SPAWN_ROW_LEGS_COLOR,
 	TAS_SPAWN_ROW_HOOK_STRENGTH,
 	TAS_SPAWN_ROW_HOOK_MODE,
-	TAS_SPAWN_ROW_HAMMER,
-	TAS_SPAWN_ROW_PISTOL,
-	TAS_SPAWN_ROW_SHOTGUN,
-	TAS_SPAWN_ROW_GRENADE,
-	TAS_SPAWN_ROW_LASER,
-	TAS_SPAWN_ROW_NINJA,
 	TAS_SPAWN_ROW_PRACTICE,
 	TAS_SPAWN_ROW_WEAPON_ID,
+	// v6.3: per-entity parameters.
+	TAS_SPAWN_ROW_PROJECTILE_FREEZE,
+	TAS_SPAWN_ROW_PROJECTILE_EXPLOSIVE,
+	TAS_SPAWN_ROW_PROJECTILE_SOUND,
+	TAS_SPAWN_ROW_LASER_TYPE,
+	TAS_SPAWN_ROW_PICKUP_TYPE,
+	TAS_SPAWN_ROW_SUBTYPE,
+	TAS_SPAWN_ROW_SWITCH,
 	TAS_SPAWN_ROW_APPLY_PHYSICS,
 	TAS_SPAWN_ROW_PREV_X,
 	TAS_SPAWN_ROW_PREV_Y,
 	TAS_SPAWN_ROW_TIMELINE,
 	TAS_SPAWN_ROW_TILE_ID,
 	TAS_SPAWN_ROW_TILE_PHYSICS,
-	TAS_SPAWN_ROW_TILE_TIMELINE,
+	TAS_SPAWN_ROW_TILE_NUMBER,
+	// v6.2/6.3: physics & parameters of the non-tee entities (before the
+	// placement / action rows so everything spawns-related sits together).
+	TAS_SPAWN_ROW_DIR,
+	TAS_SPAWN_ROW_VEL_X,
+	TAS_SPAWN_ROW_VEL_Y,
+	TAS_SPAWN_ROW_LIFESPAN,
+	TAS_SPAWN_ROW_LASER_REACH,
+	TAS_SPAWN_ROW_LASER_LENGTH,
+	TAS_SPAWN_ROW_DRAGGER_STRENGTH,
+	TAS_SPAWN_ROW_SPEEDUP_FORCE,
+	TAS_SPAWN_ROW_SPEEDUP_MAX_SPEED,
+	TAS_SPAWN_ROW_SPEEDUP_ANGLE,
 	TAS_SPAWN_ROW_COORD_MODE,
 	TAS_SPAWN_ROW_X,
 	TAS_SPAWN_ROW_Y,
@@ -1250,14 +1268,6 @@ enum
 	TAS_SPAWN_ROW_KILL,
 	TAS_SPAWN_ROW_LOOP_DELAY,
 	TAS_SPAWN_ROW_LOOP,
-	// v6.2: physics fields for the non-tee entities.
-	TAS_SPAWN_ROW_DIR,
-	TAS_SPAWN_ROW_VEL_X,
-	TAS_SPAWN_ROW_VEL_Y,
-	TAS_SPAWN_ROW_LIFESPAN,
-	TAS_SPAWN_ROW_LASER_REACH,
-	TAS_SPAWN_ROW_LASER_LENGTH,
-	TAS_SPAWN_ROW_DRAGGER_STRENGTH,
 	TAS_SPAWN_ROW_COUNT,
 };
 
@@ -1286,53 +1296,39 @@ static SRow g_TasSpawnerChildren[TAS_SPAWN_ROW_COUNT] = {
 		"Strong/weak hook id of the spawned tee (0-100)."},
 	{ERowType::Dropdown, "Hook Strength", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TasSpawnerHookModeOpts, 2, 1, nullptr, 0,
 		"Strong or weak hook for the spawned tee."},
-	{ERowType::Toggle, "Hammer", nullptr, true, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-		"Give the spawned tee a hammer."},
-	{ERowType::Toggle, "Pistol", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-		"Give the spawned tee a pistol."},
-	{ERowType::Toggle, "Shotgun", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-		"Give the spawned tee a shotgun."},
-	{ERowType::Toggle, "Grenade", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-		"Give the spawned tee a grenade launcher."},
-	{ERowType::Toggle, "Laser", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-		"Give the spawned tee a laser rifle."},
-	{ERowType::Toggle, "Ninja", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-		"Give the spawned tee a ninja sword."},
 	{ERowType::Toggle, "Practice Particles", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Draw the practice (super) particles around the spawned tee."},
-	{ERowType::Slider, "Weapon ID", nullptr, false, false, 0.0f, 5.0f, 1.0f, 0.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-		"Active weapon of the spawned tee."},
+	{ERowType::Slider, "Weapon ID", nullptr, false, false, -1.0f, 5.0f, 1.0f, 0.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Weapon the spawned tee owns and holds (-1 = no weapons at all)."},
+	// v6.3: per-entity parameters.
+	{ERowType::Toggle, "Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Projectile freezes tees on hit (freeze bullets)."},
+	{ERowType::Toggle, "Explosive", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Projectile explodes on hit (grenades are always explosive)."},
+	{ERowType::Toggle, "Sound", nullptr, true, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Play the projectile fire sound."},
+	{ERowType::Dropdown, "Laser Type", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TasSpawnerLaserTypeOpts, 2, 0, nullptr, 0,
+		"Rifle beam or shotgun (freeze) beam."},
+	{ERowType::Dropdown, "Pickup Type", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TasSpawnerPickupTypeOpts, 4, 0, nullptr, 0,
+		"Type of the spawned pickup."},
+	{ERowType::Input, "Subtype", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0,
+		"Pickup: weapon id / armor amount. Plasma: 1 = explosive, 2 = freeze, 3 = both."},
+	{ERowType::Input, "Switch", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "0-255...", nullptr, 0, 0, nullptr, 0,
+		"Switch layer number the entity belongs to (0 = always active; door / dragger / plasma / pickup)."},
 	{ERowType::Toggle, "Apply Physics", nullptr, true, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Apply physics to the spawned entity (off = hangs in the air, no collision)."},
-	{ERowType::Input, "PrevPos X (Delta)", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "x...", nullptr, 0, 0, nullptr, 0,
-		"Offset of the spawned tee's previous position (physics kick)."},
-	{ERowType::Input, "PrevPos Y (Delta)", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "y...", nullptr, 0, 0, nullptr, 0,
-		"Offset of the spawned tee's previous position (physics kick)."},
+	{ERowType::Input, "PrevPos X", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "x...", nullptr, 0, 0, nullptr, 0,
+		"Tee only: previous-position delta (physics kick on spawn)."},
+	{ERowType::Input, "PrevPos Y", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "y...", nullptr, 0, 0, nullptr, 0,
+		"Tee only: previous-position delta (physics kick on spawn)."},
 	{ERowType::Input, "Timeline Tick", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "tick...", nullptr, 0, 0, nullptr, 0,
-		"Playground tick the entity is treated as spawned at."},
+		"Tee only: playground tick the tee is treated as spawned at."},
 	{ERowType::Slider, "Tile ID", nullptr, false, false, 0.0f, (float)(TAS_SPAWNER_TILE_COUNT - 1), 1.0f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Tile to spawn (the name is shown instead of the number)."},
 	{ERowType::Toggle, "Apply Physics", nullptr, true, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Make the spawned tile solid (off = visual only)."},
-	{ERowType::Input, "Timeline Tick", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "tick...", nullptr, 0, 0, nullptr, 0,
-		"Playground tick the tile is treated as spawned at."},
-	{ERowType::Dropdown, "Coordinates Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TasSpawnerCoordOpts, 3, 0, nullptr, 0,
-		"Where to spawn: at the cursor, at absolute X/Y, or at the previous spawn."},
-	{ERowType::Input, "X", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "x...", nullptr, 0, 0, nullptr, 0,
-		"Absolute world X coordinate."},
-	{ERowType::Input, "Y", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "y...", nullptr, 0, 0, nullptr, 0,
-		"Absolute world Y coordinate."},
-	{ERowType::Toggle, "Snap Coordinates", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-		"Snap the spawn coordinates to the 32-unit tile grid."},
-	{ERowType::Button, "Spawn", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-		"Spawn the configured entity or tile."},
-	{ERowType::Button, "Kill", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-		"Remove the spawned entity or tile at the target coordinates."},
-	{ERowType::Slider, "Loop Spawn Delay", nullptr, false, false, 0.0f, 10000.0f, 20.0f, 1000.0f, "ms", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-		"Delay between automatic spawns."},
-	{ERowType::Button, g_TasDyn_Loop, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-		"Start / stop spawning at the configured delay."},
-	// v6.2: physics fields for the non-tee entities.
+	{ERowType::Input, "Tile Number", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "0-255...", nullptr, 0, 0, nullptr, 0,
+		"Tune tile: the tune zone. Tele tiles: the tele number pairing TeleIn with TeleOut."},
 	{ERowType::Dropdown, "Direction", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TasSpawnerDirOpts, 8, 0, nullptr, 0,
 		"Direction the spawned entity is launched / aimed in."},
 	{ERowType::Input, "Vel X", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "x...", nullptr, 0, 0, nullptr, 0,
@@ -1344,9 +1340,31 @@ static SRow g_TasSpawnerChildren[TAS_SPAWN_ROW_COUNT] = {
 	{ERowType::Input, "Laser Reach", nullptr, false, false, 0, 0, 0, 0, nullptr, "800", "units...", nullptr, 0, 0, nullptr, 0,
 		"Laser reach of the spawned rifle beam."},
 	{ERowType::Input, "Door Length", nullptr, false, false, 0, 0, 0, 0, nullptr, "64", "units...", nullptr, 0, 0, nullptr, 0,
-		"Length of the spawned door / dragger / plasma."},
+		"Length of the spawned door (only the door entity uses it)."},
 	{ERowType::Input, "Dragger Strength", nullptr, false, false, 0, 0, 0, 0, nullptr, "1", "0-255...", nullptr, 0, 0, nullptr, 0,
 		"Pull strength of the spawned dragger."},
+	{ERowType::Input, "Speedup Force", nullptr, false, false, 0, 0, 0, 0, nullptr, "50", "0-255...", nullptr, 0, 0, nullptr, 0,
+		"Acceleration strength of the spawned speedup tile."},
+	{ERowType::Input, "Speedup Max Speed", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "0-255...", nullptr, 0, 0, nullptr, 0,
+		"Speed cap of the spawned speedup tile (0 = unlimited)."},
+	{ERowType::Input, "Speedup Angle", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "0-359...", nullptr, 0, 0, nullptr, 0,
+		"Push direction of the spawned speedup tile in degrees (0 = right, 90 = down)."},
+	{ERowType::Dropdown, "Coordinates Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TasSpawnerCoordOpts, 3, 0, nullptr, 0,
+		"Where to spawn: at the cursor, at absolute X/Y, or at the previous spawn."},
+	{ERowType::Input, "X", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "x...", nullptr, 0, 0, nullptr, 0,
+		"Absolute world X coordinate."},
+	{ERowType::Input, "Y", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "y...", nullptr, 0, 0, nullptr, 0,
+		"Absolute world Y coordinate."},
+	{ERowType::Toggle, "Snap Coordinates", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Snap the spawn coordinates to the 32-unit tile grid."},
+	{ERowType::Button, "Spawn", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Spawn the configured entity or tile."},
+	{ERowType::DoubleButton, "Kill", "Kill All", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Remove the spawned entity or tile at the target coordinates.", "Remove every spawned entity of the selected type (or every spawned tile of the selected tile id)."},
+	{ERowType::Slider, "Loop Spawn Delay", nullptr, false, false, 0.0f, 10000.0f, 20.0f, 1000.0f, "ms", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Delay between automatic spawns."},
+	{ERowType::Button, g_TasDyn_Loop, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Start / stop spawning at the configured delay."},
 };
 
 // v6.2: Playground Settings — virtual RCON / virtual chat / practice inside
@@ -1396,9 +1414,7 @@ static SRow g_TasRows[] = {
 	{ERowType::DoubleButton, g_TasDyn_Join, "Reset Playground", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Join / leave the TAS playground.", "Drop every spawned object, tile and chat line in the playground."},
         {ERowType::Slider, "TPS", nullptr, false, false, 1.0f, 50.0f, 1.0f, 50.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Ticks per second used during playback."},
-        {ERowType::Toggle, "Pause", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Pause the TAS playback."},
+                "Ticks per second used during playback.", "Pause/resume the TAS playback."},
         {ERowType::Expandable, "Auto Rewind/Forward", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TasAutoRfChildren, 3,
                 "Auto rewind/forward on freeze/teleport/death tiles."},
         {ERowType::Expandable, "Fake Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TasFakeAimChildren, 1,
@@ -1889,63 +1905,85 @@ static bool TasSpawnerChildVisible(const SRow *pChildren, int childCount, int id
 {
         if(idx < 0 || idx >= childCount)
                 return false;
-        const int Mode = pChildren[TAS_SPAWN_ROW_MODE].valueIdx;
-        const int Entity = (int)(pChildren[TAS_SPAWN_ROW_ENTITY_ID].value + 0.5f);
-        const int Coord = pChildren[TAS_SPAWN_ROW_COORD_MODE].valueIdx;
-        const bool IsEntity = Mode == 0;
-        const bool IsTile = Mode == 1;
-        const bool IsTee = Entity == TAS_SPAWN_ENT_TEE;
+	const int Mode = pChildren[TAS_SPAWN_ROW_MODE].valueIdx;
+	const int Entity = (int)(pChildren[TAS_SPAWN_ROW_ENTITY_ID].value + 0.5f);
+	const int Coord = pChildren[TAS_SPAWN_ROW_COORD_MODE].valueIdx;
+	const bool IsEntity = Mode == 0;
+	const bool IsTile = Mode == 1;
+	const bool IsTee = Entity == TAS_SPAWN_ENT_TEE;
+	// Tiles carrying a client-side number: Tune (the tune zone) and tele tiles
+	// (the tele number pairing TeleIn with TeleOut).
+	const int TileId = CTas::SpawnerTileId((int)(pChildren[TAS_SPAWN_ROW_TILE_ID].value + 0.5f));
+	const bool TileUsesNumber = IsTile && (TileId == TILE_TUNE || TileId == TILE_TELEIN ||
+		TileId == TILE_TELEINEVIL || TileId == TILE_TELEOUT || TileId == TILE_TELECHECKIN);
 
-        switch(idx)
-        {
-        case TAS_SPAWN_ROW_ENTITY_ID:
-        case TAS_SPAWN_ROW_APPLY_PHYSICS:
-        case TAS_SPAWN_ROW_PREV_X:
-        case TAS_SPAWN_ROW_PREV_Y:
-        case TAS_SPAWN_ROW_TIMELINE:
-                return IsEntity;
-        case TAS_SPAWN_ROW_TILE_ID:
-        case TAS_SPAWN_ROW_TILE_PHYSICS:
-        case TAS_SPAWN_ROW_TILE_TIMELINE:
-                return IsTile;
-        case TAS_SPAWN_ROW_NAME:
-        case TAS_SPAWN_ROW_CLAN:
-        case TAS_SPAWN_ROW_ID:
-        case TAS_SPAWN_ROW_SKIN:
-        case TAS_SPAWN_ROW_CC_TEE:
-        case TAS_SPAWN_ROW_TEE_COLOR:
-        case TAS_SPAWN_ROW_CC_LEGS:
-        case TAS_SPAWN_ROW_LEGS_COLOR:
-        case TAS_SPAWN_ROW_HOOK_STRENGTH:
-        case TAS_SPAWN_ROW_HOOK_MODE:
-        case TAS_SPAWN_ROW_HAMMER:
-        case TAS_SPAWN_ROW_PISTOL:
-        case TAS_SPAWN_ROW_SHOTGUN:
-        case TAS_SPAWN_ROW_GRENADE:
-        case TAS_SPAWN_ROW_LASER:
-        case TAS_SPAWN_ROW_NINJA:
-        case TAS_SPAWN_ROW_PRACTICE:
-        case TAS_SPAWN_ROW_WEAPON_ID:
-                return IsEntity && IsTee;
-        case TAS_SPAWN_ROW_X:
-        case TAS_SPAWN_ROW_Y:
-                return Coord == 1;
-        // v6.2: physics fields of the non-tee entities.
-        case TAS_SPAWN_ROW_DIR:
-                return IsEntity && !IsTee && Entity != TAS_SPAWN_ENT_PICKUP;
-        case TAS_SPAWN_ROW_VEL_X:
-        case TAS_SPAWN_ROW_VEL_Y:
-        case TAS_SPAWN_ROW_LIFESPAN:
-                return IsEntity && Entity == TAS_SPAWN_ENT_PROJECTILE;
-        case TAS_SPAWN_ROW_LASER_REACH:
-                return IsEntity && Entity == TAS_SPAWN_ENT_LASER;
-        case TAS_SPAWN_ROW_LASER_LENGTH:
-                return IsEntity && (Entity == TAS_SPAWN_ENT_DOOR || Entity == TAS_SPAWN_ENT_DRAGGER || Entity == TAS_SPAWN_ENT_PLASMA);
-        case TAS_SPAWN_ROW_DRAGGER_STRENGTH:
-                return IsEntity && Entity == TAS_SPAWN_ENT_DRAGGER;
-        default:
-                return true;
-        }
+	switch(idx)
+	{
+	case TAS_SPAWN_ROW_ENTITY_ID:
+	case TAS_SPAWN_ROW_APPLY_PHYSICS:
+		return IsEntity;
+	case TAS_SPAWN_ROW_TIMELINE:
+	case TAS_SPAWN_ROW_PREV_X:
+	case TAS_SPAWN_ROW_PREV_Y:
+		// Timeline Tick / PrevPos X/Y only affect the tee; projectiles use
+		// Vel X/Y for their physics instead.
+		return IsEntity && IsTee;
+	case TAS_SPAWN_ROW_TILE_ID:
+	case TAS_SPAWN_ROW_TILE_PHYSICS:
+		return IsTile;
+	case TAS_SPAWN_ROW_TILE_NUMBER:
+		return TileUsesNumber;
+	case TAS_SPAWN_ROW_NAME:
+	case TAS_SPAWN_ROW_CLAN:
+	case TAS_SPAWN_ROW_ID:
+	case TAS_SPAWN_ROW_SKIN:
+	case TAS_SPAWN_ROW_CC_TEE:
+	case TAS_SPAWN_ROW_TEE_COLOR:
+	case TAS_SPAWN_ROW_CC_LEGS:
+	case TAS_SPAWN_ROW_LEGS_COLOR:
+	case TAS_SPAWN_ROW_HOOK_STRENGTH:
+	case TAS_SPAWN_ROW_HOOK_MODE:
+	case TAS_SPAWN_ROW_PRACTICE:
+	case TAS_SPAWN_ROW_WEAPON_ID:
+		return IsEntity && IsTee;
+	case TAS_SPAWN_ROW_PROJECTILE_FREEZE:
+	case TAS_SPAWN_ROW_PROJECTILE_EXPLOSIVE:
+	case TAS_SPAWN_ROW_PROJECTILE_SOUND:
+		return IsEntity && Entity == TAS_SPAWN_ENT_PROJECTILE;
+	case TAS_SPAWN_ROW_LASER_TYPE:
+		return IsEntity && Entity == TAS_SPAWN_ENT_LASER;
+	case TAS_SPAWN_ROW_PICKUP_TYPE:
+	case TAS_SPAWN_ROW_SUBTYPE:
+		return IsEntity && Entity == TAS_SPAWN_ENT_PICKUP;
+	case TAS_SPAWN_ROW_SWITCH:
+		return IsEntity && (Entity == TAS_SPAWN_ENT_DOOR || Entity == TAS_SPAWN_ENT_DRAGGER ||
+			Entity == TAS_SPAWN_ENT_PLASMA || Entity == TAS_SPAWN_ENT_PICKUP);
+	case TAS_SPAWN_ROW_COORD_MODE:
+		return true;
+	case TAS_SPAWN_ROW_X:
+	case TAS_SPAWN_ROW_Y:
+		return Coord == 1;
+	// v6.2: physics fields of the non-tee entities.
+	case TAS_SPAWN_ROW_DIR:
+		return IsEntity && !IsTee && Entity != TAS_SPAWN_ENT_PICKUP;
+	case TAS_SPAWN_ROW_VEL_X:
+	case TAS_SPAWN_ROW_VEL_Y:
+	case TAS_SPAWN_ROW_LIFESPAN:
+		return IsEntity && Entity == TAS_SPAWN_ENT_PROJECTILE;
+	case TAS_SPAWN_ROW_LASER_REACH:
+		return IsEntity && Entity == TAS_SPAWN_ENT_LASER;
+	case TAS_SPAWN_ROW_LASER_LENGTH:
+		// Only the door entity uses the length (draggers/plasma compute it themselves).
+		return IsEntity && Entity == TAS_SPAWN_ENT_DOOR;
+	case TAS_SPAWN_ROW_DRAGGER_STRENGTH:
+		return IsEntity && Entity == TAS_SPAWN_ENT_DRAGGER;
+	case TAS_SPAWN_ROW_SPEEDUP_FORCE:
+	case TAS_SPAWN_ROW_SPEEDUP_MAX_SPEED:
+	case TAS_SPAWN_ROW_SPEEDUP_ANGLE:
+		return IsTile && TileId == TILE_SPEED_BOOST;
+	default:
+		return true;
+	}
 }
 
 // Unified child-visibility dispatcher for the TAS panel's expandables.
@@ -2804,6 +2842,23 @@ static constexpr float SLIDER_TRACK_H = 6.0f;
 static constexpr float SLIDER_THUMB_W = 18.0f;
 static constexpr float SLIDER_THUMB_H = 10.0f;
 static constexpr float SUB_LIST_INDENT = 22.0f;
+// TPS row: the slider track spans the whole row except the Pause toggle
+// pinned to the right edge (checkbox + label + double gap to the track).
+static constexpr float KX_TPS_TOGGLE_W = 88.0f;
+// Color with a stored ARGB alpha multiplied by the UI fade alpha — so an
+// AA channel below ff actually renders translucent (WithAlpha alone would
+// overwrite the stored alpha).
+static ColorRGBA KxColorWithAlpha(unsigned RGBA, float Alpha)
+{
+        const float StoredA = ((RGBA >> 24) & 0xff) / 255.0f;
+        return ColorRGBA(RGBA, true).WithAlpha(Alpha * StoredA);
+}
+static float KxTpsTrackW(const void *pRow, float RowW)
+{
+        if(pRow && str_comp(((const SRow *)pRow)->pName, "TPS") == 0)
+                return RowW - 4.0f - KX_TPS_TOGGLE_W;
+        return RowW - 4.0f;
+}
 
 // Offscreen margin: how far outside the visible screen panels fly when hidden.
 static constexpr float OFFSCREEN_MARGIN = 100.0f;
@@ -3583,9 +3638,8 @@ static void SyncTasSpawnerRows(CTas &Tas)
 
         S.m_HookStrength = (int)SnapSliderStep(pRows[TAS_SPAWN_ROW_HOOK_STRENGTH]);
         S.m_HookStrengthMode = pRows[TAS_SPAWN_ROW_HOOK_MODE].valueIdx;
-        for(int w = 0; w < NUM_WEAPONS; ++w)
-                S.m_aWeapon[w] = pRows[TAS_SPAWN_ROW_HAMMER + w].on;
         S.m_PracticeParticles = pRows[TAS_SPAWN_ROW_PRACTICE].on;
+        // Weapon ID: -1 = bare tee.
         S.m_WeaponId = (int)SnapSliderStep(pRows[TAS_SPAWN_ROW_WEAPON_ID]);
 
         S.m_EntityPhysics = pRows[TAS_SPAWN_ROW_APPLY_PHYSICS].on;
@@ -3597,7 +3651,21 @@ static void SyncTasSpawnerRows(CTas &Tas)
         TileRow.value = std::clamp(TileRow.value, 0.0f, (float)(CTas::SpawnerTileCount() - 1));
         S.m_Tile = CTas::SpawnerTileId((int)(TileRow.value + 0.5f));
         S.m_TilePhysics = pRows[TAS_SPAWN_ROW_TILE_PHYSICS].on;
-        S.m_TileTimelineTick = TasSpawnerReadInt(pRows[TAS_SPAWN_ROW_TILE_TIMELINE]);
+        TasSpawnerEnsureInput(pRows[TAS_SPAWN_ROW_TILE_NUMBER]);
+        S.m_TileNumber = TasSpawnerReadInt(pRows[TAS_SPAWN_ROW_TILE_NUMBER]);
+        // Tele numbers are 1-255 (0 = "no teleport" in the engine) — clamp the
+        // input field itself so the stored value is always valid.
+        if(S.m_Tile == TILE_TELEIN || S.m_Tile == TILE_TELEINEVIL || S.m_Tile == TILE_TELEOUT || S.m_Tile == TILE_TELECHECKIN)
+        {
+                const int Raw = S.m_TileNumber;
+                S.m_TileNumber = std::clamp(S.m_TileNumber, 1, 255);
+                if(Raw != S.m_TileNumber)
+                {
+                        char aBuf[8];
+                        str_format(aBuf, sizeof(aBuf), "%d", S.m_TileNumber);
+                        str_copy(pRows[TAS_SPAWN_ROW_TILE_NUMBER].m_aInputBuf, aBuf);
+                }
+        }
 
         S.m_CoordsMode = pRows[TAS_SPAWN_ROW_COORD_MODE].valueIdx;
         S.m_X = TasSpawnerReadFloat(pRows[TAS_SPAWN_ROW_X]);
@@ -3612,6 +3680,11 @@ static void SyncTasSpawnerRows(CTas &Tas)
         TasSpawnerEnsureInput(pRows[TAS_SPAWN_ROW_LASER_REACH]);
         TasSpawnerEnsureInput(pRows[TAS_SPAWN_ROW_LASER_LENGTH]);
         TasSpawnerEnsureInput(pRows[TAS_SPAWN_ROW_DRAGGER_STRENGTH]);
+        TasSpawnerEnsureInput(pRows[TAS_SPAWN_ROW_SUBTYPE]);
+        TasSpawnerEnsureInput(pRows[TAS_SPAWN_ROW_SWITCH]);
+        TasSpawnerEnsureInput(pRows[TAS_SPAWN_ROW_SPEEDUP_FORCE]);
+        TasSpawnerEnsureInput(pRows[TAS_SPAWN_ROW_SPEEDUP_MAX_SPEED]);
+        TasSpawnerEnsureInput(pRows[TAS_SPAWN_ROW_SPEEDUP_ANGLE]);
         S.m_Dir = pRows[TAS_SPAWN_ROW_DIR].valueIdx;
         S.m_VelX = TasSpawnerReadFloat(pRows[TAS_SPAWN_ROW_VEL_X]);
         S.m_VelY = TasSpawnerReadFloat(pRows[TAS_SPAWN_ROW_VEL_Y]);
@@ -3619,6 +3692,17 @@ static void SyncTasSpawnerRows(CTas &Tas)
         S.m_LaserReach = TasSpawnerReadInt(pRows[TAS_SPAWN_ROW_LASER_REACH]);
         S.m_LaserLength = TasSpawnerReadInt(pRows[TAS_SPAWN_ROW_LASER_LENGTH]);
         S.m_DraggerStrength = TasSpawnerReadInt(pRows[TAS_SPAWN_ROW_DRAGGER_STRENGTH]);
+        // v6.3: per-entity parameters.
+        S.m_ProjectileFreeze = pRows[TAS_SPAWN_ROW_PROJECTILE_FREEZE].on;
+        S.m_ProjectileExplosive = pRows[TAS_SPAWN_ROW_PROJECTILE_EXPLOSIVE].on;
+        S.m_ProjectileSound = pRows[TAS_SPAWN_ROW_PROJECTILE_SOUND].on;
+        S.m_LaserType = pRows[TAS_SPAWN_ROW_LASER_TYPE].valueIdx;
+        S.m_PickupType = pRows[TAS_SPAWN_ROW_PICKUP_TYPE].valueIdx;
+        S.m_Subtype = TasSpawnerReadInt(pRows[TAS_SPAWN_ROW_SUBTYPE]);
+        S.m_SwitchNumber = TasSpawnerReadInt(pRows[TAS_SPAWN_ROW_SWITCH]);
+        S.m_SpeedupForce = TasSpawnerReadInt(pRows[TAS_SPAWN_ROW_SPEEDUP_FORCE]);
+        S.m_SpeedupMaxSpeed = TasSpawnerReadInt(pRows[TAS_SPAWN_ROW_SPEEDUP_MAX_SPEED]);
+        S.m_SpeedupAngle = TasSpawnerReadInt(pRows[TAS_SPAWN_ROW_SPEEDUP_ANGLE]);
 
         // Engine -> UI (dynamic value labels and the loop button).
         str_format(g_TasDyn_EntityName, sizeof(g_TasDyn_EntityName), "%s", CTas::SpawnerEntityName(S.m_Entity));
@@ -3753,9 +3837,11 @@ void CClickGui::UpdateTasRows()
         {
                 SRow &Row = pPanel->pRows[r];
                 if(str_comp(Row.pName, "TPS") == 0)
+                {
                         Tas.SetTps(Row.value);
-				else if(str_comp(Row.pName, "Pause") == 0)
-					Row.on = Tas.Paused();
+                        // Pause moved onto the TPS row's right button (v6.3).
+                        Row.on = Tas.Paused();
+                }
 			else if(str_comp(Row.pName, "Mode") == 0)
 				Tas.SetMode(Row.valueIdx);
 			else if(str_comp(Row.pName, "Fake Aim") == 0)
@@ -4055,7 +4141,7 @@ void CClickGui::RenderFileBrowser(float alpha)
                                 continue;
                         if(PointInRect(m_MousePos, listX, rowY, boxW - 16.0f, rowH))
                                 DrawRoundedRect(listX, rowY, boxW - 16.0f, rowH, 2.0f, IGraphics::CORNER_ALL,
-                                        ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha * 0.5f));
+                                        ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha * 0.5f * m_MainOpacity));
                         DrawText(listX + 6.0f, rowY + 6.0f, 16.0f, m_vScriptBrowserFiles[i].c_str(),
                                 ColorRGBA(0xffd8d8e8, true).WithAlpha(alpha));
                 }
@@ -4064,7 +4150,7 @@ void CClickGui::RenderFileBrowser(float alpha)
 
         const bool cancelHover = PointInRect(m_MousePos, boxX, cancelY, boxW, 34.0f);
         DrawRoundedRect(boxX, cancelY, boxW, 34.0f, 4.0f, IGraphics::CORNER_ALL,
-                ColorRGBA(cancelHover ? m_AccentColorRGBA : 0xff282834u, true).WithAlpha(cancelHover ? alpha * 0.6f : alpha));
+                KxColorWithAlpha(cancelHover ? m_AccentColorRGBA : 0xff282834u, (cancelHover ? alpha * 0.6f : alpha) * m_MainOpacity));
         DrawText(boxX + boxW * 0.5f, cancelY + 7.0f, 18.0f, "Cancel",
                 ColorRGBA(0xffffffff, true).WithAlpha(alpha), TEXTALIGN_CENTER);
 }
@@ -4350,6 +4436,8 @@ void CClickGui::OnRender()
 			hex = 0;
 			if(sscanf(g_Config.m_KxUiPanelColor, "%6x", &hex) == 1)
 				m_PanelBgRGBA = 0xff000000u | (hex & 0xffffff);
+			m_MainOpacity = g_Config.m_KxUiMainOpacity / 100.0f;
+			m_PanelOpacity = g_Config.m_KxUiPanelOpacity / 100.0f;
 			m_RainbowEnabled = g_Config.m_KxUiRainbow != 0;
 			m_RainbowSpeed = g_Config.m_KxUiRainbowSpeed / 10.0f;
 			m_BgBlackout = g_Config.m_KxUiBlackout;
@@ -4379,6 +4467,8 @@ void CClickGui::OnRender()
 				hex = 0;
 				if(sscanf(g_Config.m_KxUiPanelColor, "%6x", &hex) == 1)
 					m_PanelBgRGBA = 0xff000000u | (hex & 0xffffff);
+				m_MainOpacity = g_Config.m_KxUiMainOpacity / 100.0f;
+				m_PanelOpacity = g_Config.m_KxUiPanelOpacity / 100.0f;
 				m_RainbowEnabled = g_Config.m_KxUiRainbow != 0;
 				m_RainbowSpeed = g_Config.m_KxUiRainbowSpeed / 10.0f;
 				m_BgBlackout = g_Config.m_KxUiBlackout;
@@ -4386,6 +4476,8 @@ void CClickGui::OnRender()
 			}
 			str_format(g_Config.m_KxUiAccentColor, sizeof(g_Config.m_KxUiAccentColor), "%06x", m_SavedAccentColorRGBA & 0xffffff);
 			str_format(g_Config.m_KxUiPanelColor, sizeof(g_Config.m_KxUiPanelColor), "%06x", m_PanelBgRGBA & 0xffffff);
+			g_Config.m_KxUiMainOpacity = (int)(m_MainOpacity * 100.0f + 0.5f);
+			g_Config.m_KxUiPanelOpacity = (int)(m_PanelOpacity * 100.0f + 0.5f);
 			g_Config.m_KxUiRainbow = m_RainbowEnabled ? 1 : 0;
 			g_Config.m_KxUiRainbowSpeed = (int)(m_RainbowSpeed * 10.0f + 0.5f);
 			g_Config.m_KxUiBlackout = m_BgBlackout;
@@ -5579,6 +5671,16 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                 if(!Dragging)
                                                         child.value = (float)m_BgBlackout;
                                         }
+                                        else if(str_comp(child.pName, "Main Opacity") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = m_MainOpacity * 100.0f;
+                                        }
+                                        else if(str_comp(child.pName, "Panel Opacity") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = m_PanelOpacity * 100.0f;
+                                        }
                                         else if(str_comp(child.pName, "ClickGUI Scale") == 0)
                                         {
                                                 if(!Dragging)
@@ -6187,8 +6289,14 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                         const vec2 ppos = m_aPanelPos[m_DragSliderPanel];
                         const float indent = (m_DragSliderChild >= 0) ? SUB_LIST_INDENT : 0.0f;
                         const float trackX = ppos.x + BODY_PADDING + indent + 2.0f;
-                        const float trackW = PANEL_WIDTH - BODY_PADDING * 2 - indent - 4.0f;
-                        float pct = (m_MousePos.x - trackX) / trackW;
+                        const float trackW = KxTpsTrackW(pTarget, PANEL_WIDTH - BODY_PADDING * 2 - indent);
+                        // TPS row: the thumb center travels track minus thumb
+                        // width, so the mouse maps onto the same span.
+                        float pct;
+                        if(str_comp(pTarget->pName, "TPS") == 0)
+                                pct = (m_MousePos.x - trackX - SLIDER_THUMB_W * 0.5f) / (trackW - SLIDER_THUMB_W);
+                        else
+                                pct = (m_MousePos.x - trackX) / trackW;
                         pct = std::clamp(pct, 0.0f, 1.0f);
 {
                                                 // v1.56.284: snap to the step for ANY step > 0
@@ -6209,6 +6317,10 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 g_Config.m_KxDummyHammerLatencyMs = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "BG Blackout") == 0)
                                 m_BgBlackout = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Main Opacity") == 0)
+                                m_MainOpacity = pTarget->value / 100.0f;
+                        else if(str_comp(pTarget->pName, "Panel Opacity") == 0)
+                                m_PanelOpacity = pTarget->value / 100.0f;
                         // v1.56.260: Panels Start X/Y live update while dragging.
                         else if(str_comp(pTarget->pName, "Panels Start X") == 0)
                                 g_Config.m_KxPanelsStartX = (int)pTarget->value;
@@ -7262,8 +7374,6 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
 						g_Config.m_KxFakeAim = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "ESP") == 0)
                                                 g_Config.m_KxEsp = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Pause") == 0 && str_comp(panel.pTitle, "TAS") == 0)
-                                                GameClient()->m_Tas.SetPaused(pTarget->on);
                                         else if(str_comp(pTarget->pName, "Avoid Freeze") == 0)
                                                 g_Config.m_KxAvoidFreeze = pTarget->on ? 1 : 0;
                                         // Functions panel — Fly/Copy Moves sub-section
@@ -7739,14 +7849,20 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         else
                                                 Tas.TogglePlay();
                                 }
-                                else if(str_comp(row.pName, "Spawner") == 0 && pTarget->type == ERowType::Button)
+                                else if(str_comp(row.pName, "Spawner") == 0 && (pTarget->type == ERowType::Button || pTarget->type == ERowType::DoubleButton))
                                 {
                                         CTas &Tas = GameClient()->m_Tas;
                                         SyncTasSpawnerRows(Tas);
                                         if(str_comp(pTarget->pName, "Spawn") == 0)
                                                 Tas.SpawnerSpawn();
-                                        else if(str_comp(pTarget->pName, "Kill") == 0)
-                                                Tas.SpawnerKill();
+                                        else if(str_comp(pTarget->pName, "Kill") == 0 && pTarget->type == ERowType::DoubleButton)
+                                        {
+                                                const float btnW = (rw - 6.0f) * 0.5f;
+                                                if(mousePos.x >= rx + 2.0f + btnW)
+                                                        Tas.SpawnerKillAll();
+                                                else
+                                                        Tas.SpawnerKill();
+                                        }
                                         else if(str_comp(pTarget->pName, g_TasDyn_Loop) == 0)
                                                 Tas.SpawnerToggleLoop();
                                 }
@@ -7960,13 +8076,24 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                         }
                         if(pTarget->type == ERowType::Slider)
                         {
+                                // TPS row: the right edge is the Pause toggle, not the slider.
+                                if(str_comp(pTarget->pName, "TPS") == 0 && mousePos.x >= rx + rw - KX_TPS_TOGGLE_W)
+                                {
+                                        pTarget->on = !pTarget->on;
+                                        GameClient()->m_Tas.SetPaused(pTarget->on);
+                                        return;
+                                }
                                 // Start slider drag.
                                 m_DragSliderPanel = i;
                                 m_DragSliderRow = outRow;
                                 m_DragSliderChild = outChild;
                                 const float trackX = rx + 2.0f;
-                                const float trackW = rw - 4.0f;
-                                float pct = (mousePos.x - trackX) / trackW;
+                                const float trackW = KxTpsTrackW(pTarget, rw);
+                                float pct;
+                                if(str_comp(pTarget->pName, "TPS") == 0)
+                                        pct = (mousePos.x - trackX - SLIDER_THUMB_W * 0.5f) / (trackW - SLIDER_THUMB_W);
+                                else
+                                        pct = (mousePos.x - trackX) / trackW;
                                 pct = std::clamp(pct, 0.0f, 1.0f);
                                 {
                                         float raw = pTarget->min + pct * (pTarget->max - pTarget->min);
@@ -8177,11 +8304,11 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                         }
                         if(pTarget->type == ERowType::Input)
                         {
-                                // Click on the input box → start editing.
-                                const float nameW = std::min(88.0f, TextRender()->TextWidth(17.0f, pTarget->pName) + 5.0f);
-                                const float inX = rx + nameW + 2.0f;
+                                // Click on the input box → start editing. Geometry
+                                // must match the render: fixed width, right-aligned.
+                                const float inW = (PANEL_WIDTH - BODY_PADDING * 2) * 0.5f;
+                                const float inX = rx + rw - inW - 2.0f;
                                 const float inY = ry + 2.0f;
-                                const float inW = rw - nameW - 4.0f;
                                 const float inH = rh - 4.0f;
                                 if(PointInRect(mousePos, inX, inY, inW, inH))
                                 {
@@ -8732,16 +8859,16 @@ void CClickGui::RenderDropdownPopup(float alpha)
                         {
                                 DrawRoundedRect(ddX + 2.0f, itemY, DROPDOWN_W - 4.0f, DROPDOWN_H, 3.0f,
                                         IGraphics::CORNER_ALL,
-                                        ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha * 0.4f * ia));
+                                        KxColorWithAlpha(m_AccentColorRGBA, alpha * 0.4f * ia * m_MainOpacity));
                         }
                         if(o == target.valueIdx)
                         {
                                 DrawRoundedRect(ddX + 3.0f, itemY + 6.0f, 2.5f, DROPDOWN_H - 12.0f, 1.0f,
                                         IGraphics::CORNER_ALL,
-                                        ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha * ia));
+                                        KxColorWithAlpha(m_AccentColorRGBA, alpha * ia * m_MainOpacity));
                         }
                         const ColorRGBA optCol = (o == target.valueIdx)
-                                ? ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha * ia)
+                                ? KxColorWithAlpha(m_AccentColorRGBA, alpha * ia * m_MainOpacity)
                                 : ColorRGBA(0xffd8d8e8, true).WithAlpha(alpha * ia);
                         DrawText(ddX + 10.0f, itemY + 5.0f, 14.0f, target.pOptions[o], optCol);
                 }
@@ -9134,7 +9261,7 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
                 return;
         }
 
-        // Main Color (hex, e.g. "ff8800"). Was "ClickGUI Color" before v1.56.199.
+        // Main Color (hex, e.g. "9d4edd"). Was "ClickGUI Color" before v1.56.199.
         if(str_comp(pRow->pName, "Main Color") == 0)
         {
                 unsigned hex = 0;
@@ -9396,11 +9523,12 @@ void CClickGui::RenderToolTip(float alpha)
                 y = 4.0f;
 
         // ClickGUI look: rounded panel + 1px accent border (outer/inner pair,
-        // same trick as the input fields).
+        // same trick as the input fields). Tooltips follow the Main/Panel
+        // colors but NOT the opacity sliders.
         DrawRoundedRect(x - 1.0f, y - 1.0f, boxW + 2.0f, boxH + 2.0f, 4.0f, IGraphics::CORNER_ALL,
-                ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha));
+                KxColorWithAlpha(m_AccentColorRGBA, alpha));
         DrawRoundedRect(x, y, boxW, boxH, 4.0f, IGraphics::CORNER_ALL,
-                ColorRGBA(m_PanelBgRGBA, true).WithAlpha(alpha * 0.97f));
+                KxColorWithAlpha(m_PanelBgRGBA, alpha * 0.97f));
         for(int i = 0; i < lineCount; ++i)
                 DrawText(x + PadX, y + PadY + (float)i * LineH, FontSz, aLines[i],
                         ColorRGBA(1.0f, 1.0f, 1.0f, alpha));
@@ -9749,24 +9877,24 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
 
         DrawRoundedRect(px + 4.0f, py + 4.0f, PANEL_WIDTH, panelH,
                 5.0f, IGraphics::CORNER_ALL,
-                ColorRGBA(0xff000000, true).WithAlpha(alpha * 0.15f));
+                ColorRGBA(0xff000000, true).WithAlpha(alpha * 0.15f * m_PanelOpacity));
 
         // Panel border (1px-ish outline via slightly larger dark rect behind).
         DrawRoundedRect(px - 1.0f, py - 1.0f, PANEL_WIDTH + 2.0f, panelH + 2.0f,
                 5.0f, IGraphics::CORNER_ALL,
-                ColorRGBA(COL_PANEL_BORDER, true).WithAlpha(alpha));
+                ColorRGBA(COL_PANEL_BORDER, true).WithAlpha(alpha * m_PanelOpacity));
 
-        // Panel background.
+        // Panel background (stored ARGB alpha multiplies the UI fade alpha).
         DrawRoundedRect(px, py, PANEL_WIDTH, panelH,
                 5.0f, IGraphics::CORNER_ALL,
-                ColorRGBA(m_PanelBgRGBA, true).WithAlpha(alpha));
+                KxColorWithAlpha(m_PanelBgRGBA, alpha * m_PanelOpacity));
 
         // ---- Step 3: header ----
         // Header is the top HEADER_HEIGHT px; rounded only on top corners so it
         // blends with the body below.
         DrawRoundedRect(px, py, PANEL_WIDTH, HEADER_HEIGHT,
                 5.0f, IGraphics::CORNER_T,
-                ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha));
+                KxColorWithAlpha(m_AccentColorRGBA, alpha * m_MainOpacity));
 
         // ▼/▶ collapse arrow (left side of header) — ▼ when expanded, ▶ when collapsed.
         {
@@ -9796,7 +9924,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                 // expandable children; we tint the whole body faintly for visual depth).
                 DrawRoundedRect(bodyX, bodyY, bodyW, visibleBodyHeight,
                         0.0f, IGraphics::CORNER_NONE,
-                        ColorRGBA(COL_SUB_LIST_BG, true).WithAlpha(alpha * 0.5f));
+                        ColorRGBA(COL_SUB_LIST_BG, true).WithAlpha(alpha * 0.5f * m_PanelOpacity));
 
                 ClipEnableVirtual(bodyX, bodyY, bodyW, visibleBodyHeight);
 
@@ -9843,6 +9971,12 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                         const char *pTT = row.pToolTip;
                         if(row.type == ERowType::DoubleButton && row.pToolTip2 &&
                                 m_MousePos.x >= rx + rw * 0.5f)
+                                pTT = row.pToolTip2;
+                        // TPS slider: hovering the Pause checkbox on the right shows
+                        // the toggle's own tooltip instead of the slider's.
+                        else if(row.type == ERowType::Slider && row.pToolTip2 &&
+                                str_comp(row.pName, "TPS") == 0 &&
+                                m_MousePos.x >= rx + rw - KX_TPS_TOGGLE_W)
                                 pTT = row.pToolTip2;
                         if(pTT && PointInRect(m_MousePos, rx, ry, rw, rh))
                         {
@@ -9921,8 +10055,10 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                         str_format(valBuf, sizeof(valBuf), "%.*f", StepDec, ShownVal);
                         }
                         const char *pValueText = row.pValueLabel ? row.pValueLabel : valBuf;
+                        // TPS row: slider lives in the left half, Pause toggle on the right.
+                        const bool IsTpsRow = str_comp(row.pName, "TPS") == 0;
                         const float valW = TextRender()->TextWidth(17.0f, pValueText) + 10.0f;
-                        const float valX = rx + rw - valW - 2.0f;
+                        const float valX = IsTpsRow ? rx + rw - KX_TPS_TOGGLE_W - valW - 4.0f : rx + rw - valW - 2.0f;
                         const float valY = ry + 1.0f;
                         DrawRoundedRect(valX, valY, valW, 18.0f, 2.0f,
                                 IGraphics::CORNER_ALL,
@@ -9932,29 +10068,57 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                         // Track.
                         const float trackX = rx + 2.0f;
                         const float trackY = ry + rh - SLIDER_TRACK_H - 4.0f;
-                        const float trackW = rw - 4.0f;
+                        const float trackW = KxTpsTrackW(&row, rw);
                         DrawRoundedRect(trackX, trackY, trackW, SLIDER_TRACK_H, 2.0f,
                                 IGraphics::CORNER_ALL,
                                 ColorRGBA(COL_SLIDER_TRACK, true).WithAlpha(alpha));
 
-                        // Thumb.
+                        // Thumb. On the TPS row the track is shortened by the
+                        // Pause toggle, so the thumb travels within the track
+                        // minus its own width and never crosses into the gap.
                         float pct = 0.0f;
                         if(row.max > row.min)
                                 pct = (row.value - row.min) / (row.max - row.min);
                         pct = std::clamp(pct, 0.0f, 1.0f);
-                        const float thumbX = trackX + trackW * pct;
+                        float thumbX;
+                        if(IsTpsRow)
+                        {
+                                const float Span = trackW - SLIDER_THUMB_W;
+                                thumbX = trackX + SLIDER_THUMB_W * 0.5f + Span * pct;
+                        }
+                        else
+                                thumbX = trackX + trackW * pct;
                         const float thumbY = trackY + SLIDER_TRACK_H * 0.5f;
                         DrawRoundedRect(thumbX - SLIDER_THUMB_W * 0.5f, thumbY - SLIDER_THUMB_H * 0.5f,
                                 SLIDER_THUMB_W, SLIDER_THUMB_H, 3.0f, IGraphics::CORNER_ALL,
-                                ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha));
+                                KxColorWithAlpha(m_AccentColorRGBA, alpha * m_MainOpacity));
+
+                        // TPS row: Pause toggle pinned to the right edge (same
+                        // checkbox style as Toggle rows; row.on = paused).
+                        if(IsTpsRow)
+                        {
+                                const float cbY = ry + (rh - CHECK_W) * 0.5f;
+                                const float pLabelW = TextRender()->TextWidth(18.0f, "Pause");
+                                const float cbX = rx + rw - 2.0f - pLabelW - 4.0f - CHECK_W;
+                                DrawRoundedRect(cbX, cbY, CHECK_W, CHECK_W, 3.0f,
+                                        IGraphics::CORNER_ALL,
+                                        ColorRGBA(COL_CHECK_SQUARE, true).WithAlpha(alpha));
+                                if(row.on)
+                                        DrawText(cbX + CHECK_W * 0.5f, cbY - 2.0f, 24.0f, "\xe2\x9c\x95" /* ✕ */,
+                                                ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha), TEXTALIGN_CENTER);
+                                DrawText(cbX + CHECK_W + 4.0f, cbY + 3.0f, 18.0f, "Pause", textCol);
+                        }
                         break;
                 }
                 case ERowType::Input:
                 {
                         // [name (compact)] [text input box]
-                        const float nameW = std::min(88.0f, TextRender()->TextWidth(17.0f, row.pName) + 4.0f);
                         DrawText(rx + 2.0f, ry + 5.0f, 17.0f, row.pName, textCol);
-                        const float inW = rw / 2.0f; // v1.56.89: input field always half row width
+                        // v6.3: fixed input width — child rows are narrower (sub-list
+                        // indent), dividing their width by 2 made the field narrower
+                        // than in top-level rows. Width now always matches the
+                        // top-level row, right-aligned to the shared right edge.
+                        const float inW = (PANEL_WIDTH - BODY_PADDING * 2) * 0.5f;
                         const float inX = rx + rw - inW - 2.0f; // v1.56.89: align to right edge of panel (like dropdown)
                         const float inY = ry + 2.0f;
                         const float inH = rh - 4.0f;
@@ -9965,7 +10129,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 ColorRGBA(COL_INPUT_BG, true).WithAlpha(alpha));
                         DrawRoundedRect(inX - 1.0f, inY - 1.0f, inW + 2.0f, inH + 2.0f, 2.0f,
                                 IGraphics::CORNER_ALL,
-                                editingThis ? ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha) : ColorRGBA(COL_INPUT_BORDER, true).WithAlpha(alpha * 0.5f));
+                                editingThis ? KxColorWithAlpha(m_AccentColorRGBA, alpha * m_MainOpacity) : ColorRGBA(COL_INPUT_BORDER, true).WithAlpha(alpha * 0.5f));
                         // Lazy-init the row's mutable buffer.
                         if(!row.m_InputInitialized)
                         {
@@ -10001,7 +10165,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 float selEndX = inX + 4.0f + TextRender()->TextWidth(17.0f, tmp);
                                 DrawRoundedRect(selStartX, inY + 3.0f, selEndX - selStartX, inH - 6.0f, 1.0f,
                                         IGraphics::CORNER_NONE,
-                                        ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha * 0.5f));
+                                        ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha * 0.5f * m_MainOpacity));
                         }
                         if(pText)
                                 DrawText(inX + 4.0f, inY + 4.0f, 17.0f, pText, inCol);
@@ -10038,7 +10202,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 ColorRGBA(COL_INPUT_BG, true).WithAlpha(alpha));
                         DrawRoundedRect(inX - 1.0f, inY - 1.0f, inW + 2.0f, inH + 2.0f, 2.0f,
                                 IGraphics::CORNER_ALL,
-                                editingThis ? ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha) : ColorRGBA(COL_INPUT_BORDER, true).WithAlpha(alpha * 0.5f));
+                                editingThis ? KxColorWithAlpha(m_AccentColorRGBA, alpha * m_MainOpacity) : ColorRGBA(COL_INPUT_BORDER, true).WithAlpha(alpha * 0.5f));
                         if(!row.m_InputInitialized)
                         {
                                 if(row.pInputValue)
@@ -10073,8 +10237,9 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                 }
                 case ERowType::Dropdown:
                 {
-                        // [name] [select box]
-                        DrawText(rx + 2.0f, ry + 5.0f, 18.0f, row.pName, textCol);
+                        // [name] [select box] — name aligned with the checkbox
+                        // column of toggle rows (rx + 1).
+                        DrawText(rx + 1.0f, ry + 5.0f, 18.0f, row.pName, textCol);
                         const float ddX = rx + rw - DROPDOWN_W - 2.0f;
                         const float ddY = ry + (rh - DROPDOWN_H) * 0.5f;
                         DrawRoundedRect(ddX, ddY, DROPDOWN_W, DROPDOWN_H, 2.0f,
@@ -10101,7 +10266,9 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                         DrawText(rx + 1.0f + CHECK_W * 0.5f, ry + 3.0f - 2.0f, 24.0f, "\xe2\x9c\x95",
                                                 ColorRGBA(COL_CHECK_ON, true).WithAlpha(alpha), TEXTALIGN_CENTER);
                         }
-                        DrawText(rx + (VisualRow ? 4.0f : CHECK_W + 4.0f), ry + 5.0f, 18.0f, row.pName,
+                        // Visual expandables have no checkbox — their text starts
+                        // at the same column as the checkbox of toggle rows.
+                        DrawText(rx + (VisualRow ? 1.0f : CHECK_W + 4.0f), ry + 5.0f, 18.0f, row.pName,
                                 row.on ? ColorRGBA(COL_ROW_TEXT_ON, true).WithAlpha(alpha) : textCol);
                         // Arrow on the right (▶ collapsed, ▼ expanded).
                         const char *pArrow = row.expanded ? "\xe2\x96\xbc" : "\xe2\x96\xb6";
@@ -10115,7 +10282,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                 {
                         // Button — colored rect with centered label.
                         // Pathfinding button: green (IDLE) / red (RUNNING) / orange (FINISHED).
-                        ColorRGBA btnCol = ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha); // default purple
+                        ColorRGBA btnCol = KxColorWithAlpha(m_AccentColorRGBA, alpha * m_MainOpacity); // default purple
                         const char *pLabel = row.pName;
                         if(str_comp(row.pName, "Pathfinding") == 0)
                         {
@@ -10206,7 +10373,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                         {
                                 CBotNet &BN = GameClient()->m_BotNet;
                                 // Left button colors (Pathfinding state).
-                                ColorRGBA leftCol = ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha);
+                                ColorRGBA leftCol = KxColorWithAlpha(m_AccentColorRGBA, alpha * m_MainOpacity);
                                 const char *pLeftLabel = "Pathfinding";
                                 if(BN.m_PfState == PF_STATE_IDLE)
                                 {
@@ -10348,7 +10515,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                         }
                         else if(str_comp(row.pName, "Pick File") == 0)
                         {
-                                const ColorRGBA leftCol = ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha);
+                                const ColorRGBA leftCol = KxColorWithAlpha(m_AccentColorRGBA, alpha * m_MainOpacity);
                                 if(!g_TasFilePicked)
                                 {
                                         DrawRoundedRect(rx + 2.0f, ry + 2.0f, rw - 4.0f, rh - 4.0f, 4.0f,
@@ -10414,13 +10581,13 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                         {
                                 const float btnW = (rw - 6.0f) * 0.5f;
                                 DrawRoundedRect(rx + 2.0f, ry + 2.0f, btnW, rh - 4.0f, 4.0f,
-                                        IGraphics::CORNER_ALL, ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha));
+                                        IGraphics::CORNER_ALL, KxColorWithAlpha(m_AccentColorRGBA, alpha * m_MainOpacity));
                                 const float lw = TextRender()->TextWidth(15.0f, "Rewind");
                                 DrawText(rx + 2.0f + (btnW - lw) * 0.5f, ry + 8.0f, 15.0f, "Rewind",
                                         ColorRGBA(0xffffffff, true).WithAlpha(alpha));
                                 const float rx2 = rx + 2.0f + btnW + 2.0f;
                                 DrawRoundedRect(rx2, ry + 2.0f, btnW, rh - 4.0f, 4.0f,
-                                        IGraphics::CORNER_ALL, ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha));
+                                        IGraphics::CORNER_ALL, KxColorWithAlpha(m_AccentColorRGBA, alpha * m_MainOpacity));
                                 const float rw2 = TextRender()->TextWidth(15.0f, "Forward");
                                 DrawText(rx2 + (btnW - rw2) * 0.5f, ry + 8.0f, 15.0f, "Forward",
                                         ColorRGBA(0xffffffff, true).WithAlpha(alpha));
@@ -10613,7 +10780,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 const float cbW = bodyW - SUB_LIST_INDENT + 4.0f;
                                 const float cbH = childBlockBottom - childBlockTop;
                                 DrawRoundedRect(cbX, childBlockTop, cbW, cbH, 0.0f, IGraphics::CORNER_NONE,
-                                        ColorRGBA(COL_SUB_LIST_BG, true).WithAlpha(alpha * 0.6f));
+                                        ColorRGBA(COL_SUB_LIST_BG, true).WithAlpha(alpha * 0.6f * m_PanelOpacity));
                                 const float stripeX = rx + 1.0f + CHECK_W * 0.5f - 1.0f;
                                 const float stripeY = childBlockTop;
                                 const float stripeH = childBlockBottom - childBlockTop;
@@ -10733,16 +10900,17 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                         const float thY = trY + SLIDER_TRACK_H * 0.5f;
                                         DrawRoundedRect(thX - SLIDER_THUMB_W * 0.5f, thY - SLIDER_THUMB_H * 0.5f,
                                                 SLIDER_THUMB_W, SLIDER_THUMB_H, 3.0f, IGraphics::CORNER_ALL,
-                                                ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha));
+                                                KxColorWithAlpha(m_AccentColorRGBA, alpha * m_MainOpacity));
                                         break;
                                 }
                                 case ERowType::Input:
                                 {
-                                        const float nw = std::min(88.0f, TextRender()->TextWidth(17.0f, child.pName) + 4.0f);
                                         DrawText(crx + 2.0f, cry + 5.0f, 17.0f, child.pName, cText);
-                                        const float ix = crx + nw + 2.0f;
+                                        // Same fixed width / right alignment as top-level
+                                        // input rows, so child fields aren't narrower.
+                                        const float iw = (PANEL_WIDTH - BODY_PADDING * 2) * 0.5f;
+                                        const float ix = crx + crw - iw - 2.0f;
                                         const float iy = cry + 2.0f;
-                                        const float iw = crw - nw - 4.0f;
                                         const float ih = crh - 4.0f;
                                         if(!child.m_InputInitialized)
                                         {
@@ -10756,7 +10924,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                 ColorRGBA(COL_INPUT_BG, true).WithAlpha(alpha));
                                         DrawRoundedRect(ix - 1.0f, iy - 1.0f, iw + 2.0f, ih + 2.0f, 2.0f,
                                                 IGraphics::CORNER_ALL,
-                                                editingChild ? ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha) : ColorRGBA(COL_INPUT_BORDER, true).WithAlpha(alpha * 0.5f));
+                                                editingChild ? KxColorWithAlpha(m_AccentColorRGBA, alpha * m_MainOpacity) : ColorRGBA(COL_INPUT_BORDER, true).WithAlpha(alpha * 0.5f));
                                         const char *pT;
                                         ColorRGBA ic;
                                         if(editingChild)
@@ -10782,7 +10950,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                 float selEndX = ix + 4.0f + TextRender()->TextWidth(17.0f, tmp);
                                                 DrawRoundedRect(selStartX, iy + 3.0f, selEndX - selStartX, ih - 6.0f, 1.0f,
                                                         IGraphics::CORNER_NONE,
-                                                        ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha * 0.5f));
+                                                        ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha * 0.5f * m_MainOpacity));
                                         }
                                         if(pT)
                                                 DrawText(ix + 4.0f, iy + 3.0f, 17.0f, pT, ic);
@@ -10824,7 +10992,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                 ColorRGBA(COL_INPUT_BG, true).WithAlpha(alpha));
                                         DrawRoundedRect(ix - 1.0f, iy - 1.0f, iw + 2.0f, ih + 2.0f, 2.0f,
                                                 IGraphics::CORNER_ALL,
-                                                editingChild ? ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha) : ColorRGBA(COL_INPUT_BORDER, true).WithAlpha(alpha * 0.5f));
+                                                editingChild ? KxColorWithAlpha(m_AccentColorRGBA, alpha * m_MainOpacity) : ColorRGBA(COL_INPUT_BORDER, true).WithAlpha(alpha * 0.5f));
                                         const char *pT;
                                         ColorRGBA ic;
                                         if(editingChild)
@@ -10848,7 +11016,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                 float selEndX = ix + 4.0f + TextRender()->TextWidth(17.0f, tmp);
                                                 DrawRoundedRect(selStartX, iy + 3.0f, selEndX - selStartX, ih - 6.0f, 1.0f,
                                                         IGraphics::CORNER_NONE,
-                                                        ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha * 0.5f));
+                                                        ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha * 0.5f * m_MainOpacity));
                                         }
                                         if(pT)
                                                 DrawText(ix + 4.0f, iy + 3.0f, 17.0f, pT, ic);
@@ -10904,7 +11072,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 case ERowType::Button:
                                 {
                                         // v1.56.90: Button child — colored rect with centered label (Dummies).
-                                        ColorRGBA btnCol = ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha);
+                                        ColorRGBA btnCol = KxColorWithAlpha(m_AccentColorRGBA, alpha * m_MainOpacity);
                                         const char *pLabel = child.pName;
                                         // v1.56.90: "Connect Dummy" label changes based on connection state.
                                         if(str_comp(child.pName, "Connect Dummy") == 0)
@@ -10953,12 +11121,31 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 }
                                 case ERowType::DoubleButton:
                                 {
+                                        // v6.3: generic two-half double button (Kill | Kill All) —
+                                        // both halves red, labels from pName / pToolTip2.
+                                        if(child.pName && str_comp(child.pName, "Kill") == 0 && child.pToolTip2)
+                                        {
+                                                const float btnW = (crw - 6.0f) * 0.5f;
+                                                const ColorRGBA Red = ColorRGBA(0xffc43d3d, true).WithAlpha(alpha);
+                                                DrawRoundedRect(crx + 2.0f, cry + 2.0f, btnW, crh - 4.0f, 4.0f,
+                                                        IGraphics::CORNER_ALL, Red);
+                                                const float lw1 = TextRender()->TextWidth(13.0f, "Kill");
+                                                DrawText(crx + 2.0f + (btnW - lw1) * 0.5f, cry + 8.0f, 13.0f, "Kill",
+                                                        ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                                                const float rx2 = crx + 2.0f + btnW + 2.0f;
+                                                DrawRoundedRect(rx2, cry + 2.0f, btnW, crh - 4.0f, 4.0f,
+                                                        IGraphics::CORNER_ALL, Red);
+                                                const float lw2 = TextRender()->TextWidth(13.0f, "Kill All");
+                                                DrawText(rx2 + (btnW - lw2) * 0.5f, cry + 8.0f, 13.0f, "Kill All",
+                                                        ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                                                break;
+                                        }
                                         // v1.56.90: DoubleButton child — Connect + Switch + Send toggle (Dummies).
                                         // If dummy NOT connected: only Connect button (full row width).
                                         // If dummy connected: Connect (left) + Switch (middle) + Send checkbox (right).
                                         // v1.56.197: left button label is dynamic — "D# Connect" (idle),
                                         // "D# Connecting..." (connecting), "D# Disconnect" (connected).
-                                        ColorRGBA leftCol = ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha);
+                                        ColorRGBA leftCol = KxColorWithAlpha(m_AccentColorRGBA, alpha * m_MainOpacity);
                                         if(child.on) // child.on = connected state
                                                 leftCol = ColorRGBA(0xff3da35a, true).WithAlpha(alpha);
                                         // v1.56.197: build dynamic left-button label based on connection state.
@@ -10999,7 +11186,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                 DrawText(crx + 2.0f + (btnW - lw1) * 0.5f, cry + 8.0f, 13.0f, pLeftLabel,
                                                         ColorRGBA(0xffffffff, true).WithAlpha(alpha));
                                                 // Middle button (Switch) — green if active.
-                                                ColorRGBA rightCol = ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha);
+                                                ColorRGBA rightCol = KxColorWithAlpha(m_AccentColorRGBA, alpha * m_MainOpacity);
                                                 if(child.value > 0.5f)
                                                         rightCol = ColorRGBA(0xff3da35a, true).WithAlpha(alpha);
                                                 const float rx2 = crx + 2.0f + btnW + 2.0f;

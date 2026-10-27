@@ -1230,6 +1230,8 @@ MACRO_CONFIG_INT(KxTriggerBotRaycastShow, kx_triggerbot_raycast_show, 0, 0, 1, C
 // v1.56.255: ClickGUI UI persistence (accent/panel colors, rainbow, blackout).
 MACRO_CONFIG_STR(KxUiAccentColor, kx_ui_accent_color, 9, "9d4edd", CFGFLAG_CLIENT | CFGFLAG_SAVE, "ClickGUI accent color (hex RGB)")
 MACRO_CONFIG_STR(KxUiPanelColor, kx_ui_panel_color, 9, "161622", CFGFLAG_CLIENT | CFGFLAG_SAVE, "ClickGUI panel color (hex RGB)")
+MACRO_CONFIG_INT(KxUiMainOpacity, kx_ui_main_opacity, 100, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ClickGUI accent color opacity (0-100)")
+MACRO_CONFIG_INT(KxUiPanelOpacity, kx_ui_panel_opacity, 100, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ClickGUI panel background opacity (0-100)")
 MACRO_CONFIG_INT(KxUiRainbow, kx_ui_rainbow, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ClickGUI: rainbow accent color animation")
 MACRO_CONFIG_INT(KxUiRainbowSpeed, kx_ui_rainbow_speed, 10, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ClickGUI: rainbow speed x10 (1-100 = 0.1-10.0)")
 MACRO_CONFIG_INT(KxUiBlackout, kx_ui_blackout, 30, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ClickGUI: background blackout percent (0-100)")

@@ -76,6 +76,9 @@ private:
         // v1.56.199: configurable panel background color (replaces hardcoded COL_PANEL_BG).
         // Packed 0xAARRGGBB. Default = dark navy 0xff161622.
         unsigned m_PanelBgRGBA = 0xff161622;
+        // Opacity of the accent / panel colors (0..1), multiplied at draw time.
+        float m_MainOpacity = 1.0f;
+        float m_PanelOpacity = 1.0f;
         // v1.56.199: configurable background blackout percentage (0-100).
         // Replaces hardcoded BG_DIM_ALPHA. Stored as integer percent; divided by 100
         // at render time. Default = 30 (30%).

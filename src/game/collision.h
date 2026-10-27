@@ -56,6 +56,30 @@ public:
 
 	// DDRace
 	void SetCollisionAt(float x, float y, int Index);
+	// Turns the tune-layer tile at the position into a TILE_TUNE with the given
+	// zone so the prediction switches to that tune zone (TAS playground).
+	void SetTuneZoneAt(float x, float y, int Zone);
+	// Current tune zone number of the tune-layer tile at the position (0 = none).
+	int GetTuneZoneAt(float x, float y) const;
+	// Writes the raw tune-layer tile (type 0 clears it). Used to restore the
+	// previous state after a spawned TILE_TUNE is removed.
+	void RestoreTuneTileAt(float x, float y, int Type, int Number);
+	// TAS playground: tele-layer tiles (the prediction teleports through them).
+	// No-op when the map has no tele layer.
+	void SetTeleTileAt(float x, float y, int Type, int Number);
+	// Type of the tele-layer tile at the position (0 = none).
+	int GetTeleTileTypeAt(float x, float y) const;
+	void RestoreTeleTileAt(float x, float y, int Type, int Number);
+	// Rebuilds m_TeleIns/m_TeleOuts/... from the tele layer. The prediction
+	// resolves teleports through these tables, so they must be refreshed after
+	// the TAS spawner writes tele tiles (they are load-time only otherwise).
+	void RebuildTeleData();
+	// TAS playground: speedup-layer tiles. When the map has no speedup layer a
+	// zeroed fallback buffer is allocated on the fly, so spawned speedups work
+	// on any map (the physics reads this layer directly).
+	void SetSpeedupAt(float x, float y, int Force, int MaxSpeed, int Angle);
+	void GetSpeedupTileAt(float x, float y, int *pType, int *pForce, int *pMaxSpeed, int *pAngle) const;
+	void RestoreSpeedupAt(float x, float y, int Type, int Force, int MaxSpeed, int Angle);
 	void SetDoorCollisionAt(float x, float y, unsigned char Type, unsigned char Flags, unsigned char Number);
 	void GetDoorTile(int Index, CDoorTile *pDoorTile) const;
 	int GetFrontCollisionAt(float x, float y) const { return GetFrontTile(round_to_int(x), round_to_int(y)); }
@@ -154,7 +178,13 @@ private:
 
 	CTile *m_pTiles;
 	CTeleTile *m_pTele;
+	// Allocated by the TAS spawner when the map has no tele layer; freed in
+	// Unload. m_pTele points at it whenever it is active.
+	CTeleTile *m_pTeleFallback = nullptr;
 	CSpeedupTile *m_pSpeedup;
+	// Allocated by the TAS spawner when the map has no speedup layer; freed in
+	// Unload. m_pSpeedup points at it whenever it is active.
+	CSpeedupTile *m_pSpeedupFallback = nullptr;
 	CTile *m_pFront;
 	CSwitchTile *m_pSwitch;
 	CTuneTile *m_pTune;

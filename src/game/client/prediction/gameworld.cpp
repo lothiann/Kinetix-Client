@@ -175,7 +175,11 @@ void CGameWorld::RemoveEntity(CEntity *pEnt)
 void CGameWorld::RemoveCharacter(CCharacter *pChar)
 {
 	int Id = pChar->GetCid();
-	if(Id >= 0 && Id < MAX_CLIENTS)
+	// Only clear the slot this character actually owns: the TAS spawner keeps
+	// physics-off tees out of the world on shared ids, and the ~CCharacter
+	// dtor routes through here — blindly nulling the slot wiped the character
+	// that legitimately owned it and broke the whole playground.
+	if(Id >= 0 && Id < MAX_CLIENTS && m_apCharacters[Id] == pChar)
 	{
 		m_apCharacters[Id] = nullptr;
 		m_Core.m_apCharacters[Id] = nullptr;

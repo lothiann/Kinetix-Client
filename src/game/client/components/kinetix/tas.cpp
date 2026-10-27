@@ -228,6 +228,26 @@ void CTas::OnUpdate()
 	}
 }
 
+// Hammer hit for the playground: copy of CEffects::HammerHit with the
+// lifetime divided by the TPS factor, so the burst expands and fades at the
+// same slowed-down pace the world itself runs at.
+static void SpawnPlaygroundHammerHit(CGameClient *pGame, vec2 Pos, float Scale)
+{
+	CParticle p;
+	p.SetDefault();
+	p.m_Spr = SPRITE_PART_HIT01;
+	p.m_Pos = Pos;
+	p.m_LifeSpan = 0.3f / Scale;
+	p.m_StartSize = 120.0f;
+	p.m_EndSize = 0.0f;
+	p.m_Rot = random_angle();
+	p.m_Color.a = 1.0f;
+	p.m_StartAlpha = 1.0f;
+	pGame->m_Particles.Add(CParticles::GROUP_EXPLOSIONS, &p);
+	if(g_Config.m_SndGame)
+		pGame->m_Sounds.PlayAt(CSounds::CHN_WORLD, SOUND_HAMMER_HIT, 1.0f, Pos);
+}
+
 void CTas::OnRender()
 {
 	RenderVisuals();
@@ -270,7 +290,7 @@ void CTas::OnRender()
 			else if(EventIt->m_EventId == NETEVENTTYPE_EXPLOSION)
 				pGame->m_Effects.Explosion(EventIt->m_Pos, 1.0f);
 			else if(EventIt->m_EventId == NETEVENTTYPE_HAMMERHIT)
-				pGame->m_Effects.HammerHit(EventIt->m_Pos, 1.0f, 1.0f);
+				SpawnPlaygroundHammerHit(pGame, EventIt->m_Pos, m_Tps / 50.0f);
 			else if(EventIt->m_EventId == NETEVENTTYPE_DAMAGEIND)
 				pGame->m_Effects.DamageIndicator(EventIt->m_Pos, direction(EventIt->m_ExtraInfo / 256.0f), 1.0f);
 			EventIt->m_Handled = true;
@@ -287,6 +307,108 @@ void CTas::OnRender()
 		return;
 
 	Graphics()->MapScreenToInterface(pGame->m_Camera.m_Center.x, pGame->m_Camera.m_Center.y, pGame->m_Camera.m_Zoom);
+
+	// Speedup arrows for maps without a speedup layer: the native renderer has
+	// no layer to draw them from, so draw the arrow here (the physics still
+	// works through the collision fallback layer).
+	for(const SSpawnedTile &T : m_vSpawnedTiles)
+	{
+		if(!T.m_SpeedupSet || !T.m_SpeedupSelfDraw)
+			continue;
+		int Type = 0, Force = 0, MaxSpeed = 0, Angle = 0;
+		m_Playground.Collision()->GetSpeedupTileAt(T.m_Pos.x + 16.0f, T.m_Pos.y + 16.0f, &Type, &Force, &MaxSpeed, &Angle);
+		if(!Force && !MaxSpeed)
+			continue;
+		// Exactly what CRenderMap::RenderSpeedupOverlay draws for native tiles:
+		// the speedup arrow sprite from the game data, rotated by the angle.
+		Graphics()->TextureClear();
+		Graphics()->TextureSet(g_pData->m_aImages[IMAGE_SPEEDUP_ARROW].m_Id);
+		Graphics()->QuadsBegin();
+		Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
+		Graphics()->SelectSprite(SPRITE_SPEEDUP_ARROW);
+		Graphics()->QuadsSetRotation(Angle * (pi / 180.0f));
+		Graphics()->DrawSprite(T.m_Pos.x + 16.0f, T.m_Pos.y + 16.0f, 35.0f);
+		Graphics()->QuadsEnd();
+	}
+
+	// Tele tiles for maps without a tele layer: draw with the NATIVE entity
+	// texture using the exact CRenderMap::RenderTelemap atlas math (same
+	// sprites, same top-left anchored quads → same alignment).
+	{
+		const bool TexArrays = Graphics()->HasTextureArraysSupport();
+		const CScreenRect ScreenRect = Graphics()->GetScreen();
+		const float TilePixelSize = 1024 / 32.0f;
+		const float FinalTileSize = 32.0f / ScreenRect.Width() * Graphics()->ScreenWidth();
+		const float FinalTilesetScale = FinalTileSize / TilePixelSize;
+		const float TexSize = 1024.0f;
+		const float Frac = (1.25f / TexSize) * (1 / FinalTilesetScale);
+		const float Nudge = (0.5f / TexSize) * (1 / FinalTilesetScale);
+		Graphics()->TextureSet(pGame->m_MapImages.GetEntities(MAP_IMAGE_ENTITY_LAYER_TYPE_ALL_EXCEPT_SWITCH));
+		if(TexArrays)
+			Graphics()->QuadsTex3DBegin();
+		else
+			Graphics()->QuadsBegin();
+		Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
+		for(const SSpawnedTile &T : m_vSpawnedTiles)
+		{
+			if(!T.m_TeleSet || !T.m_TeleSelfDraw || !T.m_Tile)
+				continue;
+			const int Index = T.m_Tile;
+			const int tx = Index % 16;
+			const int ty = Index / 16;
+			const int Px0 = tx * (1024 / 16);
+			const int Py0 = ty * (1024 / 16);
+			const int Px1 = Px0 + (1024 / 16) - 1;
+			const int Py1 = Py0 + (1024 / 16) - 1;
+			float x0 = Nudge + Px0 / TexSize + Frac;
+			float y0 = Nudge + Py0 / TexSize + Frac;
+			float x1 = Nudge + Px1 / TexSize - Frac;
+			float y1 = Nudge + Py0 / TexSize + Frac;
+			float x2 = Nudge + Px1 / TexSize - Frac;
+			float y2 = Nudge + Py1 / TexSize - Frac;
+			float x3 = Nudge + Px0 / TexSize + Frac;
+			float y3 = Nudge + Py1 / TexSize - Frac;
+			if(TexArrays)
+			{
+				x0 = 0;
+				y0 = 0;
+				x1 = x0 + 1;
+				y1 = y0;
+				x2 = x0 + 1;
+				y2 = y0 + 1;
+				x3 = x0;
+				y3 = y0 + 1;
+			}
+			const IGraphics::CQuadItem QuadItem(T.m_Pos.x, T.m_Pos.y, 32.0f, 32.0f);
+			if(TexArrays)
+			{
+				Graphics()->QuadsSetSubsetFree(x0, y0, x1, y1, x2, y2, x3, y3, Index);
+				Graphics()->QuadsTex3DDrawTL(&QuadItem, 1);
+			}
+			else
+			{
+				Graphics()->QuadsSetSubsetFree(x0, y0, x1, y1, x2, y2, x3, y3);
+				Graphics()->QuadsDrawTL(&QuadItem, 1);
+			}
+		}
+		if(TexArrays)
+			Graphics()->QuadsTex3DEnd();
+		else
+			Graphics()->QuadsEnd();
+
+		// Number overlay on top, centered like the native tele overlay.
+		for(const SSpawnedTile &T : m_vSpawnedTiles)
+		{
+			if(!T.m_TeleSet || !T.m_TeleSelfDraw || !T.m_Number)
+				continue;
+			char aBuf[16];
+			str_format(aBuf, sizeof(aBuf), "%d", T.m_Number);
+			const float Width = TextRender()->TextWidth(10.0f, aBuf, -1);
+			TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
+			TextRender()->Text(T.m_Pos.x + 16.0f - Width / 2.0f, T.m_Pos.y + 16.0f - 5.0f, 10.0f, aBuf, -1.0f);
+			TextRender()->TextColor(TextRender()->DefaultTextColor());
+		}
+	}
 
 	const CCharacterCore *pCore = pChar->Core();
 
@@ -337,7 +459,12 @@ void CTas::OnRender()
 			Graphics()->TextureSet(pGame->m_GameSkin.m_aSpriteWeaponProjectiles[CurWeapon]);
 			Graphics()->QuadsBegin();
 			if(CurWeapon == WEAPON_GRENADE)
-				Graphics()->QuadsSetRotation(((float)m_PlaygroundTick - 1.0f + IntraAlpha) * 0.35f);
+			{
+				// Native rate (4*pi rad/s like CItems::RenderProjectile), but
+				// phased by this projectile's own age instead of a global
+				// timer — grenades spawned at different ticks spin out of sync.
+				Graphics()->QuadsSetRotation(Ct * pi * 2.0f * 2.0f + (float)pEnt->GetId() * 0.1f);
+			}
 			else if(length(Vel) > 0.00001f)
 				Graphics()->QuadsSetRotation(angle(Vel));
 			else
@@ -698,6 +825,13 @@ static const STasSpawnerTileDef g_aTasSpawnerTiles[] = {
 	{TILE_SUBTRACT_TIME, "SubtractTime"},
 	{TILE_LFREEZE, "LaserFreeze"},
 	{TILE_LUNFREEZE, "LaserUnfreeze"},
+	// Special-layer tiles (v6.3): written into their own map layers, not the
+	// game layer — that is what makes them actually work client-side.
+	{TILE_SPEED_BOOST, "Speedup"},
+	{TILE_TELEIN, "TeleIn"},
+	{TILE_TELEINEVIL, "TeleIn Evil"},
+	{TILE_TELEOUT, "TeleOut"},
+	{TILE_TELECHECKIN, "TeleCheckIn"},
 };
 
 static const char *const g_apTasSpawnerEntities[] = {
@@ -747,6 +881,57 @@ static vec2 TasSpawnerDir(int Dir)
 	return normalize(g_aTasSpawnerDirs[std::clamp(Dir, 0, 7)]);
 }
 
+// Render info of a spawned tee: honors the custom skin name (loaded through
+// the regular skin pipeline, community skins included) and the custom body /
+// feet colors; falls back to the local player's look.
+CTeeRenderInfo CTas::SpawnerTeeRenderInfo(const STasSpawnerSettings &S)
+{
+	CGameClient *pGame = GameClient();
+	const char *pSkin = S.m_aSkin[0] ? S.m_aSkin : pGame->m_aClients[m_LocalId].m_aSkinName;
+	char aKey[192];
+	str_format(aKey, sizeof(aKey), "%s|%s|%s", pSkin, S.m_aColorBody, S.m_aColorFeet);
+	auto It = m_SpawnerSkinCache.find(aKey);
+	if(It == m_SpawnerSkinCache.end())
+	{
+		CTeeRenderInfo Info;
+		Info.m_Size = 64.0f;
+		CSkinDescriptor Desc;
+		Desc.m_Flags |= CSkinDescriptor::FLAG_SIX;
+		str_copy(Desc.m_aSkinName, pSkin, sizeof(Desc.m_aSkinName));
+		auto pInfo = pGame->CreateManagedTeeRenderInfo(Info, Desc);
+		pInfo->TeeRenderInfo().m_Size = 64.0f;
+		const bool CustomBody = S.m_aColorBody[0] != 0;
+		const bool CustomFeet = S.m_aColorFeet[0] != 0;
+		if(CustomBody || CustomFeet)
+		{
+			pInfo->TeeRenderInfo().m_CustomColoredSkin = true;
+			pInfo->TeeRenderInfo().m_ColorBody = CustomBody ? TasSpawnerHexColor(S.m_aColorBody) : ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f);
+			pInfo->TeeRenderInfo().m_ColorFeet = CustomFeet ? TasSpawnerHexColor(S.m_aColorFeet) : ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f);
+		}
+		It = m_SpawnerSkinCache.emplace(aKey, std::move(pInfo)).first;
+	}
+	CTeeRenderInfo Out = It->second->TeeRenderInfo();
+	Out.m_Size = 64.0f;
+	return Out;
+}
+
+vec2 CTas::SpawnerAimPos()
+{
+	// "Cursor" is the AIM point (the crosshair), not the OS pointer.
+	// CControls::m_aTargetPos is stored in unzoomed camera space: the HUD
+	// draws the crosshair with MapScreenToWorld(..., Zoom = 1). The world
+	// point under it is therefore cam + (target - cam) * zoom — exactly the
+	// conversion the Pathfinder tile editor uses (pathfinder_tab.cpp).
+	// A real spectator is the exception: there the client draws the spec
+	// cursor from CCursorInfo::WorldTarget(), already a world point.
+	CGameClient *pGame = GameClient();
+	if(pGame->m_Snap.m_SpecInfo.m_Active && pGame->m_CursorInfo.IsAvailable())
+		return pGame->m_CursorInfo.WorldTarget();
+	const vec2 Cam = pGame->m_Camera.m_Center;
+	const float Zoom = pGame->m_Camera.m_Zoom;
+	return Cam + (pGame->m_Controls.m_aTargetPos[g_Config.m_ClDummy] - Cam) * Zoom;
+}
+
 vec2 CTas::SpawnerTargetPos()
 {
 	CGameClient *pGame = GameClient();
@@ -756,23 +941,7 @@ vec2 CTas::SpawnerTargetPos()
 	else if(m_Spawner.m_CoordsMode == TAS_SPAWN_COORD_PREVIOUS)
 		Pos = m_SpawnerPrevPos;
 	else
-	{
-		// "Cursor" is the AIM point (the crosshair), not the OS pointer.
-		// CControls::m_aTargetPos is stored in unzoomed camera space: the HUD
-		// draws the crosshair with MapScreenToWorld(..., Zoom = 1). The world
-		// point under it is therefore cam + (target - cam) * zoom — exactly the
-		// conversion the Pathfinder tile editor uses (pathfinder_tab.cpp).
-		// A real spectator is the exception: there the client draws the spec
-		// cursor from CCursorInfo::WorldTarget(), already a world point.
-		if(pGame->m_Snap.m_SpecInfo.m_Active && pGame->m_CursorInfo.IsAvailable())
-			Pos = pGame->m_CursorInfo.WorldTarget();
-		else
-		{
-			const vec2 Cam = pGame->m_Camera.m_Center;
-			const float Zoom = pGame->m_Camera.m_Zoom;
-			Pos = Cam + (pGame->m_Controls.m_aTargetPos[g_Config.m_ClDummy] - Cam) * Zoom;
-		}
-	}
+		Pos = SpawnerAimPos();
 	if(m_Spawner.m_Snap)
 		Pos = vec2(floorf(Pos.x / 32.0f) * 32.0f, floorf(Pos.y / 32.0f) * 32.0f);
 	return Pos;
@@ -813,6 +982,9 @@ bool CTas::SpawnerKill()
 			const vec2 EPos = It->m_pEnt ? It->m_pEnt->GetPos() : It->m_Pos;
 			if(distance(EPos, Pos) <= 32.0f)
 			{
+				// Respawn-style burst where the tee is removed.
+				if(It->m_Entity == TAS_SPAWN_ENT_TEE)
+					GameClient()->m_Effects.PlayerSpawn(EPos, 1.0f, 1.0f);
 				if(It->m_Inserted)
 					m_Playground.RemoveEntity(It->m_pEnt);
 				delete It->m_pEnt;
@@ -842,7 +1014,15 @@ bool CTas::SpawnerKill()
 			if(T.m_Index != Index)
 				continue;
 			if(T.m_Physics)
+			{
 				pColl->SetCollisionAt((float)T.m_Pos.x + 16.0f, (float)T.m_Pos.y + 16.0f, T.m_OldTile);
+				if(T.m_TuneSet)
+					pColl->RestoreTuneTileAt((float)T.m_Pos.x + 16.0f, (float)T.m_Pos.y + 16.0f, T.m_OldTuneType, T.m_OldTuneNumber);
+				if(T.m_TeleSet)
+					pColl->RestoreTeleTileAt((float)T.m_Pos.x + 16.0f, (float)T.m_Pos.y + 16.0f, T.m_OldTeleType, T.m_OldTeleNumber);
+				if(T.m_SpeedupSet)
+					pColl->RestoreSpeedupAt((float)T.m_Pos.x + 16.0f, (float)T.m_Pos.y + 16.0f, T.m_OldSpeedupType, T.m_OldSpeedupForce, T.m_OldSpeedupMaxSpeed, T.m_OldSpeedupAngle);
+			}
 				m_vSpawnedTiles.erase(m_vSpawnedTiles.begin() + i);
 				Removed = true;
 				m_TileVisualDirty = true;
@@ -988,7 +1168,9 @@ void CTas::PgTeleCursor()
 	CCharacter *pChar = m_Playground.GetCharacterById(m_LocalId);
 	if(!pChar)
 		return;
-	const vec2 Pos = SpawnerTargetPos();
+	// /tc always teleports to the crosshair, regardless of the spawner's
+	// Coordinates Mode or the Snap toggle.
+	const vec2 Pos = SpawnerAimPos();
 	CCharacterCore Core = pChar->GetCore();
 	Core.m_Pos = Pos;
 	Core.m_Vel = vec2(0.0f, 0.0f);
@@ -1825,10 +2007,10 @@ void CTas::SetPgVirtualRcon(bool On)
 
 bool CTas::SpawnerSpawnAt(const STasSpawnerSettings &Settings, vec2 Pos, int Tick, bool Record)
 {
-	// "Timeline Tick": pretend the object already existed at that tick. It is
-	// stored as the spawn tick, so playback/rewind and timed entities (lasers,
-	// doors) age from it instead of from the moment it was placed.
-	const int Timeline = Settings.m_Mode == TAS_SPAWN_MODE_TILE ? Settings.m_TileTimelineTick : Settings.m_EntityTimelineTick;
+	// "Timeline Tick" (tee only): pretend the tee already existed at that tick.
+	// It is stored as the spawn tick, so playback/rewind ages from it instead
+	// of from the moment it was placed.
+	const int Timeline = Settings.m_EntityTimelineTick;
 	if(Timeline > 0)
 		Tick = Timeline;
 
@@ -1916,13 +2098,14 @@ bool CTas::SpawnerSpawnEntity(const STasSpawnerSettings &S, vec2 Pos, int Tick, 
 		Ext.m_StrongWeakId = S.m_HookStrengthMode == 1 ? 100 - Strength : Strength;
 
 		CCharacter *pChar = new CCharacter(&m_Playground, Id, &Char, &Ext);
-		for(int w = 0; w < NUM_WEAPONS; ++w)
-			pChar->GiveWeapon(w, !S.m_aWeapon[w]);
-		// The active weapon must be owned, otherwise the next HandleWeaponSwitch
-		// resets it and the tee snaps back to the hammer.
-		const int ActiveWeapon = std::clamp(S.m_WeaponId, 0, NUM_WEAPONS - 1);
-		pChar->GiveWeapon(ActiveWeapon, false);
-		pChar->SetActiveWeapon(ActiveWeapon);
+		// Weapon loadout: -1 = bare tee (no GiveWeapon call at all), otherwise
+		// the tee owns exactly the selected weapon.
+		const int LoadoutWeapon = S.m_WeaponId;
+		if(LoadoutWeapon >= 0 && LoadoutWeapon < NUM_WEAPONS)
+		{
+			pChar->GiveWeapon(LoadoutWeapon, false);
+			pChar->SetActiveWeapon(LoadoutWeapon);
+		}
 		pChar->m_Pos = Pos;
 		pChar->m_PrevPos = Pos + vec2(S.m_PrevPosX, S.m_PrevPosY);
 		pChar->m_PrevPrevPos = pChar->m_PrevPos;
@@ -1942,16 +2125,19 @@ bool CTas::SpawnerSpawnEntity(const STasSpawnerSettings &S, vec2 Pos, int Tick, 
 		const int Type = std::clamp(S.m_WeaponId, 0, NUM_WEAPONS - 1);
 		// v6.2: direction preset + extra velocity + lifespan from the panel
 		// (-1 = never expires, like a frozen dummy projectile).
+		// v6.3: freeze / explosive / sound toggles.
 		const vec2 Dir = normalize(TasSpawnerDir(S.m_Dir) + vec2(S.m_VelX, S.m_VelY) * 0.01f);
 		const int Span = S.m_LifeSpan;
-		pEnt = new CProjectile(&m_Playground, Type, -1, Pos, Dir, Span, false, Type == WEAPON_GRENADE, SOUND_GUN_FIRE);
+		pEnt = new CProjectile(&m_Playground, Type, -1, Pos, Dir, Span, S.m_ProjectileFreeze,
+			Type == WEAPON_GRENADE || S.m_ProjectileExplosive, S.m_ProjectileSound ? SOUND_GUN_FIRE : -1);
 		SelfInserted = true;
 		break;
 	}
 	case TAS_SPAWN_ENT_LASER:
 	{
 		const float Energy = std::clamp((float)S.m_LaserReach, 32.0f, 10000.0f);
-		pEnt = new CLaser(&m_Playground, Pos, TasSpawnerDir(S.m_Dir), Energy, -1, LASERTYPE_RIFLE);
+		const int LaserType = S.m_LaserType == 1 ? LASERTYPE_SHOTGUN : LASERTYPE_RIFLE;
+		pEnt = new CLaser(&m_Playground, Pos, TasSpawnerDir(S.m_Dir), Energy, -1, LaserType);
 		SelfInserted = true;
 		break;
 	}
@@ -1959,9 +2145,15 @@ bool CTas::SpawnerSpawnEntity(const STasSpawnerSettings &S, vec2 Pos, int Tick, 
 	{
 		CPickupData Data;
 		Data.m_Pos = Pos;
-		Data.m_Type = POWERUP_HEALTH;
-		Data.m_Subtype = 0;
-		Data.m_SwitchNumber = 0;
+		switch(std::clamp(S.m_PickupType, 0, 3))
+		{
+		case 1: Data.m_Type = POWERUP_ARMOR; break;
+		case 2: Data.m_Type = POWERUP_WEAPON; break;
+		case 3: Data.m_Type = POWERUP_NINJA; break;
+		default: Data.m_Type = POWERUP_HEALTH; break;
+		}
+		Data.m_Subtype = std::clamp(S.m_Subtype, 0, 255);
+		Data.m_SwitchNumber = std::clamp(S.m_SwitchNumber, 0, 255);
 		Data.m_Flags = 0;
 		pEnt = new CPickup(&m_Playground, -1, &Data);
 		break;
@@ -1970,14 +2162,17 @@ bool CTas::SpawnerSpawnEntity(const STasSpawnerSettings &S, vec2 Pos, int Tick, 
 	case TAS_SPAWN_ENT_DRAGGER:
 	case TAS_SPAWN_ENT_PLASMA:
 	{
+		// Only the door entity uses the length (From→To); draggers and plasma
+		// compute their reach themselves.
+		const bool UsesLength = S.m_Entity == TAS_SPAWN_ENT_DOOR;
 		CLaserData Data;
 		Data.m_From = Pos;
-		Data.m_To = Pos + TasSpawnerDir(S.m_Dir) * (float)std::clamp(S.m_LaserLength, 16, 4096);
+		Data.m_To = Pos + (UsesLength ? TasSpawnerDir(S.m_Dir) * (float)std::clamp(S.m_LaserLength, 16, 4096) : TasSpawnerDir(S.m_Dir) * 32.0f);
 		Data.m_StartTick = Tick;
 		Data.m_ExtraInfo = true;
 		Data.m_Owner = -1;
-		Data.m_SwitchNumber = 0;
-		Data.m_Subtype = 0;
+		Data.m_SwitchNumber = std::clamp(S.m_SwitchNumber, 0, 255);
+		Data.m_Subtype = std::clamp(S.m_Subtype, 0, 255);
 		Data.m_Predict = false;
 		Data.m_TuneZone = 0;
 		if(S.m_Entity == TAS_SPAWN_ENT_DOOR)
@@ -1994,6 +2189,7 @@ bool CTas::SpawnerSpawnEntity(const STasSpawnerSettings &S, vec2 Pos, int Tick, 
 		else
 		{
 			Data.m_Type = LASERTYPE_PLASMA;
+			Data.m_Subtype = std::clamp(S.m_Subtype, 0, 255); // bit flags: 1 = explosive, 2 = freeze
 			pEnt = new CPlasma(&m_Playground, -1, &Data);
 		}
 		Spawn.m_LaserData = Data;
@@ -2067,6 +2263,14 @@ bool CTas::SpawnerSpawnTile(const STasSpawnerSettings &S, vec2 Pos, int Tick, bo
 		return false;
 
 	const int TileId = std::clamp(S.m_Tile, 0, 255);
+	// Layer dispatch: tele tiles live in the tele layer, the speedup tile in
+	// the speedup layer, everything else in the game layer. A spawned
+	// TILE_TUNE additionally rewrites the tune layer so the prediction
+	// switches to the configured zone.
+	const bool IsTeleTile = TileId == TILE_TELEIN || TileId == TILE_TELEINEVIL || TileId == TILE_TELEOUT || TileId == TILE_TELECHECKIN;
+	const bool IsSpeedupTile = TileId == TILE_SPEED_BOOST;
+	const bool TileUsesNumber = TileId == TILE_TUNE || IsTeleTile;
+	const int TileNumber = std::clamp(S.m_TileNumber, 0, 255);
 
 	// Already spawned here: retarget instead of stacking records.
 	for(SSpawnedTile &T : m_vSpawnedTiles)
@@ -2074,9 +2278,26 @@ bool CTas::SpawnerSpawnTile(const STasSpawnerSettings &S, vec2 Pos, int Tick, bo
 		if(T.m_Index != Index)
 			continue;
 		T.m_Tile = TileId;
+		T.m_Number = TileUsesNumber ? TileNumber : 0;
 		T.m_Physics = S.m_TilePhysics;
 		if(T.m_Physics)
-			pColl->SetCollisionAt(TilePos.x + 16.0f, TilePos.y + 16.0f, TileId);
+		{
+			if(IsTeleTile)
+				pColl->SetTeleTileAt(TilePos.x + 16.0f, TilePos.y + 16.0f, TileId, T.m_Number);
+			else if(IsSpeedupTile)
+				pColl->SetSpeedupAt(TilePos.x + 16.0f, TilePos.y + 16.0f, S.m_SpeedupForce, S.m_SpeedupMaxSpeed, S.m_SpeedupAngle);
+			else
+			{
+				pColl->SetCollisionAt(TilePos.x + 16.0f, TilePos.y + 16.0f, TileId);
+				if(TileId == TILE_TUNE)
+				{
+					T.m_TuneSet = true;
+					T.m_OldTuneType = 0;
+					T.m_OldTuneNumber = 0;
+					pColl->SetTuneZoneAt(TilePos.x + 16.0f, TilePos.y + 16.0f, T.m_Number);
+				}
+			}
+		}
 		else
 			pColl->SetCollisionAt(TilePos.x + 16.0f, TilePos.y + 16.0f, T.m_OldTile);
 		m_TileVisualDirty = true;
@@ -2084,16 +2305,52 @@ bool CTas::SpawnerSpawnTile(const STasSpawnerSettings &S, vec2 Pos, int Tick, bo
 	}
 
 	const int OldTile = pColl->GameLayer()[Index].m_Index;
-	if(S.m_TilePhysics)
-		pColl->SetCollisionAt(TilePos.x + 16.0f, TilePos.y + 16.0f, TileId);
-
 	SSpawnedTile T;
 	T.m_Index = Index;
 	T.m_OldTile = OldTile;
 	T.m_Tile = TileId;
+	T.m_Number = TileUsesNumber ? TileNumber : 0;
 	T.m_Physics = S.m_TilePhysics;
 	T.m_Tick = Tick;
 	T.m_Pos = TilePos;
+	if(S.m_TilePhysics)
+	{
+		if(IsTeleTile)
+		{
+			T.m_TeleSet = true;
+			// Without a native tele layer the map renderer has nothing to
+			// draw — the TAS renderer draws the tile itself.
+			T.m_TeleSelfDraw = !(GameClient()->Layers() && GameClient()->Layers()->TeleLayer());
+			T.m_OldTeleType = pColl->GetTeleTileTypeAt(TilePos.x + 16.0f, TilePos.y + 16.0f);
+			T.m_OldTeleNumber = 0;
+			pColl->SetTeleTileAt(TilePos.x + 16.0f, TilePos.y + 16.0f, TileId, T.m_Number);
+		}
+		else if(IsSpeedupTile)
+		{
+			T.m_SpeedupSet = true;
+			// Without a native speedup layer the map renderer has nothing to
+			// draw — the TAS renderer draws the arrow itself.
+			T.m_SpeedupSelfDraw = !(GameClient()->Layers() && GameClient()->Layers()->SpeedupLayer());
+			pColl->GetSpeedupTileAt(TilePos.x + 16.0f, TilePos.y + 16.0f, &T.m_OldSpeedupType, &T.m_OldSpeedupForce, &T.m_OldSpeedupMaxSpeed, &T.m_OldSpeedupAngle);
+			pColl->SetSpeedupAt(TilePos.x + 16.0f, TilePos.y + 16.0f, S.m_SpeedupForce, S.m_SpeedupMaxSpeed, S.m_SpeedupAngle);
+		}
+		else
+		{
+			pColl->SetCollisionAt(TilePos.x + 16.0f, TilePos.y + 16.0f, TileId);
+			// Remember the previous tune-layer tile to restore it on removal.
+			if(TileId == TILE_TUNE)
+			{
+				T.m_TuneSet = true;
+				const int OldZone = pColl->GetTuneZoneAt(TilePos.x + 16.0f, TilePos.y + 16.0f);
+				if(OldZone > 0)
+				{
+					T.m_OldTuneType = TILE_TUNE + ENTITY_OFFSET;
+					T.m_OldTuneNumber = OldZone;
+				}
+				pColl->SetTuneZoneAt(TilePos.x + 16.0f, TilePos.y + 16.0f, T.m_Number);
+			}
+		}
+	}
 	m_vSpawnedTiles.push_back(T);
 	m_TileVisualDirty = true;
 
@@ -2139,12 +2396,103 @@ void CTas::SpawnerClearLive()
 			if(pColl->GameLayer()[T.m_Index].m_Index != T.m_Tile)
 				continue;
 			pColl->SetCollisionAt((float)T.m_Pos.x + 16.0f, (float)T.m_Pos.y + 16.0f, T.m_OldTile);
+			if(T.m_TuneSet)
+				pColl->RestoreTuneTileAt((float)T.m_Pos.x + 16.0f, (float)T.m_Pos.y + 16.0f, T.m_OldTuneType, T.m_OldTuneNumber);
+			if(T.m_TeleSet)
+				pColl->RestoreTeleTileAt((float)T.m_Pos.x + 16.0f, (float)T.m_Pos.y + 16.0f, T.m_OldTeleType, T.m_OldTeleNumber);
+			if(T.m_SpeedupSet)
+				pColl->RestoreSpeedupAt((float)T.m_Pos.x + 16.0f, (float)T.m_Pos.y + 16.0f, T.m_OldSpeedupType, T.m_OldSpeedupForce, T.m_OldSpeedupMaxSpeed, T.m_OldSpeedupAngle);
 		}
 	}
 		m_vSpawnedTiles.clear();
 		m_TileVisualDirty = true;
 		m_SpawnerLoop = false;
 	m_SpawnerLoopMs = 0.0f;
+	m_SpawnerRenderTick = -1;
+}
+
+void CTas::SpawnerKillAll()
+{
+	if(!m_Joined)
+		return;
+
+	// "Kill All" only clears the selected GROUP: the entity type chosen in the
+	// panel (entity mode) or the chosen tile id (tile mode).
+	if(m_Spawner.m_Mode == TAS_SPAWN_MODE_TILE)
+	{
+		CCollision *pColl = m_Playground.Collision();
+		if(pColl)
+		{
+			for(const SSpawnedTile &T : m_vSpawnedTiles)
+			{
+				if(T.m_Tile != m_Spawner.m_Tile)
+					continue;
+				if(T.m_Index < 0 || T.m_Index >= pColl->GetWidth() * pColl->GetHeight())
+					continue;
+				if(T.m_Physics)
+				{
+					pColl->SetCollisionAt((float)T.m_Pos.x + 16.0f, (float)T.m_Pos.y + 16.0f, T.m_OldTile);
+					if(T.m_TuneSet)
+						pColl->RestoreTuneTileAt((float)T.m_Pos.x + 16.0f, (float)T.m_Pos.y + 16.0f, T.m_OldTuneType, T.m_OldTuneNumber);
+					if(T.m_TeleSet)
+						pColl->RestoreTeleTileAt((float)T.m_Pos.x + 16.0f, (float)T.m_Pos.y + 16.0f, T.m_OldTeleType, T.m_OldTeleNumber);
+					if(T.m_SpeedupSet)
+						pColl->RestoreSpeedupAt((float)T.m_Pos.x + 16.0f, (float)T.m_Pos.y + 16.0f, T.m_OldSpeedupType, T.m_OldSpeedupForce, T.m_OldSpeedupMaxSpeed, T.m_OldSpeedupAngle);
+				}
+			}
+		}
+		m_vSpawnedTiles.erase(
+			std::remove_if(m_vSpawnedTiles.begin(), m_vSpawnedTiles.end(),
+				[this](const SSpawnedTile &T) { return T.m_Tile == m_Spawner.m_Tile; }),
+			m_vSpawnedTiles.end());
+		for(auto It = m_vSpawnerRecords.begin(); It != m_vSpawnerRecords.end();)
+		{
+			if(It->m_Mode == TAS_SPAWN_MODE_TILE && It->m_Tile == m_Spawner.m_Tile)
+				It = m_vSpawnerRecords.erase(It);
+			else
+				++It;
+		}
+		m_TileVisualDirty = true;
+	}
+	else
+	{
+		for(SSpawnedEnt &E : m_vSpawnedEnts)
+		{
+			if(E.m_Entity != m_Spawner.m_Entity)
+				continue;
+			if(!E.m_pEnt)
+				continue;
+			// Respawn-style burst where the tee is removed.
+			GameClient()->m_Effects.PlayerSpawn(E.m_pEnt->GetPos(), 1.0f, 1.0f);
+			if(E.m_Inserted)
+				m_Playground.RemoveEntity(E.m_pEnt);
+			delete E.m_pEnt;
+			E.m_pEnt = nullptr;
+		}
+		m_vSpawnedEnts.erase(
+			std::remove_if(m_vSpawnedEnts.begin(), m_vSpawnedEnts.end(),
+				[this](const SSpawnedEnt &E) { return E.m_Entity == m_Spawner.m_Entity; }),
+			m_vSpawnedEnts.end());
+		for(auto It = m_vSpawnerRecords.begin(); It != m_vSpawnerRecords.end();)
+		{
+			if(It->m_Mode == TAS_SPAWN_MODE_ENTITY && It->m_Entity == m_Spawner.m_Entity)
+				It = m_vSpawnerRecords.erase(It);
+			else
+				++It;
+		}
+		// The previous-spawn anchor survives only if a record of the selected
+		// group still exists; otherwise the anchor belongs to a dead spawn.
+		m_SpawnerHasPrev = false;
+		for(const STasSpawnerRecord &Rec : m_vSpawnerRecords)
+		{
+			if(Rec.m_Mode == TAS_SPAWN_MODE_ENTITY && Rec.m_Entity == m_Spawner.m_Entity)
+			{
+				m_SpawnerHasPrev = true;
+				m_SpawnerPrevPos = Rec.m_Pos;
+				break;
+			}
+		}
+	}
 	m_SpawnerRenderTick = -1;
 }
 
@@ -2367,8 +2715,7 @@ void CTas::RenderSpawned()
 			Prev.m_Weapon = Cur.m_Weapon;
 
 			CTeeRenderInfo &Info = Draw.Info;
-			Info = pGame->m_aClients[m_LocalId].m_RenderInfo;
-			Info.m_Size = 64.0f;
+			Info = SpawnerTeeRenderInfo(E.m_Settings);
 			const bool CustomBody = E.m_Settings.m_aColorBody[0] != 0;
 			const bool CustomFeet = E.m_Settings.m_aColorFeet[0] != 0;
 			if(CustomBody || CustomFeet)
@@ -2466,7 +2813,9 @@ void CTas::RenderPlaygroundHookColl()
 	Aim = normalize(Aim);
 	const CTuningParams *pTuning = m_Playground.GetTuning(0);
 	const float HookLength = pTuning ? pTuning->m_HookLength : 380.0f;
-	const vec2 Pos = pCore->m_Pos;
+	// The tee is rendered interpolated between ticks — draw the line from the
+	// same render position, otherwise it shakes against the tee while moving.
+	const vec2 Pos = PlaygroundTeeRenderPos();
 	const vec2 End = Pos + Aim * HookLength;
 	vec2 ColPos(0.0f, 0.0f);
 	vec2 NewPos(0.0f, 0.0f);
@@ -2480,6 +2829,36 @@ void CTas::RenderPlaygroundHookColl()
 	IGraphics::CLineItem Line(Pos, To);
 	Graphics()->LinesDraw(&Line, 1);
 	Graphics()->LinesEnd();
+
+	// Spawned tees: the engine shows other players' hook coll when THEY hold
+	// the aim key (PLAYERFLAG_AIM) — a fake tee can never do that, so the
+	// playground shows it for the tee the crosshair rests on instead
+	// (cl_show_hook_coll_other, 2 = always for every spawned tee).
+	if(g_Config.m_ClShowHookCollOther <= 0)
+		return;
+	const vec2 AimPoint = SpawnerTargetPos();
+	for(const SSpawnedEnt &E : m_vSpawnedEnts)
+	{
+		if(E.m_Entity != TAS_SPAWN_ENT_TEE || !E.m_pEnt)
+			continue;
+		const bool Always = g_Config.m_ClShowHookCollOther == 2;
+		if(!Always && distance(E.m_pEnt->GetPos(), AimPoint) > CCharacterCore::PhysicalSize())
+			continue;
+		const vec2 TeePos = E.m_RenderCurPos;
+		const vec2 TeeAim = Aim; // spawned tees aim along the live crosshair
+		const vec2 TeeEnd = TeePos + TeeAim * HookLength;
+		vec2 TeeCol(0.0f, 0.0f);
+		vec2 TeeNew(0.0f, 0.0f);
+		const int TeeHit = m_Playground.Collision()->IntersectLine(TeePos, TeeEnd, &TeeCol, &TeeNew);
+		const vec2 TeeTo = TeeHit ? TeeCol : TeeEnd;
+		const int TeeColorVal = TeeHit ? g_Config.m_ClHookCollColorHookableColl : g_Config.m_ClHookCollColorNoColl;
+		Graphics()->TextureClear();
+		Graphics()->LinesBegin();
+		Graphics()->SetColor(color_cast<ColorRGBA>(ColorHSLA(TeeColorVal)).WithAlpha(1.0f));
+		IGraphics::CLineItem TeeLine(TeePos, TeeTo);
+		Graphics()->LinesDraw(&TeeLine, 1);
+		Graphics()->LinesEnd();
+	}
 }
 
 void CTas::JoinLeavePlayground()
@@ -3556,7 +3935,10 @@ static void SpawnPlaygroundTrail(CGameClient *pGame, const CProjectileData &Data
 	}
 	else
 		return;
-	const float T = (float)(PlaygroundTick - Data.m_StartTick) / TickSpeed;
+	// Spawn on the position the renderer is showing right now: the render
+	// interpolates one tick behind the simulation, so spawning at the raw sim
+	// tick position made the smoke lead the projectile by up to half a tile.
+	const float T = (float)(PlaygroundTick - 1 - Data.m_StartTick) / TickSpeed;
 	if(T < 0.0f)
 		return;
 	const vec2 Pos = CalcPos(Data.m_StartPos, Data.m_StartVel, Curvature, Speed, T);
