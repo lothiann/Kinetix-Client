@@ -22,6 +22,7 @@
 #include <game/client/components/scoreboard.h>
 #include <game/client/gameclient.h>
 #include <game/collision.h>
+#include <game/localization.h>
 
 #include <algorithm>
 
@@ -34,6 +35,7 @@
 CControls::CControls()
 {
         mem_zero(&m_aLastData, sizeof(m_aLastData));
+        std::fill(std::begin(m_aMouseOnAction), std::end(m_aMouseOnAction), false);
         std::fill(std::begin(m_aMousePos), std::end(m_aMousePos), vec2(0.0f, 0.0f));
         std::fill(std::begin(m_aMousePosOnAction), std::end(m_aMousePosOnAction), vec2(0.0f, 0.0f));
         std::fill(std::begin(m_aTargetPos), std::end(m_aTargetPos), vec2(0.0f, 0.0f));
@@ -45,7 +47,7 @@ void CControls::OnReset()
         for(int D = 0; D < MAX_DUMMIES; D++)
                 ResetInput(D);
 
-	std::fill(std::begin(m_aAmmoCount), std::end(m_aAmmoCount), 0);
+        std::fill(std::begin(m_aAmmoCount), std::end(m_aAmmoCount), 0);
 
         m_LastSendTime = 0;
 }
@@ -66,13 +68,14 @@ void CControls::ResetInput(int Dummy)
 
 void CControls::OnPlayerDeath()
 {
-	std::fill(std::begin(m_aAmmoCount), std::end(m_aAmmoCount), 0);
+        std::fill(std::begin(m_aAmmoCount), std::end(m_aAmmoCount), 0);
 }
 
 struct CInputState
 {
         CControls *m_pControls;
         int *m_apVariables[MAX_DUMMIES];
+        bool m_IsMouseAction;
 };
 
 void CControls::ConKeyInputState(IConsole::IResult *pResult, void *pUserData)
@@ -82,7 +85,11 @@ void CControls::ConKeyInputState(IConsole::IResult *pResult, void *pUserData)
         if(pState->m_pControls->GameClient()->m_GameInfo.m_BugDDRaceInput && pState->m_pControls->GameClient()->m_Snap.m_SpecInfo.m_Active)
                 return;
 
-        *pState->m_apVariables[g_Config.m_ClDummy] = pResult->GetInteger(0);
+        const int Stroke = pResult->GetInteger(0);
+        *pState->m_apVariables[g_Config.m_ClDummy] = Stroke;
+
+        if(Stroke != 0 && pState->m_IsMouseAction && g_Config.m_ClSubTickAiming && pState->m_pControls->GameClient()->m_Binds.m_HandlingNewBind)
+                pState->m_pControls->m_aMouseOnAction[g_Config.m_ClDummy] = true;
 }
 
 void CControls::ConKeyInputCounter(IConsole::IResult *pResult, void *pUserData)
@@ -92,36 +99,41 @@ void CControls::ConKeyInputCounter(IConsole::IResult *pResult, void *pUserData)
         if((pState->m_pControls->GameClient()->m_GameInfo.m_BugDDRaceInput && pState->m_pControls->GameClient()->m_Snap.m_SpecInfo.m_Active) || pState->m_pControls->GameClient()->m_Spectator.IsActive())
                 return;
 
-	int *pVariable = pState->m_apVariables[g_Config.m_ClDummy];
-	if(((*pVariable) & 1) != pResult->GetInteger(0))
-		(*pVariable)++;
-	*pVariable &= INPUT_STATE_MASK;
+        int *pVariable = pState->m_apVariables[g_Config.m_ClDummy];
+        const int Stroke = pResult->GetInteger(0);
+        if(((*pVariable) & 1) != Stroke)
+        {
+                (*pVariable)++;
+                if(Stroke != 0 && pState->m_IsMouseAction && g_Config.m_ClSubTickAiming && pState->m_pControls->GameClient()->m_Binds.m_HandlingNewBind)
+                        pState->m_pControls->m_aMouseOnAction[g_Config.m_ClDummy] = true;
+        }
+        *pVariable &= INPUT_STATE_MASK;
 }
 
 void CControls::ConKeyInputPfEditFire(IConsole::IResult *pResult, void *pUserData)
 {
-	CInputState *pState = (CInputState *)pUserData;
-	CBotNet &BN = pState->m_pControls->GameClient()->m_BotNet;
-	if(BN.m_PfEditorMode != 0)
-	{
-		BN.m_PfEditFireHeld = pResult->GetInteger(0) != 0;
-		return;
-	}
-	BN.m_PfEditFireHeld = false;
-	ConKeyInputCounter(pResult, pUserData);
+        CInputState *pState = (CInputState *)pUserData;
+        CBotNet &BN = pState->m_pControls->GameClient()->m_BotNet;
+        if(BN.m_PfEditorMode != 0)
+        {
+                BN.m_PfEditFireHeld = pResult->GetInteger(0) != 0;
+                return;
+        }
+        BN.m_PfEditFireHeld = false;
+        ConKeyInputCounter(pResult, pUserData);
 }
 
 void CControls::ConKeyInputPfEditHook(IConsole::IResult *pResult, void *pUserData)
 {
-	CInputState *pState = (CInputState *)pUserData;
-	CBotNet &BN = pState->m_pControls->GameClient()->m_BotNet;
-	if(BN.m_PfEditorMode != 0)
-	{
-		BN.m_PfEditHookHeld = pResult->GetInteger(0) != 0;
-		return;
-	}
-	BN.m_PfEditHookHeld = false;
-	ConKeyInputState(pResult, pUserData);
+        CInputState *pState = (CInputState *)pUserData;
+        CBotNet &BN = pState->m_pControls->GameClient()->m_BotNet;
+        if(BN.m_PfEditorMode != 0)
+        {
+                BN.m_PfEditHookHeld = pResult->GetInteger(0) != 0;
+                return;
+        }
+        BN.m_PfEditHookHeld = false;
+        ConKeyInputState(pResult, pUserData);
 }
 
 struct CInputSet
@@ -151,27 +163,27 @@ void CControls::OnConsoleInit()
 {
         // game commands
         {
-                static CInputState s_State = {this, {&m_aInputDirectionLeft[0], &m_aInputDirectionLeft[1], &m_aInputDirectionLeft[2], &m_aInputDirectionLeft[3], &m_aInputDirectionLeft[4], &m_aInputDirectionLeft[5], &m_aInputDirectionLeft[6], &m_aInputDirectionLeft[7]}};
+                static CInputState s_State = {this, {&m_aInputDirectionLeft[0], &m_aInputDirectionLeft[1], &m_aInputDirectionLeft[2], &m_aInputDirectionLeft[3], &m_aInputDirectionLeft[4], &m_aInputDirectionLeft[5], &m_aInputDirectionLeft[6], &m_aInputDirectionLeft[7]}, false};
                 Console()->Register("+left", "", CFGFLAG_CLIENT, ConKeyInputState, &s_State, "Move left");
         }
         {
-                static CInputState s_State = {this, {&m_aInputDirectionRight[0], &m_aInputDirectionRight[1], &m_aInputDirectionRight[2], &m_aInputDirectionRight[3], &m_aInputDirectionRight[4], &m_aInputDirectionRight[5], &m_aInputDirectionRight[6], &m_aInputDirectionRight[7]}};
+                static CInputState s_State = {this, {&m_aInputDirectionRight[0], &m_aInputDirectionRight[1], &m_aInputDirectionRight[2], &m_aInputDirectionRight[3], &m_aInputDirectionRight[4], &m_aInputDirectionRight[5], &m_aInputDirectionRight[6], &m_aInputDirectionRight[7]}, false};
                 Console()->Register("+right", "", CFGFLAG_CLIENT, ConKeyInputState, &s_State, "Move right");
         }
         {
-                static CInputState s_State = {this, {&m_aInputData[0].m_Jump, &m_aInputData[1].m_Jump, &m_aInputData[2].m_Jump, &m_aInputData[3].m_Jump, &m_aInputData[4].m_Jump, &m_aInputData[5].m_Jump, &m_aInputData[6].m_Jump, &m_aInputData[7].m_Jump}};
+                static CInputState s_State = {this, {&m_aInputData[0].m_Jump, &m_aInputData[1].m_Jump, &m_aInputData[2].m_Jump, &m_aInputData[3].m_Jump, &m_aInputData[4].m_Jump, &m_aInputData[5].m_Jump, &m_aInputData[6].m_Jump, &m_aInputData[7].m_Jump}, false};
                 Console()->Register("+jump", "", CFGFLAG_CLIENT, ConKeyInputState, &s_State, "Jump");
         }
         {
-                static CInputState s_State = {this, {&m_aInputData[0].m_Hook, &m_aInputData[1].m_Hook, &m_aInputData[2].m_Hook, &m_aInputData[3].m_Hook, &m_aInputData[4].m_Hook, &m_aInputData[5].m_Hook, &m_aInputData[6].m_Hook, &m_aInputData[7].m_Hook}};
+                static CInputState s_State = {this, {&m_aInputData[0].m_Hook, &m_aInputData[1].m_Hook, &m_aInputData[2].m_Hook, &m_aInputData[3].m_Hook, &m_aInputData[4].m_Hook, &m_aInputData[5].m_Hook, &m_aInputData[6].m_Hook, &m_aInputData[7].m_Hook}, true};
                 Console()->Register("+hook", "", CFGFLAG_CLIENT, ConKeyInputPfEditHook, &s_State, "Hook");
         }
         {
-                static CInputState s_State = {this, {&m_aInputData[0].m_Fire, &m_aInputData[1].m_Fire, &m_aInputData[2].m_Fire, &m_aInputData[3].m_Fire, &m_aInputData[4].m_Fire, &m_aInputData[5].m_Fire, &m_aInputData[6].m_Fire, &m_aInputData[7].m_Fire}};
+                static CInputState s_State = {this, {&m_aInputData[0].m_Fire, &m_aInputData[1].m_Fire, &m_aInputData[2].m_Fire, &m_aInputData[3].m_Fire, &m_aInputData[4].m_Fire, &m_aInputData[5].m_Fire, &m_aInputData[6].m_Fire, &m_aInputData[7].m_Fire}, true};
                 Console()->Register("+fire", "", CFGFLAG_CLIENT, ConKeyInputPfEditFire, &s_State, "Fire");
         }
         {
-                static CInputState s_State = {this, {&m_aShowHookColl[0], &m_aShowHookColl[1], &m_aShowHookColl[2], &m_aShowHookColl[3], &m_aShowHookColl[4], &m_aShowHookColl[5], &m_aShowHookColl[6], &m_aShowHookColl[7]}};
+                static CInputState s_State = {this, {&m_aShowHookColl[0], &m_aShowHookColl[1], &m_aShowHookColl[2], &m_aShowHookColl[3], &m_aShowHookColl[4], &m_aShowHookColl[5], &m_aShowHookColl[6], &m_aShowHookColl[7]}, false};
                 Console()->Register("+showhookcoll", "", CFGFLAG_CLIENT, ConKeyInputState, &s_State, "Show Hook Collision");
         }
 
@@ -204,18 +216,62 @@ void CControls::OnConsoleInit()
                 static CInputSet s_Set = {this, {&m_aInputData[0].m_PrevWeapon, &m_aInputData[1].m_PrevWeapon, &m_aInputData[2].m_PrevWeapon, &m_aInputData[3].m_PrevWeapon, &m_aInputData[4].m_PrevWeapon, &m_aInputData[5].m_PrevWeapon, &m_aInputData[6].m_PrevWeapon, &m_aInputData[7].m_PrevWeapon}, 0};
                 Console()->Register("+prevweapon", "", CFGFLAG_CLIENT, ConKeyInputNextPrevWeapon, &s_Set, "Switch to previous weapon");
         }
+
+        Console()->Register("tp_to_cursor", "", CFGFLAG_CLIENT, ConTpToCursor, this, "Practice: teleport yourself to your cursor");
+        Console()->Register("tp_dummy_to_cursor", "", CFGFLAG_CLIENT, ConTpDummyToCursor, this, "Practice: teleport the other tee to your cursor");
+}
+
+void CControls::ConTpToCursor(IConsole::IResult *pResult, void *pUserData)
+{
+        CControls *pSelf = (CControls *)pUserData;
+        if(pSelf->Client()->State() != IClient::STATE_ONLINE)
+                return;
+
+        pSelf->SendPracticeTeleportToCursor(g_Config.m_ClDummy == 0 ? IClient::CONN_MAIN : IClient::CONN_DUMMY_START + g_Config.m_ClDummy - 1);
+}
+
+void CControls::ConTpDummyToCursor(IConsole::IResult *pResult, void *pUserData)
+{
+        CControls *pSelf = (CControls *)pUserData;
+        if(pSelf->Client()->State() != IClient::STATE_ONLINE)
+                return;
+
+        if(!pSelf->Client()->DummyConnected())
+        {
+                pSelf->GameClient()->Echo(Localize("Dummy is not connected"));
+                return;
+        }
+
+        // Send on the inactive connection; the server only teleports the sender.
+        pSelf->SendPracticeTeleportToCursor(g_Config.m_ClDummy == 0 ? IClient::CONN_DUMMY_START : IClient::CONN_MAIN);
+}
+
+vec2 CControls::CursorWorldPos() const
+{
+        const vec2 Center = GameClient()->m_Camera.m_Center;
+        const vec2 TargetPos = m_aTargetPos[g_Config.m_ClDummy];
+        return Center + (TargetPos - Center) * GameClient()->m_Camera.m_Zoom;
+}
+
+void CControls::SendPracticeTeleportToCursor(int Conn)
+{
+        const vec2 CursorPos = CursorWorldPos();
+        CNetMsg_Cl_PracticeTeleport Msg;
+        Msg.m_X = round_to_int(CursorPos.x);
+        Msg.m_Y = round_to_int(CursorPos.y);
+        Client()->SendPackMsg(Conn, &Msg, MSGFLAG_VITAL);
 }
 
 void CControls::OnMessage(int Msg, void *pRawMsg)
 {
-	if(Msg == NETMSGTYPE_SV_WEAPONPICKUP)
-	{
-		CNetMsg_Sv_WeaponPickup *pMsg = (CNetMsg_Sv_WeaponPickup *)pRawMsg;
-		if(g_Config.m_ClAutoswitchWeapons)
-			m_aInputData[g_Config.m_ClDummy].m_WantedWeapon = pMsg->m_Weapon + 1;
-		// We don't really know ammo count, until we'll switch to that weapon, but any non-zero count will suffice here
-		m_aAmmoCount[std::max(0, pMsg->m_Weapon % NUM_WEAPONS)] = 10;
-	}
+        if(Msg == NETMSGTYPE_SV_WEAPONPICKUP)
+        {
+                CNetMsg_Sv_WeaponPickup *pMsg = (CNetMsg_Sv_WeaponPickup *)pRawMsg;
+                if(g_Config.m_ClAutoswitchWeapons)
+                        m_aInputData[g_Config.m_ClDummy].m_WantedWeapon = pMsg->m_Weapon + 1;
+                // We don't really know ammo count, until we'll switch to that weapon, but any non-zero count will suffice here
+                m_aAmmoCount[std::max(0, pMsg->m_Weapon % NUM_WEAPONS)] = 10;
+        }
 }
 
 int CControls::SnapInput(int *pData)
@@ -1315,55 +1371,55 @@ int CControls::SnapInput(int *pData)
 
 void CControls::OnRender()
 {
-		// v1.56.264: Fake Aim Predict — advance the rendered aim between sends.
-		// Real (and fire/hook release ticks) → the live mouse, exactly like no
-		// Fake Aim. Spin → interpolate between the last two SENT spin angles
-		// over the real send interval. Input is sent at a 25 Hz floor, NOT every
-		// game tick — extrapolating by IntraGameTick overshot each send interval
-		// and snapped back at every tick boundary (sawtooth = jerky rotation).
-		// Other modes hold a constant offset between re-rolls, nothing to advance.
-		if(m_FakeAimPredictMode == 1)
-			m_FakeAimRenderOffset = m_aMousePos[g_Config.m_ClDummy];
-		else if(m_FakeAimPredictMode == 2)
-		{
-			float Frac = (time_get() - m_LastSendTime) / (float)(time_freq() / 25);
-			if(Frac < 0.0f)
-				Frac = 0.0f;
-			if(Frac > 1.0f)
-				Frac = 1.0f;
-			// Sweep from the previous sent angle to the current one; the next
-			// send advances the base by exactly one step → no backward jumps.
-			const float Angle = m_FakeAimSpinAngle - m_FakeAimSpinStep + Frac * m_FakeAimSpinStep;
-			// Keep the radius the tick actually produced (Spin * AIM_DIST,
-			// possibly rescaled by Distance from center), not a hardcoded 200.
-			float Radius = length(m_FakeAimRenderOffset);
-			if(Radius < 0.5f)
-				Radius = 200.0f;
-			m_FakeAimRenderOffset = vec2(cosf(Angle), sinf(Angle)) * Radius;
-		}
+                // v1.56.264: Fake Aim Predict — advance the rendered aim between sends.
+                // Real (and fire/hook release ticks) → the live mouse, exactly like no
+                // Fake Aim. Spin → interpolate between the last two SENT spin angles
+                // over the real send interval. Input is sent at a 25 Hz floor, NOT every
+                // game tick — extrapolating by IntraGameTick overshot each send interval
+                // and snapped back at every tick boundary (sawtooth = jerky rotation).
+                // Other modes hold a constant offset between re-rolls, nothing to advance.
+                if(m_FakeAimPredictMode == 1)
+                        m_FakeAimRenderOffset = m_aMousePos[g_Config.m_ClDummy];
+                else if(m_FakeAimPredictMode == 2)
+                {
+                        float Frac = (time_get() - m_LastSendTime) / (float)(time_freq() / 25);
+                        if(Frac < 0.0f)
+                                Frac = 0.0f;
+                        if(Frac > 1.0f)
+                                Frac = 1.0f;
+                        // Sweep from the previous sent angle to the current one; the next
+                        // send advances the base by exactly one step → no backward jumps.
+                        const float Angle = m_FakeAimSpinAngle - m_FakeAimSpinStep + Frac * m_FakeAimSpinStep;
+                        // Keep the radius the tick actually produced (Spin * AIM_DIST,
+                        // possibly rescaled by Distance from center), not a hardcoded 200.
+                        float Radius = length(m_FakeAimRenderOffset);
+                        if(Radius < 0.5f)
+                                Radius = 200.0f;
+                        m_FakeAimRenderOffset = vec2(cosf(Angle), sinf(Angle)) * Radius;
+                }
 
-		// v1.56.276: Smooth Predict — glide the rendered server-side aim marker
-		// between AimBot Smooth mode's per-tick steps (same idea as the Spin
-		// predict above). ApplyAim publishes prev/cur each game tick; here they
-		// are lerped over the intra-tick fraction. A publish delayed by one
-		// tick clamps to the reached position (no boundary flicker); a stale
-		// tick (target lost, smooth off) disables the prediction and the
-		// marker falls back to the stepped sent aim.
-		{
-			CAimBot &SmoothAB = GameClient()->m_AimBot;
-			const int MarkerTickDelta = Client()->GameTick(g_Config.m_ClDummy) - SmoothAB.m_SmoothPredictTick;
-			// the fake pattern owns the sent aim between shots (Show
-			// Server-Side shows it).
-			if(MarkerTickDelta >= 0 && MarkerTickDelta <= 1 &&
-				g_Config.m_KxFakeAim && g_Config.m_KxFakeAimShowServerSide && g_Config.m_KxFakeAimShowForMe)
-			{
-				float Frac = Client()->IntraGameTick(g_Config.m_ClDummy) + MarkerTickDelta;
-				if(Frac > 1.0f)
-					Frac = 1.0f;
-				m_FakeAimRenderActive = true;
-				m_FakeAimRenderOffset = SmoothAB.m_SmoothPredictPrev + (SmoothAB.m_SmoothPredictCurr - SmoothAB.m_SmoothPredictPrev) * Frac;
-			}
-		}
+                // v1.56.276: Smooth Predict — glide the rendered server-side aim marker
+                // between AimBot Smooth mode's per-tick steps (same idea as the Spin
+                // predict above). ApplyAim publishes prev/cur each game tick; here they
+                // are lerped over the intra-tick fraction. A publish delayed by one
+                // tick clamps to the reached position (no boundary flicker); a stale
+                // tick (target lost, smooth off) disables the prediction and the
+                // marker falls back to the stepped sent aim.
+                {
+                        CAimBot &SmoothAB = GameClient()->m_AimBot;
+                        const int MarkerTickDelta = Client()->GameTick(g_Config.m_ClDummy) - SmoothAB.m_SmoothPredictTick;
+                        // the fake pattern owns the sent aim between shots (Show
+                        // Server-Side shows it).
+                        if(MarkerTickDelta >= 0 && MarkerTickDelta <= 1 &&
+                                g_Config.m_KxFakeAim && g_Config.m_KxFakeAimShowServerSide && g_Config.m_KxFakeAimShowForMe)
+                        {
+                                float Frac = Client()->IntraGameTick(g_Config.m_ClDummy) + MarkerTickDelta;
+                                if(Frac > 1.0f)
+                                        Frac = 1.0f;
+                                m_FakeAimRenderActive = true;
+                                m_FakeAimRenderOffset = SmoothAB.m_SmoothPredictPrev + (SmoothAB.m_SmoothPredictCurr - SmoothAB.m_SmoothPredictPrev) * Frac;
+                        }
+                }
 
         if(Client()->State() != IClient::STATE_ONLINE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
                 return;
@@ -1397,9 +1453,9 @@ void CControls::OnRender()
                 // make sure to compensate for smooth dyncam to ensure the cursor stays still in world space if zoomed
                 vec2 DyncamOffsetDelta = GameClient()->m_Camera.m_DyncamTargetCameraOffset - GameClient()->m_Camera.m_aDyncamCurrentCameraOffset[g_Config.m_ClDummy];
                 float Zoom = GameClient()->m_Camera.m_Zoom;
-		// TAS fake world: anchor the cursor to the fake tee, not the real one
-		const vec2 CursorAnchor = (GameClient()->m_Tas.IsJoined() && !GameClient()->m_Tas.IsDead()) ? GameClient()->m_Tas.PlaygroundTeeRenderPos() : GameClient()->m_LocalCharacterPos;
-		m_aTargetPos[g_Config.m_ClDummy] = CursorAnchor + m_aMousePos[g_Config.m_ClDummy] - DyncamOffsetDelta + DyncamOffsetDelta / Zoom;
+                // TAS fake world: anchor the cursor to the fake tee, not the real one
+                const vec2 CursorAnchor = (GameClient()->m_Tas.IsJoined() && !GameClient()->m_Tas.IsDead()) ? GameClient()->m_Tas.PlaygroundTeeRenderPos() : GameClient()->m_LocalCharacterPos;
+                m_aTargetPos[g_Config.m_ClDummy] = CursorAnchor + m_aMousePos[g_Config.m_ClDummy] - DyncamOffsetDelta + DyncamOffsetDelta / Zoom;
         }
         else if(GameClient()->m_Snap.m_SpecInfo.m_Active && GameClient()->m_Snap.m_SpecInfo.m_UsePosition)
         {
@@ -1515,9 +1571,9 @@ float CControls::GetMinMouseDistance() const
 
 float CControls::GetMaxMouseDistance() const
 {
-	float CameraMaxDistance = 200.0f;
-	float FollowFactor = (g_Config.m_ClDyncam ? g_Config.m_ClDyncamFollowFactor : g_Config.m_ClMouseFollowfactor) / 100.0f;
-	float DeadZone = g_Config.m_ClDyncam ? g_Config.m_ClDyncamDeadzone : g_Config.m_ClMouseDeadzone;
-	float MaxDistance = g_Config.m_ClDyncam ? g_Config.m_ClDyncamMaxDistance : g_Config.m_ClMouseMaxDistance;
-	return std::min(FollowFactor != 0.0f ? CameraMaxDistance / FollowFactor + DeadZone : MaxDistance, MaxDistance);
+        float CameraMaxDistance = 200.0f;
+        float FollowFactor = (g_Config.m_ClDyncam ? g_Config.m_ClDyncamFollowFactor : g_Config.m_ClMouseFollowfactor) / 100.0f;
+        float DeadZone = g_Config.m_ClDyncam ? g_Config.m_ClDyncamDeadzone : g_Config.m_ClMouseDeadzone;
+        float MaxDistance = g_Config.m_ClDyncam ? g_Config.m_ClDyncamMaxDistance : g_Config.m_ClMouseMaxDistance;
+        return std::min(FollowFactor != 0.0f ? CameraMaxDistance / FollowFactor + DeadZone : MaxDistance, MaxDistance);
 }

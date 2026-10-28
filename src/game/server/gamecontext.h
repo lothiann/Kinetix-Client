@@ -177,6 +177,7 @@ class CGameContext : public IGameServer
 	static void ConchainSpecialMotdupdate(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData);
 	static void ConchainSettingUpdate(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData);
 	static void ConchainPracticeByDefaultUpdate(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData);
+	static void ConchainTeleOthersAuthLevel(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData);
 	static void ConDumpLog(IConsole::IResult *pResult, void *pUserData);
 
 	void AddVote(const char *pDescription, const char *pCommand);
@@ -368,6 +369,7 @@ public:
 	void OnShowOthersNetMessage(const CNetMsg_Cl_ShowOthers *pMsg, int ClientId);
 	void OnShowDistanceNetMessage(const CNetMsg_Cl_ShowDistance *pMsg, int ClientId);
 	void OnCameraInfoNetMessage(const CNetMsg_Cl_CameraInfo *pMsg, int ClientId);
+	void OnPracticeTeleportNetMessage(const CNetMsg_Cl_PracticeTeleport *pMsg, int ClientId);
 	void OnSetSpectatorModeNetMessage(const CNetMsg_Cl_SetSpectatorMode *pMsg, int ClientId);
 	void OnChangeInfoNetMessage(const CNetMsg_Cl_ChangeInfo *pMsg, int ClientId);
 	void OnEmoticonNetMessage(const CNetMsg_Cl_Emoticon *pMsg, int ClientId);
@@ -493,6 +495,7 @@ private:
 	static void ConToTeleporter(IConsole::IResult *pResult, void *pUserData);
 	static void ConToCheckTeleporter(IConsole::IResult *pResult, void *pUserData);
 	void Teleport(CCharacter *pChr, vec2 Pos);
+	void PracticeTeleport(CCharacter *pChr, vec2 Pos);
 	static void ConTeleport(IConsole::IResult *pResult, void *pUserData);
 
 	static void ConInfo(IConsole::IResult *pResult, void *pUserData);

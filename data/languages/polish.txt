@@ -2640,12 +2640,18 @@ Always predict frozen players
 No country flags match your filter criteria
 == Żadna flaga nie odpowiada twoim kryteriom
 
+Hold Shift to be more precise.
+== 
+
+Dummy is not connected
+== 
+
 [Important alert message]
 Tap to dismiss…
-== Stuknij, aby odrzucić…
+== 
 
 Initializing layers
-== Wczytywanie warstw
+== 
 
 [Direct touch input]
 Relative aim
@@ -2700,11 +2706,20 @@ The extra menu with the given number is activated.
 Credits
 == 
 
+Teleport to cursor
+== 
+
+Teleport dummy to cursor
+== 
+
+Practice
+== 
+
 Join
-== Dołącz
+== 
 
-'%s' not bound.
-== '%s' nie jest do niczego przypisany.
+not bound
+== 
 
-Press '%s' to show cursor.
-== Naciśnij '%s' ,aby włączyć kursor.
+Show cursor
+== 

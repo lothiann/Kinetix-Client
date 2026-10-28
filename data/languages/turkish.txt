@@ -2661,50 +2661,65 @@ Prediction margin
 Predict events (experimental)
 == Olayları tahmin et (deneysel)
 
+Hold Shift to be more precise.
+== 
+
+Dummy is not connected
+== 
+
 [Important alert message]
 Tap to dismiss…
-== Kapatmak için dokun…
+== 
 
 Initializing layers
-== Katmanlar başlatılıyor
+== 
 
 [Direct touch input]
 Relative aim
-== Göreceli aim
+== 
 
 [Predefined touch button behaviors]
 Joystick Relative Aim
-== Oyun Kolu Göreceli Aimi
+== 
 
 Virtual joystick which only aims and moves the mouse pointer relatively.
-== Yalnızca nişan alan ve fare imlecini göreceli olarak hareket ettiren sanal joystick.
+== 
 
 Credits
-== Emeği geçenler
+== 
+
+Teleport to cursor
+== 
+
+Teleport dummy to cursor
+== 
+
+Practice
+== 
 
 [AntiPing: predict other players]
 Off
-== Kapalı
+== 
 
 [AntiPing: predict other players]
 All
-== Herkes
+== 
 
 [AntiPing: predict other players]
 Interact
-== Etkileşim
+== 
 
 Always predict frozen players
-== Donmuş oyuncuları her zaman göster
+== 
 
 No country flags match your filter criteria
-== Filtreleme kriterlerinizle eşleşen ülke bayrağı bulunmuyor
+== 
 
 Join
-== Katıl
+== 
 
-'%s' not bound.
-== '%s' atanmamış.
+not bound
+== 
 
-Press '%s' to show cursor.
-== İmleci göstermek için '%s' bas.
+Show cursor
+== 

@@ -26,7 +26,7 @@
 #include <game/client/components/countryflags.h>
 #include <game/client/components/scoreboard.h>
 #include <game/client/components/statboard.h>
-#include <game/client/components/tooltips.h>
+#include <game/client/tooltips.h>
 #include <game/client/components/debughud.h>
 #include <game/client/components/hud.h>
 #include <game/client/components/important_alert.h>
@@ -997,7 +997,10 @@ void CCodeExec::RegisterRawAPI()
 
         // CBinds
         lua.new_usertype<CBinds>("CBinds",
-                "m_MouseOnAction", &CBinds::m_MouseOnAction,
+                // 20.2 moved this flag from CBinds to CControls (per dummy).
+                "m_MouseOnAction", sol::property(
+                        [this](CBinds &) -> bool { return GameClient()->m_Controls.m_aMouseOnAction[g_Config.m_ClDummy]; },
+                        [this](CBinds &, bool Value) { GameClient()->m_Controls.m_aMouseOnAction[g_Config.m_ClDummy] = Value; }),
                 "Bind", [](CBinds &b, int key, const std::string &str, bool free, int mod) { b.Bind(key, str.c_str(), free, mod); },
                 "Get", [](CBinds &b, int key, int mod) -> std::string { return std::string(b.Get(key, mod)); },
                 "SetDefaults", [](CBinds &b) { b.SetDefaults(); },
@@ -1443,7 +1446,7 @@ void CCodeExec::RegisterRawAPI()
                 "m_Background", sol::property([](CGameClient &gc) -> CBackground& { return gc.m_Background; }),
                 "m_MenuBackground", sol::property([](CGameClient &gc) -> CMenuBackground& { return gc.m_MenuBackground; }),
                 "m_MapSounds", sol::property([](CGameClient &gc) -> CMapSounds& { return gc.m_MapSounds; }),
-                "m_Tooltips", sol::property([](CGameClient &gc) -> CTooltips& { return gc.m_Tooltips; }),
+                "m_Tooltips", sol::property([](CGameClient &gc) -> CTooltips& { return *gc.Ui()->Tooltips(); }),
                 "m_aReceivedTuning", sol::property([this, &lua](CGameClient &gc) -> sol::table {
                         auto t = lua.create_table();
                         for(int i = 0; i < MAX_CLIENTS; i++) t[i] = std::ref(gc.m_aReceivedTuning[i]);

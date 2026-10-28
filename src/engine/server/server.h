@@ -235,6 +235,7 @@ public:
 	CServerBan m_ServerBan;
 
 	int64_t m_GameStartTime;
+	int64_t m_StartTime;
 
 	enum
 	{
@@ -454,6 +455,7 @@ public:
 	static void ConKick(IConsole::IResult *pResult, void *pUser);
 	static void ConStatus(IConsole::IResult *pResult, void *pUser);
 	static void ConShutdown(IConsole::IResult *pResult, void *pUser);
+	static void ConUptime(IConsole::IResult *pResult, void *pUser);
 	static void ConRecord(IConsole::IResult *pResult, void *pUser);
 	static void ConStopRecord(IConsole::IResult *pResult, void *pUser);
 	static void ConMapReload(IConsole::IResult *pResult, void *pUser);
@@ -487,6 +489,7 @@ public:
 	static void ConchainRconPasswordChange(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData);
 	static void ConchainRconModPasswordChange(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData);
 	static void ConchainRconHelperPasswordChange(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData);
+	static void ConchainReservedSlotsAuthLevel(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData);
 	static void ConchainMapUpdate(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData);
 	static void ConchainSixupUpdate(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData);
 	static void ConchainRegisterCommunityTokenRedact(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData);

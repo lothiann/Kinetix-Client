@@ -2690,21 +2690,36 @@ Always predict frozen players
 No country flags match your filter criteria
 == Keine Länderflaggen stimmen mit dem Filter überein
 
+Hold Shift to be more precise.
+== Halte Shift gedrückt, um genauer zu navigieren.
+
+Dummy is not connected
+== Dummy ist nicht verbunden
+
 [Important alert message]
 Tap to dismiss…
-== Tippen zum Schließen…
+== Tippen zum Schließen …
 
 Initializing layers
-== Vorbereite Darstellungsebenen
+== Darstellungsebenen werden vorbereitet
 
 Credits
 == Mitwirkende
 
+Teleport to cursor
+== Zum Mauszeiger teleportieren
+
+Teleport dummy to cursor
+== Dummy zum Mauszeiger teleportieren
+
+Practice
+== Training
+
 Join
 == Beitreten
 
-'%s' not bound.
-== '%s' nicht gebunden.
+not bound
+== nicht gebunden
 
-Press '%s' to show cursor.
-== Drücke '%s' um die Maus zu zeigen.
+Show cursor
+== Zeige Mauszeiger

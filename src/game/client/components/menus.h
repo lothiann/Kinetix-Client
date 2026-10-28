@@ -521,6 +521,7 @@ protected:
 	int m_SelectedIndex;
 	bool m_ServerBrowserShouldRevealSelection;
 	std::vector<CUIElement *> m_avpServerBrowserUiElements[IServerBrowser::NUM_TYPES];
+	std::vector<char> m_vServerbrowserElementIds[IServerBrowser::NUM_TYPES];
 	void RenderServerbrowserServerList(CUIRect View, bool &WasListboxItemActivated);
 	void RenderServerbrowserStatusBox(CUIRect StatusBox, bool WasListboxItemActivated);
 	void PopupConfirmSwitchServer();
@@ -812,7 +813,7 @@ public:
                 CGhostItem() :
                         m_Slot(-1), m_Own(false) { m_aFilename[0] = 0; }
 
-                bool operator<(const CGhostItem &Other) const { return m_Time < Other.m_Time; }
+
 
                 bool Active() const { return m_Slot != -1; }
                 bool HasFile() const { return m_aFilename[0]; }

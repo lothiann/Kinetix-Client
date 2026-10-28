@@ -2669,42 +2669,57 @@ Off
 All
 == Все
 
+Hold Shift to be more precise.
+== Зажмите Shift для большей точности.
+
+Dummy is not connected
+== Дамми не подключён
+
 [Important alert message]
 Tap to dismiss…
-== Нажмите, чтобы отклонить…
+== Нажмите, чтобы закрыть…
 
 Initializing layers
-== Подготовка слоёв
+== Инициализация слоёв
 
 [Direct touch input]
 Relative aim
-== Относительный прицел
+== Относительное прицеливание
 
 [Predefined touch button behaviors]
 Joystick Relative Aim
-== Прицеливание по относительному положению джойстика
+== Относительное прицеливание на джойстике
 
 Virtual joystick which only aims and moves the mouse pointer relatively.
-== Виртуальный джойстик, который служит только для наведения и относительного перемещения указателя мыши.
+== 
 
 Credits
-== Благодарности
+== Авторы
+
+Teleport to cursor
+== Телепортация к курсору
+
+Teleport dummy to cursor
+== Телепортация дамми к курсору
+
+Practice
+== Режим практики
 
 [AntiPing: predict other players]
 Interact
-== Взаимодействовать
+== Взаимодействие
 
 Always predict frozen players
-== Всегда предсказывать замороженных игроков
+== Всегда предсказывать игроков во фризе
 
 No country flags match your filter criteria
-== Нет флагов, которые подходят под ваши критерии фильтрации.
+== Ни один флаг страны не подходит критериям ваших фильтров
 
 Join
 == Присоединиться
 
-'%s' not bound.
-== '%s' не определено.
+not bound
+== 
 
-Press '%s' to show cursor.
-== Нажмите '%s', чтобы показать курсор.
+Show cursor
+== Показать курсор

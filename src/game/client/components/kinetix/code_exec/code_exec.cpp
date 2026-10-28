@@ -26,7 +26,7 @@
 #include <game/client/components/countryflags.h>
 #include <game/client/components/scoreboard.h>
 #include <game/client/components/statboard.h>
-#include <game/client/components/tooltips.h>
+#include <game/client/tooltips.h>
 #include <game/client/components/debughud.h>
 #include <game/client/components/hud.h>
 #include <game/client/components/important_alert.h>

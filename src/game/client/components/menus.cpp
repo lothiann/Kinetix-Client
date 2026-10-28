@@ -133,26 +133,26 @@ int CMenus::DoButton_Menu(CButtonContainer *pButtonContainer, const char *pText,
 
         pRect->Draw(Color, Corners, Rounding);
 
-	if(pImageName)
-	{
-		CUIRect Image;
-		pRect->VSplitRight(pRect->h * BUTTON_IMAGE_WIDTH_FACTOR, &Text, &Image); // always correct ratio for image
+        if(pImageName)
+        {
+                CUIRect Image;
+                pRect->VSplitRight(pRect->h * BUTTON_IMAGE_WIDTH_FACTOR, &Text, &Image); // always correct ratio for image
 
-		// render image
-		const CMenuImage *pImage = FindMenuImage(pImageName);
-		if(pImage)
-		{
-			const bool ImageHot = Ui()->HotItem() == pButtonContainer || (pImageHotId != nullptr && Ui()->HotItem() == pImageHotId);
-			Graphics()->TextureSet(ImageHot ? pImage->m_OrgTexture : pImage->m_GreyTexture);
-			Graphics()->WrapClamp();
-			Graphics()->QuadsBegin();
-			Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
-			IGraphics::CQuadItem QuadItem(Image.x, Image.y, Image.w, Image.h);
-			Graphics()->QuadsDrawTL(&QuadItem, 1);
-			Graphics()->QuadsEnd();
-			Graphics()->WrapNormal();
-		}
-	}
+                // render image
+                const CMenuImage *pImage = FindMenuImage(pImageName);
+                if(pImage)
+                {
+                        const bool ImageHot = Ui()->HotItem() == pButtonContainer || (pImageHotId != nullptr && Ui()->HotItem() == pImageHotId);
+                        Graphics()->TextureSet(ImageHot ? pImage->m_OrgTexture : pImage->m_GreyTexture);
+                        Graphics()->WrapClamp();
+                        Graphics()->QuadsBegin();
+                        Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
+                        IGraphics::CQuadItem QuadItem(Image.x, Image.y, Image.w, Image.h);
+                        Graphics()->QuadsDrawTL(&QuadItem, 1);
+                        Graphics()->QuadsEnd();
+                        Graphics()->WrapNormal();
+                }
+        }
 
         Text.HMargin(pRect->h >= 20.0f ? 2.0f : 1.0f, &Text);
         Text.HMargin((Text.h * FontFactor) / 2.0f, &Text);
@@ -290,18 +290,18 @@ int CMenus::DoButton_CheckBox_Common(const void *pId, const char *pText, const c
         Box.Margin(2.0f, &Box);
         Box.Draw(ColorRGBA(1, 1, 1, 0.25f * Ui()->ButtonColorMul(pId)), IGraphics::CORNER_ALL, 3.0f);
 
-	const bool Checkable = *pBoxText == 'X';
-	if(Checkable)
-	{
-		TextRender()->SetRenderFlags(ETextRenderFlags::TEXT_RENDER_FLAG_ONLY_ADVANCE_WIDTH | ETextRenderFlags::TEXT_RENDER_FLAG_NO_X_BEARING | ETextRenderFlags::TEXT_RENDER_FLAG_NO_Y_BEARING | ETextRenderFlags::TEXT_RENDER_FLAG_NO_OVERSIZE | ETextRenderFlags::TEXT_RENDER_FLAG_NO_PIXEL_ALIGNMENT);
-		TextRender()->SetFontPreset(EFontPreset::ICON_FONT);
-		Ui()->DoLabel(&Box, FontIcon::XMARK, Box.h * CUi::ms_FontmodHeight, TEXTALIGN_MC);
-		TextRender()->SetFontPreset(EFontPreset::DEFAULT_FONT);
-	}
-	else
-	{
-		Ui()->DoLabel(&Box, pBoxText, Box.h * CUi::ms_FontmodHeight, TEXTALIGN_MC);
-	}
+        const bool Checkable = *pBoxText == 'X';
+        if(Checkable)
+        {
+                TextRender()->SetRenderFlags(ETextRenderFlags::TEXT_RENDER_FLAG_ONLY_ADVANCE_WIDTH | ETextRenderFlags::TEXT_RENDER_FLAG_NO_X_BEARING | ETextRenderFlags::TEXT_RENDER_FLAG_NO_Y_BEARING | ETextRenderFlags::TEXT_RENDER_FLAG_NO_OVERSIZE | ETextRenderFlags::TEXT_RENDER_FLAG_NO_PIXEL_ALIGNMENT);
+                TextRender()->SetFontPreset(EFontPreset::ICON_FONT);
+                Ui()->DoLabel(&Box, FontIcon::XMARK, Box.h * CUi::ms_FontmodHeight, TEXTALIGN_MC);
+                TextRender()->SetFontPreset(EFontPreset::DEFAULT_FONT);
+        }
+        else
+        {
+                Ui()->DoLabel(&Box, pBoxText, Box.h * CUi::ms_FontmodHeight, TEXTALIGN_MC);
+        }
 
         TextRender()->SetRenderFlags(0);
         Ui()->DoLabel(&Label, pText, Box.h * CUi::ms_FontmodHeight, TEXTALIGN_ML);
@@ -473,7 +473,7 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
                         Client()->Quit();
                 }
         }
-        GameClient()->m_Tooltips.DoToolTip(&s_QuitButton, &Button, Localize("Quit"));
+        Ui()->DoToolTip(&s_QuitButton, &Button, Localize("Quit"));
 
         Box.VSplitRight(10.0f, &Box, nullptr);
         Box.VSplitRight(33.0f, &Box, &Button);
@@ -482,7 +482,7 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
         {
                 NewPage = PAGE_SETTINGS;
         }
-        GameClient()->m_Tooltips.DoToolTip(&s_SettingsButton, &Button, Localize("Settings"));
+        Ui()->DoToolTip(&s_SettingsButton, &Button, Localize("Settings"));
 
         Box.VSplitRight(10.0f, &Box, nullptr);
         Box.VSplitRight(33.0f, &Box, &Button);
@@ -491,7 +491,7 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
         {
                 g_Config.m_ClEditor = 1;
         }
-        GameClient()->m_Tooltips.DoToolTip(&s_EditorButton, &Button, Localize("Editor"));
+        Ui()->DoToolTip(&s_EditorButton, &Button, Localize("Editor"));
 
         if(ClientState == IClient::STATE_OFFLINE)
         {
@@ -502,7 +502,7 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
                 {
                         NewPage = PAGE_DEMOS;
                 }
-                GameClient()->m_Tooltips.DoToolTip(&s_DemoButton, &Button, Localize("Demos"));
+                Ui()->DoToolTip(&s_DemoButton, &Button, Localize("Demos"));
                 Box.VSplitRight(10.0f, &Box, nullptr);
 
                 Box.VSplitLeft(33.0f, &Button, &Box);
@@ -538,7 +538,7 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
                 {
                         m_ShowStart = true;
                 }
-                GameClient()->m_Tooltips.DoToolTip(&s_StartButton, &Button, Localize("Main menu"));
+                Ui()->DoToolTip(&s_StartButton, &Button, Localize("Main menu"));
 
                 const float BrowserButtonWidth = 75.0f;
                 Box.VSplitLeft(10.0f, nullptr, &Box);
@@ -548,7 +548,7 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
                 {
                         NewPage = PAGE_INTERNET;
                 }
-                GameClient()->m_Tooltips.DoToolTip(&s_InternetButton, &Button, Localize("Internet"));
+                Ui()->DoToolTip(&s_InternetButton, &Button, Localize("Internet"));
 
                 Box.VSplitLeft(BrowserButtonWidth, &Button, &Box);
                 static CButtonContainer s_LanButton;
@@ -556,7 +556,7 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
                 {
                         NewPage = PAGE_LAN;
                 }
-                GameClient()->m_Tooltips.DoToolTip(&s_LanButton, &Button, Localize("LAN"));
+                Ui()->DoToolTip(&s_LanButton, &Button, Localize("LAN"));
 
                 Box.VSplitLeft(BrowserButtonWidth, &Button, &Box);
                 static CButtonContainer s_FavoritesButton;
@@ -564,28 +564,28 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
                 {
                         NewPage = PAGE_FAVORITES;
                 }
-                GameClient()->m_Tooltips.DoToolTip(&s_FavoritesButton, &Button, Localize("Favorites"));
+                Ui()->DoToolTip(&s_FavoritesButton, &Button, Localize("Favorites"));
 
-		const int MaxPage = PAGE_FAVORITES + ServerBrowser()->FavoriteCommunities().size();
-		if(
-			!Ui()->IsPopupOpen() &&
-			CLineInput::GetActiveInput() == nullptr &&
-			(g_Config.m_UiPage >= PAGE_INTERNET && g_Config.m_UiPage <= MaxPage) &&
-			(m_MenuPage >= PAGE_INTERNET && m_MenuPage <= PAGE_FAVORITE_COMMUNITY_5))
-		{
-			if(Input()->KeyPress(KEY_RIGHT))
-			{
-				NewPage = g_Config.m_UiPage + 1;
-				if(NewPage > MaxPage)
-					NewPage = PAGE_INTERNET;
-			}
-			if(Input()->KeyPress(KEY_LEFT))
-			{
-				NewPage = g_Config.m_UiPage - 1;
-				if(NewPage < PAGE_INTERNET)
-					NewPage = MaxPage;
-			}
-		}
+                const int MaxPage = PAGE_FAVORITES + ServerBrowser()->FavoriteCommunities().size();
+                if(
+                        !Ui()->IsPopupOpen() &&
+                        CLineInput::GetActiveInput() == nullptr &&
+                        (g_Config.m_UiPage >= PAGE_INTERNET && g_Config.m_UiPage <= MaxPage) &&
+                        (m_MenuPage >= PAGE_INTERNET && m_MenuPage <= PAGE_FAVORITE_COMMUNITY_5))
+                {
+                        if(Input()->KeyPress(KEY_RIGHT))
+                        {
+                                NewPage = g_Config.m_UiPage + 1;
+                                if(NewPage > MaxPage)
+                                        NewPage = PAGE_INTERNET;
+                        }
+                        if(Input()->KeyPress(KEY_LEFT))
+                        {
+                                NewPage = g_Config.m_UiPage - 1;
+                                if(NewPage < PAGE_INTERNET)
+                                        NewPage = MaxPage;
+                        }
+                }
 
                 size_t FavoriteCommunityIndex = 0;
                 static CButtonContainer s_aFavoriteCommunityButtons[5];
@@ -602,7 +602,7 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
                         {
                                 NewPage = Page;
                         }
-                        GameClient()->m_Tooltips.DoToolTip(&s_aFavoriteCommunityButtons[FavoriteCommunityIndex], &Button, pCommunity->Name());
+                        Ui()->DoToolTip(&s_aFavoriteCommunityButtons[FavoriteCommunityIndex], &Button, pCommunity->Name());
 
                         ++FavoriteCommunityIndex;
                         if(FavoriteCommunityIndex >= std::size(s_aFavoriteCommunityButtons))
@@ -667,7 +667,7 @@ void CMenus::RenderMenubar(CUIRect Box, IClient::EClientState ClientState)
                         {
                                 NewPage = PAGE_DEMOS;
                         }
-                        GameClient()->m_Tooltips.DoToolTip(&s_DemoButton, &Button, Localize("Demos"));
+                        Ui()->DoToolTip(&s_DemoButton, &Button, Localize("Demos"));
                         Box.VSplitRight(10.0f, &Box, nullptr);
 
                         TextRender()->SetRenderFlags(0);
@@ -688,17 +688,17 @@ void CMenus::RenderLoadingDirect(const char *pCaption, const char *pContent, std
 {
         // TODO: not supported right now due to separate render thread
 
-	// make sure that we don't render for each little thing we load
-	// because that will slow down loading if we have vsync
-	// make sure we otherwise update the progressbar if we have one for a smoother animation
-	const std::chrono::nanoseconds Now = time_get_nanoseconds();
+        // make sure that we don't render for each little thing we load
+        // because that will slow down loading if we have vsync
+        // make sure we otherwise update the progressbar if we have one for a smoother animation
+        const std::chrono::nanoseconds Now = time_get_nanoseconds();
 
-	/* Limit FPS to something reasonable. Ideally the values would just be stored and the rendering would be on a **consistent** timer with 60Hz
-	 * Waiting for calls of this function makes the rendering stutter, which you can notice with the background
-	 */
-	int RefreshRate = g_Config.m_GfxVsync || !Progress.has_value() ? 60 : (in_range(g_Config.m_GfxRefreshRate, 1, 300) ? g_Config.m_GfxRefreshRate : 300);
-	if(RefreshRate > 0 && Now - m_LoadingState.m_LastRender < std::chrono::nanoseconds(1s) / RefreshRate)
-		return;
+        /* Limit FPS to something reasonable. Ideally the values would just be stored and the rendering would be on a **consistent** timer with 60Hz
+         * Waiting for calls of this function makes the rendering stutter, which you can notice with the background
+         */
+        int RefreshRate = g_Config.m_GfxVsync || !Progress.has_value() ? 60 : (in_range(g_Config.m_GfxRefreshRate, 1, 300) ? g_Config.m_GfxRefreshRate : 300);
+        if(RefreshRate > 0 && Now - m_LoadingState.m_LastRender < std::chrono::nanoseconds(1s) / RefreshRate)
+                return;
 
         // need up date this here to get correct
         ms_GuiColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_UiColor, true));
@@ -734,14 +734,14 @@ void CMenus::RenderLoadingDirect(const char *pCaption, const char *pContent, std
         Box.HSplitTop(24.0f, &Label, &Box);
         Ui()->DoLabel(&Label, pContent, 20.0f, TEXTALIGN_MC);
 
-	if(Progress.has_value())
-	{
-		CUIRect ProgressBar;
-		Box.HSplitBottom(30.0f, &Box, nullptr);
-		Box.HSplitBottom(25.0f, &Box, &ProgressBar);
-		ProgressBar.VMargin(20.0f, &ProgressBar);
-		Ui()->RenderProgressBar(ProgressBar, std::clamp(Progress.value(), 0.0f, 1.0f));
-	}
+        if(Progress.has_value())
+        {
+                CUIRect ProgressBar;
+                Box.HSplitBottom(30.0f, &Box, nullptr);
+                Box.HSplitBottom(25.0f, &Box, &ProgressBar);
+                ProgressBar.VMargin(20.0f, &ProgressBar);
+                Ui()->RenderProgressBar(ProgressBar, std::clamp(Progress.value(), 0.0f, 1.0f));
+        }
 
         Graphics()->SetColor(1.0, 1.0, 1.0, 1.0);
 
@@ -750,12 +750,12 @@ void CMenus::RenderLoadingDirect(const char *pCaption, const char *pContent, std
 
 void CMenus::RenderLoading(const char *pCaption, const char *pContent, int IncreaseCounter)
 {
-	// does not support multithreading
+        // does not support multithreading
 
-	const int CurLoadRenderCount = m_LoadingState.m_Current;
-	m_LoadingState.m_Current += IncreaseCounter;
-	dbg_assert(m_LoadingState.m_Current <= m_LoadingState.m_Total, "Invalid progress for RenderLoading");
-	RenderLoadingDirect(pCaption, pContent, m_LoadingState.m_Total > 0 ? std::make_optional(CurLoadRenderCount / (float)m_LoadingState.m_Total) : std::nullopt);
+        const int CurLoadRenderCount = m_LoadingState.m_Current;
+        m_LoadingState.m_Current += IncreaseCounter;
+        dbg_assert(m_LoadingState.m_Current <= m_LoadingState.m_Total, "Invalid progress for RenderLoading");
+        RenderLoadingDirect(pCaption, pContent, m_LoadingState.m_Total > 0 ? std::make_optional(CurLoadRenderCount / (float)m_LoadingState.m_Total) : std::nullopt);
 }
 
 void CMenus::FinishLoading()
@@ -900,13 +900,13 @@ void CMenus::ConchainUpdateMusicState(IConsole::IResult *pResult, void *pUserDat
 
 void CMenus::UpdateMusicState()
 {
-	const bool ShouldPlay = Client()->State() == IClient::STATE_OFFLINE && g_Config.m_SndEnable && g_Config.m_SndMusic;
-	if(ShouldPlay && !GameClient()->m_Sounds.IsPlaying(SOUND_MENU))
-		GameClient()->m_Sounds.Enqueue(CSounds::CHN_MUSIC, SOUND_MENU);
-	else if(!ShouldPlay && GameClient()->m_Sounds.IsPlaying(SOUND_MENU))
-		GameClient()->m_Sounds.Stop(SOUND_MENU);
-	if(!ShouldPlay)
-		GameClient()->m_MapSounds.StopAll();
+        const bool ShouldPlay = Client()->State() == IClient::STATE_OFFLINE && g_Config.m_SndEnable && g_Config.m_SndMusic;
+        if(ShouldPlay && !GameClient()->m_Sounds.IsPlaying(SOUND_MENU))
+                GameClient()->m_Sounds.Enqueue(CSounds::CHN_MUSIC, SOUND_MENU);
+        else if(!ShouldPlay && GameClient()->m_Sounds.IsPlaying(SOUND_MENU))
+                GameClient()->m_Sounds.Stop(SOUND_MENU);
+        if(!ShouldPlay)
+                GameClient()->m_MapSounds.StopAll();
 }
 
 void CMenus::PopupMessage(const char *pTitle, const char *pMessage, const char *pButtonLabel, int NextPopup, FPopupButtonCallback pfnButtonCallback)
@@ -1462,7 +1462,7 @@ void CMenus::RenderPopupFullscreen(CUIRect Screen)
                                 Name.VSplitLeft(2.5f * Name.h, &Icon, &Name);
                                 m_CommunityIcons.Render(pIcon, Icon, true);
                                 Ui()->DoButtonLogic(&s_CommunityTooltipButtonId, 0, &Icon, BUTTONFLAG_NONE);
-                                GameClient()->m_Tooltips.DoToolTip(&s_CommunityTooltipButtonId, &Icon, pCommunity->Name());
+                                Ui()->DoToolTip(&s_CommunityTooltipButtonId, &Icon, pCommunity->Name());
                         }
 
                         Ui()->DoLabel(&Label, Localize("Name"), 18.0f, TEXTALIGN_ML);
@@ -1729,13 +1729,13 @@ void CMenus::RenderPopupFullscreen(CUIRect Screen)
                         JoinTutorial();
                 }
 
-		static CButtonContainer s_SkipTutorialButton;
-		if(DoButton_Menu(&s_SkipTutorialButton, Localize("Skip Tutorial"), 0, &Skip) || Ui()->ConsumeHotkey(CUi::HOTKEY_ESCAPE))
-		{
-			Client()->RequestDDNetInfo();
-			m_JoinTutorial.m_Queued = false;
-			m_Popup = g_Config.m_BrIndicateFinished ? POPUP_POINTS : POPUP_NONE;
-		}
+                static CButtonContainer s_SkipTutorialButton;
+                if(DoButton_Menu(&s_SkipTutorialButton, Localize("Skip Tutorial"), 0, &Skip) || Ui()->ConsumeHotkey(CUi::HOTKEY_ESCAPE))
+                {
+                        Client()->RequestDDNetInfo();
+                        m_JoinTutorial.m_Queued = false;
+                        m_Popup = g_Config.m_BrIndicateFinished ? POPUP_POINTS : POPUP_NONE;
+                }
 
                 Box.HSplitBottom(20.f, &Box, &Part);
                 Box.HSplitBottom(24.f, &Box, &Part);
@@ -1910,23 +1910,23 @@ void CMenus::RenderPopupFullscreen(CUIRect Screen)
                                         RunServer();
                                 }
 
-				pProgressLabel = Localize("Waiting for local server to stop…");
-				ProgressDeterminate = false;
-			}
-		}
-		else if(m_JoinTutorial.m_LocalServerState == CJoinTutorial::ELocalServerState::WAITING_START)
-		{
-			if(LastStateChangeSeconds >= 5.0f && !GameClient()->m_LocalServer.IsStarting())
-			{
-				ShowFinalErrorMessage();
-			}
-			else
-			{
-				if(LastStateChangeSeconds >= 2.0f &&
-					GameClient()->m_LocalServer.IsServerRunning())
-				{
-					GameClient()->m_LocalServer.Connect();
-				}
+                                pProgressLabel = Localize("Waiting for local server to stop…");
+                                ProgressDeterminate = false;
+                        }
+                }
+                else if(m_JoinTutorial.m_LocalServerState == CJoinTutorial::ELocalServerState::WAITING_START)
+                {
+                        if(LastStateChangeSeconds >= 5.0f && !GameClient()->m_LocalServer.IsStarting())
+                        {
+                                ShowFinalErrorMessage();
+                        }
+                        else
+                        {
+                                if(LastStateChangeSeconds >= 2.0f &&
+                                        GameClient()->m_LocalServer.IsServerRunning())
+                                {
+                                        GameClient()->m_LocalServer.Connect();
+                                }
 
                                 pProgressLabel = Localize("Waiting for local server to start…");
                                 ProgressDeterminate = false;
@@ -1939,20 +1939,20 @@ void CMenus::RenderPopupFullscreen(CUIRect Screen)
                         Ui()->DoLabel(&ProgressLabel, pProgressLabel, 20.0f, TEXTALIGN_ML);
                 }
 
-		static CButtonContainer s_Button;
-		if(DoButton_Menu(&s_Button, Localize("Cancel"), 0, &ButtonBar) ||
-			Ui()->ConsumeHotkey(CUi::HOTKEY_ESCAPE) ||
-			Ui()->ConsumeHotkey(CUi::HOTKEY_ENTER))
-		{
-			GameClient()->m_LocalServer.CancelConnect();
-			m_Popup = POPUP_NONE;
-		}
-	}
-	else if(m_Popup == POPUP_POINTS)
-	{
-		Box.HSplitBottom(20.0f, &Box, nullptr);
-		Box.HSplitBottom(24.0f, &Box, &Part);
-		Part.VMargin(120.0f, &Part);
+                static CButtonContainer s_Button;
+                if(DoButton_Menu(&s_Button, Localize("Cancel"), 0, &ButtonBar) ||
+                        Ui()->ConsumeHotkey(CUi::HOTKEY_ESCAPE) ||
+                        Ui()->ConsumeHotkey(CUi::HOTKEY_ENTER))
+                {
+                        GameClient()->m_LocalServer.CancelConnect();
+                        m_Popup = POPUP_NONE;
+                }
+        }
+        else if(m_Popup == POPUP_POINTS)
+        {
+                Box.HSplitBottom(20.0f, &Box, nullptr);
+                Box.HSplitBottom(24.0f, &Box, &Part);
+                Part.VMargin(120.0f, &Part);
 
                 if(Client()->InfoState() == IClient::EInfoState::SUCCESS && Client()->Points() > 50)
                 {
@@ -2092,18 +2092,18 @@ void CMenus::RenderPopupConnecting(CUIRect Screen)
                 const char *pConnectivityLabel = "";
                 switch(Client()->UdpConnectivity(Client()->ConnectNetTypes()))
                 {
-                case IClient::CONNECTIVITY_UNKNOWN:
+                case IClient::EConnectivity::UNKNOWN:
                         break;
-                case IClient::CONNECTIVITY_CHECKING:
+                case IClient::EConnectivity::CHECKING:
                         pConnectivityLabel = Localize("Trying to determine UDP connectivity…");
                         break;
-                case IClient::CONNECTIVITY_UNREACHABLE:
+                case IClient::EConnectivity::UNREACHABLE:
                         pConnectivityLabel = Localize("UDP seems to be filtered.");
                         break;
-                case IClient::CONNECTIVITY_DIFFERING_UDP_TCP_IP_ADDRESSES:
+                case IClient::EConnectivity::DIFFERING_UDP_TCP_IP_ADDRESSES:
                         pConnectivityLabel = Localize("UDP and TCP IP addresses seem to be different. Try disabling VPN, proxy or network accelerators.");
                         break;
-                case IClient::CONNECTIVITY_REACHABLE:
+                case IClient::EConnectivity::REACHABLE:
                         pConnectivityLabel = Localize("No answer from server yet.");
                         break;
                 }
@@ -2165,42 +2165,42 @@ void CMenus::RenderPopupLoading(CUIRect Screen)
                 str_format(aLabel1, sizeof(aLabel1), Localize("%d/%d KiB (%.1f KiB/s)"), Client()->MapDownloadAmount() / 1024, Client()->MapDownloadTotalsize() / 1024, m_DownloadSpeed / 1024.0f);
 
 
-		const int SecondsLeft = std::max(1, m_DownloadSpeed > 0.0f ? static_cast<int>((Client()->MapDownloadTotalsize() - Client()->MapDownloadAmount()) / m_DownloadSpeed) : 1);
-		const int MinutesLeft = SecondsLeft / 60;
-		if(MinutesLeft > 0)
-		{
-			str_format(aLabel2, sizeof(aLabel2), MinutesLeft == 1 ? Localize("%i minute left") : Localize("%i minutes left"), MinutesLeft);
-		}
-		else
-		{
-			str_format(aLabel2, sizeof(aLabel2), SecondsLeft == 1 ? Localize("%i second left") : Localize("%i seconds left"), SecondsLeft);
-		}
-	}
-	else
-	{
-		str_copy(aTitle, Localize("Connected"));
-		switch(Client()->LoadingStateDetail())
-		{
-		case IClient::LOADING_STATE_DETAIL_INITIAL:
-			str_copy(aLabel1, Localize("Getting game info"));
-			break;
-		case IClient::LOADING_STATE_DETAIL_LOADING_MAP:
-			str_copy(aLabel1, Localize("Loading map file from storage"));
-			break;
-		case IClient::LOADING_STATE_DETAIL_LOADING_DEMO:
-			str_copy(aLabel1, Localize("Loading demo file from storage"));
-			break;
-		case IClient::LOADING_STATE_DETAIL_SENDING_READY:
-			str_copy(aLabel1, Localize("Requesting to join the game"));
-			break;
-		case IClient::LOADING_STATE_DETAIL_GETTING_READY:
-			str_copy(aLabel1, Localize("Sending initial client info"));
-			break;
-		default:
-			dbg_assert_failed("Invalid loading state %d for RenderPopupLoading", static_cast<int>(Client()->LoadingStateDetail()));
-		}
-		aLabel2[0] = '\0';
-	}
+                const int SecondsLeft = std::max(1, m_DownloadSpeed > 0.0f ? static_cast<int>((Client()->MapDownloadTotalsize() - Client()->MapDownloadAmount()) / m_DownloadSpeed) : 1);
+                const int MinutesLeft = SecondsLeft / 60;
+                if(MinutesLeft > 0)
+                {
+                        str_format(aLabel2, sizeof(aLabel2), MinutesLeft == 1 ? Localize("%i minute left") : Localize("%i minutes left"), MinutesLeft);
+                }
+                else
+                {
+                        str_format(aLabel2, sizeof(aLabel2), SecondsLeft == 1 ? Localize("%i second left") : Localize("%i seconds left"), SecondsLeft);
+                }
+        }
+        else
+        {
+                str_copy(aTitle, Localize("Connected"));
+                switch(Client()->LoadingStateDetail())
+                {
+                case IClient::ELoadingStateDetail::INITIAL:
+                        str_copy(aLabel1, Localize("Getting game info"));
+                        break;
+                case IClient::ELoadingStateDetail::LOADING_MAP:
+                        str_copy(aLabel1, Localize("Loading map file from storage"));
+                        break;
+                case IClient::ELoadingStateDetail::LOADING_DEMO:
+                        str_copy(aLabel1, Localize("Loading demo file from storage"));
+                        break;
+                case IClient::ELoadingStateDetail::SENDING_READY:
+                        str_copy(aLabel1, Localize("Requesting to join the game"));
+                        break;
+                case IClient::ELoadingStateDetail::GETTING_READY:
+                        str_copy(aLabel1, Localize("Sending initial client info"));
+                        break;
+                default:
+                        dbg_assert_failed("Invalid loading state %d for RenderPopupLoading", static_cast<int>(Client()->LoadingStateDetail()));
+                }
+                aLabel2[0] = '\0';
+        }
 
         const float FontSize = 20.0f;
 
@@ -2700,39 +2700,39 @@ void CMenus::OnStateChange(int NewState, int OldState)
         if(OldState == IClient::STATE_ONLINE || OldState == IClient::STATE_OFFLINE)
                 TextRender()->DeleteTextContainer(m_MotdTextContainerIndex);
 
-	if(NewState == IClient::STATE_OFFLINE)
-	{
-		if(OldState >= IClient::STATE_ONLINE && NewState < IClient::STATE_QUITTING)
-			UpdateMusicState();
-		m_Popup = POPUP_NONE;
-		if(Client()->ErrorString() && Client()->ErrorString()[0] != 0)
-		{
-			if(str_find(Client()->ErrorString(), "password"))
-			{
-				m_Popup = POPUP_PASSWORD;
-				m_PasswordInput.SelectAll();
-				Ui()->SetActiveItem(&m_PasswordInput);
-			}
-			else
-			{
-				m_Popup = POPUP_DISCONNECTED;
-			}
-		}
-	}
-	else if(NewState == IClient::STATE_LOADING)
-	{
-		m_DownloadLastCheckTime = time_get();
-		m_DownloadLastCheckSize = 0;
-		m_DownloadSpeed = 0.0f;
-	}
-	else if(NewState == IClient::STATE_ONLINE || NewState == IClient::STATE_DEMOPLAYBACK)
-	{
-		if(m_Popup != POPUP_WARNING)
-		{
-			m_Popup = POPUP_NONE;
-			SetActive(false);
-		}
-	}
+        if(NewState == IClient::STATE_OFFLINE)
+        {
+                if(OldState >= IClient::STATE_ONLINE && NewState < IClient::STATE_QUITTING)
+                        UpdateMusicState();
+                m_Popup = POPUP_NONE;
+                if(Client()->ErrorString() && Client()->ErrorString()[0] != 0)
+                {
+                        if(str_find(Client()->ErrorString(), "password"))
+                        {
+                                m_Popup = POPUP_PASSWORD;
+                                m_PasswordInput.SelectAll();
+                                Ui()->SetActiveItem(&m_PasswordInput);
+                        }
+                        else
+                        {
+                                m_Popup = POPUP_DISCONNECTED;
+                        }
+                }
+        }
+        else if(NewState == IClient::STATE_LOADING)
+        {
+                m_DownloadLastCheckTime = time_get();
+                m_DownloadLastCheckSize = 0;
+                m_DownloadSpeed = 0.0f;
+        }
+        else if(NewState == IClient::STATE_ONLINE || NewState == IClient::STATE_DEMOPLAYBACK)
+        {
+                if(m_Popup != POPUP_WARNING)
+                {
+                        m_Popup = POPUP_NONE;
+                        SetActive(false);
+                }
+        }
 }
 
 void CMenus::OnWindowResize()
@@ -2770,16 +2770,16 @@ void CMenus::OnRender()
 
         Ui()->Update();
 
-	if(IsActive())
-		Ui()->DoBackButton();
+        if(IsActive())
+                Ui()->DoBackButton();
 
-	Render();
+        Render();
 
-	if(IsActive())
-	{
-		Ui()->RenderBackButton();
-		RenderTools()->RenderCursor(Ui()->MousePos(), 24.0f);
-	}
+        if(IsActive())
+        {
+                Ui()->RenderBackButton();
+                RenderTools()->RenderCursor(Ui()->MousePos(), 24.0f);
+        }
 
         // render debug information
         if(g_Config.m_Debug)
@@ -2820,9 +2820,9 @@ void CMenus::UpdateColors()
 
 void CMenus::RenderBackground()
 {
-	const float ScreenHeight = 300.0f;
-	const float ScreenWidth = ScreenHeight * Graphics()->ScreenAspect();
-	Graphics()->MapScreenToSize(ScreenWidth, ScreenHeight);
+        const float ScreenHeight = 300.0f;
+        const float ScreenWidth = ScreenHeight * Graphics()->ScreenAspect();
+        Graphics()->MapScreenToSize(ScreenWidth, ScreenHeight);
 
         // render background color
         Graphics()->TextureClear();
@@ -2897,18 +2897,18 @@ int CMenus::MenuImageScan(const char *pName, int IsDir, int DirType, void *pUser
         char aPath[IO_MAX_PATH_LENGTH];
         str_format(aPath, sizeof(aPath), "menuimages/%s", pName);
 
-	CImageInfo Info;
-	if(!pSelf->Graphics()->LoadPng(Info, aPath, DirType))
-	{
-		log_error("menus", "Failed to load menu image from '%s'", aPath);
-		return 0;
-	}
-	if(Info.m_Format != CImageInfo::FORMAT_RGBA)
-	{
-		Info.Free();
-		log_error("menus", "Failed to load menu image from '%s': must be an RGBA image", aPath);
-		return 0;
-	}
+        CImageInfo Info;
+        if(!pSelf->Graphics()->LoadPng(Info, aPath, DirType))
+        {
+                log_error("menus", "Failed to load menu image from '%s'", aPath);
+                return 0;
+        }
+        if(Info.m_Format != CImageInfo::FORMAT_RGBA)
+        {
+                Info.Free();
+                log_error("menus", "Failed to load menu image from '%s': must be an RGBA image", aPath);
+                return 0;
+        }
 
         MenuImage.m_OrgTexture = pSelf->Graphics()->LoadTextureRaw(Info, 0, aPath);
 

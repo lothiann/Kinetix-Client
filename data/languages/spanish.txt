@@ -134,7 +134,7 @@ Folder
 == Carpeta
 
 Force vote
-== Forzar
+== Forzar voto
 
 Free-View
 == Vista libre
@@ -251,7 +251,7 @@ Password
 == Contraseña
 
 Password incorrect
-== Contraseña incorrecta
+== Contraseña incorreta
 
 Ping
 == Ping
@@ -530,7 +530,7 @@ Render demo
 == Renderizar demo
 
 Replace video
-== Reemplazar vídeo
+== Reemplazar video
 
 File already exists, do you want to overwrite it?
 == El archivo ya existe, ¿quieres sobrescribirlo?
@@ -1098,7 +1098,7 @@ Config directory
 == Directorio de configuración
 
 Run on join
-== Ejecutar al entrar
+== Ejec. al entrar
 
 Chat command (e.g. showall 1)
 == Comando de chat (Ej. showall 1)
@@ -1107,7 +1107,7 @@ The format of texture %s is not RGBA which will cause visual bugs.
 == El formato de la textura %s no es RGBA, lo que puede causar errores visuales.
 
 Join Tutorial Server
-== Unirse a un servidor de Tutorial
+== Ir a un servidor Tutorial
 
 Skip Tutorial
 == Saltar Tutorial
@@ -1205,7 +1205,7 @@ Status
 == Estado
 
 Aim bind
-== Bind de apuntado
+== Apuntar
 
 Mouse
 == Ratón
@@ -2076,7 +2076,7 @@ Renders your frame rate in the top right
 
 [Translation credits: Add your own name here when you update translations]
 English translation by the DDNet Team
-== Traducción al español por ReGnuM, Ninja Style, Alexandre, GaBOr, HeroiAmarelo, Mortcheck, FeaRZ, Ryozuki, Headshot, Deëivid y paproninja!
+== Traducción al español por ReGnuM, Ninja Style, Alexandre, GaBOr, HeroiAmarelo, Mortcheck, FeaRZ, Ryozuki, Headshot y Deëivid!
 
 Show spectator cursor
 == Mostrar cursor de espectador
@@ -2272,7 +2272,7 @@ Bind
 
 [Touch button behavior]
 Bind Toggle
-== Alternar bind
+== Bind alternado
 
 [Touch button behavior]
 Predefined
@@ -2690,9 +2690,15 @@ Always predict frozen players
 No country flags match your filter criteria
 == Ninguna bandera coincide con tu criterio de filtrado
 
+Hold Shift to be more precise.
+== Mantén pulsado Shift para ser más preciso.
+
+Dummy is not connected
+== El Dummy no está conectado
+
 [Important alert message]
 Tap to dismiss…
-== Toca para descartar…
+== Pulsar para cancelar…
 
 Initializing layers
 == Inicializando capas
@@ -2700,11 +2706,20 @@ Initializing layers
 Credits
 == Créditos
 
+Teleport to cursor
+== Teletransportarse al cursor
+
+Teleport dummy to cursor
+== Teletransportar dummy al cursor
+
+Practice
+== Práctica
+
 Join
 == Unirse
 
-'%s' not bound.
-== '%s' no bindeado.
+not bound
+== no bindeado
 
-Press '%s' to show cursor.
-== Pulsa '%s' para mostrar el cursor.
+Show cursor
+== Mostrar cursor
