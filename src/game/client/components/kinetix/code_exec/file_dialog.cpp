@@ -16,7 +16,16 @@
 #include <commdlg.h>
 #pragma pop_macro("NOGDI")
 
-bool KxPickScriptFile(char *pBuf, int BufSize)
+// UTF-8 -> UTF-16 helper for the dialog paths.
+static void KxUtf8ToWide(const char *pUtf8, wchar_t *pWide, int WideSize)
+{
+	pWide[0] = L'\0';
+	if(!pUtf8 || !pUtf8[0] || WideSize <= 0)
+		return;
+	MultiByteToWideChar(CP_UTF8, 0, pUtf8, -1, pWide, WideSize);
+}
+
+bool KxPickScriptFile(char *pBuf, int BufSize, const char *pInitialDir)
 {
 	wchar_t aWidePath[1024];
 	aWidePath[0] = L'\0';
@@ -24,18 +33,11 @@ bool KxPickScriptFile(char *pBuf, int BufSize)
 	wchar_t aWideCwd[1024];
 	const DWORD CurDirLen = GetCurrentDirectoryW(1024, aWideCwd);
 
-	wchar_t aWideScripts[1024];
-	LPCWSTR pInitialDir = NULL;
-	if(CurDirLen > 0 && CurDirLen < 880)
-	{
-		DWORD Len = CurDirLen;
-		if(aWideCwd[Len - 1] != L'\\' && aWideCwd[Len - 1] != L'/')
-			aWideScripts[Len++] = L'\\';
-		lstrcpyW(aWideScripts + Len, L"data\\scripts");
-		const DWORD Attr = GetFileAttributesW(aWideScripts);
-		if(Attr != INVALID_FILE_ATTRIBUTES && (Attr & FILE_ATTRIBUTE_DIRECTORY))
-			pInitialDir = aWideScripts;
-	}
+	// v6.5: open in the caller-provided folder (Kinetix/Scripts in the save
+	// dir) instead of the binary's data/scripts.
+	wchar_t aWideDir[1024];
+	KxUtf8ToWide(pInitialDir, aWideDir, 1024);
+	LPCWSTR pDir = aWideDir[0] ? aWideDir : NULL;
 
 	OPENFILENAMEW Ofn;
 	mem_zero(&Ofn, sizeof(Ofn));
@@ -44,7 +46,7 @@ bool KxPickScriptFile(char *pBuf, int BufSize)
 	Ofn.lpstrFilter = L"Lua scripts (*.lua, *.txt)\0*.lua;*.txt\0All files (*.*)\0*.*\0";
 	Ofn.lpstrFile = aWidePath;
 	Ofn.nMaxFile = 1024;
-	Ofn.lpstrInitialDir = pInitialDir;
+	Ofn.lpstrInitialDir = pDir;
 	Ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY;
 
 	const BOOL Picked = GetOpenFileNameW(&Ofn);
@@ -58,7 +60,7 @@ bool KxPickScriptFile(char *pBuf, int BufSize)
 	return WideCharToMultiByte(CP_UTF8, 0, aWidePath, -1, pBuf, BufSize, NULL, NULL) > 0;
 }
 
-bool KxPickTasFile(char *pBuf, int BufSize)
+bool KxPickTasFile(char *pBuf, int BufSize, const char *pInitialDir)
 {
 	wchar_t aWidePath[1024];
 	aWidePath[0] = L'\0';
@@ -66,18 +68,11 @@ bool KxPickTasFile(char *pBuf, int BufSize)
 	wchar_t aWideCwd[1024];
 	const DWORD CurDirLen = GetCurrentDirectoryW(1024, aWideCwd);
 
-	wchar_t aWideTas[1024];
-	LPCWSTR pInitialDir = NULL;
-	if(CurDirLen > 0 && CurDirLen < 880)
-	{
-		DWORD Len = CurDirLen;
-		if(aWideCwd[Len - 1] != L'\\' && aWideCwd[Len - 1] != L'/')
-			aWideTas[Len++] = L'\\';
-		lstrcpyW(aWideTas + Len, L"data\\tas");
-		const DWORD Attr = GetFileAttributesW(aWideTas);
-		if(Attr != INVALID_FILE_ATTRIBUTES && (Attr & FILE_ATTRIBUTE_DIRECTORY))
-			pInitialDir = aWideTas;
-	}
+	// v6.5: open in the caller-provided folder (Kinetix/TAS in the save dir)
+	// instead of the binary's data/tas.
+	wchar_t aWideDir[1024];
+	KxUtf8ToWide(pInitialDir, aWideDir, 1024);
+	LPCWSTR pDir = aWideDir[0] ? aWideDir : NULL;
 
 	OPENFILENAMEW Ofn;
 	mem_zero(&Ofn, sizeof(Ofn));
@@ -86,7 +81,7 @@ bool KxPickTasFile(char *pBuf, int BufSize)
 	Ofn.lpstrFilter = L"TAS files (*.tas)\0*.tas\0All files (*.*)\0*.*\0";
 	Ofn.lpstrFile = aWidePath;
 	Ofn.nMaxFile = 1024;
-	Ofn.lpstrInitialDir = pInitialDir;
+	Ofn.lpstrInitialDir = pDir;
 	Ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY;
 
 	const BOOL Picked = GetOpenFileNameW(&Ofn);
@@ -143,14 +138,31 @@ bool KxPickFileAsync(int Kind)
 	jobject Activity = (jobject)SDL_AndroidGetActivity();
 	if(!pEnv || !Activity)
 		return false;
-	jclass ActivityClass = pEnv->GetObjectClass(Activity);
 
-	jmethodID MethodId = pEnv->GetStaticMethodID(ActivityClass, "sendMessage", "(II)Z");
-	const bool Dispatched = MethodId && pEnv->CallStaticBooleanMethod(ActivityClass, MethodId, (jint)COMMAND_PICK_FILE, (jint)Kind) != JNI_FALSE;
+	// v6.5: SDL_AndroidGetActivity() returns an SDL-owned reference — deleting
+	// it with DeleteLocalRef crashed the client. Wrap it in our own local ref
+	// and only ever release that one.
+	jobject ActivityLocal = pEnv->NewLocalRef(Activity);
+	if(!ActivityLocal)
+		return false;
 
-	pEnv->DeleteLocalRef(ActivityClass);
-	pEnv->DeleteLocalRef(Activity);
-
+	bool Dispatched = false;
+	jclass ActivityClass = pEnv->GetObjectClass(ActivityLocal);
+	if(ActivityClass)
+	{
+		jmethodID MethodId = pEnv->GetStaticMethodID(ActivityClass, "sendMessage", "(II)Z");
+		if(MethodId)
+			Dispatched = pEnv->CallStaticBooleanMethod(ActivityClass, MethodId, (jint)COMMAND_PICK_FILE, (jint)Kind) != JNI_FALSE;
+		if(pEnv->ExceptionCheck())
+		{
+			// A Java exception must never leak into the game thread.
+			pEnv->ExceptionDescribe();
+			pEnv->ExceptionClear();
+			Dispatched = false;
+		}
+		pEnv->DeleteLocalRef(ActivityClass);
+	}
+	pEnv->DeleteLocalRef(ActivityLocal);
 	return Dispatched;
 }
 
@@ -169,17 +181,19 @@ bool KxPickFilePump(int *pKind, char *pPath, int BufSize)
 #endif
 
 #if !defined(CONF_FAMILY_WINDOWS)
-bool KxPickScriptFile(char *pBuf, int BufSize)
+bool KxPickScriptFile(char *pBuf, int BufSize, const char *pInitialDir)
 {
 	(void)pBuf;
 	(void)BufSize;
+	(void)pInitialDir;
 	return false;
 }
 
-bool KxPickTasFile(char *pBuf, int BufSize)
+bool KxPickTasFile(char *pBuf, int BufSize, const char *pInitialDir)
 {
 	(void)pBuf;
 	(void)BufSize;
+	(void)pInitialDir;
 	return false;
 }
 #endif

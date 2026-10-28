@@ -131,31 +131,46 @@ public class ClientActivity extends SDLActivity {
 	}
 
 	private String copyPickedFile(Uri uri, int kind) {
-		String name = "picked";
-		Cursor cursor = getContentResolver().query(uri, null, null, null, null);
-		if(cursor != null) {
-			try {
-				int nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
-				if(nameIndex >= 0 && cursor.moveToFirst() && cursor.getString(nameIndex) != null) {
-					name = cursor.getString(nameIndex);
-				}
-			} finally {
-				cursor.close();
-			}
-		}
-		name = name.replaceAll("[/\\\\]", "_");
-		if(name.isEmpty()) {
-			name = "picked";
-		}
-
-		File dir = new File(getExternalFilesDir(null), "user/" + (kind == 1 ? "tas" : "scripts"));
-		dir.mkdirs();
-		File destination = new File(dir, name);
-
+		// Any exception here must not take the activity down: report "not
+		// picked" to native and let the game handle it.
 		InputStream in = null;
 		OutputStream out = null;
 		try {
+			String name = "picked";
+			Cursor cursor = getContentResolver().query(uri, null, null, null, null);
+			if(cursor != null) {
+				try {
+					int nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+					if(nameIndex >= 0 && cursor.moveToFirst() && cursor.getString(nameIndex) != null) {
+						name = cursor.getString(nameIndex);
+					}
+				} finally {
+					cursor.close();
+				}
+			}
+			name = name.replaceAll("[/\\]", "_");
+			if(name.isEmpty()) {
+				name = "picked";
+			}
+
+			// v6.5: central Kinetix data folder (same layout as on desktop).
+			File baseDir = getExternalFilesDir(null);
+			if(baseDir == null) {
+				baseDir = getFilesDir();
+			}
+			if(baseDir == null) {
+				return null;
+			}
+			File dir = new File(baseDir, "Kinetix/" + (kind == 1 ? "TAS" : "Scripts"));
+			if(!dir.exists() && !dir.mkdirs() && !dir.isDirectory()) {
+				return null;
+			}
+			File destination = new File(dir, name);
+
 			in = getContentResolver().openInputStream(uri);
+			if(in == null) {
+				return null;
+			}
 			out = new FileOutputStream(destination);
 			byte[] buffer = new byte[65536];
 			int read;

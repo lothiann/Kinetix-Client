@@ -252,6 +252,42 @@ private:
         std::vector<std::string> m_vScriptBrowserFiles;
         float m_FileBrowserScroll = 0.0f;
 
+        // v6.3: ArrayList HUD (Visuals panel). Editor mode closes the ClickGUI
+        // and shows a sample list; the HUD itself renders in game even while
+        // the ClickGUI is closed. Drag position is persisted as screen ratios
+        // (kx_arraylist_pos_x/y), clamped so the list never leaves the screen.
+        bool m_ArrayListEditor = false;
+        bool m_ArrayListDragging = false;
+        vec2 m_ArrayListDragOffset = vec2(0.0f, 0.0f);
+        // v6.3: relative drag anchor (press position + HUD top-left at press),
+        // so the movement never drifts even if the cursor position is sampled late.
+        vec2 m_ArrayListDragStartMouse = vec2(0.0f, 0.0f);
+        vec2 m_ArrayListDragStartPos = vec2(0.0f, 0.0f);
+        float m_ArrayListHue = 0.0f;
+        float m_ArrayListRectX = 0.0f;
+        float m_ArrayListRectY = 0.0f;
+        float m_ArrayListRectW = 0.0f;
+        float m_ArrayListRectH = 0.0f;
+        bool m_ArrayListRectValid = false;
+        // Enable order for the History sort: names are appended when a feature
+        // turns on and removed when it turns off.
+        std::vector<std::string> m_vArrayListHistory;
+
+        // v6.4: ArrayInfo HUD — info line (logo | watermark | FPS | session |
+        // tee | nick | functions), wrapped at kx_arrayinfo_max_length. Same
+        // editor/drag model as the ArrayList.
+        bool m_ArrayInfoEditor = false;
+        bool m_ArrayInfoDragging = false;
+        vec2 m_ArrayInfoDragStartMouse = vec2(0.0f, 0.0f);
+        vec2 m_ArrayInfoDragStartPos = vec2(0.0f, 0.0f);
+        float m_ArrayInfoHue = 0.0f;
+        float m_ArrayInfoRectX = 0.0f;
+        float m_ArrayInfoRectY = 0.0f;
+        float m_ArrayInfoRectW = 0.0f;
+        float m_ArrayInfoRectH = 0.0f;
+        bool m_ArrayInfoRectValid = false;
+        IGraphics::CTextureHandle m_ArrayInfoLogo;
+
         // v1.56.60: advance all per-row / per-panel animations toward their targets.
         // Called once per frame from OnRender before any drawing.
         void UpdateAnimations(float dt);
@@ -277,6 +313,24 @@ private:
         void RefreshScriptBrowserList();
         void RenderFileBrowser(float alpha);
         void HandleFileBrowserClick(vec2 mousePos);
+
+        // v6.3: ArrayList HUD — enabled-feature list rendered in game.
+        void ArrayListBuildList(std::vector<std::string> &vOut) const;
+        void ArrayListUpdateHistory(const std::vector<std::string> &vEnabled);
+        void UpdateArrayList(float dt);
+        void RenderArrayList(float alpha);
+        bool ArrayListHitTest(vec2 mousePos) const;
+        bool ShouldRenderArrayList() const;
+        bool ArrayListPositionModified() const;
+        void ResetArrayListPosition();
+
+        // v6.4: ArrayInfo HUD — info line rendered in game.
+        void UpdateArrayInfo(float dt);
+        void RenderArrayInfo(float alpha);
+        bool ArrayInfoHitTest(vec2 mousePos) const;
+        bool ShouldRenderArrayInfo() const;
+        bool ArrayInfoPositionModified() const;
+        void ResetArrayInfoPosition();
 
         // Panel geometry — scaled up again 1.2x in v1.56.39 for readability.
         static constexpr float PANEL_WIDTH = 300.0f;
@@ -389,6 +443,9 @@ private:
 
         // Low-level draw helpers (all screen-space px).
         void DrawRoundedRect(float x, float y, float w, float h, float radius, int corners, ColorRGBA color);
+        // v6.3: real 1 px rounded-rect stroke (line polyline), optionally
+        // suppressing the top/bottom edges for touching blocks.
+        void DrawRoundedOutline(float x, float y, float w, float h, float radius, ColorRGBA color, bool DrawTop, bool DrawBottom);
         void DrawText(float x, float y, float size, const char *pText, ColorRGBA color, int align = 0);
 
         // v1.56.284: ClickGUI-styled ToolTip near the cursor (word-wrapped,

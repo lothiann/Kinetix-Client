@@ -168,7 +168,16 @@ void CDummyData::Init(IConsole *pConsole, IClient *pClient, IStorage *pStorage)
 		"Dummy limit incl. main (1..128): ClickGUI Dummies slider; respected by dummy_connect/ClickGUI/Reconnect");
 
 	// Load the persisted state (if any) and push it into the engine.
-	if(m_pStorage->FileExists("kinetix_dummies.cfg", IStorage::TYPE_SAVE) ||
+	// v6.5: the config lives in the central Kinetix data folder now; the old
+	// kinetix_dummies.cfg is migrated once (loaded, then Save() writes the
+	// new path).
+	if(m_pStorage->FileExists("Kinetix/dummy_settings.cfg", IStorage::TYPE_SAVE))
+	{
+		m_Loading = true;
+		m_pConsole->ExecuteFile("Kinetix/dummy_settings.cfg", false);
+		m_Loading = false;
+	}
+	else if(m_pStorage->FileExists("kinetix_dummies.cfg", IStorage::TYPE_SAVE) ||
 		m_pStorage->FileExists("kinetix_dummies.cfg", IStorage::TYPE_ALL))
 	{
 		m_Loading = true;
@@ -183,7 +192,7 @@ void CDummyData::Save()
 {
 	if(!m_pStorage)
 		return;
-	IOHANDLE File = m_pStorage->OpenFile("kinetix_dummies.cfg", IOFLAG_WRITE, IStorage::TYPE_SAVE);
+	IOHANDLE File = m_pStorage->OpenFile("Kinetix/dummy_settings.cfg", IOFLAG_WRITE, IStorage::TYPE_SAVE);
 	if(!File)
 		return;
 	char aBuf[384];

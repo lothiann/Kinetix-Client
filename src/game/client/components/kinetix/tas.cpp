@@ -4392,11 +4392,12 @@ void CTas::SaveTake(const char *pMap, const char *pName, const char *pAuthor)
 		char aStamp[64];
 		str_timestamp_format(aStamp, sizeof(aStamp), "%H-%M_%d-%m-%Y");
 		char aRel[512];
-		str_format(aRel, sizeof(aRel), "data/tas/%s_%s.tas", aMapSafe, aStamp);
-		Storage()->GetBinaryPathAbsolute(aRel, aPath, sizeof(aPath));
-		char aDir[512];
-		Storage()->GetBinaryPathAbsolute("data/tas", aDir, sizeof(aDir));
-		fs_makedir(aDir);
+		// v6.5: TAS files live in the central Kinetix data folder (save dir;
+		// on Android that is the app's external files dir), not next to the
+		// binary. The folder is created on startup, this is a safety net.
+		str_format(aRel, sizeof(aRel), "Kinetix/TAS/%s_%s.tas", aMapSafe, aStamp);
+		Storage()->CreateFolder("Kinetix/TAS", IStorage::TYPE_SAVE);
+		Storage()->GetCompletePath(IStorage::TYPE_SAVE, aRel, aPath, sizeof(aPath));
 		str_timestamp_format(aCreated, sizeof(aCreated), "%H:%M | %d.%m.%Y");
 	}
 

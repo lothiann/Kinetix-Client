@@ -206,9 +206,18 @@ void CBotNet::OnConsoleInit()
 	Console()->Register("kx_pf_paste", "", CFGFLAG_CLIENT, ConPfPaste, this, "Pathfinder: paste the found path into TAS Playground as the current run");
 	Console()->Register("kx_dummy_switch", "", CFGFLAG_CLIENT, ConDummySwitch, this, "Switch to next dummy (smart dummy switch)");
 
+	// v6.5: central Kinetix data folder in the save directory (on Android this
+	// is the app's external files dir, i.e. Android/data/<pkg>/files/Kinetix).
+	// Created on startup together with its subfolders, so users can drop TAS
+	// files or scripts in before the client ever wrote anything there.
+	Storage()->CreateFolder("Kinetix", IStorage::TYPE_SAVE);
+	Storage()->CreateFolder("Kinetix/TAS", IStorage::TYPE_SAVE);
+	Storage()->CreateFolder("Kinetix/Scripts", IStorage::TYPE_SAVE);
+
 	// Kinetix Dummy Manager (v1.56.282): register the dummy%d_* / kx_dummy_limit
-	// runtime commands, load kinetix_dummies.cfg and push the per-slot proxies
-	// + limit into the engine.
+	// runtime commands, load Kinetix/dummy_settings.cfg (migrating the old
+	// kinetix_dummies.cfg on first run) and push the per-slot proxies + limit
+	// into the engine.
 	m_Dummy.Init(Console(), Client(), Storage());
 }
 
