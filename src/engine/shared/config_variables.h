@@ -261,12 +261,11 @@ MACRO_CONFIG_INT(ClDummyDefaultEyes, dummy_default_eyes, 0, 0, 5, CFGFLAG_CLIENT
 // Max value 127 = MAX_DUMMIES-1 — update when MAX_DUMMIES changes
 MACRO_CONFIG_INT(ClDummy, cl_dummy, 0, 0, 127, CFGFLAG_CLIENT | CFGFLAG_INSENSITIVE, "Which player you control (0 = main, 1-127 = dummies)")
 MACRO_CONFIG_INT(ClDummyHammer, cl_dummy_hammer, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_INSENSITIVE, "Whether dummy is hammering for a hammerfly")
-MACRO_CONFIG_INT(KxDummyHammerKeepInputs, kx_dummy_hammer_keep_inputs, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Preserve dummy movement inputs (direction/jump/hook) during hammerfly; aim is still overridden for hammer direction")
+MACRO_CONFIG_INT(KxDummyHammerKeepInputs, kx_dummy_hammer_keep_inputs, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Preserve dummy inputs during hammerfly (direction/jump/hook; with Auto Fly also the pipeline aim between hits)")
 MACRO_CONFIG_INT(KxDummyHammerCustomLatency, kx_dummy_hammer_custom_latency, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Use custom hammer latency instead of default 500ms")
 MACRO_CONFIG_INT(KxDummyHammerLatencyMs, kx_dummy_hammer_latency_ms, 500, 50, 2000, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Hammer latency in milliseconds (only used when kx_dummy_hammer_custom_latency is on)")
-MACRO_CONFIG_INT(KxDummyHammerAuto, kx_dummy_hammer_auto, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Auto-hammer: dummy hammers the active player every tick when in hammer radius (overrides custom latency)")
-MACRO_CONFIG_INT(KxDummyHammerAutoMaxDist, kx_dummy_hammer_auto_max_dist, 50, 5, 63, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Auto Fly: max distance (in world units) between dummy and active player for hammer to fire. Real DDNet hammer max reach = 63 center-to-center (ProjStartPos offset 21 + FindEntities radius 14 + target ProximityRadius 28). Default 50 = small safety margin. Max 63 = exact real reach.")
-MACRO_CONFIG_INT(KxDummyHammerAutoPredict, kx_dummy_hammer_auto_predict, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Auto Fly: predict next-tick position of active player AND dummy before range check. Full physics: runs a real one-tick simulation (gravity, velocity ramp, friction, input, hook, map + player collision), falls back to linear pos+vel if unavailable. When on, hammer fires if the tees WILL be in range next tick (even if currently slightly out of range). Catches fast-moving players.")
+MACRO_CONFIG_INT(KxDummyHammerAuto, kx_dummy_hammer_auto, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Auto Fly: hammer only when the next tick can really hit (one-tick simulation; aim is set on the hit)")
+MACRO_CONFIG_INT(KxFixDummyHammer, kx_fix_dummy_hammer, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Fix Dummy Hammer: keep the dummy on the hammer while hammering (prevents Copy Moves from switching it back to the copied weapon)")
 MACRO_CONFIG_INT(KxFlyRide, kx_fly_ride, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Fly Ride: pilot (active dummy) hooks/hammers nearest dummy, WASD moves anchor point")
 MACRO_CONFIG_INT(KxTripleFly, kx_triple_fly, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Auto Triple Fly: acting dummy auto-hooks a target that enters trigger radius and holds hook while farther than radius")
 MACRO_CONFIG_INT(KxTripleFlyDummyMode, kx_triple_fly_dummy_mode, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Auto Triple Fly: acting dummy selection (0 = closest to active dummy, 1 = by ID)")
@@ -1350,6 +1349,27 @@ MACRO_CONFIG_INT(KxArrayInfoSessionTime, kx_arrayinfo_session_time, 1, 0, 1, CFG
 MACRO_CONFIG_INT(KxArrayInfoTee, kx_arrayinfo_tee, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayInfo: show the main tee icon")
 MACRO_CONFIG_INT(KxArrayInfoNickname, kx_arrayinfo_nickname, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayInfo: show the current nickname")
 MACRO_CONFIG_INT(KxArrayInfoFunctions, kx_arrayinfo_functions, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayInfo: show the enabled function count")
+
+// v6.7: ArrayPlayer HUD — now-playing media card (Windows SMTC / Android media).
+MACRO_CONFIG_INT(KxArrayPlayerEnabled, kx_arrayplayer_enabled, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayPlayer: show the now-playing player")
+MACRO_CONFIG_INT(KxArrayPlayerXAnchor, kx_arrayplayer_xanchor, 0, 0, 3, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayPlayer: text X anchor (0=Auto, 1=Right, 2=Center, 3=Left)")
+MACRO_CONFIG_INT(KxArrayPlayerStyle, kx_arrayplayer_style, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayPlayer: style (0=Group, 1=DDNet Group)")
+MACRO_CONFIG_INT(KxArrayPlayerIndent, kx_arrayplayer_indent, 4, 0, 40, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayPlayer: gap between title and artist (px)")
+MACRO_CONFIG_INT(KxArrayPlayerSize, kx_arrayplayer_size, 10, 1, 20, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayPlayer: HUD scale x10 (1-20 = 0.1x-2.0x)")
+MACRO_CONFIG_INT(KxArrayPlayerDynamicScale, kx_arrayplayer_dynamic_scale, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayPlayer: resize by dragging the bottom-right corner in the editor")
+MACRO_CONFIG_INT(KxArrayPlayerWidth, kx_arrayplayer_width, 320, 100, 1000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayPlayer: card width (px)")
+MACRO_CONFIG_INT(KxArrayPlayerHeight, kx_arrayplayer_height, 90, 40, 600, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayPlayer: card height (px)")
+MACRO_CONFIG_STR(KxArrayPlayerTextColor, kx_arrayplayer_text_color, 9, "ffffff", CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayPlayer: text color (hex RGB)")
+MACRO_CONFIG_INT(KxArrayPlayerRainbow, kx_arrayplayer_rainbow, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayPlayer: rainbow text")
+MACRO_CONFIG_INT(KxArrayPlayerRainbowMode, kx_arrayplayer_rainbow_mode, 0, 0, 2, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayPlayer: rainbow mode (0=Group, 1=Peas, 2=Peas+Gradient)")
+MACRO_CONFIG_INT(KxArrayPlayerRainbowSpeed, kx_arrayplayer_rainbow_speed, 10, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayPlayer: rainbow speed x10 (1-100 = 0.1-10.0)")
+MACRO_CONFIG_INT(KxArrayPlayerRainbowStep, kx_arrayplayer_rainbow_step, 25, 1, 180, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayPlayer: rainbow hue step (degrees)")
+MACRO_CONFIG_INT(KxArrayPlayerTextOpacity, kx_arrayplayer_text_opacity, 100, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayPlayer: text opacity (0-100)")
+MACRO_CONFIG_INT(KxArrayPlayerMainOpacity, kx_arrayplayer_main_opacity, 100, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayPlayer: border opacity (0-100)")
+MACRO_CONFIG_INT(KxArrayPlayerPanelOpacity, kx_arrayplayer_panel_opacity, 100, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayPlayer: background opacity (0-100)")
+MACRO_CONFIG_INT(KxArrayPlayerPosX, kx_arrayplayer_pos_x, 5000, -20000, 20000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayPlayer: X position as screen ratio (-20000-20000)")
+MACRO_CONFIG_INT(KxArrayPlayerPosY, kx_arrayplayer_pos_y, 5000, -20000, 20000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayPlayer: Y position as screen ratio (-20000-20000)")
+
 MACRO_CONFIG_INT(KxCustomColors, kx_custom_colors, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: custom colors (master; 0 = original look)")
 
 // v1.56.283: per-entity-category custom colors (Visuals > Custom colors > Sprite = Entities > Entity).
@@ -1754,8 +1774,39 @@ MACRO_CONFIG_INT(KxTbEntOthersOffWhileFreeze, kx_tb_ent_others_off_while_freeze,
  * Add config variables for mods below this comment to avoid merge conflicts.
  */
 MACRO_CONFIG_INT(KxBindsMode, kx_binds_mode, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Binds panel bind mode: 0=merge (append to existing bind), 1=override")
+MACRO_CONFIG_INT(KxSdsEnabled, kx_sds_enabled, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Smart dummy switch master toggle (0 = the bound switch button does nothing)")
 MACRO_CONFIG_INT(KxSdsMode, kx_sds_mode, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Smart dummy switch mode: 0=loop all connected dummies, 1=order targets")
 MACRO_CONFIG_STR(KxSdsDummyIds, kx_sds_dummy_ids, 32, "", CFGFLAG_CLIENT | CFGFLAG_SAVE, "Smart dummy switch: comma-separated dummy ids (0-7)")
+
+// v6.7: Smart Copy Moves — restrict cl_dummy_copy_moves to the top-N dummies
+// by a sort metric. Filters follow the ESP filter semantics (without the Dummy
+// filter: the candidates ARE our own dummies).
+MACRO_CONFIG_INT(KxSmartCopyMoves, kx_smart_copy_moves, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Smart Copy Moves: 1=apply copy moves only to the top-N dummies")
+MACRO_CONFIG_INT(KxSmartCopySort, kx_smart_copy_sort, 0, 0, 3, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Smart Copy Moves sort: 0=id 1=nearest by me 2=nearest aim 3=last active")
+MACRO_CONFIG_INT(KxSmartCopyApply, kx_smart_copy_apply, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Smart Copy Moves apply mode: 0=trigger (capture on copy moves enable) 1=always (recompute every tick)")
+MACRO_CONFIG_INT(KxSmartCopyCount, kx_smart_copy_count, 2, 1, 127, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Smart Copy Moves: how many top dummies receive copy moves")
+MACRO_CONFIG_INT(KxSmartCopyTeam, kx_smart_copy_team, 0, 0, 4, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Smart Copy Moves team filter: 0=both 1=my 2=war 3=blue 4=red")
+MACRO_CONFIG_INT(KxSmartCopyDdraceTeam, kx_smart_copy_ddrace_team, 0, 0, 3, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Smart Copy Moves DDrace team filter: 0=both 1=my 2=other 3=target")
+MACRO_CONFIG_INT(KxSmartCopyDdraceTeamId, kx_smart_copy_ddrace_team_id, 0, 0, 63, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Smart Copy Moves DDrace team id (used when DDrace team filter = target)")
+MACRO_CONFIG_INT(KxSmartCopyFriend, kx_smart_copy_friend, 0, 0, 2, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Smart Copy Moves friend filter: 0=both 1=ignore 2=only")
+MACRO_CONFIG_INT(KxSmartCopyClanmate, kx_smart_copy_clanmate, 0, 0, 2, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Smart Copy Moves clanmate filter: 0=both 1=ignore 2=only")
+MACRO_CONFIG_INT(KxSmartCopyTargetsMode, kx_smart_copy_targets_mode, 0, 0, 2, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Smart Copy Moves targets filter: 0=both 1=only 2=ignore")
+MACRO_CONFIG_STR(KxSmartCopyTargets, kx_smart_copy_targets, 64, "", CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Smart Copy Moves targets filter IDs (empty or no valid IDs = off)")
+MACRO_CONFIG_INT(KxSmartCopyFreeze, kx_smart_copy_freeze, 0, 0, 2, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Smart Copy Moves freeze filter: 0=both 1=freeze 2=no_freeze")
+
+// v6.7: Smart Dummy Switch — candidate ordering + filters (ESP semantics,
+// no Dummy filter) + Without Repeat (no immediate revisits until the round
+// of all candidates completes).
+MACRO_CONFIG_INT(KxSdsOrder, kx_sds_order, 0, 0, 3, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Smart dummy switch order: 0=id 1=nearest by me 2=nearest by aim 3=last active")
+MACRO_CONFIG_INT(KxSdsNoRepeat, kx_sds_no_repeat, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Smart dummy switch: 1=don't revisit dummies until every candidate was visited once (order != id)")
+MACRO_CONFIG_INT(KxSdsTeam, kx_sds_team, 0, 0, 4, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Smart dummy switch team filter: 0=both 1=my 2=war 3=blue 4=red")
+MACRO_CONFIG_INT(KxSdsDdraceTeam, kx_sds_ddrace_team, 0, 0, 3, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Smart dummy switch DDrace team filter: 0=both 1=my 2=other 3=target")
+MACRO_CONFIG_INT(KxSdsDdraceTeamId, kx_sds_ddrace_team_id, 0, 0, 63, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Smart dummy switch DDrace team id (used when DDrace team filter = target)")
+MACRO_CONFIG_INT(KxSdsFriend, kx_sds_friend, 0, 0, 2, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Smart dummy switch friend filter: 0=both 1=ignore 2=only")
+MACRO_CONFIG_INT(KxSdsClanmate, kx_sds_clanmate, 0, 0, 2, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Smart dummy switch clanmate filter: 0=both 1=ignore 2=only")
+MACRO_CONFIG_INT(KxSdsTargetsMode, kx_sds_targets_mode, 0, 0, 2, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Smart dummy switch targets filter: 0=both 1=only 2=ignore")
+MACRO_CONFIG_STR(KxSdsTargets, kx_sds_targets, 64, "", CFGFLAG_CLIENT | CFGFLAG_SAVE, "Smart dummy switch targets filter IDs (empty or no valid IDs = off)")
+MACRO_CONFIG_INT(KxSdsFreeze, kx_sds_freeze, 0, 0, 2, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Smart dummy switch freeze filter: 0=both 1=freeze 2=no_freeze")
 
 // v1.56.263: Admin Alarm (Visuals panel) — per-level, like AimBot per-weapon:
 // the Level dropdown selects which level's settings are being edited. The

@@ -13,6 +13,7 @@
 #include <game/client/components/chat.h>
 #include <game/client/components/kinetix/code_exec/code_exec.h>
 #include <game/client/components/kinetix/code_exec/file_dialog.h>
+#include <game/client/components/kinetix/media_info.h>
 
 #include <yoga/Yoga.h>
 
@@ -204,19 +205,8 @@ static SRow g_CopyMovesLatencyChildren[] = {
         {ERowType::Slider, "Latency (ms)", nullptr, false, false, 50.0f, 5000.0f, 10.0f, 500.0f, "ms", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Staggered replay delay; effective delay = value × dummy index (0 = live copy)."},
 };
-// v1.56.189: "Auto Fly" expandable — configurable auto-hammer for hammerfly.
-// Children: Max Distance slider (5-63, default 50, real hammer max reach = 63
-// = ProjStartPos offset 21 + FindEntities radius 14 + target ProximityRadius 28),
-// v1.56.246: Predict toggle — full one-tick physics next-tick position
-// prediction (gravity, velramp, hook, collisions; see CGameClient::PredictedPosNextTick).
-static SRow g_AutoFlyChildren[] = {
-        {ERowType::Slider, "Max Distance", nullptr, false, false, 5.0f, 63.0f, 1.0f, 50.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Max hammer reach for the auto-hammer (in-game max is 63)."},
-        {ERowType::Toggle, "Predict", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Predict the next-tick position (full physics) before hammering."},
-};
-static const char *const g_TripleFlyDummyModeOpts[] = {"Closest to me", "ID"};
-static const char *const g_TripleFlyTargetModeOpts[] = {"Closest to me", "Closest to Aim", "IDs"};
+static const char *const g_TripleFlyDummyModeOpts[] = {"Closest To Me", "ID"};
+static const char *const g_TripleFlyTargetModeOpts[] = {"Closest To Me", "Closest To Aim", "IDs"};
 static SRow g_TripleFlyChildren[] = {
         {ERowType::Dropdown, "Dummy mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TripleFlyDummyModeOpts, 2, 0, nullptr, 0,
                 "How the anchor dummy is chosen (closest to me or by id)."},
@@ -270,7 +260,7 @@ static const char *const g_ABFriendOpts[] = {"Both", "Ignore", "Only"};
 static const char *const g_ABDummyOpts[] = {"Both", "Ignore", "Only"};
 static const char *const g_ABTargetsFilterOpts[] = {"Both", "Only", "Ignore"};
 static const char *const g_ABFreezeOpts[] = {"Both", "Freeze", "No freeze"};
-static const char *const g_ABPriorityOpts[] = {"Nearest FOV", "Nearest Aim", "Nearest to me"};
+static const char *const g_ABPriorityOpts[] = {"Nearest To FOV", "Nearest To Aim", "Nearest To Me"};
 // v1.56.262: "Auto Fire" expandable — auto-fire every Delay ticks while fire is held.
 static SRow g_AutoFireChildren[] = {
         {ERowType::Slider, "Delay", nullptr, false, false, 0.0f, 50.0f, 1.0f, 0.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
@@ -812,6 +802,36 @@ static SRow g_AvoidFreezeChildren[] = {
         {ERowType::Slider, "Ticks Before", nullptr, false, false, 1.0f, 10.0f, 1.0f, 3.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Ticks before the freeze to pre-empt it."},
 };
+// v6.7: Smart Copy Moves expandable — header is the master toggle. Children:
+// sort/apply dropdowns + top-N slider + ESP-style filters (no Dummy filter —
+// the candidates are our own dummies).
+static const char *const g_SmartSortOpts[] = {"ID", "Nearest To Me", "Nearest To Aim", "Last Active"};
+static const char *const g_SmartApplyOpts[] = {"Trigger", "Always"};
+static SRow g_SmartCopyMovesChildren[] = {
+        {ERowType::Dropdown, "Sort Type", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_SmartSortOpts, 4, 0, nullptr, 0,
+                "How the top dummies are picked."},
+        {ERowType::Dropdown, "Apply Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_SmartApplyOpts, 2, 0, nullptr, 0,
+                "Trigger: capture the top on copy moves enable; Always: recompute every tick."},
+        {ERowType::Slider, "Apply Dummies", nullptr, false, false, 1.0f, 7.0f, 1.0f, 2.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "How many top dummies receive copy moves (max follows the dummy limit)."},
+        {ERowType::Dropdown, "Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TeamFilterOpts, 5, 0, nullptr, 0,
+                "Team filter for the dummy."},
+        {ERowType::Dropdown, "DDrace Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_DDraceTeamOpts, 4, 0, nullptr, 0,
+                "DDrace team filter for the dummy."},
+        {ERowType::Input, "Target ID", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0,
+                "Explicit DDrace team id (used when DDrace Team = Target)."},
+        {ERowType::Dropdown, "Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0,
+                "Friend filter (both / ignore / only)."},
+        {ERowType::Dropdown, "Clanmate", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0,
+                "Clanmate filter (both / ignore / only)."},
+        {ERowType::Dropdown, "Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0,
+                "Freeze-state filter (both / freeze / no freeze)."},
+        {ERowType::Dropdown, "Targets", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0,
+                "Include only / ignore specific target ids."},
+        {ERowType::Input, "Targets IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0,
+                "Target id list (used when Targets = Only/Ignore)."},
+};
+
 // v1.56.260: Functions panel merged with the former Advanced rows (Laser unfreeze,
 // Fake Aim, Basic Avoid Freeze). Trajectory/ESP/Hitboxes moved to the Visuals
 // panel; Random Aim rows removed (feature deleted).
@@ -834,12 +854,18 @@ static SRow g_FunctionsRows[] = {
                 "Keep your own input while a fly/hammer feature is active."},
         {ERowType::Expandable, "Custom latency", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CustomLatencyChildren, 1,
                 "Add artificial input latency."},
-        // v1.56.189: Auto fly is now an expandable with Max Distance + Predict children.
-        {ERowType::Expandable, "Auto fly", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AutoFlyChildren, 2,
-                "Automatically hammer-fly."},
+        // v6.7: Auto fly is a plain toggle — it only checks whether the next tick
+        // can really hit and fires exactly then (no distance/predict settings).
+        {ERowType::Toggle, "Auto fly", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Hammer only when the next tick can really hit; aim is set on the hit."},
+        {ERowType::Toggle, "Fix Dummy Hammer", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Keep the dummy on the hammer while hammering (fixes Copy Moves switching it to the copied weapon)."},
         {ERowType::Expandable, "Auto Triple Fly", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TripleFlyChildren, 6,
                 "Triple-fly anchored to a dummy."},
         // Copy Moves sub-section
+        // v6.7: Smart Copy Moves — restrict copy moves to the top-N dummies.
+        {ERowType::Expandable, "Smart Copy Moves", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_SmartCopyMovesChildren, 11,
+                "Apply copy moves only to the top-N dummies (header = master toggle)."},
         {ERowType::Expandable, "Copy Moves Filter", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CopyMovesFilterChildren, 6,
                 "Choose which inputs are excluded from copied moves."},
         {ERowType::Toggle, "Mirror direction", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
@@ -1079,14 +1105,31 @@ static SRow g_BindsEdgeChildren[] = {
                 "Edge-bind activation window (ms)."},
 };
 static const char *const g_BindsModeOpts[] = {"Merge", "Override"};
-static const char *const g_SdsModeOpts[] = {"Loop all", "Order targets"};
+// v6.7: Smart Dummy Switch — candidate order + Without Repeat + filters.
+static const char *const g_SdsOrderOpts[] = {"ID", "Nearest To Me", "Nearest To Aim", "Last Active"};
 static SRow g_BindsSdsChildren[] = {
         {ERowType::Input, "Button", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0,
                 "Button that triggers the smart dummy switch."},
-        {ERowType::Dropdown, "Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_SdsModeOpts, 2, 0, nullptr, 0,
-                "Loop all dummies or follow a fixed target order."},
-        {ERowType::Input, "Dummy IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "0,1,3,5...", nullptr, 0, 0, nullptr, 0,
-                "Dummy id list for the smart dummy switch."},
+        {ERowType::Dropdown, "Order Type", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_SdsOrderOpts, 4, 0, nullptr, 0,
+                "How the next dummy is picked."},
+        {ERowType::Toggle, "Without Repeat", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Don't revisit dummies until every candidate was visited once (new round after)."},
+        {ERowType::Dropdown, "Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TeamFilterOpts, 5, 0, nullptr, 0,
+                "Team filter for the switch candidates."},
+        {ERowType::Dropdown, "DDrace Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_DDraceTeamOpts, 4, 0, nullptr, 0,
+                "DDrace team filter for the switch candidates."},
+        {ERowType::Input, "Target ID", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0,
+                "Explicit DDrace team id (used when DDrace Team = Target)."},
+        {ERowType::Dropdown, "Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0,
+                "Friend filter (both / ignore / only)."},
+        {ERowType::Dropdown, "Clanmate", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0,
+                "Clanmate filter (both / ignore / only)."},
+        {ERowType::Dropdown, "Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0,
+                "Freeze-state filter (both / freeze / no freeze)."},
+        {ERowType::Dropdown, "Targets", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0,
+                "Include only / ignore specific target ids."},
+        {ERowType::Input, "Targets IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0,
+                "Target id list (used when Targets = Only/Ignore)."},
 };
 
 static SRow g_BindsRows[] = {
@@ -1095,7 +1138,7 @@ static SRow g_BindsRows[] = {
         {ERowType::Expandable, "Binds", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BindsMainChildren, 18, "Bind keys to toggle features. Commits on Enter or on focus loss."},
         {ERowType::Expandable, "Edge bind", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BindsEdgeChildren, 2,
                 "Bind mouse buttons to a toggle with an edge window."},
-        {ERowType::Expandable, "Smart dummy switch", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BindsSdsChildren, 3,
+        {ERowType::Expandable, "Smart dummy switch", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BindsSdsChildren, 11,
                 "Cycle dummies with a bound button."},
 };
 
@@ -1648,10 +1691,10 @@ static SRow g_ArrayInfoChildren[] = {
                 "Visual style of the info blocks."},
         {ERowType::Slider, "Indentation", nullptr, false, false, 0.0f, 40.0f, 1.0f, 2.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Vertical gap between info lines (the blocks move with it)."},
-        {ERowType::Input, "Text Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ffffff", "hex...", nullptr, 0, 0, nullptr, 0,
-                "Text color of the info line (hex RGB)."},
         {ERowType::Slider, "ArrayInfo Size", nullptr, false, false, 0.1f, 2.0f, 0.1f, 1.0f, "x", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Overall scale of the info bar (like ClickGUI Scale)."},
+        {ERowType::Input, "Text Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ffffff", "hex...", nullptr, 0, 0, nullptr, 0,
+                "Text color of the info line (hex RGB)."},
         {ERowType::Toggle, "Rainbow Text", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Animate the text color with a hue cycle."},
         {ERowType::Dropdown, "Rainbow Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ArrayListRainbowModeOpts, 3, 0, nullptr, 0,
@@ -1666,6 +1709,44 @@ static SRow g_ArrayInfoChildren[] = {
                 "Opacity of the block borders."},
         {ERowType::Slider, "Panel Opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Opacity of the block background."},
+};
+// v6.7: ArrayPlayer — now-playing media card. Same settings model as
+// ArrayList, minus Max Length / Sort Type and the Peas styles. Indentation is
+// the vertical gap between the track title and the artist.
+static const char *const g_ArrayPlayerStyleOpts[] = {"Group", "DDNet Group"};
+static SRow g_ArrayPlayerChildren[] = {
+        {ERowType::DoubleButton, "Editor", "Reset", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Toggle the ArrayPlayer editor (closes the ClickGUI).", "Reset the player position to its default."},
+        {ERowType::Dropdown, "X Anchor", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ArrayListXAnchorOpts, 4, 0, nullptr, 0,
+                "Horizontal alignment of the title/artist text inside the card."},
+        {ERowType::Dropdown, "Style", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ArrayPlayerStyleOpts, 2, 0, nullptr, 0,
+                "Visual style of the player card."},
+        {ERowType::Slider, "Indentation", nullptr, false, false, 0.0f, 40.0f, 1.0f, 4.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Vertical gap between the track title and the artist."},
+        {ERowType::Slider, "ArrayPlayer Size", nullptr, false, false, 0.1f, 2.0f, 0.1f, 1.0f, "x", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Overall scale of the player (like ClickGUI Scale)."},
+        {ERowType::Input, "Text Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ffffff", "hex...", nullptr, 0, 0, nullptr, 0,
+                "Text color of the player (hex RGB)."},
+        {ERowType::Toggle, "Dynamic Scale", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Resize the player by dragging its bottom-right corner in the editor."},
+        {ERowType::Slider, "Height ArrayPlayer", nullptr, false, false, 40.0f, 600.0f, 1.0f, 90.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Card height in pixels."},
+        {ERowType::Slider, "Weight ArrayPlayer", nullptr, false, false, 100.0f, 1000.0f, 1.0f, 320.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Card width in pixels."},
+        {ERowType::Toggle, "Rainbow Text", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Animate the title/artist color with a hue cycle."},
+        {ERowType::Dropdown, "Rainbow Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ArrayListRainbowModeOpts, 3, 0, nullptr, 0,
+                "Group = one color, Peas = per line, Peas+Gradient = per character."},
+        {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Rainbow hue rotation speed."},
+        {ERowType::Slider, "Step", nullptr, false, false, 1.0f, 180.0f, 1.0f, 25.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Hue offset between the title and artist."},
+        {ERowType::Slider, "Text Opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Opacity of the title/artist text."},
+        {ERowType::Slider, "Main Opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Opacity of the card border."},
+        {ERowType::Slider, "Panel Opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Opacity of the card background."},
 };
 static SRow g_VisualsRows[] = {
         {ERowType::Expandable, "Custom colors", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CustomColorsChildren, 7, "Master switch: off = original game look."},
@@ -1689,6 +1770,8 @@ static SRow g_VisualsRows[] = {
                 "On-screen list of enabled features (drag to move)."},
         {ERowType::Expandable, "ArrayInfo", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ArrayInfoChildren, 21,
                 "On-screen info bar (drag to move)."},
+        {ERowType::Expandable, "ArrayPlayer", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ArrayPlayerChildren, 16,
+                "On-screen now-playing media card (drag to move)."},
 };
 
 // v1.56.286: Search panel — real-time filtering of every other panel.
@@ -2119,6 +2202,22 @@ static bool ArrayInfoChildVisible(const SRow *pChildren, int childCount, int idx
         return true;
 }
 
+// v6.7: ArrayPlayer children — same rainbow gating as the ArrayList/ArrayInfo.
+static bool ArrayPlayerChildVisible(const SRow *pChildren, int childCount, int idx)
+{
+        if(idx < 0 || idx >= childCount)
+                return false;
+        const SRow &row = pChildren[idx];
+        const bool Rainbow = g_Config.m_KxArrayPlayerRainbow != 0;
+        if(str_comp(row.pName, "Text Color") == 0)
+                return !Rainbow;
+        if(str_comp(row.pName, "Rainbow Mode") == 0 || str_comp(row.pName, "Speed") == 0)
+                return Rainbow;
+        if(str_comp(row.pName, "Step") == 0)
+                return Rainbow && g_Config.m_KxArrayPlayerRainbowMode != 0;
+        return true;
+}
+
 // v6.3: tooltip opacity rows live under the Show ToolTips toggle.
 static bool ClickGuiSettingsChildVisible(const SRow *pChildren, int childCount, int idx)
 {
@@ -2139,6 +2238,8 @@ static bool TasRowChildrenVisible(const SRow &row, int c)
                 return ArrayListChildVisible(row.pChildren, row.childCount, c);
         if(str_comp(row.pName, "ArrayInfo") == 0)
                 return ArrayInfoChildVisible(row.pChildren, row.childCount, c);
+        if(str_comp(row.pName, "ArrayPlayer") == 0)
+                return ArrayPlayerChildVisible(row.pChildren, row.childCount, c);
         if(str_comp(row.pName, "ClickGUI Settings") == 0)
                 return ClickGuiSettingsChildVisible(row.pChildren, row.childCount, c);
         if(str_comp(row.pName, "Visuals") == 0)
@@ -2872,8 +2973,54 @@ static bool BindsChildVisible(const SRow *pChildren, int childCount, int idx)
 {
         if(idx < 0 || idx >= childCount)
                 return false;
-        if(str_comp(pChildren[idx].pName, "Dummy IDs") == 0)
-                return g_Config.m_KxSdsMode == 1;
+        const SRow &row = pChildren[idx];
+        // v6.7: Without Repeat needs a non-ID order (plain id cycling has no
+        // meaningful "repeat").
+        if(str_comp(row.pName, "Without Repeat") == 0)
+                return g_Config.m_KxSdsOrder != 0;
+        // v6.7: "Target ID" visible only when DDrace Team = Target (3).
+        if(str_comp(row.pName, "Target ID") == 0)
+        {
+                for(int i = 0; i < childCount; ++i)
+                {
+                        if(str_comp(pChildren[i].pName, "DDrace Team") == 0)
+                                return pChildren[i].valueIdx == 3;
+                }
+        }
+        // v6.7: "Targets IDs" visible only when Targets filter != Both.
+        if(str_comp(row.pName, "Targets IDs") == 0 || str_comp(row.pName, "Untargets IDs") == 0)
+        {
+                for(int i = 0; i < childCount; ++i)
+                {
+                        if(str_comp(pChildren[i].pName, "Targets") == 0)
+                                return pChildren[i].valueIdx != 0;
+                }
+        }
+        return true;
+}
+// v6.7: Smart Copy Moves — "Target ID" only when DDrace Team = Target (3);
+// "Targets IDs"/"Untargets IDs" only when Targets filter != Both.
+static bool SmartCopyChildVisible(const SRow *pChildren, int childCount, int idx)
+{
+        if(idx < 0 || idx >= childCount)
+                return false;
+        const SRow &row = pChildren[idx];
+        if(str_comp(row.pName, "Target ID") == 0)
+        {
+                for(int i = 0; i < childCount; ++i)
+                {
+                        if(str_comp(pChildren[i].pName, "DDrace Team") == 0)
+                                return pChildren[i].valueIdx == 3;
+                }
+        }
+        if(str_comp(row.pName, "Targets IDs") == 0 || str_comp(row.pName, "Untargets IDs") == 0)
+        {
+                for(int i = 0; i < childCount; ++i)
+                {
+                        if(str_comp(pChildren[i].pName, "Targets") == 0)
+                                return pChildren[i].valueIdx != 0;
+                }
+        }
         return true;
 }
 // v1.56.129: BAF — "Angles" + "Silent" visible only when Aim toggle is on.
@@ -4587,6 +4734,7 @@ void CClickGui::OnRender()
 	// ClickGUI is closed (and while the editor preview is active).
 	const bool ArrayListVisible = ShouldRenderArrayList();
 	const bool ArrayInfoVisible = ShouldRenderArrayInfo();
+	const bool ArrayPlayerVisible = ShouldRenderArrayPlayer();
 
 	// Perf: when fully closed (including the close animation), there is nothing
 	// to update or draw besides the ArrayList HUD. The heavy panel/UI sync
@@ -4594,10 +4742,12 @@ void CClickGui::OnRender()
 	// function, burning ~0.4ms/frame even with the ClickGUI closed.
 	if(!isOpen && m_AnimProgress <= 0.0f)
 	{
-		if(!ArrayListVisible && !ArrayInfoVisible)
+		if(!ArrayListVisible && !ArrayInfoVisible && !ArrayPlayerVisible)
 		{
 			m_ArrayListDragging = false;
 			m_ArrayInfoDragging = false;
+			m_ArrayPlayerDragging = false;
+			m_ArrayPlayerResizing = false;
 			return;
 		}
 		// Minimal per-frame setup for the HUD-only path (scale + cursor).
@@ -4608,7 +4758,7 @@ void CClickGui::OnRender()
 			m_MousePos = Input()->NativeMousePos() / (m_UiScale > 0.0f ? m_UiScale : 1.0f);
 		// The editor is a positioning mode: keep the OS cursor visible so the
 		// HUD can be dragged. The console manages its own mouse mode.
-		if((m_ArrayListEditor || m_ArrayInfoEditor) && !GameClient()->m_GameConsole.IsActive())
+		if((m_ArrayListEditor || m_ArrayInfoEditor || m_ArrayPlayerEditor) && !GameClient()->m_GameConsole.IsActive())
 			Input()->MouseModeAbsolute();
 		// v6.3: poll the left button directly so dragging works even if the
 		// press event never reaches CClickGui::OnInput while the GUI is closed.
@@ -4616,9 +4766,25 @@ void CClickGui::OnRender()
 		{
 			m_ArrayListDragging = false;
 			m_ArrayInfoDragging = false;
+			m_ArrayPlayerDragging = false;
+			m_ArrayPlayerResizing = false;
+			m_ArrayPlayerBtnWasDown = false;
 		}
 		else
 		{
+			// v6.7: media transport buttons (edge-triggered, HUD-only path).
+			if(m_ArrayPlayerBtnRectValid && !m_ArrayPlayerEditor && !m_ArrayPlayerBtnWasDown)
+			{
+				for(int b = 0; b < 3; ++b)
+				{
+					if(PointInRect(m_MousePos, m_aArrayPlayerBtnRect[b][0], m_aArrayPlayerBtnRect[b][1], m_aArrayPlayerBtnRect[b][2], m_aArrayPlayerBtnRect[b][3]))
+					{
+						KxMedia::Command(b);
+						m_ArrayPlayerBtnWasDown = true;
+						break;
+					}
+				}
+			}
 			if(m_ArrayListEditor && !m_ArrayListDragging && ArrayListHitTest(m_MousePos))
 			{
 				m_ArrayListDragging = true;
@@ -4630,6 +4796,22 @@ void CClickGui::OnRender()
 				m_ArrayInfoDragging = true;
 				m_ArrayInfoDragStartMouse = m_MousePos;
 				m_ArrayInfoDragStartPos = vec2(m_ArrayInfoRectX, m_ArrayInfoRectY);
+			}
+			if(m_ArrayPlayerEditor && !m_ArrayPlayerDragging && !m_ArrayPlayerResizing)
+			{
+				if(ArrayPlayerResizeHitTest(m_MousePos))
+				{
+					m_ArrayPlayerResizing = true;
+					m_ArrayPlayerResizeStartMouse = m_MousePos;
+					m_ArrayPlayerResizeStartW = g_Config.m_KxArrayPlayerWidth;
+					m_ArrayPlayerResizeStartH = g_Config.m_KxArrayPlayerHeight;
+				}
+				else if(ArrayPlayerHitTest(m_MousePos))
+				{
+					m_ArrayPlayerDragging = true;
+					m_ArrayPlayerDragStartMouse = m_MousePos;
+					m_ArrayPlayerDragStartPos = vec2(m_ArrayPlayerRectX, m_ArrayPlayerRectY);
+				}
 			}
 		}
 		Graphics()->MapScreenToSize(VScreenWidth(), VScreenHeight());
@@ -4644,7 +4826,14 @@ void CClickGui::OnRender()
 			UpdateArrayInfo(Client()->RenderFrameTime());
 			RenderArrayInfo(1.0f);
 		}
-		KxSetCursorShape(((m_ArrayListDragging || ArrayListHitTest(m_MousePos)) || (m_ArrayInfoDragging || ArrayInfoHitTest(m_MousePos))) ? 9 : 0);
+		if(ArrayPlayerVisible)
+		{
+			UpdateArrayPlayer(Client()->RenderFrameTime());
+			RenderArrayPlayer(1.0f);
+		}
+		const bool HoverPlayerResize = ArrayPlayerResizeHitTest(m_MousePos);
+		const bool HoverPlayer = ArrayPlayerHitTest(m_MousePos);
+		KxSetCursorShape(HoverPlayerResize ? 5 : (((m_ArrayListDragging || ArrayListHitTest(m_MousePos)) || (m_ArrayInfoDragging || ArrayInfoHitTest(m_MousePos)) || (m_ArrayPlayerDragging || HoverPlayer)) ? 9 : 0));
 		return;
 	}
 
@@ -4841,6 +5030,8 @@ void CClickGui::OnRender()
                                         row.on = g_Config.m_KxDummyHammerCustomLatency != 0;
                                 else if(str_comp(row.pName, "Auto fly") == 0)
                                         row.on = g_Config.m_KxDummyHammerAuto != 0;
+                                else if(str_comp(row.pName, "Fix Dummy Hammer") == 0)
+                                        row.on = g_Config.m_KxFixDummyHammer != 0;
                                 else if(str_comp(row.pName, "Auto Triple Fly") == 0)
                                         row.on = g_Config.m_KxTripleFly != 0;
                                 // v1.56.262: Visuals bypasses + Admin Alarm + Functions headers.
@@ -4873,6 +5064,9 @@ void CClickGui::OnRender()
                                 // v1.56.187: Copy Moves Latency expandable is master toggle.
                                 else if(str_comp(row.pName, "Copy Moves Latency") == 0)
                                         row.on = g_Config.m_KxCopyMovesLatencyEnabled != 0;
+                                // v6.7: Smart Dummy Switch expandable is master toggle.
+                                else if(str_comp(row.pName, "Smart dummy switch") == 0)
+                                        row.on = g_Config.m_KxSdsEnabled != 0;
                                 // Pathfinder top-level sliders/toggles
                                 else if(str_comp(row.pName, "A* Weight") == 0)
                                         row.value = g_Config.m_KxPfAStarWeight / 100.0f;
@@ -4945,9 +5139,54 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
+if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
-                                        if(str_comp(child.pName, "Latency (ms)") == 0 && str_comp(row.pName, "Custom latency") == 0)
+                                        // v6.7: Smart Copy Moves children (index-keyed: Sort Type,
+                                        // Apply Mode, Apply Dummies slider, filters + inputs).
+                                        // First in the chain: no earlier branch matches these rows.
+                                        if(str_comp(row.pName, "Smart Copy Moves") == 0)
+                                        {
+                                                switch(c)
+                                                {
+                                                case 0: child.valueIdx = g_Config.m_KxSmartCopySort; break;
+                                                case 1: child.valueIdx = g_Config.m_KxSmartCopyApply; break;
+                                                case 2:
+                                                {
+                                                        // Slider max follows the Dummy Manager limit (incl. main).
+                                                        const int MaxCnt = g_DummyLimit >= 2 ? g_DummyLimit - 1 : 1;
+                                                        child.max = (float)MaxCnt;
+                                                        int Cnt = g_Config.m_KxSmartCopyCount;
+                                                        if(Cnt < 1)
+                                                                Cnt = 1;
+                                                        if(Cnt > MaxCnt)
+                                                                Cnt = MaxCnt;
+                                                        child.value = (float)Cnt;
+                                                        break;
+                                                }
+                                                case 3: child.valueIdx = g_Config.m_KxSmartCopyTeam; break;
+                                                case 4: child.valueIdx = g_Config.m_KxSmartCopyDdraceTeam; break;
+                                                case 5:
+                                                        if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                        {
+                                                                str_format(child.m_aInputBuf, sizeof(child.m_aInputBuf), "%d", g_Config.m_KxSmartCopyDdraceTeamId);
+                                                                child.m_InputInitialized = true;
+                                                        }
+                                                        break;
+                                                case 6: child.valueIdx = g_Config.m_KxSmartCopyFriend; break;
+                                                case 7: child.valueIdx = g_Config.m_KxSmartCopyClanmate; break;
+                                                case 8: child.valueIdx = g_Config.m_KxSmartCopyFreeze; break;
+                                                case 9: child.valueIdx = g_Config.m_KxSmartCopyTargetsMode; break;
+                                                case 10:
+                                                        child.pName = (g_Config.m_KxSmartCopyTargetsMode == 2) ? "Untargets IDs" : "Targets IDs";
+                                                        if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                        {
+                                                                str_copy(child.m_aInputBuf, g_Config.m_KxSmartCopyTargets, sizeof(child.m_aInputBuf));
+                                                                child.m_InputInitialized = true;
+                                                        }
+                                                        break;
+                                                }
+                                        }
+                                        else if(str_comp(child.pName, "Latency (ms)") == 0 && str_comp(row.pName, "Custom latency") == 0)
                                                 child.value = (float)g_Config.m_KxDummyHammerLatencyMs;
                                         else if(str_comp(child.pName, "Latency (ms)") == 0 && str_comp(row.pName, "Copy Moves Latency") == 0)
                                                 child.value = (float)g_Config.m_KxCopyMovesLatency;
@@ -4965,11 +5204,6 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                 child.on = g_Config.m_KxDummyCopyMovesFilterFire != 0;
                                         else if(str_comp(child.pName, "Filter: Weapon") == 0)
                                                 child.on = g_Config.m_KxDummyCopyMovesFilterWeapon != 0;
-                                        // v1.56.189: Auto Fly children — Max Distance slider + Predict toggle.
-                                        else if(str_comp(child.pName, "Max Distance") == 0 && str_comp(row.pName, "Auto fly") == 0)
-                                                child.value = (float)g_Config.m_KxDummyHammerAutoMaxDist;
-                                        else if(str_comp(child.pName, "Predict") == 0 && str_comp(row.pName, "Auto fly") == 0)
-                                                child.on = g_Config.m_KxDummyHammerAutoPredict != 0;
                                         else if(str_comp(child.pName, "Dummy mode") == 0 && str_comp(row.pName, "Auto Triple Fly") == 0)
                                                 child.valueIdx = g_Config.m_KxTripleFlyDummyMode;
                                         else if(str_comp(child.pName, "Target mode") == 0 && str_comp(row.pName, "Auto Triple Fly") == 0)
@@ -6136,6 +6370,79 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                         }
                                 }
                         }
+                        // v6.7: ArrayPlayer settings.
+                        else if(str_comp(row.pName, "ArrayPlayer") == 0 && row.type == ERowType::Expandable)
+                        {
+                                row.on = g_Config.m_KxArrayPlayerEnabled != 0;
+                                for(int c = 0; c < row.childCount; ++c)
+                                {
+                                        SRow &child = row.pChildren[c];
+                                        const bool Dragging = (m_DragSliderPanel == p && m_DragSliderRow == r && m_DragSliderChild == c);
+                                        if(str_comp(child.pName, "X Anchor") == 0)
+                                                child.valueIdx = g_Config.m_KxArrayPlayerXAnchor;
+                                        else if(str_comp(child.pName, "Style") == 0)
+                                                child.valueIdx = g_Config.m_KxArrayPlayerStyle;
+                                        else if(str_comp(child.pName, "Indentation") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = (float)g_Config.m_KxArrayPlayerIndent;
+                                        }
+                                        else if(str_comp(child.pName, "ArrayPlayer Size") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = g_Config.m_KxArrayPlayerSize / 10.0f;
+                                        }
+                                        else if(str_comp(child.pName, "Text Color") == 0)
+                                        {
+                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                {
+                                                        str_copy(child.m_aInputBuf, g_Config.m_KxArrayPlayerTextColor, sizeof(child.m_aInputBuf));
+                                                        child.m_InputInitialized = true;
+                                                }
+                                        }
+                                        else if(str_comp(child.pName, "Dynamic Scale") == 0)
+                                                child.on = g_Config.m_KxArrayPlayerDynamicScale != 0;
+                                        else if(str_comp(child.pName, "Height ArrayPlayer") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = (float)g_Config.m_KxArrayPlayerHeight;
+                                        }
+                                        else if(str_comp(child.pName, "Weight ArrayPlayer") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = (float)g_Config.m_KxArrayPlayerWidth;
+                                        }
+                                        else if(str_comp(child.pName, "Rainbow Text") == 0)
+                                                child.on = g_Config.m_KxArrayPlayerRainbow != 0;
+                                        else if(str_comp(child.pName, "Rainbow Mode") == 0)
+                                                child.valueIdx = g_Config.m_KxArrayPlayerRainbowMode;
+                                        else if(str_comp(child.pName, "Speed") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = g_Config.m_KxArrayPlayerRainbowSpeed / 10.0f;
+                                        }
+                                        else if(str_comp(child.pName, "Step") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = (float)g_Config.m_KxArrayPlayerRainbowStep;
+                                        }
+                                        else if(str_comp(child.pName, "Text Opacity") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = (float)g_Config.m_KxArrayPlayerTextOpacity;
+                                        }
+                                        else if(str_comp(child.pName, "Main Opacity") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = (float)g_Config.m_KxArrayPlayerMainOpacity;
+                                        }
+                                        else if(str_comp(child.pName, "Panel Opacity") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = (float)g_Config.m_KxArrayPlayerPanelOpacity;
+                                        }
+                                }
+                        }
                         // v1.56.283: Custom colors — one branch for the selected Sprite/Entity.
                         else if(str_comp(row.pName, "Custom colors") == 0 && row.type == ERowType::Expandable)
                         {
@@ -6424,13 +6731,38 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                         child.m_InputInitialized = true;
                                                 }
                                         }
-                                        else if(str_comp(child.pName, "Mode") == 0)
-                                                child.valueIdx = g_Config.m_KxSdsMode;
-                                        else if(str_comp(child.pName, "Dummy IDs") == 0)
+                                        // v6.7: Smart Dummy Switch children (index order: Button,
+                                        // Order Type, Without Repeat, filters + inputs).
+                                        else if(str_comp(child.pName, "Order Type") == 0)
+                                                child.valueIdx = g_Config.m_KxSdsOrder;
+                                        else if(str_comp(child.pName, "Without Repeat") == 0)
+                                                child.on = g_Config.m_KxSdsNoRepeat != 0;
+                                        else if(str_comp(child.pName, "Team") == 0)
+                                                child.valueIdx = g_Config.m_KxSdsTeam;
+                                        else if(str_comp(child.pName, "DDrace Team") == 0)
+                                                child.valueIdx = g_Config.m_KxSdsDdraceTeam;
+                                        else if(str_comp(child.pName, "Target ID") == 0)
                                         {
                                                 if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
                                                 {
-                                                        str_copy(child.m_aInputBuf, g_Config.m_KxSdsDummyIds, sizeof(child.m_aInputBuf));
+                                                        str_format(child.m_aInputBuf, sizeof(child.m_aInputBuf), "%d", g_Config.m_KxSdsDdraceTeamId);
+                                                        child.m_InputInitialized = true;
+                                                }
+                                        }
+                                        else if(str_comp(child.pName, "Friend") == 0)
+                                                child.valueIdx = g_Config.m_KxSdsFriend;
+                                        else if(str_comp(child.pName, "Clanmate") == 0)
+                                                child.valueIdx = g_Config.m_KxSdsClanmate;
+                                        else if(str_comp(child.pName, "Freeze") == 0)
+                                                child.valueIdx = g_Config.m_KxSdsFreeze;
+                                        else if(str_comp(child.pName, "Targets") == 0)
+                                                child.valueIdx = g_Config.m_KxSdsTargetsMode;
+                                        else if(str_comp(child.pName, "Targets IDs") == 0 || str_comp(child.pName, "Untargets IDs") == 0)
+                                        {
+                                                child.pName = (g_Config.m_KxSdsTargetsMode == 2) ? "Untargets IDs" : "Targets IDs";
+                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                {
+                                                        str_copy(child.m_aInputBuf, g_Config.m_KxSdsTargets, sizeof(child.m_aInputBuf));
                                                         child.m_InputInitialized = true;
                                                 }
                                         }
@@ -6769,6 +7101,27 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 else if(str_comp(pTarget->pName, "Panel Opacity") == 0)
                                         g_Config.m_KxArrayInfoPanelOpacity = (int)(pTarget->value + 0.5f);
                         }
+                        else if(str_comp(row.pName, "ArrayPlayer") == 0)
+                        {
+                                if(str_comp(pTarget->pName, "Indentation") == 0)
+                                        g_Config.m_KxArrayPlayerIndent = (int)(pTarget->value + 0.5f);
+                                else if(str_comp(pTarget->pName, "ArrayPlayer Size") == 0)
+                                        g_Config.m_KxArrayPlayerSize = (int)(pTarget->value * 10.0f + 0.5f);
+                                else if(str_comp(pTarget->pName, "Height ArrayPlayer") == 0)
+                                        g_Config.m_KxArrayPlayerHeight = (int)(pTarget->value + 0.5f);
+                                else if(str_comp(pTarget->pName, "Weight ArrayPlayer") == 0)
+                                        g_Config.m_KxArrayPlayerWidth = (int)(pTarget->value + 0.5f);
+                                else if(str_comp(pTarget->pName, "Speed") == 0)
+                                        g_Config.m_KxArrayPlayerRainbowSpeed = (int)(pTarget->value * 10.0f + 0.5f);
+                                else if(str_comp(pTarget->pName, "Step") == 0)
+                                        g_Config.m_KxArrayPlayerRainbowStep = (int)(pTarget->value + 0.5f);
+                                else if(str_comp(pTarget->pName, "Text Opacity") == 0)
+                                        g_Config.m_KxArrayPlayerTextOpacity = (int)(pTarget->value + 0.5f);
+                                else if(str_comp(pTarget->pName, "Main Opacity") == 0)
+                                        g_Config.m_KxArrayPlayerMainOpacity = (int)(pTarget->value + 0.5f);
+                                else if(str_comp(pTarget->pName, "Panel Opacity") == 0)
+                                        g_Config.m_KxArrayPlayerPanelOpacity = (int)(pTarget->value + 0.5f);
+                        }
                         else if(str_comp(row.pName, "ClickGUI Settings") == 0 && str_comp(pTarget->pName, "ToolTips Text Opacity") == 0)
                                 g_Config.m_KxUiTooltipTextOpacity = (int)(pTarget->value + 0.5f);
                         else if(str_comp(row.pName, "ClickGUI Settings") == 0 && str_comp(pTarget->pName, "ToolTips Main Opacity") == 0)
@@ -6842,8 +7195,9 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 g_Config.m_KxCopyMovesLatency = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Ratio") == 0 && str_comp(row.pName, "Freedom Path") == 0)
                                 g_Config.m_KxPfFreedomRatio = (int)(pTarget->value * 10.0f + 0.5f);
-                        else if(str_comp(pTarget->pName, "Max Distance") == 0 && str_comp(row.pName, "Auto fly") == 0)
-                                g_Config.m_KxDummyHammerAutoMaxDist = (int)pTarget->value;
+                        // v6.7: Smart Copy Moves top-N slider.
+                        else if(str_comp(pTarget->pName, "Apply Dummies") == 0)
+                                g_Config.m_KxSmartCopyCount = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Trigger radius") == 0 && str_comp(row.pName, "Auto Triple Fly") == 0)
                                 g_Config.m_KxTripleFlyTriggerRadius = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Radius") == 0 && str_comp(row.pName, "Auto Triple Fly") == 0)
@@ -7106,6 +7460,11 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
         {
                 UpdateArrayInfo(Client()->RenderFrameTime());
                 RenderArrayInfo(1.0f);
+        }
+        if(ArrayPlayerVisible)
+        {
+                UpdateArrayPlayer(Client()->RenderFrameTime());
+                RenderArrayPlayer(1.0f);
         }
 
         // v1.56.287: BG Blur — capture the rendered game behind the GUI, blur it
@@ -7392,7 +7751,7 @@ bool CClickGui::OnInput(const IInput::CEvent &Event)
         // v6.3: the ArrayList editor captures ALL mouse input, exactly like the
         // open ClickGUI (1:1) — nothing leaks into the game. The HUD is dragged
         // by holding it.
-        const bool ArrayEditorActive = (m_ArrayListEditor && ShouldRenderArrayList()) || (m_ArrayInfoEditor && ShouldRenderArrayInfo());
+        const bool ArrayEditorActive = (m_ArrayListEditor && ShouldRenderArrayList()) || (m_ArrayInfoEditor && ShouldRenderArrayInfo()) || (m_ArrayPlayerEditor && ShouldRenderArrayPlayer());
         if(g_Config.m_ClClickGui == 0 && ArrayEditorActive && !GameClient()->m_GameConsole.IsActive())
         {
                 const vec2 MP = Input()->NativeMousePos() / (m_UiScale > 0.0f ? m_UiScale : 1.0f);
@@ -7410,12 +7769,30 @@ bool CClickGui::OnInput(const IInput::CEvent &Event)
                                 m_ArrayInfoDragStartMouse = MP;
                                 m_ArrayInfoDragStartPos = vec2(m_ArrayInfoRectX, m_ArrayInfoRectY);
                         }
+                        if(m_ArrayPlayerEditor && !m_ArrayPlayerDragging && !m_ArrayPlayerResizing)
+                        {
+                                if(ArrayPlayerResizeHitTest(MP))
+                                {
+                                        m_ArrayPlayerResizing = true;
+                                        m_ArrayPlayerResizeStartMouse = MP;
+                                        m_ArrayPlayerResizeStartW = g_Config.m_KxArrayPlayerWidth;
+                                        m_ArrayPlayerResizeStartH = g_Config.m_KxArrayPlayerHeight;
+                                }
+                                else if(ArrayPlayerHitTest(MP))
+                                {
+                                        m_ArrayPlayerDragging = true;
+                                        m_ArrayPlayerDragStartMouse = MP;
+                                        m_ArrayPlayerDragStartPos = vec2(m_ArrayPlayerRectX, m_ArrayPlayerRectY);
+                                }
+                        }
                         return true;
                 }
                 if((Event.m_Flags & IInput::FLAG_RELEASE) && Event.m_Key == KEY_MOUSE_1)
                 {
                         m_ArrayListDragging = false;
                         m_ArrayInfoDragging = false;
+                        m_ArrayPlayerDragging = false;
+                        m_ArrayPlayerResizing = false;
                         return true;
                 }
                 if(Event.m_Key >= KEY_MOUSE_1 && Event.m_Key <= KEY_MOUSE_8)
@@ -7486,7 +7863,7 @@ bool CClickGui::OnCursorMove(float x, float y, IInput::ECursorType CursorType)
                 return true;
         }
         // v6.3: the HUD editors own the cursor exactly like the open GUI.
-        if((m_ArrayListEditor && ShouldRenderArrayList()) || (m_ArrayInfoEditor && ShouldRenderArrayInfo()))
+        if((m_ArrayListEditor && ShouldRenderArrayList()) || (m_ArrayInfoEditor && ShouldRenderArrayInfo()) || (m_ArrayPlayerEditor && ShouldRenderArrayPlayer()))
                 return true;
         return false;
 }
@@ -7508,7 +7885,7 @@ bool CClickGui::OnTouchState(std::vector<IInput::CTouchFingerState> &vTouchFinge
         // mouse drag is owned by OnInput/OnRender; clearing it every frame made
         // the polling restart the drag at the current cursor position (zero net
         // movement, i.e. the HUD never moved).
-        if((m_ArrayListEditor || m_ArrayInfoEditor) && g_Config.m_ClClickGui == 0 && m_AnimProgress <= 0.0f)
+        if((m_ArrayListEditor || m_ArrayInfoEditor || m_ArrayPlayerEditor) && g_Config.m_ClClickGui == 0 && m_AnimProgress <= 0.0f)
         {
                 const bool HadTouch = m_TouchActive;
                 m_TouchActive = !vTouchFingerStates.empty();
@@ -7529,6 +7906,22 @@ bool CClickGui::OnTouchState(std::vector<IInput::CTouchFingerState> &vTouchFinge
                                 m_ArrayInfoDragStartMouse = m_MousePos;
                                 m_ArrayInfoDragStartPos = vec2(m_ArrayInfoRectX, m_ArrayInfoRectY);
                         }
+                        if(m_ArrayPlayerEditor && !m_ArrayPlayerDragging && !m_ArrayPlayerResizing)
+                        {
+                                if(ArrayPlayerResizeHitTest(m_MousePos))
+                                {
+                                        m_ArrayPlayerResizing = true;
+                                        m_ArrayPlayerResizeStartMouse = m_MousePos;
+                                        m_ArrayPlayerResizeStartW = g_Config.m_KxArrayPlayerWidth;
+                                        m_ArrayPlayerResizeStartH = g_Config.m_KxArrayPlayerHeight;
+                                }
+                                else if(ArrayPlayerHitTest(m_MousePos))
+                                {
+                                        m_ArrayPlayerDragging = true;
+                                        m_ArrayPlayerDragStartMouse = m_MousePos;
+                                        m_ArrayPlayerDragStartPos = vec2(m_ArrayPlayerRectX, m_ArrayPlayerRectY);
+                                }
+                        }
                 }
                 else
                 {
@@ -7536,6 +7929,8 @@ bool CClickGui::OnTouchState(std::vector<IInput::CTouchFingerState> &vTouchFinge
                         {
                                 m_ArrayListDragging = false;
                                 m_ArrayInfoDragging = false;
+                                m_ArrayPlayerDragging = false;
+                                m_ArrayPlayerResizing = false;
                         }
                         m_TouchActive = false;
                 }
@@ -7741,6 +8136,20 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
         // v6.3: the ArrayList HUD is drawn UNDER the ClickGUI and is only
         // draggable in the editor (GUI closed), so clicks here go to the panels.
 
+        // v6.7: ArrayPlayer media transport buttons — clickable with the GUI
+        // open too (the card itself is not a ClickGUI panel).
+        if(m_ArrayPlayerBtnRectValid && !m_ArrayPlayerEditor && ShouldRenderArrayPlayer())
+        {
+                for(int b = 0; b < 3; ++b)
+                {
+                        if(PointInRect(mousePos, m_aArrayPlayerBtnRect[b][0], m_aArrayPlayerBtnRect[b][1], m_aArrayPlayerBtnRect[b][2], m_aArrayPlayerBtnRect[b][3]))
+                        {
+                                KxMedia::Command(b);
+                                return;
+                        }
+                }
+        }
+
         // Iterate panels top-to-bottom (high z first) to find the topmost hit.
         int clickOrder[NUM_PANELS];
         for(int i = 0; i < NUM_PANELS; ++i)
@@ -7910,6 +8319,8 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         // v6.4: ArrayInfo master + info toggles.
                                         else if(str_comp(pTarget->pName, "ArrayInfo") == 0)
                                                 g_Config.m_KxArrayInfoEnabled = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "ArrayPlayer") == 0)
+                                                g_Config.m_KxArrayPlayerEnabled = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Kinetix Logo") == 0 && str_comp(row.pName, "ArrayInfo") == 0)
                                                 g_Config.m_KxArrayInfoLogo = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Show FPS") == 0 && str_comp(row.pName, "ArrayInfo") == 0)
@@ -7926,6 +8337,10 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 g_Config.m_KxArrayListRainbow = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Rainbow Text") == 0 && str_comp(row.pName, "ArrayInfo") == 0)
                                                 g_Config.m_KxArrayInfoRainbow = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Rainbow Text") == 0 && str_comp(row.pName, "ArrayPlayer") == 0)
+                                                g_Config.m_KxArrayPlayerRainbow = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Dynamic Scale") == 0 && str_comp(row.pName, "ArrayPlayer") == 0)
+                                                g_Config.m_KxArrayPlayerDynamicScale = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Show ToolTips") == 0)
                                                 g_Config.m_KxUiShowTooltips = pTarget->on ? 1 : 0;
                                         // v1.56.283: Custom colors — per-selection Enable
@@ -7994,6 +8409,8 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 g_Config.m_KxDummyHammerCustomLatency = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Auto fly") == 0)
                                                 g_Config.m_KxDummyHammerAuto = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Fix Dummy Hammer") == 0)
+                                                g_Config.m_KxFixDummyHammer = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Auto Triple Fly") == 0)
                                                 g_Config.m_KxTripleFly = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Edge bind") == 0)
@@ -8009,271 +8426,13 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         // v1.56.151: Fly Ride
                                         else if(str_comp(pTarget->pName, "Fly Ride") == 0)
                                                 g_Config.m_KxFlyRide = pTarget->on ? 1 : 0;
-                                        // v1.56.83: AimBot/TriggerBot expandable master toggles
-                                        else if(str_comp(pTarget->pName, "AimBot") == 0)
-                                                g_Config.m_KxAimBot = pTarget->on;
-                                        else if(str_comp(pTarget->pName, "TriggerBot") == 0)
-                                                g_Config.m_KxTriggerBot = pTarget->on;
-                                        // v1.56.83: AimBot per-weapon child toggles (parent = "AimBot")
-                                        else if(str_comp(row.pName, "AimBot") == 0)
+                                        // C1061: MSVC caps block nesting at 128 levels and this
+                                        // dispatch chain outgrew it. Everything from the AimBot/
+                                        // TriggerBot master toggles down lives in HandleToggleTail;
+                                        // it runs as this chain's final else-if, so the
+                                        // first-match-wins order of the original chain is unchanged.
+                                        else if(HandleToggleTail(pTarget, &row, &panel))
                                         {
-                                                CAimBot &ab = GameClient()->m_AimBot;
-                                                {
-                                                        auto &s = AbEditSettings(ab);
-                                                        if(str_comp(pTarget->pName, "Enable") == 0)
-                                                            s.m_Enabled = pTarget->on;
-                                                        else if(str_comp(pTarget->pName, "Show FOV") == 0)
-                                                            ab.m_AimBotShowFov = pTarget->on;
-                                                        else if(str_comp(pTarget->pName, "Show Radius") == 0)
-                                                            ab.m_AimBotShowRadius = pTarget->on;
-                                                        else if(str_comp(pTarget->pName, "Auto Switch Weapon") == 0)
-                                                            s.m_AutoSwitchWeapon = pTarget->on;
-                                                        else if(str_comp(pTarget->pName, "Use raycast (Show)") == 0)
-                                                            s.m_UseRaycastShow = pTarget->on;
-                                                        else if(str_comp(pTarget->pName, "Use raycast angle (AB)") == 0)
-                                                            s.m_UseAngle = pTarget->on;
-                                                        else if(str_comp(pTarget->pName, "Predict") == 0)
-                                                            s.m_Predict = pTarget->on;
-                                                        else if(str_comp(pTarget->pName, "Silent") == 0)
-                                                        {
-                                                            s.m_Silent = pTarget->on;
-                                                            // "Trigger" is hidden while Silent is on — remap.
-                                                            if(s.m_Silent && s.m_AimMode == 1)
-                                                                s.m_AimMode = 0;
-                                                        }
-                                                        else if(str_comp(pTarget->pName, "Center snap") == 0)
-                                                            s.m_SmoothCenterSnap = pTarget->on;
-                                                        else if(str_comp(pTarget->pName, "Off while freeze") == 0)
-                                                            s.m_OffWhileFreeze = pTarget->on;
-                                                }
-                                        }
-                                        // v1.56.83: TriggerBot per-weapon child toggles (parent = "TriggerBot")
-                                        else if(str_comp(row.pName, "TriggerBot") == 0)
-                                        {
-                                                CAimBot &tb = GameClient()->m_AimBot;
-                                                {
-                                                        auto &s = TbEditSettings(tb);
-                                                        if(str_comp(pTarget->pName, "Enable") == 0)
-                                                            s.m_Enabled = pTarget->on;
-                                                        else if(str_comp(pTarget->pName, "Show FOV") == 0)
-                                                            tb.m_TriggerBotShowFov = pTarget->on;
-                                                        else if(str_comp(pTarget->pName, "Show Radius") == 0)
-                                                            tb.m_TriggerBotShowRadius = pTarget->on;
-                                                        else if(str_comp(pTarget->pName, "Auto Switch Weapon") == 0)
-                                                            s.m_AutoSwitchWeapon = pTarget->on;
-                                                        else if(str_comp(pTarget->pName, "Use raycast (Show)") == 0)
-                                                            s.m_UseRaycastShow = pTarget->on;
-                                                        else if(str_comp(pTarget->pName, "Use silent channel AB") == 0)
-                                                            s.m_UseSilentChannelAB = pTarget->on;
-                                                        else if(str_comp(pTarget->pName, "Off while freeze") == 0)
-                                                            s.m_OffWhileFreeze = pTarget->on;
-                                                }
-                                        }
-                                        // v1.56.178: Trajectory per-type child toggles (parent = "Trajectory")
-                                        else if(str_comp(row.pName, "Trajectory") == 0 && pTarget != &row)
-                                        {
-                                                CTrajectory &traj = GameClient()->m_Trajectory;
-                                                int sel = traj.m_SelectedType;
-                                                if(sel >= 0 && sel < CTrajectory::NUM_TRAJ_TYPES)
-                                                {
-                                                        auto &ts = traj.m_aTypes[sel];
-                                                        if(str_comp(pTarget->pName, "Show") == 0)
-                                                                ts.m_Show = pTarget->on;
-                                                        else if(str_comp(pTarget->pName, "Alpha Gradient") == 0)
-                                                                ts.m_AlphaGradient = pTarget->on;
-                                                        else if(str_comp(pTarget->pName, "Simulate Players") == 0)
-                                                                ts.m_SimulatePlayers = pTarget->on;
-                                                        else if(str_comp(pTarget->pName, "Show for other players") == 0)
-                                                                ts.m_ShowForOtherPlayers = pTarget->on;
-                                                        else if(str_comp(pTarget->pName, "Show for current") == 0)
-                                                                ts.m_ShowForCurrent = pTarget->on;
-                                                }
-                                        }
-                                        // v1.56.258: Block children toggles.
-                                        else if(str_comp(row.pName, "Helpers") == 0 && pTarget != &row)
-                                        {
-                                                if(str_comp(pTarget->pName, "Auto Main") == 0) g_Config.m_KxAutoMain = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "All Target") == 0) g_Config.m_KxTargetAll = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "Rescue") == 0) g_Config.m_KxRescue = pTarget->on;
-                                                else if(str_comp(pTarget->pName, "All Rescue") == 0) g_Config.m_KxRescueAll = pTarget->on;
-                                        }
-                                        // Copy Moves Filter expandable is master toggle.
-                                        else if(str_comp(pTarget->pName, "Copy Moves Filter") == 0)
-                                                g_Config.m_KxDummyCopyMovesFilter = pTarget->on ? 1 : 0;
-                                        // v1.56.187: Copy Moves Latency expandable is master toggle.
-                                        else if(str_comp(pTarget->pName, "Copy Moves Latency") == 0)
-                                                g_Config.m_KxCopyMovesLatencyEnabled = pTarget->on ? 1 : 0;
-                                        // Copy Moves Filter sub-toggles
-                                        else if(str_comp(pTarget->pName, "Filter: Jump") == 0)
-                                                g_Config.m_KxDummyCopyMovesFilterJump = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Filter: Direction") == 0)
-                                                g_Config.m_KxDummyCopyMovesFilterDirection = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Filter: Hook") == 0)
-                                                g_Config.m_KxDummyCopyMovesFilterHook = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Filter: Aim") == 0)
-                                                g_Config.m_KxDummyCopyMovesFilterAim = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Filter: Fire") == 0)
-                                                g_Config.m_KxDummyCopyMovesFilterFire = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Filter: Weapon") == 0)
-                                                g_Config.m_KxDummyCopyMovesFilterWeapon = pTarget->on ? 1 : 0;
-                                        // v1.56.189: Auto Fly Predict toggle.
-                                        else if(str_comp(pTarget->pName, "Predict") == 0 && str_comp(row.pName, "Auto fly") == 0)
-                                                g_Config.m_KxDummyHammerAutoPredict = pTarget->on ? 1 : 0;
-                                        // Settings → IRC children
-                                        else if(str_comp(pTarget->pName, "Reveal join") == 0)
-                                                g_Config.m_KxIrcRevealJoin = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Nameplate tag") == 0)
-                                                g_Config.m_KxIrcNameplateTag = pTarget->on ? 1 : 0;
-                                        // Advanced → Laser unfreeze children
-                                        else if(str_comp(pTarget->pName, "Auto laser") == 0)
-                                                g_Config.m_KxLaserUnfreezeAuto = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Silent") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
-                                                g_Config.m_KxLaserUnfreezeSilent = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Show attempt") == 0)
-                                                g_Config.m_KxLaserUnfreezeShowAttempt = pTarget->on ? 1 : 0;
-                                        // Basic Avoid Freeze toggles
-                                        else if(str_comp(pTarget->pName, "Freeze") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
-                                                g_Config.m_KxAfAvoidFreeze = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Teleport") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
-                                                g_Config.m_KxAfAvoidTeleport = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Death") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
-                                                g_Config.m_KxAfAvoidDeath = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Direction") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
-                                                g_Config.m_KxAfDirection = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Jump") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
-                                                g_Config.m_KxAfJump = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Hook") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
-                                                g_Config.m_KxAfHook = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Aim") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
-                                                g_Config.m_KxAfAim = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Silent") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
-                                                g_Config.m_KxAfSilent = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Show for me") == 0)
-                                                g_Config.m_KxFakeAimShowForMe = pTarget->on ? 1 : 0;
-                                        // v1.56.262: Fake Aim — Show Server-Side Aim.
-                                        else if(str_comp(pTarget->pName, "Show Server-Side Aim") == 0 && str_comp(row.pName, "Fake Aim") == 0)
-                                                g_Config.m_KxFakeAimShowServerSide = pTarget->on ? 1 : 0;
-                                        // v1.56.263: Fake Aim — Predict.
-                                        else if(str_comp(pTarget->pName, "Predict") == 0 && str_comp(row.pName, "Fake Aim") == 0)
-                                                g_Config.m_KxFakeAimPredict = pTarget->on ? 1 : 0;
-                                        // v1.56.256: ESP pointer/box visibility toggles.
-                                        else if(str_comp(pTarget->pName, "Pointer") == 0 && str_comp(row.pName, "ESP") == 0)
-                                                g_Config.m_KxEspPointer = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Box") == 0 && str_comp(row.pName, "ESP") == 0)
-                                                g_Config.m_KxEspBox = pTarget->on ? 1 : 0;
-                                        // v1.56.256: Hitboxes toggles.
-                                        else if(str_comp(pTarget->pName, "Tee tile") == 0 && str_comp(row.pName, "Hitboxes") == 0)
-                                                g_Config.m_KxHitboxesTeeTile = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Tee trigger") == 0 && str_comp(row.pName, "Hitboxes") == 0)
-                                                g_Config.m_KxHitboxesTeeTrigger = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Show for others") == 0 && str_comp(row.pName, "Hitboxes") == 0)
-                                                g_Config.m_KxHitboxesShowOthers = pTarget->on ? 1 : 0;
-                                        // v1.56.257: Hitboxes expandable header = master toggle (like IRC/Spoofer).
-                                        else if(str_comp(pTarget->pName, "Hitboxes") == 0)
-                                                g_Config.m_KxHitboxes = pTarget->on ? 1 : 0;
-                                        // Pathfinder → Visuals children
-                                        else if(str_comp(pTarget->pName, "Show field") == 0)
-                                                g_Config.m_KxPfShowField = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Show hooks") == 0)
-                                                g_Config.m_KxPfShowHooks = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Show branches") == 0)
-                                                g_Config.m_KxPfShowBranches = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Show speed") == 0)
-                                                g_Config.m_KxPfShowSpeed = pTarget->on ? 1 : 0;
-                                        // Pathfinder top-level
-                                        else if(str_comp(pTarget->pName, "Freeze Support (Beta)") == 0)
-                                                g_Config.m_KxPfFreezeSupport = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Freedom Path") == 0)
-                                                g_Config.m_KxPfFreedom = pTarget->on ? 1 : 0;
-                                        // v1.56.280: RT Pathfinder top-level toggle
-                                        else if(str_comp(pTarget->pName, "Reconstruct") == 0)
-                                                g_Config.m_KxRtPfReconstruct = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Future Limit") == 0)
-                                                g_Config.m_KxRtPfFutureLimit = pTarget->on ? 1 : 0;
-                                        // RT Pathfinder Visuals children (panel-gated: TAS/Pathfinder
-                                        // use overlapping child labels — generic names are safe here).
-                                        else if(str_comp(row.pName, "Visuals") == 0 && str_comp(panel.pTitle, "Real-Time Pathfinder") == 0)
-                                        {
-                                                if(str_comp(pTarget->pName, "Show Path") == 0)
-                                                        g_Config.m_KxRtPfShowPath = pTarget->on ? 1 : 0;
-                                                else if(str_comp(pTarget->pName, "Show Hooks") == 0)
-                                                        g_Config.m_KxRtPfShowHooks = pTarget->on ? 1 : 0;
-                                                else if(str_comp(pTarget->pName, "Show Field") == 0)
-                                                        g_Config.m_KxRtPfShowField = pTarget->on ? 1 : 0;
-                                                else if(str_comp(pTarget->pName, "Show Previous Path") == 0)
-                                                        g_Config.m_KxRtPfShowPrevPath = pTarget->on ? 1 : 0;
-                                                else if(str_comp(pTarget->pName, "Show Speed") == 0)
-                                                        g_Config.m_KxRtPfShowSpeed = pTarget->on ? 1 : 0;
-                                        }
-                                        // Settings → IRC/Spoofer expandables are master toggles.
-                                        else if(str_comp(pTarget->pName, "IRC") == 0)
-                                                g_Config.m_KxIrcEnabled = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Spoofer") == 0)
-                                        {
-                                                g_Config.m_KxVersionSpoof = pTarget->on ? 1 : 0;
-                                                g_Config.m_KxSpoofClientStr = pTarget->on ? 1 : 0;
-                                        }
-                                        // v1.56.273: Spoof Zoom / Spoof Spectate headers = master toggles.
-                                        else if(str_comp(pTarget->pName, "Spoof Zoom") == 0)
-                                                g_Config.m_KxSpoofZoom = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Spoof Spectate") == 0)
-                                                g_Config.m_KxSpoofSpectate = pTarget->on ? 1 : 0;
-                                        // v1.56.107: Spoofer → Git hash toggle (child)
-                                        else if(str_comp(pTarget->pName, "Git hash") == 0 && str_comp(row.pName, "Spoofer") == 0)
-                                                g_Config.m_KxSpoofGitHashEnabled = pTarget->on ? 1 : 0;
-                                        // v1.56.174: Spoofer → Extra NETMSGs toggle (BestClient preset only)
-                                        else if(str_comp(pTarget->pName, "Extra NETMSGs") == 0 && str_comp(row.pName, "Spoofer") == 0)
-                                        {
-                                                if(g_Config.m_KxSpoofClientPreset == 1)
-                                                        g_Config.m_KxSpoofTClientExtraNetmsgs = pTarget->on ? 1 : 0;
-                                                else
-                                                        g_Config.m_KxSpoofBestClientExtraNetmsgs = pTarget->on ? 1 : 0;
-                                        }
-                                        else if(str_comp(pTarget->pName, "Rainbow Main Color") == 0)
-                                        {
-                                                // v1.56.78: save color before enabling rainbow,
-                                                // restore it when disabling.
-                                                if(pTarget->on && !m_RainbowEnabled)
-                                                        m_SavedAccentColorRGBA = m_AccentColorRGBA;
-                                                else if(!pTarget->on && m_RainbowEnabled)
-                                                        m_AccentColorRGBA = m_SavedAccentColorRGBA;
-                                                m_RainbowEnabled = pTarget->on;
-                                        }
-                                        // v1.56.201: Line rendering per-component Rainbow toggle
-                                        else if(str_comp(pTarget->pName, "Rainbow") == 0 && str_comp(row.pName, "Line rendering") == 0)
-                                        {
-                                                int compIdx = g_Config.m_KxLineComponent;
-                                                EKxLineComponent comp = (EKxLineComponent)compIdx;
-                                                switch(comp)
-                                                {
-                                                case KX_LINE_AIMBOT: g_Config.m_KxLineAimBotRainbow = pTarget->on ? 1 : 0; break;
-                                                case KX_LINE_TRIGGERBOT: g_Config.m_KxLineTriggerBotRainbow = pTarget->on ? 1 : 0; break;
-                                                case KX_LINE_TRAJECTORY: g_Config.m_KxLineTrajectoryRainbow = pTarget->on ? 1 : 0; break;
-                                                case KX_LINE_LASER_UNFREEZE: g_Config.m_KxLineLaserUnfreezeRainbow = pTarget->on ? 1 : 0; break;
-												case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderRainbow = pTarget->on ? 1 : 0; break;
-												case KX_LINE_RT_PATHFINDER: g_Config.m_KxLineRtPathfinderRainbow = pTarget->on ? 1 : 0; break;
-                                                case KX_LINE_ESP: g_Config.m_KxLineEspRainbow = pTarget->on ? 1 : 0; break;
-                                                case KX_LINE_TAS: g_Config.m_KxLineTasRainbow = pTarget->on ? 1 : 0; break;
-                                                 case KX_LINE_HITBOXES: g_Config.m_KxLineHitboxesRainbow = pTarget->on ? 1 : 0; break;
-                                                }
-                                        }
-                                        // v1.56.210: Line rendering per-component Gradient toggle
-                                        else if(str_comp(pTarget->pName, "Gradient") == 0 && str_comp(row.pName, "Line rendering") == 0)
-                                        {
-                                                int compIdx = g_Config.m_KxLineComponent;
-                                                EKxLineComponent comp = (EKxLineComponent)compIdx;
-                                                switch(comp)
-                                                {
-                                                case KX_LINE_AIMBOT: g_Config.m_KxLineAimBotGradient = pTarget->on ? 1 : 0; break;
-                                                case KX_LINE_TRIGGERBOT: g_Config.m_KxLineTriggerBotGradient = pTarget->on ? 1 : 0; break;
-                                                case KX_LINE_TRAJECTORY: g_Config.m_KxLineTrajectoryGradient = pTarget->on ? 1 : 0; break;
-                                                case KX_LINE_LASER_UNFREEZE: g_Config.m_KxLineLaserUnfreezeGradient = pTarget->on ? 1 : 0; break;
-												case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderGradient = pTarget->on ? 1 : 0; break;
-												case KX_LINE_RT_PATHFINDER: g_Config.m_KxLineRtPathfinderGradient = pTarget->on ? 1 : 0; break;
-                                                case KX_LINE_ESP: g_Config.m_KxLineEspGradient = pTarget->on ? 1 : 0; break;
-                                                case KX_LINE_TAS: g_Config.m_KxLineTasGradient = pTarget->on ? 1 : 0; break;
-                                                 case KX_LINE_HITBOXES: g_Config.m_KxLineHitboxesGradient = pTarget->on ? 1 : 0; break;
-                                                }
                                         }
                                         return;
                                 }
@@ -8284,26 +8443,30 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 // only exists once the list position was moved.
                                 if(str_comp(pTarget->pName, "Editor") == 0 && pTarget->type == ERowType::DoubleButton)
                                 {
-                                        const bool Info = (str_comp(row.pName, "ArrayInfo") == 0);
-                                        const bool Modified = Info ? ArrayInfoPositionModified() : ArrayListPositionModified();
+                                        const int Kind = (str_comp(row.pName, "ArrayInfo") == 0) ? 1 : (str_comp(row.pName, "ArrayPlayer") == 0) ? 2 : 0;
+                                        const bool Modified = Kind == 1 ? ArrayInfoPositionModified() : Kind == 2 ? ArrayPlayerPositionModified() : ArrayListPositionModified();
                                         const float btnW = (rw - 6.0f) * 0.5f;
                                         if(Modified && mousePos.x >= rx + 2.0f + btnW)
                                         {
-                                                if(Info)
+                                                if(Kind == 1)
                                                         ResetArrayInfoPosition();
+                                                else if(Kind == 2)
+                                                        ResetArrayPlayerPosition();
                                                 else
                                                         ResetArrayListPosition();
                                         }
                                         else
                                         {
-                                                bool &EditorRef = Info ? m_ArrayInfoEditor : m_ArrayListEditor;
+                                                bool &EditorRef = Kind == 1 ? m_ArrayInfoEditor : Kind == 2 ? m_ArrayPlayerEditor : m_ArrayListEditor;
                                                 EditorRef = !EditorRef;
                                                 if(EditorRef)
                                                 {
-                                                        if(Info)
+                                                        if(Kind != 0)
                                                                 m_ArrayListEditor = false;
-                                                        else
+                                                        if(Kind != 1)
                                                                 m_ArrayInfoEditor = false;
+                                                        if(Kind != 2)
+                                                                m_ArrayPlayerEditor = false;
                                                         g_Config.m_ClClickGui = 0;
                                                 }
                                         }
@@ -8786,6 +8949,27 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         else if(str_comp(pTarget->pName, "Panel Opacity") == 0)
                                                 g_Config.m_KxArrayInfoPanelOpacity = (int)(pTarget->value + 0.5f);
                                 }
+                                else if(str_comp(row.pName, "ArrayPlayer") == 0)
+                                {
+                                        if(str_comp(pTarget->pName, "Indentation") == 0)
+                                                g_Config.m_KxArrayPlayerIndent = (int)(pTarget->value + 0.5f);
+                                        else if(str_comp(pTarget->pName, "ArrayPlayer Size") == 0)
+                                                g_Config.m_KxArrayPlayerSize = (int)(pTarget->value * 10.0f + 0.5f);
+                                        else if(str_comp(pTarget->pName, "Height ArrayPlayer") == 0)
+                                                g_Config.m_KxArrayPlayerHeight = (int)(pTarget->value + 0.5f);
+                                        else if(str_comp(pTarget->pName, "Weight ArrayPlayer") == 0)
+                                                g_Config.m_KxArrayPlayerWidth = (int)(pTarget->value + 0.5f);
+                                        else if(str_comp(pTarget->pName, "Speed") == 0)
+                                                g_Config.m_KxArrayPlayerRainbowSpeed = (int)(pTarget->value * 10.0f + 0.5f);
+                                        else if(str_comp(pTarget->pName, "Step") == 0)
+                                                g_Config.m_KxArrayPlayerRainbowStep = (int)(pTarget->value + 0.5f);
+                                        else if(str_comp(pTarget->pName, "Text Opacity") == 0)
+                                                g_Config.m_KxArrayPlayerTextOpacity = (int)(pTarget->value + 0.5f);
+                                        else if(str_comp(pTarget->pName, "Main Opacity") == 0)
+                                                g_Config.m_KxArrayPlayerMainOpacity = (int)(pTarget->value + 0.5f);
+                                        else if(str_comp(pTarget->pName, "Panel Opacity") == 0)
+                                                g_Config.m_KxArrayPlayerPanelOpacity = (int)(pTarget->value + 0.5f);
+                                }
                                 else if(str_comp(row.pName, "ClickGUI Settings") == 0 && str_comp(pTarget->pName, "ToolTips Text Opacity") == 0)
                                         g_Config.m_KxUiTooltipTextOpacity = (int)(pTarget->value + 0.5f);
                                 else if(str_comp(row.pName, "ClickGUI Settings") == 0 && str_comp(pTarget->pName, "ToolTips Main Opacity") == 0)
@@ -8801,8 +8985,9 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         g_Config.m_KxCopyMovesLatency = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Ratio") == 0 && str_comp(row.pName, "Freedom Path") == 0)
                                         g_Config.m_KxPfFreedomRatio = (int)(pTarget->value * 10.0f + 0.5f);
-                                else if(str_comp(pTarget->pName, "Max Distance") == 0 && str_comp(row.pName, "Auto fly") == 0)
-                                        g_Config.m_KxDummyHammerAutoMaxDist = (int)pTarget->value;
+                                // v6.7: Smart Copy Moves top-N slider.
+                                else if(str_comp(pTarget->pName, "Apply Dummies") == 0)
+                                        g_Config.m_KxSmartCopyCount = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Trigger radius") == 0 && str_comp(row.pName, "Auto Triple Fly") == 0)
                                         g_Config.m_KxTripleFlyTriggerRadius = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Radius") == 0 && str_comp(row.pName, "Auto Triple Fly") == 0)
@@ -9049,6 +9234,298 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
         }
 }
 
+// C1061 (MSVC 128-level block-nesting limit): tail of the toggle dispatch
+// chain in HandleMouseDown — everything from the AimBot/TriggerBot master
+// toggles down. It must stay the chain's FINAL else-if: the row-gated child
+// blocks at its top (row == "AimBot"/"TriggerBot"/...) may only run when no
+// earlier plain-name branch of the head chain matched. Returns true when a
+// branch matched. pTargetV/pRowV/pPanelV are SRow*/SRow*/SPanel* — void*
+// like ApplyInputCommit because those types are invisible to the header.
+bool CClickGui::HandleToggleTail(void *pTargetV, void *pRowV, void *pPanelV)
+{
+        SRow *pTarget = (SRow *)pTargetV;
+        SRow &row = *(SRow *)pRowV;
+        SPanel &panel = *(SPanel *)pPanelV;
+        // v1.56.83: AimBot/TriggerBot expandable master toggles
+        if(str_comp(pTarget->pName, "AimBot") == 0)
+                g_Config.m_KxAimBot = pTarget->on;
+        else if(str_comp(pTarget->pName, "TriggerBot") == 0)
+                g_Config.m_KxTriggerBot = pTarget->on;
+        // v1.56.83: AimBot per-weapon child toggles (parent = "AimBot")
+        else if(str_comp(row.pName, "AimBot") == 0)
+        {
+                CAimBot &ab = GameClient()->m_AimBot;
+                {
+                        auto &s = AbEditSettings(ab);
+                        if(str_comp(pTarget->pName, "Enable") == 0)
+                            s.m_Enabled = pTarget->on;
+                        else if(str_comp(pTarget->pName, "Show FOV") == 0)
+                            ab.m_AimBotShowFov = pTarget->on;
+                        else if(str_comp(pTarget->pName, "Show Radius") == 0)
+                            ab.m_AimBotShowRadius = pTarget->on;
+                        else if(str_comp(pTarget->pName, "Auto Switch Weapon") == 0)
+                            s.m_AutoSwitchWeapon = pTarget->on;
+                        else if(str_comp(pTarget->pName, "Use raycast (Show)") == 0)
+                            s.m_UseRaycastShow = pTarget->on;
+                        else if(str_comp(pTarget->pName, "Use raycast angle (AB)") == 0)
+                            s.m_UseAngle = pTarget->on;
+                        else if(str_comp(pTarget->pName, "Predict") == 0)
+                            s.m_Predict = pTarget->on;
+                        else if(str_comp(pTarget->pName, "Silent") == 0)
+                        {
+                            s.m_Silent = pTarget->on;
+                            // "Trigger" is hidden while Silent is on — remap.
+                            if(s.m_Silent && s.m_AimMode == 1)
+                                s.m_AimMode = 0;
+                        }
+                        else if(str_comp(pTarget->pName, "Center snap") == 0)
+                            s.m_SmoothCenterSnap = pTarget->on;
+                        else if(str_comp(pTarget->pName, "Off while freeze") == 0)
+                            s.m_OffWhileFreeze = pTarget->on;
+                }
+        }
+        // v1.56.83: TriggerBot per-weapon child toggles (parent = "TriggerBot")
+        else if(str_comp(row.pName, "TriggerBot") == 0)
+        {
+                CAimBot &tb = GameClient()->m_AimBot;
+                {
+                        auto &s = TbEditSettings(tb);
+                        if(str_comp(pTarget->pName, "Enable") == 0)
+                            s.m_Enabled = pTarget->on;
+                        else if(str_comp(pTarget->pName, "Show FOV") == 0)
+                            tb.m_TriggerBotShowFov = pTarget->on;
+                        else if(str_comp(pTarget->pName, "Show Radius") == 0)
+                            tb.m_TriggerBotShowRadius = pTarget->on;
+                        else if(str_comp(pTarget->pName, "Auto Switch Weapon") == 0)
+                            s.m_AutoSwitchWeapon = pTarget->on;
+                        else if(str_comp(pTarget->pName, "Use raycast (Show)") == 0)
+                            s.m_UseRaycastShow = pTarget->on;
+                        else if(str_comp(pTarget->pName, "Use silent channel AB") == 0)
+                            s.m_UseSilentChannelAB = pTarget->on;
+                        else if(str_comp(pTarget->pName, "Off while freeze") == 0)
+                            s.m_OffWhileFreeze = pTarget->on;
+                }
+        }
+        // v1.56.178: Trajectory per-type child toggles (parent = "Trajectory")
+        else if(str_comp(row.pName, "Trajectory") == 0 && pTarget != &row)
+        {
+                CTrajectory &traj = GameClient()->m_Trajectory;
+                int sel = traj.m_SelectedType;
+                if(sel >= 0 && sel < CTrajectory::NUM_TRAJ_TYPES)
+                {
+                        auto &ts = traj.m_aTypes[sel];
+                        if(str_comp(pTarget->pName, "Show") == 0)
+                                ts.m_Show = pTarget->on;
+                        else if(str_comp(pTarget->pName, "Alpha Gradient") == 0)
+                                ts.m_AlphaGradient = pTarget->on;
+                        else if(str_comp(pTarget->pName, "Simulate Players") == 0)
+                                ts.m_SimulatePlayers = pTarget->on;
+                        else if(str_comp(pTarget->pName, "Show for other players") == 0)
+                                ts.m_ShowForOtherPlayers = pTarget->on;
+                        else if(str_comp(pTarget->pName, "Show for current") == 0)
+                                ts.m_ShowForCurrent = pTarget->on;
+                }
+        }
+        // v1.56.258: Block children toggles.
+        else if(str_comp(row.pName, "Helpers") == 0 && pTarget != &row)
+        {
+                if(str_comp(pTarget->pName, "Auto Main") == 0) g_Config.m_KxAutoMain = pTarget->on;
+                else if(str_comp(pTarget->pName, "All Target") == 0) g_Config.m_KxTargetAll = pTarget->on;
+                else if(str_comp(pTarget->pName, "Rescue") == 0) g_Config.m_KxRescue = pTarget->on;
+                else if(str_comp(pTarget->pName, "All Rescue") == 0) g_Config.m_KxRescueAll = pTarget->on;
+        }
+        // Copy moves Filter expandable is master toggle.
+        else if(str_comp(pTarget->pName, "Copy Moves Filter") == 0)
+                g_Config.m_KxDummyCopyMovesFilter = pTarget->on ? 1 : 0;
+        // v6.7: Smart Copy Moves expandable is master toggle.
+        else if(str_comp(pTarget->pName, "Smart Copy Moves") == 0)
+                g_Config.m_KxSmartCopyMoves = pTarget->on ? 1 : 0;
+        // v6.7: Smart Dummy Switch expandable is master toggle.
+        else if(str_comp(pTarget->pName, "Smart dummy switch") == 0)
+                g_Config.m_KxSdsEnabled = pTarget->on ? 1 : 0;
+        // v6.7: Smart Dummy Switch Without Repeat (clear the visited round).
+        else if(str_comp(pTarget->pName, "Without Repeat") == 0 && str_comp(row.pName, "Smart dummy switch") == 0)
+        {
+                g_Config.m_KxSdsNoRepeat = pTarget->on ? 1 : 0;
+                GameClient()->m_BotNet.SdsResetVisited();
+        }
+        // v1.56.187: Copy Moves Latency expandable is master toggle.
+        else if(str_comp(pTarget->pName, "Copy Moves Latency") == 0)
+                g_Config.m_KxCopyMovesLatencyEnabled = pTarget->on ? 1 : 0;
+        // Copy Moves Filter sub-toggles
+        else if(str_comp(pTarget->pName, "Filter: Jump") == 0)
+                g_Config.m_KxDummyCopyMovesFilterJump = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Filter: Direction") == 0)
+                g_Config.m_KxDummyCopyMovesFilterDirection = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Filter: Hook") == 0)
+                g_Config.m_KxDummyCopyMovesFilterHook = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Filter: Aim") == 0)
+                g_Config.m_KxDummyCopyMovesFilterAim = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Filter: Fire") == 0)
+                g_Config.m_KxDummyCopyMovesFilterFire = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Filter: Weapon") == 0)
+                g_Config.m_KxDummyCopyMovesFilterWeapon = pTarget->on ? 1 : 0;
+        // Settings → IRC children
+        else if(str_comp(pTarget->pName, "Reveal join") == 0)
+                g_Config.m_KxIrcRevealJoin = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Nameplate tag") == 0)
+                g_Config.m_KxIrcNameplateTag = pTarget->on ? 1 : 0;
+        // Advanced → Laser unfreeze children
+        else if(str_comp(pTarget->pName, "Auto laser") == 0)
+                g_Config.m_KxLaserUnfreezeAuto = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Silent") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
+                g_Config.m_KxLaserUnfreezeSilent = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Show attempt") == 0)
+                g_Config.m_KxLaserUnfreezeShowAttempt = pTarget->on ? 1 : 0;
+        // Basic Avoid Freeze toggles
+        else if(str_comp(pTarget->pName, "Freeze") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                g_Config.m_KxAfAvoidFreeze = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Teleport") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                g_Config.m_KxAfAvoidTeleport = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Death") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                g_Config.m_KxAfAvoidDeath = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Direction") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                g_Config.m_KxAfDirection = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Jump") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                g_Config.m_KxAfJump = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Hook") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                g_Config.m_KxAfHook = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Aim") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                g_Config.m_KxAfAim = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Silent") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                g_Config.m_KxAfSilent = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Show for me") == 0)
+                g_Config.m_KxFakeAimShowForMe = pTarget->on ? 1 : 0;
+        // v1.56.262: Fake Aim — Show Server-Side Aim.
+        else if(str_comp(pTarget->pName, "Show Server-Side Aim") == 0 && str_comp(row.pName, "Fake Aim") == 0)
+                g_Config.m_KxFakeAimShowServerSide = pTarget->on ? 1 : 0;
+        // v1.56.263: Fake Aim — Predict.
+        else if(str_comp(pTarget->pName, "Predict") == 0 && str_comp(row.pName, "Fake Aim") == 0)
+                g_Config.m_KxFakeAimPredict = pTarget->on ? 1 : 0;
+        // v1.56.256: ESP pointer/box visibility toggles.
+        else if(str_comp(pTarget->pName, "Pointer") == 0 && str_comp(row.pName, "ESP") == 0)
+                g_Config.m_KxEspPointer = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Box") == 0 && str_comp(row.pName, "ESP") == 0)
+                g_Config.m_KxEspBox = pTarget->on ? 1 : 0;
+        // v1.56.256: Hitboxes toggles.
+        else if(str_comp(pTarget->pName, "Tee tile") == 0 && str_comp(row.pName, "Hitboxes") == 0)
+                g_Config.m_KxHitboxesTeeTile = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Tee trigger") == 0 && str_comp(row.pName, "Hitboxes") == 0)
+                g_Config.m_KxHitboxesTeeTrigger = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Show for others") == 0 && str_comp(row.pName, "Hitboxes") == 0)
+                g_Config.m_KxHitboxesShowOthers = pTarget->on ? 1 : 0;
+        // v1.56.257: Hitboxes expandable header = master toggle (like IRC/Spoofer).
+        else if(str_comp(pTarget->pName, "Hitboxes") == 0)
+                g_Config.m_KxHitboxes = pTarget->on ? 1 : 0;
+        // Pathfinder → Visuals children
+        else if(str_comp(pTarget->pName, "Show field") == 0)
+                g_Config.m_KxPfShowField = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Show hooks") == 0)
+                g_Config.m_KxPfShowHooks = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Show branches") == 0)
+                g_Config.m_KxPfShowBranches = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Show speed") == 0)
+                g_Config.m_KxPfShowSpeed = pTarget->on ? 1 : 0;
+        // Pathfinder top-level
+        else if(str_comp(pTarget->pName, "Freeze Support (Beta)") == 0)
+                g_Config.m_KxPfFreezeSupport = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Freedom Path") == 0)
+                g_Config.m_KxPfFreedom = pTarget->on ? 1 : 0;
+        // v1.56.280: RT Pathfinder top-level toggle
+        else if(str_comp(pTarget->pName, "Reconstruct") == 0)
+                g_Config.m_KxRtPfReconstruct = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Future Limit") == 0)
+                g_Config.m_KxRtPfFutureLimit = pTarget->on ? 1 : 0;
+        // RT Pathfinder Visuals children (panel-gated: TAS/Pathfinder
+        // use overlapping child labels — generic names are safe here).
+        else if(str_comp(row.pName, "Visuals") == 0 && str_comp(panel.pTitle, "Real-Time Pathfinder") == 0)
+        {
+                if(str_comp(pTarget->pName, "Show Path") == 0)
+                        g_Config.m_KxRtPfShowPath = pTarget->on ? 1 : 0;
+                else if(str_comp(pTarget->pName, "Show Hooks") == 0)
+                        g_Config.m_KxRtPfShowHooks = pTarget->on ? 1 : 0;
+                else if(str_comp(pTarget->pName, "Show Field") == 0)
+                        g_Config.m_KxRtPfShowField = pTarget->on ? 1 : 0;
+                else if(str_comp(pTarget->pName, "Show Previous Path") == 0)
+                        g_Config.m_KxRtPfShowPrevPath = pTarget->on ? 1 : 0;
+                else if(str_comp(pTarget->pName, "Show Speed") == 0)
+                        g_Config.m_KxRtPfShowSpeed = pTarget->on ? 1 : 0;
+        }
+        // Settings → IRC/Spoofer expandables are master toggles.
+        else if(str_comp(pTarget->pName, "IRC") == 0)
+                g_Config.m_KxIrcEnabled = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Spoofer") == 0)
+        {
+                g_Config.m_KxVersionSpoof = pTarget->on ? 1 : 0;
+                g_Config.m_KxSpoofClientStr = pTarget->on ? 1 : 0;
+        }
+        // v1.56.273: Spoof Zoom / Spoof Spectate headers = master toggles.
+        else if(str_comp(pTarget->pName, "Spoof Zoom") == 0)
+                g_Config.m_KxSpoofZoom = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Spoof Spectate") == 0)
+                g_Config.m_KxSpoofSpectate = pTarget->on ? 1 : 0;
+        // v1.56.107: Spoofer → Git hash toggle (child)
+        else if(str_comp(pTarget->pName, "Git hash") == 0 && str_comp(row.pName, "Spoofer") == 0)
+                g_Config.m_KxSpoofGitHashEnabled = pTarget->on ? 1 : 0;
+        // v1.56.174: Spoofer → Extra NETMSGs toggle (BestClient preset only)
+        else if(str_comp(pTarget->pName, "Extra NETMSGs") == 0 && str_comp(row.pName, "Spoofer") == 0)
+        {
+                if(g_Config.m_KxSpoofClientPreset == 1)
+                        g_Config.m_KxSpoofTClientExtraNetmsgs = pTarget->on ? 1 : 0;
+                else
+                        g_Config.m_KxSpoofBestClientExtraNetmsgs = pTarget->on ? 1 : 0;
+        }
+        else if(str_comp(pTarget->pName, "Rainbow Main Color") == 0)
+        {
+                // v1.56.78: save color before enabling rainbow,
+                // restore it when disabling.
+                if(pTarget->on && !m_RainbowEnabled)
+                        m_SavedAccentColorRGBA = m_AccentColorRGBA;
+                else if(!pTarget->on && m_RainbowEnabled)
+                        m_AccentColorRGBA = m_SavedAccentColorRGBA;
+                m_RainbowEnabled = pTarget->on;
+        }
+        // v1.56.201: Line rendering per-component Rainbow toggle
+        else if(str_comp(pTarget->pName, "Rainbow") == 0 && str_comp(row.pName, "Line rendering") == 0)
+        {
+                int compIdx = g_Config.m_KxLineComponent;
+                EKxLineComponent comp = (EKxLineComponent)compIdx;
+                switch(comp)
+                {
+                case KX_LINE_AIMBOT: g_Config.m_KxLineAimBotRainbow = pTarget->on ? 1 : 0; break;
+                case KX_LINE_TRIGGERBOT: g_Config.m_KxLineTriggerBotRainbow = pTarget->on ? 1 : 0; break;
+                case KX_LINE_TRAJECTORY: g_Config.m_KxLineTrajectoryRainbow = pTarget->on ? 1 : 0; break;
+                case KX_LINE_LASER_UNFREEZE: g_Config.m_KxLineLaserUnfreezeRainbow = pTarget->on ? 1 : 0; break;
+                case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderRainbow = pTarget->on ? 1 : 0; break;
+                case KX_LINE_RT_PATHFINDER: g_Config.m_KxLineRtPathfinderRainbow = pTarget->on ? 1 : 0; break;
+                case KX_LINE_ESP: g_Config.m_KxLineEspRainbow = pTarget->on ? 1 : 0; break;
+                case KX_LINE_TAS: g_Config.m_KxLineTasRainbow = pTarget->on ? 1 : 0; break;
+                case KX_LINE_HITBOXES: g_Config.m_KxLineHitboxesRainbow = pTarget->on ? 1 : 0; break;
+                }
+        }
+        // v1.56.210: Line rendering per-component Gradient toggle
+        else if(str_comp(pTarget->pName, "Gradient") == 0 && str_comp(row.pName, "Line rendering") == 0)
+        {
+                int compIdx = g_Config.m_KxLineComponent;
+                EKxLineComponent comp = (EKxLineComponent)compIdx;
+                switch(comp)
+                {
+                case KX_LINE_AIMBOT: g_Config.m_KxLineAimBotGradient = pTarget->on ? 1 : 0; break;
+                case KX_LINE_TRIGGERBOT: g_Config.m_KxLineTriggerBotGradient = pTarget->on ? 1 : 0; break;
+                case KX_LINE_TRAJECTORY: g_Config.m_KxLineTrajectoryGradient = pTarget->on ? 1 : 0; break;
+                case KX_LINE_LASER_UNFREEZE: g_Config.m_KxLineLaserUnfreezeGradient = pTarget->on ? 1 : 0; break;
+                case KX_LINE_PATHFINDER: g_Config.m_KxLinePathfinderGradient = pTarget->on ? 1 : 0; break;
+                case KX_LINE_RT_PATHFINDER: g_Config.m_KxLineRtPathfinderGradient = pTarget->on ? 1 : 0; break;
+                case KX_LINE_ESP: g_Config.m_KxLineEspGradient = pTarget->on ? 1 : 0; break;
+                case KX_LINE_TAS: g_Config.m_KxLineTasGradient = pTarget->on ? 1 : 0; break;
+                case KX_LINE_HITBOXES: g_Config.m_KxLineHitboxesGradient = pTarget->on ? 1 : 0; break;
+                }
+        }
+        else
+                return false;
+        return true;
+}
+
 void CClickGui::HandleMouseUp(vec2 mousePos)
 {
         if(m_DragSliderPanel >= 0)
@@ -9293,7 +9770,7 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
+if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                 const float crh = RowHeightForRow(child);
                                 if(r == m_DropdownRow && c == m_DropdownChild)
@@ -9319,8 +9796,41 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                         // v1.56.111: Line rendering Component dropdown
                                                         else if(str_comp(target.pName, "Component") == 0)
                                                                 g_Config.m_KxLineComponent = o;
-                                                        else if(str_comp(target.pName, "Mode") == 0 && str_comp(row.pName, "Smart dummy switch") == 0)
-                                                                g_Config.m_KxSdsMode = o;
+                                                        // v6.7: Smart Dummy Switch order + filters.
+                                                        else if(str_comp(target.pName, "Order Type") == 0 && str_comp(row.pName, "Smart dummy switch") == 0)
+                                                        {
+                                                                g_Config.m_KxSdsOrder = o;
+                                                                GameClient()->m_BotNet.SdsResetVisited();
+                                                        }
+                                                        else if(str_comp(target.pName, "Team") == 0 && str_comp(row.pName, "Smart dummy switch") == 0)
+                                                                g_Config.m_KxSdsTeam = o;
+                                                        else if(str_comp(target.pName, "DDrace Team") == 0 && str_comp(row.pName, "Smart dummy switch") == 0)
+                                                                g_Config.m_KxSdsDdraceTeam = o;
+                                                        else if(str_comp(target.pName, "Friend") == 0 && str_comp(row.pName, "Smart dummy switch") == 0)
+                                                                g_Config.m_KxSdsFriend = o;
+                                                        else if(str_comp(target.pName, "Clanmate") == 0 && str_comp(row.pName, "Smart dummy switch") == 0)
+                                                                g_Config.m_KxSdsClanmate = o;
+                                                        else if(str_comp(target.pName, "Freeze") == 0 && str_comp(row.pName, "Smart dummy switch") == 0)
+                                                                g_Config.m_KxSdsFreeze = o;
+                                                        else if(str_comp(target.pName, "Targets") == 0 && str_comp(row.pName, "Smart dummy switch") == 0)
+                                                                g_Config.m_KxSdsTargetsMode = o;
+                                                        // v6.7: Smart Copy Moves dropdowns.
+                                                        else if(str_comp(target.pName, "Sort Type") == 0 && str_comp(row.pName, "Smart Copy Moves") == 0)
+                                                                g_Config.m_KxSmartCopySort = o;
+                                                        else if(str_comp(target.pName, "Apply Mode") == 0 && str_comp(row.pName, "Smart Copy Moves") == 0)
+                                                                g_Config.m_KxSmartCopyApply = o;
+                                                        else if(str_comp(target.pName, "Team") == 0 && str_comp(row.pName, "Smart Copy Moves") == 0)
+                                                                g_Config.m_KxSmartCopyTeam = o;
+                                                        else if(str_comp(target.pName, "DDrace Team") == 0 && str_comp(row.pName, "Smart Copy Moves") == 0)
+                                                                g_Config.m_KxSmartCopyDdraceTeam = o;
+                                                        else if(str_comp(target.pName, "Friend") == 0 && str_comp(row.pName, "Smart Copy Moves") == 0)
+                                                                g_Config.m_KxSmartCopyFriend = o;
+                                                        else if(str_comp(target.pName, "Clanmate") == 0 && str_comp(row.pName, "Smart Copy Moves") == 0)
+                                                                g_Config.m_KxSmartCopyClanmate = o;
+                                                        else if(str_comp(target.pName, "Freeze") == 0 && str_comp(row.pName, "Smart Copy Moves") == 0)
+                                                                g_Config.m_KxSmartCopyFreeze = o;
+                                                        else if(str_comp(target.pName, "Targets") == 0 && str_comp(row.pName, "Smart Copy Moves") == 0)
+                                                                g_Config.m_KxSmartCopyTargetsMode = o;
                                                         // v1.56.273: Spoof Spectate mode.
                                                         else if(str_comp(target.pName, "Mode") == 0 && str_comp(row.pName, "Spoof Spectate") == 0)
                                                                 g_Config.m_KxSpoofSpectateMode = o;
@@ -9533,6 +10043,16 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                                 else if(str_comp(target.pName, "Rainbow Mode") == 0)
                                                                         g_Config.m_KxArrayInfoRainbowMode = o;
                                                         }
+                                                        // v6.7: ArrayPlayer dropdowns.
+                                                        else if(str_comp(row.pName, "ArrayPlayer") == 0)
+                                                        {
+                                                                if(str_comp(target.pName, "X Anchor") == 0)
+                                                                        g_Config.m_KxArrayPlayerXAnchor = o;
+                                                                else if(str_comp(target.pName, "Style") == 0)
+                                                                        g_Config.m_KxArrayPlayerStyle = o;
+                                                                else if(str_comp(target.pName, "Rainbow Mode") == 0)
+                                                                        g_Config.m_KxArrayPlayerRainbowMode = o;
+                                                        }
                                                         m_DropdownOpen = false;
                                                         return true;
                                                 }
@@ -9646,7 +10166,7 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
+if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                 const float crh = RowHeightForRow(child);
                                 if(r == m_DropdownRow && c == m_DropdownChild)
@@ -9931,7 +10451,7 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
+if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                 if(!SearchKeepsChild(child))
                                         continue;
@@ -10074,6 +10594,11 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
                 // v1.56.262: BalanceBot → Targets IDs.
                 else if(str_comp(pOwner, "BalanceBot") == 0)
                         str_copy(g_Config.m_KxBbTargetsIds, pRow->m_aInputBuf, sizeof(g_Config.m_KxBbTargetsIds));
+                // v6.7: Smart Copy Moves / Smart Dummy Switch → Targets IDs.
+                else if(str_comp(pOwner, "Smart Copy Moves") == 0)
+                        str_copy(g_Config.m_KxSmartCopyTargets, pRow->m_aInputBuf, sizeof(g_Config.m_KxSmartCopyTargets));
+                else if(str_comp(pOwner, "Smart dummy switch") == 0)
+                        str_copy(g_Config.m_KxSdsTargets, pRow->m_aInputBuf, sizeof(g_Config.m_KxSdsTargets));
         }
         // Block children: string IDs.
         else if(str_comp(pRow->pName, "Main ID") == 0)
@@ -10099,7 +10624,7 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
         else if(str_comp(pRow->pName, "Stand Dist") == 0) g_Config.m_KxStandDist = (int)atof(pRow->m_aInputBuf);
         else if(str_comp(pRow->pName, "MStand Dist") == 0) g_Config.m_KxMainStandDist = (int)atof(pRow->m_aInputBuf);
         else if(str_comp(pRow->pName, "Buttons") == 0) str_copy(g_Config.m_KxEdgeBindButtons, pRow->m_aInputBuf, sizeof(g_Config.m_KxEdgeBindButtons));
-        else if(str_comp(pRow->pName, "Dummy IDs") == 0) str_copy(g_Config.m_KxSdsDummyIds, pRow->m_aInputBuf, sizeof(g_Config.m_KxSdsDummyIds));
+        // v6.7: the SDS "Dummy IDs" row was replaced by Order Type + filters.
         // v1.56.273: Spoof Spectate numeric fields.
         else if(str_comp(pRow->pName, "Fake spectate X") == 0) g_Config.m_KxSpoofSpectateX = atoi(pRow->m_aInputBuf);
         else if(str_comp(pRow->pName, "Fake spectate Y") == 0) g_Config.m_KxSpoofSpectateY = atoi(pRow->m_aInputBuf);
@@ -10114,6 +10639,11 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
                         g_Config.m_KxHitboxesDDraceTeamId = atoi(pRow->m_aInputBuf);
                 else if(str_comp(pOwner, "BalanceBot") == 0)
                         g_Config.m_KxBbDDraceTeamId = atoi(pRow->m_aInputBuf);
+                // v6.7: Smart Copy Moves / Smart Dummy Switch → DDrace team Target ID.
+                else if(str_comp(pOwner, "Smart Copy Moves") == 0)
+                        g_Config.m_KxSmartCopyDdraceTeamId = atoi(pRow->m_aInputBuf);
+                else if(str_comp(pOwner, "Smart dummy switch") == 0)
+                        g_Config.m_KxSdsDdraceTeamId = atoi(pRow->m_aInputBuf);
         }
         // v1.56.283: Visuals custom-color Color input — the Sprite/Entity
         // dropdowns on the "Custom colors" owner row select the cvar.
@@ -10284,6 +10814,8 @@ static constexpr int KX_ARRAYLIST_DEF_POS_X = 9850;
 static constexpr int KX_ARRAYLIST_DEF_POS_Y = 1000;
 static constexpr int KX_ARRAYINFO_DEF_POS_X = 7000;
 static constexpr int KX_ARRAYINFO_DEF_POS_Y = 500;
+static constexpr int KX_ARRAYPLAYER_DEF_POS_X = 5000;
+static constexpr int KX_ARRAYPLAYER_DEF_POS_Y = 5000;
 
 // Full-saturation hue -> RGB.
 static void KxHueToRgb(float Hue, float &R, float &G, float &B)
@@ -10394,7 +10926,9 @@ static SArrayListFeature g_ArrayListFeatures[] = {
         {"Preserve Input", &g_Config.m_KxDummyHammerKeepInputs},
         {"Custom Latency", &g_Config.m_KxDummyHammerCustomLatency},
         {"Auto Fly", &g_Config.m_KxDummyHammerAuto},
+        {"Fix Dummy Hammer", &g_Config.m_KxFixDummyHammer},
         {"Auto Triple Fly", &g_Config.m_KxTripleFly},
+        {"Smart Copy Moves", &g_Config.m_KxSmartCopyMoves},
         {"Copy Moves Filter", &g_Config.m_KxDummyCopyMovesFilter},
         {"Mirror Direction", &g_Config.m_KxDummyCopyMirrorDir},
         {"Mirror Aim X", &g_Config.m_KxDummyCopyMirrorAimX},
@@ -10509,16 +11043,10 @@ bool CClickGui::ArrayListHitTest(vec2 mousePos) const
                 mousePos.y >= m_ArrayListRectY && mousePos.y <= m_ArrayListRectY + m_ArrayListRectH;
 }
 
-void CClickGui::ArrayListBuildList(std::vector<std::string> &vOut) const
+// v6.7: the REAL enabled-feature list (no editor sample). Single source of
+// truth for both the ArrayList HUD and the ArrayInfo "X Functions" count.
+void CClickGui::ArrayListBuildEnabled(std::vector<std::string> &vOut) const
 {
-        vOut.clear();
-        if(m_ArrayListEditor)
-        {
-                static const char *s_apSample[] = {"AimBot", "TriggerBot", "Pathfinder", "TAS Play", "Playground"};
-                for(const char *pName : s_apSample)
-                        vOut.emplace_back(pName);
-                return;
-        }
         for(const SArrayListFeature &F : g_ArrayListFeatures)
                 if(*F.pOn)
                         vOut.emplace_back(F.pName);
@@ -10538,6 +11066,26 @@ void CClickGui::ArrayListBuildList(std::vector<std::string> &vOut) const
         // Spoofer's header is an OR of two configs (version / client string).
         if(g_Config.m_KxVersionSpoof || g_Config.m_KxSpoofClientStr)
                 vOut.emplace_back("Spoofer");
+        // Smart Dummy Switch is enabled while its trigger bind is set.
+        {
+                char aSdsKey[64];
+                GameClient()->m_Binds.GetKey("kx_dummy_switch", aSdsKey, sizeof(aSdsKey));
+                if(aSdsKey[0])
+                        vOut.emplace_back("Smart Dummy Switch");
+        }
+}
+
+void CClickGui::ArrayListBuildList(std::vector<std::string> &vOut) const
+{
+        vOut.clear();
+        if(m_ArrayListEditor)
+        {
+                static const char *s_apSample[] = {"AimBot", "TriggerBot", "Pathfinder", "TAS Play", "Playground"};
+                for(const char *pName : s_apSample)
+                        vOut.emplace_back(pName);
+                return;
+        }
+        ArrayListBuildEnabled(vOut);
 }
 
 void CClickGui::ArrayListUpdateHistory(const std::vector<std::string> &vEnabled)
@@ -11116,12 +11664,14 @@ void CClickGui::RenderArrayInfo(float alpha)
         }
         if(g_Config.m_KxArrayInfoFunctions || Editor)
         {
-                int FuncCount = 0;
-                for(const SArrayListFeature &F : g_ArrayListFeatures)
-                        if(*F.pOn)
-                                ++FuncCount;
+                // v6.7: count the REAL enabled list (ArrayListBuildEnabled) — the
+                // same source the ArrayList renders — so the "X Functions" count
+                // always matches the list. Editor mode shows the sample list but
+                // still counts the real one.
+                std::vector<std::string> vFuncs;
+                ArrayListBuildEnabled(vFuncs);
                 char aBuf[64];
-                str_format(aBuf, sizeof(aBuf), "%d Functions", FuncCount);
+                str_format(aBuf, sizeof(aBuf), "%d Functions", (int)vFuncs.size());
                 AddTextPiece(aBuf);
         }
 
@@ -11129,6 +11679,9 @@ void CClickGui::RenderArrayInfo(float alpha)
                 return;
 
         const float SepW = TextRender()->TextWidth(FontSz, " | ");
+        // Ink width of the bar itself (first-character bearing is suppressed in
+        // both TextWidth and DrawText, so this is exactly the drawn width).
+        const float BarW = TextRender()->TextWidth(FontSz, "|");
 
         // ---- wrap pieces into lines at the physical Max Length ----
         std::vector<std::vector<int>> vLines;
@@ -11309,7 +11862,10 @@ void CClickGui::RenderArrayInfo(float alpha)
                         {
                                 if(k > 0)
                                 {
-                                        DrawTextColored(tx, ty, " | ", (int)i);
+                                        // Center the bar in the fixed separator slot. Drawing
+                                        // " | " offsets it by the bar's left bearing, which
+                                        // made the gap before it look wider than after it.
+                                        DrawTextColored(tx + (SepW - BarW) * 0.5f, ty, "|", (int)i);
                                         tx += SepW;
                                 }
                                 DrawPiece(tx, ty, Line[k], (int)i);
@@ -11338,7 +11894,8 @@ void CClickGui::RenderArrayInfo(float alpha)
                         {
                                 if(k > 0)
                                 {
-                                        DrawTextColored(tx, ry + PadY, " | ", (int)i);
+                                        // Center the bar in the fixed separator slot (see above).
+                                        DrawTextColored(tx + (SepW - BarW) * 0.5f, ry + PadY, "|", (int)i);
                                         tx += SepW;
                                 }
                                 DrawPiece(tx, ry + PadY, Line[k], (int)i);
@@ -11348,6 +11905,498 @@ void CClickGui::RenderArrayInfo(float alpha)
         }
 
         TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
+}
+
+// ============================================================================
+// v6.7: ArrayPlayer HUD — now-playing media card.
+// ============================================================================
+
+bool CClickGui::ShouldRenderArrayPlayer() const
+{
+        if(g_Config.m_KxArrayPlayerEnabled == 0 && !m_ArrayPlayerEditor)
+                return false;
+        if(GameClient()->m_Menus.IsActive())
+                return false;
+        const int State = Client()->State();
+        return State == IClient::STATE_ONLINE || State == IClient::STATE_DEMOPLAYBACK;
+}
+
+bool CClickGui::ArrayPlayerPositionModified() const
+{
+        return g_Config.m_KxArrayPlayerPosX != KX_ARRAYPLAYER_DEF_POS_X ||
+                g_Config.m_KxArrayPlayerPosY != KX_ARRAYPLAYER_DEF_POS_Y;
+}
+
+void CClickGui::ResetArrayPlayerPosition()
+{
+        g_Config.m_KxArrayPlayerPosX = KX_ARRAYPLAYER_DEF_POS_X;
+        g_Config.m_KxArrayPlayerPosY = KX_ARRAYPLAYER_DEF_POS_Y;
+}
+
+bool CClickGui::ArrayPlayerHitTest(vec2 mousePos) const
+{
+        if(!m_ArrayPlayerRectValid)
+                return false;
+        return mousePos.x >= m_ArrayPlayerRectX && mousePos.x <= m_ArrayPlayerRectX + m_ArrayPlayerRectW &&
+                mousePos.y >= m_ArrayPlayerRectY && mousePos.y <= m_ArrayPlayerRectY + m_ArrayPlayerRectH;
+}
+
+bool CClickGui::ArrayPlayerResizeHitTest(vec2 mousePos) const
+{
+        if(!m_ArrayPlayerRectValid || !m_ArrayPlayerEditor || g_Config.m_KxArrayPlayerDynamicScale == 0)
+                return false;
+        const float Zone = 16.0f;
+        return mousePos.x >= m_ArrayPlayerRectX + m_ArrayPlayerRectW - Zone &&
+                mousePos.x <= m_ArrayPlayerRectX + m_ArrayPlayerRectW &&
+                mousePos.y >= m_ArrayPlayerRectY + m_ArrayPlayerRectH - Zone &&
+                mousePos.y <= m_ArrayPlayerRectY + m_ArrayPlayerRectH;
+}
+
+void CClickGui::UpdateArrayPlayer(float dt)
+{
+        m_ArrayPlayerHue += dt * (g_Config.m_KxArrayPlayerRainbowSpeed / 10.0f) * 60.0f;
+
+        if(!m_ArrayPlayerRectValid)
+                return;
+
+        const float ScreenW = VScreenWidth();
+        const float ScreenH = VScreenHeight();
+        if(ScreenW <= 0.0f || ScreenH <= 0.0f)
+                return;
+
+        const float SizeScale = (g_Config.m_KxUiSettingsOn != 0) ? (g_Config.m_KxArrayPlayerSize / 10.0f) : 1.0f;
+        const float S = std::max(0.01f, SizeScale);
+
+        if(m_ArrayPlayerResizing)
+        {
+                const int W = (int)(m_ArrayPlayerResizeStartW + (m_MousePos.x - m_ArrayPlayerResizeStartMouse.x) / S + 0.5f);
+                const int H = (int)(m_ArrayPlayerResizeStartH + (m_MousePos.y - m_ArrayPlayerResizeStartMouse.y) / S + 0.5f);
+                g_Config.m_KxArrayPlayerWidth = std::clamp(W, 100, 1000);
+                g_Config.m_KxArrayPlayerHeight = std::clamp(H, 40, 600);
+                return;
+        }
+        if(!m_ArrayPlayerDragging)
+                return;
+
+        const float Left = m_ArrayPlayerDragStartPos.x + (m_MousePos.x - m_ArrayPlayerDragStartMouse.x);
+        const float Top = m_ArrayPlayerDragStartPos.y + (m_MousePos.y - m_ArrayPlayerDragStartMouse.y);
+        g_Config.m_KxArrayPlayerPosX = (int)((Left / ScreenW) * 10000.0f + (Left >= 0.0f ? 0.5f : -0.5f));
+        g_Config.m_KxArrayPlayerPosY = (int)((Top / ScreenH) * 10000.0f + (Top >= 0.0f ? 0.5f : -0.5f));
+}
+
+static void KxEllipsize(char *pDst, int DstSize, const char *pSrc, float MaxW, float FontSz, ITextRender *pTextRender)
+{
+        if(DstSize <= 0)
+                return;
+        str_copy(pDst, pSrc, DstSize);
+        if(MaxW <= 0.0f || pTextRender->TextWidth(FontSz, pDst) <= MaxW)
+                return;
+
+        int Len = str_length(pDst);
+        while(Len > 0)
+        {
+                --Len;
+                while(Len > 0 && (pDst[Len] & 0xC0) == 0x80)
+                        --Len;
+                pDst[Len] = '\0';
+                char aTry[256];
+                str_format(aTry, sizeof(aTry), "%s...", pDst);
+                if(pTextRender->TextWidth(FontSz, aTry) <= MaxW)
+                {
+                        str_copy(pDst, aTry, DstSize);
+                        return;
+                }
+        }
+        str_copy(pDst, "...", DstSize);
+}
+
+// v6.7: rounds the corners of a decoded RGBA image in place (alpha fades to 0
+// outside the rounded rect). The ArrayPlayer cover uses it because there is
+// no rounded texture clipping in IGraphics.
+static void KxRoundImageCorners(CImageInfo &Img, float Radius)
+{
+	if(Img.m_Format != CImageInfo::FORMAT_RGBA || !Img.m_pData ||
+		Img.m_Width == 0 || Img.m_Height == 0)
+		return;
+	const int Wp = (int)Img.m_Width;
+	const int Hp = (int)Img.m_Height;
+	const float Rad = std::clamp(Radius, 1.0f, std::min(Wp, Hp) * 0.5f);
+	uint8_t *pData = Img.m_pData;
+	for(int y = 0; y < Hp; ++y)
+	{
+		for(int x = 0; x < Wp; ++x)
+		{
+			const float Cx = std::min((float)x, (float)(Wp - 1 - x));
+			const float Cy = std::min((float)y, (float)(Hp - 1 - y));
+			if(Cx >= Rad || Cy >= Rad)
+				continue; // not in a corner zone
+			const float Dx = Rad - Cx;
+			const float Dy = Rad - Cy;
+			const float Dist = std::sqrt(Dx * Dx + Dy * Dy);
+			const float A = std::clamp(Rad - Dist + 1.0f, 0.0f, 1.0f); // ~1px feather
+			if(A < 1.0f)
+				pData[(y * Wp + x) * 4 + 3] = (uint8_t)(pData[(y * Wp + x) * 4 + 3] * A);
+		}
+	}
+}
+
+void CClickGui::RenderArrayPlayer(float alpha)
+{
+        m_ArrayPlayerRectValid = false;
+
+        KxMedia::Update();
+        const SKxMediaInfo Info = KxMedia::Get();
+
+        // No track and not editing -> nothing to draw (the user asked for the
+        // player to disappear entirely when nothing is playing).
+        if(!Info.m_Valid && !m_ArrayPlayerEditor)
+                return;
+
+        const bool UiOn = g_Config.m_KxUiSettingsOn != 0;
+        const float S = (UiOn ? g_Config.m_KxArrayPlayerSize : 10) / 10.0f;
+        const float W = (float)(UiOn ? g_Config.m_KxArrayPlayerWidth : 320) * S;
+        const float H = (float)(UiOn ? g_Config.m_KxArrayPlayerHeight : 90) * S;
+        if(W <= 0.0f || H <= 0.0f)
+                return;
+
+        const float Pad = 12.0f * S; // v6.7: 1.5x the old 8px inset
+        const float FontSz = 15.0f * S;
+        const float TitleSz = FontSz * 1.3f; // v6.7: bigger track title
+        const float ArtistSz = FontSz * 0.75f; // v6.7: smaller artist line
+        const float TimeSz = 13.0f * S; // v6.7: bigger time label
+        const float Indent = (UiOn ? (float)g_Config.m_KxArrayPlayerIndent : 4.0f) * S;
+        const float TextOp = (UiOn ? g_Config.m_KxArrayPlayerTextOpacity : 100) / 100.0f;
+        const float MainOp = (UiOn ? g_Config.m_KxArrayPlayerMainOpacity : 100) / 100.0f;
+        const float PanelOp = (UiOn ? g_Config.m_KxArrayPlayerPanelOpacity : 100) / 100.0f;
+        const bool DDNetStyle = UiOn && g_Config.m_KxArrayPlayerStyle == 1;
+        const bool Rainbow = UiOn && g_Config.m_KxArrayPlayerRainbow != 0;
+        const int RainbowMode = g_Config.m_KxArrayPlayerRainbowMode;
+        const float RainbowStep = (float)g_Config.m_KxArrayPlayerRainbowStep;
+
+        const float ScreenW = VScreenWidth();
+        const float ScreenH = VScreenHeight();
+        if(ScreenW <= 0.0f || ScreenH <= 0.0f)
+                return;
+
+        float Left = (g_Config.m_KxArrayPlayerPosX / 10000.0f) * ScreenW;
+        float Top = (g_Config.m_KxArrayPlayerPosY / 10000.0f) * ScreenH;
+        if(!m_ArrayPlayerEditor)
+        {
+                Left = std::clamp(Left, 0.0f, std::max(0.0f, ScreenW - W));
+                Top = std::clamp(Top, 0.0f, std::max(0.0f, ScreenH - H));
+        }
+
+        m_ArrayPlayerRectX = Left;
+        m_ArrayPlayerRectY = Top;
+        m_ArrayPlayerRectW = W;
+        m_ArrayPlayerRectH = H;
+        m_ArrayPlayerRectValid = true;
+
+        // ---- layout ----
+        const float BarsH = 14.0f * S;
+        // Bottom row (mockup): thick progress line at the very bottom, the
+        // time label sits above the slider (right) and the visualizer bars
+        // stand on the slider; the media buttons live ON the cover row (no
+        // dedicated row), centered below the title/artist text block.
+        const float LineY = Top + H - Pad;
+        const float TrackH = std::max(2.0f, 2.5f * S); // progress line thickness
+        const float BtnH = 20.0f * S; // media buttons
+        const float BtnW = 26.0f * S;
+        const float BarsBase = LineY - TrackH * 0.5f - 4.0f * S; // bars right above the slider
+        const float TimeY = BarsBase - TimeSz;
+        const float TextAreaTop = Top + Pad;
+        const float TextAreaBottom = BarsBase - std::max(BarsH, TimeSz) - 4.0f * S;
+        // Buttons sit at the BOTTOM edge of the cover (aligned with TextAreaBottom).
+        const float ButtonsTop = TextAreaBottom - BtnH;
+
+        // ---- album art (decode once per track; the media thread already
+        // decoded the cover to RGBA via WIC) ----
+        if(Info.m_ArtSerial != m_ArrayPlayerArtSerial || (Info.m_vArt.empty() && m_ArrayPlayerArt.IsValid()))
+        {
+                m_ArrayPlayerArtSerial = Info.m_ArtSerial;
+                if(m_ArrayPlayerArt.IsValid())
+                        Graphics()->UnloadTexture(&m_ArrayPlayerArt);
+                if(!Info.m_vArt.empty() && Info.m_ArtW > 0 && Info.m_ArtH > 0)
+                {
+                        CImageInfo Img;
+                        Img.m_Width = Info.m_ArtW;
+                        Img.m_Height = Info.m_ArtH;
+                        Img.m_Format = CImageInfo::FORMAT_RGBA;
+                        Img.Allocate();
+                        mem_copy(Img.m_pData, Info.m_vArt.data(), std::min(Img.DataSize(), Info.m_vArt.size()));
+                        KxRoundImageCorners(Img, std::min(Img.m_Width, Img.m_Height) * 0.12f);
+                        m_ArrayPlayerArt = Graphics()->LoadTextureRawMove(Img, 0);
+                }
+        }
+
+        unsigned TextHex = 0xffffff;
+        sscanf(g_Config.m_KxArrayPlayerTextColor, "%6x", &TextHex);
+
+        const ColorRGBA BorderCol = DDNetStyle
+                ? ColorRGBA(0.0f, 0.0f, 0.0f, 0.35f * alpha * MainOp)
+                : KxColorWithAlpha(m_AccentColorRGBA, alpha * MainOp);
+        const ColorRGBA BgCol = DDNetStyle
+                ? ColorRGBA(0.2f, 0.2f, 0.2f, 0.8f * alpha * PanelOp)
+                : KxColorWithAlpha(m_PanelBgRGBA, alpha * 0.97f * PanelOp);
+
+        DrawRoundedRect(Left, Top, W, H, 5.0f * S, IGraphics::CORNER_ALL, BgCol);
+        DrawRoundedOutline(Left + 0.5f, Top + 0.5f, W - 1.0f, H - 1.0f, 4.5f * S, BorderCol, true, true);
+
+        const bool HasArt = m_ArrayPlayerArt.IsValid() || (m_ArrayPlayerEditor && !Info.m_Valid);
+        // Mockup: the cover spans the TEXT ZONE height (title+artist area),
+        // leaving the bottom row clear — not the full card height.
+        const float ArtSize = std::max(0.0f, std::min(H - Pad * 2.0f, TextAreaBottom - TextAreaTop));
+        float TextX = Left + Pad;
+        if(HasArt)
+                TextX += ArtSize + Pad;
+        const float TextW = std::max(10.0f, Left + W - Pad - TextX);
+
+        // Title top-aligned with the cover (mockup), artist right below.
+        const float TextY = TextAreaTop;
+
+        int XA = UiOn ? g_Config.m_KxArrayPlayerXAnchor : 0;
+        if(XA == 0)
+                XA = 3; // default: left-aligned inside the card
+
+        auto DrawPlayerText = [&](float x, float y, const char *pText, int LineIdx, float Sz, float AlphaMul, bool Bold) {
+                // Fake bold: the text renderer has no font weight, so titles are
+                // drawn twice with a small x offset.
+                const float BoldDx = Bold ? std::max(0.5f, Sz * 0.05f) : 0.0f;
+                for(int Pass = 0; Pass < (Bold ? 2 : 1); ++Pass)
+                {
+                        const float Px = x + Pass * BoldDx;
+                        if(!Rainbow)
+                        {
+                                DrawText(Px, y, Sz, pText, ColorRGBA(TextHex, true).WithAlpha(alpha * TextOp * AlphaMul));
+                                continue;
+                        }
+                        if(RainbowMode == 2)
+                        {
+                                std::vector<STextColorSplit> vSplits;
+                                vSplits.reserve((size_t)str_length(pText));
+                                const char *pCur = pText;
+                                int BytePos = 0;
+                                while(*pCur)
+                                {
+                                        const char *pNext = pCur;
+                                        str_utf8_decode(&pNext);
+                                        const int CharLen = (int)(pNext - pCur);
+                                        const float CharX = Px + TextRender()->TextWidth(Sz, pText, BytePos);
+                                        const float t = (W > 0.0f) ? std::clamp((CharX - Left) / W, 0.0f, 1.0f) : 0.0f;
+                                        float R, G, B;
+                                        KxHueToRgb(m_ArrayPlayerHue - RainbowStep * t, R, G, B);
+                                        vSplits.emplace_back(BytePos, CharLen, ColorRGBA(R, G, B, alpha * TextOp * AlphaMul));
+                                        BytePos += CharLen;
+                                        pCur = pNext;
+                                }
+                                KxDrawTextColorSplits(TextRender(), Px, y, Sz, pText, ColorRGBA(1.0f, 1.0f, 1.0f, alpha * TextOp * AlphaMul), vSplits);
+                                continue;
+                        }
+                        float R, G, B;
+                        KxHueToRgb(m_ArrayPlayerHue + (float)LineIdx * (RainbowMode == 1 ? RainbowStep : 0.0f), R, G, B);
+                        DrawText(Px, y, Sz, pText, ColorRGBA(R, G, B, alpha * TextOp * AlphaMul));
+                }
+        };
+
+        // ---- art ----
+        if(HasArt)
+        {
+                if(m_ArrayPlayerArt.IsValid())
+                {
+                        Graphics()->BlendNormal();
+                        Graphics()->TextureSet(m_ArrayPlayerArt);
+                        Graphics()->QuadsBegin();
+                        Graphics()->SetColor(ColorRGBA(1.0f, 1.0f, 1.0f, alpha * TextOp));
+                        IGraphics::CQuadItem Quad(Left + Pad, Top + Pad, ArtSize, ArtSize);
+                        Graphics()->QuadsDrawTL(&Quad, 1);
+                        Graphics()->QuadsEnd();
+                        Graphics()->TextureClear();
+                }
+                else
+                {
+                        DrawRoundedRect(Left + Pad, Top + Pad, ArtSize, ArtSize, 4.0f * S,
+                                IGraphics::CORNER_ALL, ColorRGBA(0.0f, 0.0f, 0.0f, alpha * 0.65f));
+                }
+        }
+
+        // ---- title / artist ----
+        const char *pTitleSrc = (Info.m_Valid && Info.m_aTitle[0]) ? Info.m_aTitle : (m_ArrayPlayerEditor ? "Track Title" : "Unknown");
+        const char *pArtistSrc = (Info.m_Valid && Info.m_aArtist[0]) ? Info.m_aArtist : (m_ArrayPlayerEditor ? "Artist" : "Unknown");
+        char aTitle[256];
+        char aArtist[256];
+        KxEllipsize(aTitle, sizeof(aTitle), pTitleSrc, TextW, TitleSz, TextRender());
+        KxEllipsize(aArtist, sizeof(aArtist), pArtistSrc, TextW, ArtistSz, TextRender());
+
+        auto AlignTextX = [&](const char *pText, float Sz) {
+                const float tw = TextRender()->TextWidth(Sz, pText);
+                if(XA == 2)
+                        return TextX + (TextW - tw) * 0.5f;
+                if(XA == 1)
+                        return TextX + TextW - tw;
+                return TextX;
+        };
+        DrawPlayerText(AlignTextX(aTitle, TitleSz), TextY, aTitle, 0, TitleSz, 1.0f, true);
+        DrawPlayerText(AlignTextX(aArtist, ArtistSz), TextY + TitleSz + Indent, aArtist, 1, ArtistSz, 0.6f, false);
+
+        // ---- time / progress ----
+        const double Duration = Info.m_Valid ? Info.m_Duration : 180.0;
+        const double Position = Info.m_Valid ? KxMedia::GetPosition() : (m_ArrayPlayerEditor ? 72.0 : 0.0);
+        const int PosSec = (int)Position;
+        const int DurSec = (int)Duration;
+        char aTime[64];
+        str_format(aTime, sizeof(aTime), "%d:%02d / %d:%02d", PosSec / 60, PosSec % 60, DurSec / 60, DurSec % 60);
+        const float TimeW = TextRender()->TextWidth(TimeSz, aTime);
+        const float LineX0 = Left + Pad;
+        const float LineX1 = Left + W - Pad;
+        const float Ratio = Duration > 0.0 ? (float)std::clamp(Position / Duration, 0.0, 1.0) : 0.0f;
+
+        // v6.7: thick line + bigger thumb, both follow the rainbow settings.
+        const float ThumbD = 10.0f * S;
+        ColorRGBA TrackBgCol;
+        if(DDNetStyle)
+                TrackBgCol = ColorRGBA(0.0f, 0.0f, 0.0f, alpha * 0.35f * MainOp);
+        else
+        {
+                const ColorRGBA Tint = KxColorWithAlpha(m_PanelBgRGBA, 1.0f);
+                TrackBgCol = ColorRGBA(std::min(1.0f, Tint.r * 2.5f), std::min(1.0f, Tint.g * 2.5f), std::min(1.0f, Tint.b * 2.5f), alpha * 0.8f * MainOp);
+        }
+        DrawRoundedRect(LineX0, LineY - TrackH * 0.5f, LineX1 - LineX0, TrackH, TrackH * 0.5f, IGraphics::CORNER_ALL, TrackBgCol);
+
+        ColorRGBA ProgressCol;
+        if(Rainbow)
+        {
+                float R, G, B;
+                KxHueToRgb(m_ArrayPlayerHue + (RainbowMode == 0 ? 0.0f : RainbowStep * Ratio), R, G, B);
+                ProgressCol = ColorRGBA(R, G, B, alpha * MainOp);
+        }
+        else
+                ProgressCol = DDNetStyle ? ColorRGBA(0.9f, 0.9f, 0.9f, alpha * MainOp) : KxColorWithAlpha(m_AccentColorRGBA, alpha * MainOp);
+
+        if(Ratio > 0.0f)
+        {
+                DrawRoundedRect(LineX0, LineY - TrackH * 0.5f, (LineX1 - LineX0) * Ratio, TrackH, TrackH * 0.5f,
+                        IGraphics::CORNER_ALL, ProgressCol);
+                DrawRoundedRect(LineX0 + (LineX1 - LineX0) * Ratio - ThumbD * 0.5f, LineY - ThumbD * 0.5f, ThumbD, ThumbD, ThumbD * 0.5f,
+                        IGraphics::CORNER_ALL, ProgressCol);
+        }
+
+        DrawText(LineX1, TimeY, TimeSz, aTime,
+                ColorRGBA(TextHex, true).WithAlpha(alpha * 0.8f * TextOp), TEXTALIGN_RIGHT);
+
+        // ---- media transport buttons: previous / play-pause / next ----
+        // Centered in the span between the cover and the right card edge,
+        // directly above the slider. Icons are drawn from primitives (bars and
+        // freeform quads) — the game font has no media glyphs.
+        const float BtnGap = 8.0f * S;
+        const float BtnGroupW = BtnW * 3.0f + BtnGap * 2.0f;
+        // Centered on the FULL card width (left..right edges), not the text span.
+        const float BtnX0 = Left + (W - BtnGroupW) * 0.5f;
+        for(int b = 0; b < 3; ++b)
+        {
+                const float bx = BtnX0 + b * (BtnW + BtnGap);
+                m_aArrayPlayerBtnRect[b][0] = bx;
+                m_aArrayPlayerBtnRect[b][1] = ButtonsTop;
+                m_aArrayPlayerBtnRect[b][2] = BtnW;
+                m_aArrayPlayerBtnRect[b][3] = BtnH;
+                const bool Hover = !m_ArrayPlayerEditor && PointInRect(m_MousePos, bx, ButtonsTop, BtnW, BtnH);
+                if(Hover)
+                        DrawRoundedRect(bx, ButtonsTop, BtnW, BtnH, 3.0f * S, IGraphics::CORNER_ALL,
+                                ColorRGBA(1.0f, 1.0f, 1.0f, alpha * 0.08f));
+
+                ColorRGBA IconCol;
+                if(Rainbow)
+                {
+                        float R, G, B;
+                        KxHueToRgb(m_ArrayPlayerHue - RainbowStep * (RainbowMode == 0 ? 0.0f : (float)b / 2.0f), R, G, B);
+                        IconCol = ColorRGBA(R, G, B, alpha * TextOp);
+                }
+                else
+                        IconCol = ColorRGBA(TextHex, true).WithAlpha(alpha * TextOp * (Hover ? 1.0f : 0.8f));
+
+                const float cy = ButtonsTop + BtnH * 0.5f;
+                const float ih = BtnH * 0.5f; // icon height
+                const float BarW2 = std::max(1.5f, 2.0f * S); // icon bar thickness
+                Graphics()->BlendNormal();
+
+                if(b == 0)
+                {
+                        // previous: |◀
+                        DrawRoundedRect(bx + BtnW * 0.22f, cy - ih * 0.5f, BarW2, ih, BarW2 * 0.5f, IGraphics::CORNER_ALL, IconCol);
+                        const float tx0 = bx + BtnW * 0.22f + BarW2 + 1.0f * S;
+                        const float tx1 = bx + BtnW * 0.78f;
+                        Graphics()->QuadsBegin();
+                        Graphics()->SetColor(IconCol);
+                        IGraphics::CFreeformItem Tri(tx1, cy - ih * 0.5f, tx1, cy + ih * 0.5f, tx0, cy, tx0, cy);
+                        Graphics()->QuadsDrawFreeform(&Tri, 1);
+                        Graphics()->QuadsEnd();
+                }
+                else if(b == 1)
+                {
+                        if(Info.m_Playing)
+                        {
+                                // pause: two bars
+                                const float pw = (BtnW * 0.42f - BarW2) * 0.5f;
+                                DrawRoundedRect(bx + BtnW * 0.29f, cy - ih * 0.5f, BarW2, ih, BarW2 * 0.5f, IGraphics::CORNER_ALL, IconCol);
+                                DrawRoundedRect(bx + BtnW * 0.29f + BarW2 + pw, cy - ih * 0.5f, BarW2, ih, BarW2 * 0.5f, IGraphics::CORNER_ALL, IconCol);
+                        }
+                        else
+                        {
+                                // play: ▶
+                                const float tx0 = bx + BtnW * 0.30f;
+                                const float tx1 = bx + BtnW * 0.70f;
+                                Graphics()->QuadsBegin();
+                                Graphics()->SetColor(IconCol);
+                                IGraphics::CFreeformItem Tri(tx0, cy - ih * 0.5f, tx0, cy + ih * 0.5f, tx1, cy, tx1, cy);
+                                Graphics()->QuadsDrawFreeform(&Tri, 1);
+                                Graphics()->QuadsEnd();
+                        }
+                }
+                else
+                {
+                        // next: ▶|
+                        const float tx0 = bx + BtnW * 0.22f;
+                        const float tx1 = bx + BtnW * 0.78f - BarW2 - 1.0f * S;
+                        Graphics()->QuadsBegin();
+                        Graphics()->SetColor(IconCol);
+                        IGraphics::CFreeformItem Tri(tx0, cy - ih * 0.5f, tx0, cy + ih * 0.5f, tx1, cy, tx1, cy);
+                        Graphics()->QuadsDrawFreeform(&Tri, 1);
+                        Graphics()->QuadsEnd();
+                        DrawRoundedRect(bx + BtnW * 0.78f - BarW2, cy - ih * 0.5f, BarW2, ih, BarW2 * 0.5f, IGraphics::CORNER_ALL, IconCol);
+                }
+        }
+        m_ArrayPlayerBtnRectValid = true;
+
+        // ---- level-driven visualizer bars floating above the progress line ----
+        const int Bands = SKxMediaInfo::NUM_BANDS;
+        const float BarAreaW = std::max(20.0f * S, LineX1 - TimeW - 10.0f * S - LineX0);
+        const float BarGap = std::max(1.0f, 1.5f * S);
+        const float BarW = std::max(1.0f, (BarAreaW - BarGap * (Bands - 1)) / (float)Bands);
+        for(int i = 0; i < Bands; ++i)
+        {
+                float Level;
+                if(Info.m_Valid)
+                        Level = Info.m_aBands[i];
+                else if(m_ArrayPlayerEditor)
+                        Level = 0.22f + 0.55f * std::fabs(std::sin((float)i * 0.7f + m_ArrayPlayerHue * 0.02f));
+                else
+                        Level = 0.0f;
+                const float Bh = Level * BarsH;
+                if(Bh < 1.0f)
+                        continue; // silence — no stub dashes along the line
+                ColorRGBA BarCol;
+                if(Rainbow)
+                {
+                        // Group = one hue, Peas/Peas+Gradient = gradient across bars.
+                        float R, G, B;
+                        const float t = RainbowMode == 0 ? 0.0f : (float)i / (float)(Bands - 1);
+                        KxHueToRgb(m_ArrayPlayerHue - RainbowStep * t, R, G, B);
+                        BarCol = ColorRGBA(R, G, B, alpha * MainOp);
+                }
+                else
+                        BarCol = DDNetStyle ? ColorRGBA(0.75f, 0.75f, 0.75f, alpha * MainOp) : KxColorWithAlpha(m_AccentColorRGBA, alpha * MainOp);
+                const float bx = LineX0 + (float)i * (BarW + BarGap);
+                DrawRoundedRect(bx, BarsBase - Bh, BarW, Bh, 1.0f * S, IGraphics::CORNER_ALL, BarCol);
+        }
 }
 
 // ============================================================================
@@ -11419,7 +12468,7 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
+if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                 if(!SearchKeepsChild(row.pChildren[c]))
                                         continue;
@@ -11511,7 +12560,7 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
+if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                                 if(!SearchKeepsChild(row.pChildren[c]))
                                                         continue;
@@ -11603,7 +12652,7 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
+if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                 if(!SearchKeepsChild(row.pChildren[c]))
                                         continue;
@@ -12571,7 +13620,7 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
+if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                         if(!SearchKeepsChild(row.pChildren[c]))
                                                 continue;
@@ -12612,7 +13661,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c)) continue;
                                 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
                                         continue;
-                                if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c))) continue;
+                                if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c))) continue;
                                 if(!SearchKeepsChild(row.pChildren[c]))
                                         continue;
                                 const YGNodeRef pn = rowNodes[preIdx];
@@ -12662,7 +13711,7 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
+if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                 if(!SearchKeepsChild(child))
                                         continue;
@@ -12974,9 +14023,9 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                         // position was moved.
                                         if(child.pName && str_comp(child.pName, "Editor") == 0)
                                         {
-                                                const bool Info = (str_comp(row.pName, "ArrayInfo") == 0);
-                                                const bool EditorActive = Info ? m_ArrayInfoEditor : m_ArrayListEditor;
-                                                const bool Modified = Info ? ArrayInfoPositionModified() : ArrayListPositionModified();
+                                                const int Kind = (str_comp(row.pName, "ArrayInfo") == 0) ? 1 : (str_comp(row.pName, "ArrayPlayer") == 0) ? 2 : 0;
+                                                const bool EditorActive = Kind == 1 ? m_ArrayInfoEditor : Kind == 2 ? m_ArrayPlayerEditor : m_ArrayListEditor;
+                                                const bool Modified = Kind == 1 ? ArrayInfoPositionModified() : Kind == 2 ? ArrayPlayerPositionModified() : ArrayListPositionModified();
                                                 // Editor green, Exit Editor red; Reset the Clear-yellow half.
                                                 const ColorRGBA leftCol = (EditorActive ? ColorRGBA(0xffc43d3d, true) : ColorRGBA(0xff3da35a, true)).WithAlpha(alpha);
                                                 const char *pLeftLabel = EditorActive ? "Exit Editor" : "Editor";

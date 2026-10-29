@@ -276,6 +276,203 @@ bool CBotNet::ProcessCopyMoves(CGameClient *pGame, CNetObj_PlayerInput *pInput, 
         return true;
 }
 
+// v6.7: shared dummy filter check — same semantics as CEsp::PassesFiltersImpl
+// (team / DDrace team / friend / clanmate / targets / freeze), evaluated on the
+// dummy's server client. No Dummy filter: the candidates ARE our own dummies.
+bool CBotNet::DummyPassesFilters(int Dummy, int teamFilter, int ddraceTeamFilter, int ddraceTeamId,
+        int friendFilter, int clanmateFilter, int targetsFilterMode, const char *pTargetsIds, int freezeFilter) const
+{
+        CGameClient *pGame = GameClient();
+        const int Cid = pGame->m_aLocalIds[Dummy];
+        if(Cid < 0 || Cid >= 128 || !pGame->m_aClients[Cid].m_Active || !pGame->m_Snap.m_aCharacters[Cid].m_Active)
+                return false;
+        const int LocalId = pGame->m_aLocalIds[g_Config.m_ClDummy];
+        if(LocalId < 0 || LocalId >= 128)
+                return false;
+
+        // Team filter: 0=both 1=my 2=war 3=blue 4=red ("Team" = REAL team).
+        const int MyRealTeam = pGame->m_aClients[LocalId].m_Team;
+        if(teamFilter == 1)
+        {
+                if(pGame->m_aClients[Cid].m_Team != MyRealTeam)
+                        return false;
+        }
+        else if(teamFilter == 2)
+        {
+                if(pGame->m_aClients[Cid].m_Team == MyRealTeam)
+                        return false;
+        }
+        else if(teamFilter == 3)
+        {
+                if(pGame->m_aClients[Cid].m_Team != TEAM_BLUE)
+                        return false;
+        }
+        else if(teamFilter == 4)
+        {
+                if(pGame->m_aClients[Cid].m_Team != TEAM_RED)
+                        return false;
+        }
+        // DDrace team filter: 0=both 1=my 2=other 3=target id.
+        if(ddraceTeamFilter == 1 && !pGame->m_Teams.SameTeam(LocalId, Cid))
+                return false;
+        if(ddraceTeamFilter == 2 && pGame->m_Teams.SameTeam(LocalId, Cid))
+                return false;
+        if(ddraceTeamFilter == 3 && pGame->m_Teams.Team(Cid) != ddraceTeamId)
+                return false;
+        // Friend filter: 0=both 1=ignore 2=only.
+        if(friendFilter == 1 && pGame->m_aClients[Cid].m_Friend)
+                return false;
+        if(friendFilter == 2 && !pGame->m_aClients[Cid].m_Friend)
+                return false;
+        // Clanmate filter: 0=both 1=ignore 2=only.
+        if(clanmateFilter == 1 && str_comp(pGame->m_aClients[Cid].m_aClan, pGame->m_aClients[LocalId].m_aClan) == 0)
+                return false;
+        if(clanmateFilter == 2 && str_comp(pGame->m_aClients[Cid].m_aClan, pGame->m_aClients[LocalId].m_aClan) != 0)
+                return false;
+        // Targets filter: 0=both 1=only 2=ignore (by server client id).
+        if(targetsFilterMode != 0)
+        {
+                bool found = false;
+                bool anyValid = false;
+                const char *pIds = pTargetsIds;
+                while(*pIds)
+                {
+                        while(*pIds && (*pIds == ' ' || *pIds == ',' || *pIds == ';'))
+                                pIds++;
+                        if(!*pIds)
+                                break;
+                        if(*pIds >= '0' && *pIds <= '9')
+                        {
+                                const int id = atoi(pIds);
+                                if(id >= 0 && id < 128 && pGame->m_aClients[id].m_Active)
+                                {
+                                        anyValid = true;
+                                        if(id == Cid)
+                                                found = true;
+                                }
+                        }
+                        while(*pIds && *pIds != ' ' && *pIds != ',' && *pIds != ';')
+                                pIds++;
+                }
+                if(targetsFilterMode == 1 && anyValid && !found)
+                        return false;
+                if(targetsFilterMode == 2 && anyValid && found)
+                        return false;
+        }
+        // Freeze filter: 0=both 1=freeze 2=no_freeze.
+        const bool isFrozen = pGame->m_aClients[Cid].m_FreezeEnd != 0 || pGame->m_aClients[Cid].m_LiveFrozen;
+        if(freezeFilter == 1 && !isFrozen)
+                return false;
+        if(freezeFilter == 2 && isFrozen)
+                return false;
+        return true;
+}
+
+void CBotNet::SdsResetVisited()
+{
+        m_SdsVisitedCount = 0;
+}
+
+// v6.7: Smart Copy Moves — rebuild the per-dummy allow list: among the
+// filter-passing candidates (main slot or connected dummy, not the active
+// one), the top-N by the selected sort metric receives copy moves.
+void CBotNet::SmartCopyRecompute()
+{
+        for(int D = 0; D < MAX_DUMMIES; D++)
+                m_aSmartCopyAllow[D] = false;
+        if(!g_Config.m_KxSmartCopyMoves || !g_Config.m_ClDummyCopyMoves)
+                return;
+
+        CGameClient *pGame = GameClient();
+        const int Cur = g_Config.m_ClDummy;
+        const int Order = g_Config.m_KxSmartCopySort;
+        const int activeId = pGame->m_aLocalIds[Cur];
+
+        vec2 ActivePos(0.0f, 0.0f);
+        vec2 AimPoint(0.0f, 0.0f);
+        const bool haveRef = activeId >= 0 && activeId < 128 && pGame->m_aClients[activeId].m_Active;
+        if(haveRef)
+        {
+                ActivePos = pGame->m_aClients[activeId].m_Predicted.m_Pos;
+                // v6.7: zoom-accurate world aim point — same conversion as the
+                // spawner cursor (tas.cpp SpawnerTargetPos): m_aTargetPos is stored
+                // in unzoomed camera space, so the world point under the crosshair
+                // is cam + (target - cam) * zoom.
+                const CNetObj_PlayerInput &In = pGame->m_Controls.m_aInputData[Cur];
+                const vec2 Cam = pGame->m_Camera.m_Center;
+                const float Zoom = pGame->m_Camera.m_Zoom;
+                if(Zoom > 0.001f)
+                        AimPoint = Cam + (pGame->m_Controls.m_aTargetPos[Cur] - Cam) * Zoom;
+                else
+                        AimPoint = ActivePos + vec2((float)In.m_TargetX, (float)In.m_TargetY);
+        }
+
+        int aCand[MAX_DUMMIES];
+        long long aKey[MAX_DUMMIES];
+        int NumCand = 0;
+        for(int D = 0; D < MAX_DUMMIES; D++)
+        {
+                if(D == Cur)
+                        continue;
+                if(!(D == 0 || Client()->DummyConnected(D)))
+                        continue;
+
+                long long Key = (long long)D;
+                const int Cid = pGame->m_aLocalIds[D];
+                if(Order != 0 && haveRef && Cid >= 0 && Cid < 128 && pGame->m_aClients[Cid].m_Active)
+                {
+                        const vec2 DummyPos = pGame->m_aClients[Cid].m_Predicted.m_Pos;
+                        if(Order == 1)
+                        {
+                                const vec2 d = DummyPos - ActivePos;
+                                Key = (long long)(d.x * d.x + d.y * d.y);
+                        }
+                        else if(Order == 2)
+                        {
+                                const vec2 d = DummyPos - AimPoint;
+                                Key = (long long)(d.x * d.x + d.y * d.y);
+                        }
+                        else // Last Active: most recently active first, never-active last
+                                Key = -(long long)(m_aDummyActiveSeq[D] + 1);
+                }
+
+                if(!DummyPassesFilters(D, g_Config.m_KxSmartCopyTeam, g_Config.m_KxSmartCopyDdraceTeam,
+                        g_Config.m_KxSmartCopyDdraceTeamId, g_Config.m_KxSmartCopyFriend,
+                        g_Config.m_KxSmartCopyClanmate, g_Config.m_KxSmartCopyTargetsMode,
+                        g_Config.m_KxSmartCopyTargets, g_Config.m_KxSmartCopyFreeze))
+                        continue;
+
+                aCand[NumCand] = D;
+                aKey[NumCand] = Key;
+                NumCand++;
+        }
+
+        for(int i = 1; i < NumCand; i++)
+        {
+                const int CD = aCand[i];
+                const long long CK = aKey[i];
+                int j = i;
+                while(j > 0 && (aKey[j - 1] > CK || (aKey[j - 1] == CK && aCand[j - 1] > CD)))
+                {
+                        aKey[j] = aKey[j - 1];
+                        aCand[j] = aCand[j - 1];
+                        j--;
+                }
+                aKey[j] = CK;
+                aCand[j] = CD;
+        }
+
+        // Top-N, clamped by the Dummy Manager limit (incl. main → N ≤ limit-1).
+        int Count = g_Config.m_KxSmartCopyCount;
+        const int Limit = Client()->DummyLimit();
+        if(Limit >= 1 && Count > Limit - 1)
+                Count = Limit - 1;
+        if(Count < 1)
+                Count = 1;
+        for(int i = 0; i < NumCand && i < Count; i++)
+                m_aSmartCopyAllow[aCand[i]] = true;
+}
+
 bool CBotNet::ProcessPathfinderGo(CGameClient *pGame, CNetObj_PlayerInput *pInput, int Dummy, CBotNetDummy &State, int LocalID)
 {
         // "Go to position" pathfinder.  Returns true when active (always commits

@@ -456,6 +456,25 @@ public:
         // Per-dummy runtime state
         CBotNetDummy m_aDummies[MAX_DUMMIES];
 
+        // v6.7: Smart Copy Moves — per-dummy allow list. Trigger mode: captured
+        // once when copy moves (or the smart gate) is enabled; Always mode:
+        // recomputed every tick. Checked by the copy-moves loop in controls.cpp.
+        bool m_aSmartCopyAllow[MAX_DUMMIES];
+        int m_PrevClDummyCopyMoves = -1; // -1 = first OnUpdate captures immediately
+        int m_PrevKxSmartCopyMoves = 0;
+
+        // v6.7: Smart Dummy Switch "Without Repeat" — dummy slots already
+        // visited this round (cleared when every candidate was visited once).
+        int m_aSdsVisited[MAX_DUMMIES];
+        int m_SdsVisitedCount = 0;
+
+        // v6.7: last-active dummy sequence for the "Last Active" sort. Slot D's
+        // value = order in which D last became the active dummy (-1 = never;
+        // higher = more recent).
+        int m_ActiveSeqCounter = 0;
+        int m_aDummyActiveSeq[MAX_DUMMIES];
+        int m_PrevActiveSeqDummy = -1;
+
         // Kinetix Dummy Manager (v1.56.282): per-dummy profiles + proxies.
         // Exposed as runtime commands (dummy%d_* / kx_dummy_limit), persisted
         // to kinetix_dummies.cfg — deliberately NOT in g_Config.
@@ -671,6 +690,18 @@ public:
 	static std::string ReplacePlaceholders(const std::string &Cmd, int DummyIndex, CGameClient *pGame);
 
 	void SmartDummySwitch();
+
+        // v6.7: Smart Copy Moves — rebuild the per-dummy allow list (top-N by
+        // sort metric among the filter-passing dummies). Public: called from
+        // controls.cpp (Always mode) and from OnUpdate (Trigger capture).
+        void SmartCopyRecompute();
+        // v6.7: shared dummy filter check (ESP filter semantics without the
+        // Dummy filter) — used by Smart Copy Moves and Smart Dummy Switch.
+        bool DummyPassesFilters(int Dummy, int teamFilter, int ddraceTeamFilter, int ddraceTeamId,
+                int friendFilter, int clanmateFilter, int targetsFilterMode, const char *pTargetsIds,
+                int freezeFilter) const;
+        // v6.7: clear the Without Repeat visited list (round restart).
+        void SdsResetVisited();
 
 private:
         // =========================================================

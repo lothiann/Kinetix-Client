@@ -33,7 +33,7 @@ void CBotNet::IssueKillForDummy(int Dummy)
         // "kill" must run on the right dummy slot; temporarily switch ClDummy.
         int OldDummy = g_Config.m_ClDummy;
         g_Config.m_ClDummy = Dummy;
-        Console()->ExecuteLine("kill", -1, -1);
+        Console()->ExecuteLine("kill", -1, true);
         g_Config.m_ClDummy = OldDummy;
 }
 

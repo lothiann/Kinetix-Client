@@ -682,6 +682,90 @@ bool CGameClient::PredictedPosNextTick(int CidA, int CidB, vec2 &OutPosA, vec2 &
         return true;
 }
 
+// Auto Fly / Triple Fly — one-tick hammer prediction. A press sent by the dummy
+// is applied by CCharacter::OnDirectInput -> FireWeapon at the start of the
+// next predicted tick, i.e. BEFORE that tick's movement. The state the shot is
+// resolved against is therefore exactly the predicted world's current state, and
+// the checks below mirror FireWeapon 1:1:
+//   - the dummy must be able to fire (freeze / live freeze; deep freeze blocks
+//     the hammer unless sv_deepfly is on),
+//   - the reload timer must already be 0 (FireWeapon refuses while != 0),
+//   - the hammer must be owned/loaded and not disabled by a HIT_DISABLE tile,
+//   - the two tees must be able to collide (solo / different DDrace team = no hit),
+//   - the strike must reach: ProjStartPos = pos + dir * R * 0.75 and
+//     FindEntities(ProjStartPos, R * 0.5) keeps a target whose distance to
+//     ProjStartPos is < 0.5 * R + targetRadius.
+// The hammer does not have to be the active weapon yet: the press carries
+// WantedWeapon = HAMMER + 1 and the reload is ready, so DoWeaponSwitch fires the
+// hammer on the same tick.
+// pAim receives the aim vector (active - dummy) that makes the press land.
+// Used by Auto Fly in OnSnapInput and by Auto Triple Fly (same check, 1:1).
+bool CGameClient::DummyHammerCanHit(int DummyD, int ActiveD, vec2 *pAim)
+{
+        if(DummyD < 0 || DummyD >= MAX_DUMMIES || ActiveD < 0 || ActiveD >= MAX_DUMMIES)
+                return false;
+        if(DummyD == ActiveD)
+                return false;
+        if(DummyD != 0 && !Client()->DummyConnected(DummyD))
+                return false;
+
+        const int DummyCid = m_aLocalIds[DummyD];
+        const int ActiveCid = m_aLocalIds[ActiveD];
+        if(DummyCid < 0 || DummyCid >= MAX_CLIENTS || ActiveCid < 0 || ActiveCid >= MAX_CLIENTS)
+                return false;
+        if(DummyCid == ActiveCid)
+                return false;
+
+        CCharacter *pDummy = m_PredictedWorld.GetCharacterById(DummyCid);
+        CCharacter *pActive = m_PredictedWorld.GetCharacterById(ActiveCid);
+        if(!pDummy || !pActive)
+                return false;
+
+        // FireWeapon: frozen tees cannot fire at all; a deep-frozen tee cannot
+        // fire the hammer unless sv_deepfly is enabled.
+        if(pDummy->m_FreezeTime > 0 || pDummy->Core()->m_LiveFrozen)
+                return false;
+        if(pDummy->Core()->m_DeepFrozen && !g_Config.m_SvDeepfly)
+                return false;
+
+        // FireWeapon refuses while the reload timer is running. The press is
+        // applied on the next tick before HandleWeapons() decrements it, so the
+        // current predicted timer is exactly the one FireWeapon will see.
+        if(pDummy->GetReloadTimer() != 0)
+                return false;
+
+        // The hammer must be the weapon that actually fires. When another weapon
+        // is held, the press only queues the switch, so the shot would be wasted
+        // this tick — wait for the hammer to become active.
+        if(!pDummy->GetWeaponGot(WEAPON_HAMMER) || pDummy->GetWeaponAmmo(WEAPON_HAMMER) == 0)
+                return false;
+        if(pDummy->GetActiveWeapon() != WEAPON_HAMMER)
+                return false;
+        if(pDummy->HammerHitDisabled())
+                return false;
+
+        // Different/solo DDrace teams cannot hit each other.
+        if(!pDummy->CanCollide(ActiveCid))
+                return false;
+
+        // Aim straight at the active tee. The engine rounds TargetX/Y to ints,
+        // so the geometry test uses exactly the value that will be sent.
+        const vec2 DummyPos = pDummy->GetPos();
+        const vec2 ActivePos = pActive->GetPos();
+        const vec2 AimF = ActivePos - DummyPos;
+        const vec2 AimI((float)(int)AimF.x, (float)(int)AimF.y);
+        const float AimLen = length(AimI);
+        const vec2 Dir = AimLen > 0.001f ? AimI / AimLen : vec2(0.0f, -1.0f);
+        const vec2 ProjStartPos = DummyPos + Dir * pDummy->GetProximityRadius() * 0.75f;
+        const float HitRadius = pDummy->GetProximityRadius() * 0.5f + pActive->GetProximityRadius();
+        if(distance(ActivePos, ProjStartPos) >= HitRadius)
+                return false;
+
+        if(pAim)
+                *pAim = AimF;
+        return true;
+}
+
 int CGameClient::OnSnapInput(int *pData, int Conn, bool Force)
 {
         if(Conn == g_Config.m_ClDummy)
@@ -707,6 +791,14 @@ int CGameClient::OnSnapInput(int *pData, int Conn, bool Force)
 
         if(!g_Config.m_ClDummyHammer)
         {
+                // Auto Fly: cl_dummy_hammer turned off — the session is over. The
+                // next enable starts a fresh session (no aim until its first hit).
+                m_aHammerSession[Conn] = false;
+                m_aHammerSessionHit[Conn] = false;
+                m_aHammerSessionAim[Conn] = vec2(0.0f, 0.0f);
+                m_aHammerPipelineAim[Conn] = vec2(0.0f, 0.0f);
+                m_aHammerPipelineOwnsAim[Conn] = false;
+
                 if(m_aDummyFire[Conn] != 0)
                 {
                         // Hammer just turned off — send a release (even fire counter).
@@ -730,63 +822,122 @@ int CGameClient::OnSnapInput(int *pData, int Conn, bool Force)
         }
         else
         {
-                // Determine if auto-fly is active: dummy auto-hammers every tick when
-                // the active player is within hammer radius.
+                // Auto Fly — one session per continuous cl_dummy_hammer = 1 stretch.
+                // Every tick, while the session runs, a one-tick prediction decides
+                // whether a hammer press sent now would REALLY hit the active tee on
+                // the tick the press is applied (reload timer, freeze, weapon, team
+                // collision and the engine's own strike geometry). If it would: aim
+                // at the active tee and press for exactly one tick. If not: release.
+                //
+                // Aim system (auto fly only):
+                //   - before the first hit of the session the aim is NOT touched at
+                //     all (not even to 0,0);
+                //   - on a hit tick the aim points at the active tee;
+                //   - between hits the aim stays at the last hit's aim;
+                //   - Preserve Inputs may replace that aim when the input pipeline
+                //     (Copy Moves / Triple Fly / the user) asks for a different one.
                 const bool autoFly = g_Config.m_KxDummyHammerAuto != 0;
-                bool canHammerNow = true;
+
                 if(autoFly)
                 {
-                        const int activeId = m_aLocalIds[g_Config.m_ClDummy];
-                        if(activeId < 0)
+                        // Keep the DDNet "hammer was active" counter alive so that
+                        // turning cl_dummy_hammer off still sends the release below.
+                        m_aDummyFire[Conn]++;
+
+                        if(!m_aHammerSession[Conn])
                         {
-                                canHammerNow = false;
+                                m_aHammerSession[Conn] = true;
+                                m_aHammerSessionHit[Conn] = false;
+                                m_aHammerSessionAim[Conn] = vec2(0.0f, 0.0f);
+                                m_aHammerPipelineAim[Conn] = vec2((float)m_aDummyInput[Conn].m_TargetX,
+                                        (float)m_aDummyInput[Conn].m_TargetY);
+                                m_aHammerPipelineOwnsAim[Conn] = false;
+
+                                // Preserve Inputs: start from the live pipeline aim so a
+                                // fresh session never shows a stale leftover aim.
+                                if(g_Config.m_KxDummyHammerKeepInputs &&
+                                        (m_aDummyInput[Conn].m_TargetX != 0 || m_aDummyInput[Conn].m_TargetY != 0))
+                                {
+                                        m_aHammerInput[Conn].m_TargetX = m_aDummyInput[Conn].m_TargetX;
+                                        m_aHammerInput[Conn].m_TargetY = m_aDummyInput[Conn].m_TargetY;
+                                        m_aHammerPipelineOwnsAim[Conn] = true;
+                                }
+                        }
+
+                        const int InX = m_aDummyInput[Conn].m_TargetX;
+                        const int InY = m_aDummyInput[Conn].m_TargetY;
+                        const bool pipelineChanged = InX != (int)m_aHammerPipelineAim[Conn].x ||
+                                InY != (int)m_aHammerPipelineAim[Conn].y;
+
+                        vec2 HitAim;
+                        const bool canHit = DummyHammerCanHit(Conn, g_Config.m_ClDummy, &HitAim);
+
+                        if(canHit)
+                        {
+                                // Land the press: aim at the active tee, odd fire parity.
+                                m_aHammerInput[Conn].m_TargetX = (int)HitAim.x;
+                                m_aHammerInput[Conn].m_TargetY = (int)HitAim.y;
+                                m_aHammerInput[Conn].m_Fire = (m_aHammerInput[Conn].m_Fire + 1) | 1;
+                                m_aDummyLastFireTick[Conn] = Client()->GameTick(g_Config.m_ClDummy);
+                                m_aHammerSessionHit[Conn] = true;
+                                m_aHammerSessionAim[Conn] = HitAim;
+                                m_aHammerPipelineOwnsAim[Conn] = false;
                         }
                         else
                         {
-                                // Use m_Predicted.m_Pos (server-accurate) instead of m_RenderPos
-                                // (interpolated, lags 2-5 ticks). m_RenderPos caused spurious
-                                // hammer fires when the dummy appeared in-range visually but had
-                                // already moved out of range on the server. DDNet uses
-                                // m_Predicted.m_Pos for the same reason.
-                                const vec2 activePos = m_aClients[activeId].m_Predicted.m_Pos;
-                                const vec2 dummyPos = m_aClients[m_aLocalIds[Conn]].m_Predicted.m_Pos;
+                                // No real hit this tick — release (even fire parity).
+                                m_aHammerInput[Conn].m_Fire = (m_aHammerInput[Conn].m_Fire + 1) & ~1;
 
-                                // v1.56.189: Configurable max distance (replaces hardcoded 50).
-                                // Real DDNet hammer max reach center-to-center = ProjStartPos offset
-                                // (PhysicalSize*0.75 = 21) + FindEntities radius (PhysicalSize*0.5 = 14)
-                                // + target ProximityRadius (28) = 63. Slider max = 63 (v1.56.190).
-                                const float maxDist = (float)g_Config.m_KxDummyHammerAutoMaxDist;
-
-                                // v1.56.189 (fixed v1.56.191): Predict — BOTH active and dummy
-                                // positions are predicted (v1.56.189 only predicted active,
-                                // leaving dummy at current pos — wrong, since both move every
-                                // tick). We check the distance between the two predicted
-                                // positions, which is the actual next-tick distance.
-                                // v1.56.246: prediction is now a full one-tick physics simulation
-                                // (gravity, velocity ramp, friction, input, hook, map + player
-                                // collision) instead of linear pos+vel — at hammerfly speeds
-                                // velramp eats 10-15% of horizontal velocity per tick, so linear
-                                // extrapolation overshoots badly. Linear is the fallback when the
-                                // prediction world isn't ready (see PredictedPosNextTick).
-                                vec2 activeTestPos = activePos;
-                                vec2 dummyTestPos = dummyPos;
-                                if(g_Config.m_KxDummyHammerAutoPredict)
+                                // Preserve Inputs takes the aim over only when the pipeline
+                                // actually asks for a different nonzero aim (the player
+                                // moves the crosshair / Copy Moves moves it). Holding an
+                                // unchanged aim must not pull the dummy off the last hit
+                                // direction — that is what kept the landed hammer invisible.
+                                if(g_Config.m_KxDummyHammerKeepInputs && pipelineChanged)
                                 {
-                                        if(!PredictedPosNextTick(activeId, m_aLocalIds[Conn], activeTestPos, dummyTestPos))
+                                        if(InX != 0 || InY != 0)
                                         {
-                                                activeTestPos = activePos + m_aClients[activeId].m_Predicted.m_Vel;
-                                                dummyTestPos = dummyPos + m_aClients[m_aLocalIds[Conn]].m_Predicted.m_Vel;
+                                                m_aHammerInput[Conn].m_TargetX = InX;
+                                                m_aHammerInput[Conn].m_TargetY = InY;
+                                                m_aHammerPipelineOwnsAim[Conn] = true;
+                                        }
+                                        else
+                                        {
+                                                m_aHammerPipelineOwnsAim[Conn] = false;
                                         }
                                 }
 
-                                const vec2 delta = activeTestPos - dummyTestPos;
-                                const float distSq = delta.x * delta.x + delta.y * delta.y;
-                                if(distSq > maxDist * maxDist)
-                                        canHammerNow = false;
+                                if(!m_aHammerPipelineOwnsAim[Conn] && m_aHammerSessionHit[Conn])
+                                {
+                                        // After a hit keep aiming where the last hit aimed.
+                                        m_aHammerInput[Conn].m_TargetX = (int)m_aHammerSessionAim[Conn].x;
+                                        m_aHammerInput[Conn].m_TargetY = (int)m_aHammerSessionAim[Conn].y;
+                                }
+                                // Before the first hit the auto-fly aim system sets no aim
+                                // of its own (never a 0,0 reset); the seeded pipeline aim or
+                                // a pipeline change above is what is sent.
                         }
-                        // Auto fly overrides custom latency — hammers every tick when in range.
+
+                        m_aHammerPipelineAim[Conn] = vec2((float)InX, (float)InY);
+
+                        m_aHammerInput[Conn].m_WantedWeapon = WEAPON_HAMMER + 1;
+                        if(!g_Config.m_ClDummyRestoreWeapon)
+                                m_aDummyInput[Conn].m_WantedWeapon = WEAPON_HAMMER + 1;
+
+                        if(g_Config.m_KxDummyHammerKeepInputs)
+                        {
+                                m_aHammerInput[Conn].m_Direction = m_aDummyInput[Conn].m_Direction;
+                                m_aHammerInput[Conn].m_Jump = m_aDummyInput[Conn].m_Jump;
+                                m_aHammerInput[Conn].m_Hook = m_aDummyInput[Conn].m_Hook;
+                        }
+
+                        mem_copy(pData, &m_aHammerInput[Conn], sizeof(m_aHammerInput[Conn]));
+                        return sizeof(m_aHammerInput[Conn]);
                 }
-                else if(g_Config.m_KxDummyHammerCustomLatency)
+
+                // ============ MANUAL MODE (auto fly off) — unchanged DDNet behaviour
+                bool canHammerNow = true;
+                if(g_Config.m_KxDummyHammerCustomLatency)
                 {
                         const int latencyTicks = std::max(1, (g_Config.m_KxDummyHammerLatencyMs + 19) / 20);
                         if(m_aDummyFire[Conn] % latencyTicks != 0)
@@ -796,28 +947,6 @@ int CGameClient::OnSnapInput(int *pData, int Conn, bool Force)
                 {
                         if(m_aDummyFire[Conn] % 25 != 0)
                                 canHammerNow = false;
-                }
-
-                // v1.56.188: Auto Fly — when dummy is out of hammer range, behave
-                // as if cl_dummy_hammer is off: send normal dummy input so the user
-                // can control the dummy (movement/jump/hook/weapon). Hammer input
-                // (m_aHammerInput) and fire counter (m_aDummyFire) are NOT touched —
-                // they stay ready for seamless resume when the dummy re-enters range.
-                // Without this, dummy was stuck on hammer weapon with no user control
-                // whenever autoFly was on, even when nowhere near the active player.
-                if(autoFly && canHammerNow)
-                {
-                        const int FireDelayTicks = m_aTuning[Conn].GetWeaponFireDelay(WEAPON_HAMMER) * Client()->GameTickSpeed();
-                        if(Client()->GameTick(g_Config.m_ClDummy) - m_aDummyLastFireTick[Conn] < FireDelayTicks)
-                                canHammerNow = false;
-                }
-
-                if(autoFly && !canHammerNow)
-                {
-                        if(!Force && (!m_aDummyInput[Conn].m_Direction && !m_aDummyInput[Conn].m_Jump && !m_aDummyInput[Conn].m_Hook))
-                                return 0;
-                        mem_copy(pData, &m_aDummyInput[Conn], sizeof(m_aDummyInput[Conn]));
-                        return sizeof(m_aDummyInput[Conn]);
                 }
 
                 // Always send a fresh packet every tick (not just on hammer hits).
@@ -911,24 +1040,16 @@ void CGameClient::ApplyCopyMovesTransforms(int D, const CNetObj_PlayerInput &Src
         if(wantSmart)
         {
                 // Smart aim: dummy aims at the same WORLD point as the player.
-                // Player's world aim = activePos + (m_TargetX, m_TargetY) from SrcInput.
-                // v1.56.186: SrcInput is the (possibly delayed) source — keeps smart
-                // aim in sync with movement/fire replay delay.
-                // v1.56.273: zoom compensation — with cl_dyncam the world point under
-                // the crosshair carries a camera-lag term (same as m_aTargetPos in
-                // CControls::OnRender): cursor = anchor + aim + DyncamOffsetDelta *
-                // (1/Zoom - 1). Without it the dummy aims at a shifted point while
-                // zoomed.
-                vec2 playerWorldAim = activePos + vec2(
-                        (float)AimX,
-                        (float)AimY);
-                if(g_Config.m_ClDyncam)
-                {
-                        const vec2 Dod = m_Camera.m_DyncamTargetCameraOffset - m_Camera.m_aDyncamCurrentCameraOffset[g_Config.m_ClDummy];
-                        const float Zoom = m_Camera.m_Zoom;
-                        if(Zoom > 0.001f)
-                                playerWorldAim += Dod * (1.0f / Zoom - 1.0f);
-                }
+                // v6.7: zoom-accurate — same conversion as the spawner cursor
+                // (tas.cpp SpawnerTargetPos): m_aTargetPos is stored in unzoomed
+                // camera space, so the world point under the crosshair is
+                // cam + (target - cam) * zoom. The old dyncam-only lag term left
+                // plain zoom-out shifted.
+                const vec2 Cam = m_Camera.m_Center;
+                const float Zoom = m_Camera.m_Zoom;
+                const vec2 playerWorldAim = Zoom > 0.001f
+                        ? Cam + (m_Controls.m_aTargetPos[g_Config.m_ClDummy] - Cam) * Zoom
+                        : activePos + vec2((float)AimX, (float)AimY);
                 const vec2 dummyAim = playerWorldAim - dummyPos;
                 m_aDummyInput[D].m_TargetX = (int)dummyAim.x;
                 m_aDummyInput[D].m_TargetY = (int)dummyAim.y;

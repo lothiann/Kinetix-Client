@@ -76,6 +76,19 @@ CBotNet::CBotNet()
         m_pRtCustomFinishGrid = nullptr;
         m_RtPfRebuildFreeze = 0;
 
+        // v6.7: Smart Copy Moves / Smart Dummy Switch runtime state.
+        for(int D = 0; D < MAX_DUMMIES; D++)
+        {
+                m_aSmartCopyAllow[D] = false;
+                m_aSdsVisited[D] = -1;
+                m_aDummyActiveSeq[D] = -1;
+        }
+        m_SdsVisitedCount = 0;
+        m_ActiveSeqCounter = 0;
+        m_PrevActiveSeqDummy = -1;
+        m_PrevClDummyCopyMoves = -1;
+        m_PrevKxSmartCopyMoves = 0;
+
         // Per-dummy state is auto-initialized by CBotNetDummy constructor
 }
 
@@ -120,61 +133,136 @@ static void ConDummySwitch(IConsole::IResult *pResult, void *pUserData)
 
 void CBotNet::SmartDummySwitch()
 {
+        if(!g_Config.m_KxSdsEnabled)
+                return;
+
         const int Cur = g_Config.m_ClDummy;
-        int Next = -1;
-        if(g_Config.m_KxSdsMode == 0)
+        const int Order = g_Config.m_KxSdsOrder;
+
+        CGameClient *pGame = GameClient();
+        const int activeId = pGame->m_aLocalIds[Cur];
+
+        // Reference points for the Nearest To Me / Nearest To Aim orders: the
+        // active player's predicted position and the world point under the
+        // crosshair. v6.7: zoom-accurate — same conversion as the spawner
+        // cursor (tas.cpp SpawnerTargetPos): m_aTargetPos is stored in unzoomed
+        // camera space, so the world point is cam + (target - cam) * zoom.
+        vec2 ActivePos(0.0f, 0.0f);
+        vec2 AimPoint(0.0f, 0.0f);
+        const bool haveRef = activeId >= 0 && activeId < 128 && pGame->m_aClients[activeId].m_Active;
+        if(haveRef)
         {
-                for(int Off = 1; Off <= MAX_DUMMIES && Next < 0; Off++)
-                {
-                        const int D = (Cur + Off) % MAX_DUMMIES;
-                        if(D == 0 || Client()->DummyConnected(D))
-                                Next = D;
-                }
+                ActivePos = pGame->m_aClients[activeId].m_Predicted.m_Pos;
+                const CNetObj_PlayerInput &In = pGame->m_Controls.m_aInputData[Cur];
+                const vec2 Cam = pGame->m_Camera.m_Center;
+                const float Zoom = pGame->m_Camera.m_Zoom;
+                if(Zoom > 0.001f)
+                        AimPoint = Cam + (pGame->m_Controls.m_aTargetPos[Cur] - Cam) * Zoom;
+                else
+                        AimPoint = ActivePos + vec2((float)In.m_TargetX, (float)In.m_TargetY);
         }
-        else
+
+        // Candidates: main slot or any connected dummy except the current one,
+        // passing the SDS filters. Key: 0=slot id, 1/2=distance² to me/aim,
+        // 3=last-active recency (most recent first, never-active last).
+        int aCand[MAX_DUMMIES];
+        long long aKey[MAX_DUMMIES];
+        int NumCand = 0;
+        for(int D = 0; D < MAX_DUMMIES; D++)
         {
-                int aIds[MAX_DUMMIES];
-                int NumIds = 0;
-                const char *pCursor = g_Config.m_KxSdsDummyIds;
-                while(*pCursor && NumIds < MAX_DUMMIES)
+                if(D == Cur)
+                        continue;
+                if(!(D == 0 || Client()->DummyConnected(D)))
+                        continue;
+
+                long long Key = (long long)D;
+                const int Cid = pGame->m_aLocalIds[D];
+                if(Order != 0 && haveRef && Cid >= 0 && Cid < 128 && pGame->m_aClients[Cid].m_Active)
                 {
-                        while(*pCursor == ' ' || *pCursor == '\t')
-                                pCursor++;
-                        if(*pCursor < '0' || *pCursor > '9')
-                                break;
-                        int V = 0;
-                        while(*pCursor >= '0' && *pCursor <= '9')
+                        const vec2 DummyPos = pGame->m_aClients[Cid].m_Predicted.m_Pos;
+                        if(Order == 1)
                         {
-                                V = V * 10 + (*pCursor - '0');
-                                pCursor++;
+                                const vec2 d = DummyPos - ActivePos;
+                                Key = (long long)(d.x * d.x + d.y * d.y);
                         }
-                        if(V < MAX_DUMMIES)
-                                aIds[NumIds++] = V;
-                        while(*pCursor && *pCursor != ',')
-                                pCursor++;
-                        if(*pCursor == ',')
-                                pCursor++;
-                }
-                if(NumIds > 0)
-                {
-                        int Pos = -1;
-                        for(int i = 0; i < NumIds; i++)
+                        else if(Order == 2)
                         {
-                                if(aIds[i] == Cur)
+                                const vec2 d = DummyPos - AimPoint;
+                                Key = (long long)(d.x * d.x + d.y * d.y);
+                        }
+                        else // Last Active
+                                Key = -(long long)(m_aDummyActiveSeq[D] + 1);
+                }
+
+                if(!DummyPassesFilters(D, g_Config.m_KxSdsTeam, g_Config.m_KxSdsDdraceTeam, g_Config.m_KxSdsDdraceTeamId,
+                        g_Config.m_KxSdsFriend, g_Config.m_KxSdsClanmate, g_Config.m_KxSdsTargetsMode,
+                        g_Config.m_KxSdsTargets, g_Config.m_KxSdsFreeze))
+                        continue;
+
+                aCand[NumCand] = D;
+                aKey[NumCand] = Key;
+                NumCand++;
+        }
+
+        // Insertion sort by (key, slot id) — tiny lists, no <algorithm>.
+        for(int i = 1; i < NumCand; i++)
+        {
+                const int CD = aCand[i];
+                const long long CK = aKey[i];
+                int j = i;
+                while(j > 0 && (aKey[j - 1] > CK || (aKey[j - 1] == CK && aCand[j - 1] > CD)))
+                {
+                        aKey[j] = aKey[j - 1];
+                        aCand[j] = aCand[j - 1];
+                        j--;
+                }
+                aKey[j] = CK;
+                aCand[j] = CD;
+        }
+
+        int Next = -1;
+        const bool noRepeat = Order != 0 && g_Config.m_KxSdsNoRepeat != 0;
+        if(noRepeat)
+        {
+                // The round memory holds where we have BEEN: the slot we are
+                // leaving joins it now (the destination joins when we leave it
+                // later). Skip every visited slot; when all candidates were
+                // visited, clear the memory and start a new round.
+                bool HaveCur = false;
+                for(int v = 0; v < m_SdsVisitedCount; v++)
+                {
+                        if(m_aSdsVisited[v] == Cur)
+                        {
+                                HaveCur = true;
+                                break;
+                        }
+                }
+                if(!HaveCur && m_SdsVisitedCount < MAX_DUMMIES)
+                        m_aSdsVisited[m_SdsVisitedCount++] = Cur;
+
+                for(int i = 0; i < NumCand && Next < 0; i++)
+                {
+                        bool Visited = false;
+                        for(int v = 0; v < m_SdsVisitedCount; v++)
+                        {
+                                if(m_aSdsVisited[v] == aCand[i])
                                 {
-                                        Pos = i;
+                                        Visited = true;
                                         break;
                                 }
                         }
-                        const int Start = Pos >= 0 ? Pos : NumIds - 1;
-                        for(int Off = 1; Off <= NumIds && Next < 0; Off++)
-                        {
-                                const int D = aIds[(Start + Off) % NumIds];
-                                if(D == 0 || Client()->DummyConnected(D))
-                                        Next = D;
-                        }
+                        if(!Visited)
+                                Next = aCand[i];
+                }
+                if(Next < 0 && NumCand > 0)
+                {
+                        m_SdsVisitedCount = 0;
+                        Next = aCand[0];
                 }
         }
+        else if(NumCand > 0)
+                Next = aCand[0];
+
         if(Next >= 0 && Next != Cur)
                 g_Config.m_ClDummy = Next;
 }
@@ -237,7 +325,16 @@ void CBotNet::OnReset()
         {
                 m_aDummies[D].Reset();
                 ResetDummyInputs(D);
+                // v6.7: Smart Copy Moves / Smart Dummy Switch runtime state.
+                m_aSmartCopyAllow[D] = false;
+                m_aSdsVisited[D] = -1;
+                m_aDummyActiveSeq[D] = -1;
         }
+        m_SdsVisitedCount = 0;
+        m_ActiveSeqCounter = 0;
+        m_PrevActiveSeqDummy = -1;
+        m_PrevClDummyCopyMoves = -1;
+        m_PrevKxSmartCopyMoves = 0;
 }
 
 // OnMapLoad (v1.56.164): called by CGameClient::OnConnected() after
@@ -298,6 +395,11 @@ void CBotNet::OnMapLoad()
                 {
                         pGame->m_aDummyFire[D] = 0;
                         pGame->m_aDummyLastFireTick[D] = 0;
+                        pGame->m_aHammerSession[D] = false;
+                        pGame->m_aHammerSessionHit[D] = false;
+                        pGame->m_aHammerSessionAim[D] = vec2(0.0f, 0.0f);
+                        pGame->m_aHammerPipelineAim[D] = vec2(0.0f, 0.0f);
+                        pGame->m_aHammerPipelineOwnsAim[D] = false;
                 }
         }
 
@@ -310,6 +412,14 @@ void CBotNet::OnUpdate()
 {
         if(Client()->State() != IClient::STATE_ONLINE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
                 return;
+
+        // v6.7: last-active dummy sequence — stamp the slot that just became
+        // the active dummy ("Last Active" sorting for Smart Copy Moves / SDS).
+        if(g_Config.m_ClDummy != m_PrevActiveSeqDummy)
+        {
+                m_aDummyActiveSeq[g_Config.m_ClDummy] = ++m_ActiveSeqCounter;
+                m_PrevActiveSeqDummy = g_Config.m_ClDummy;
+        }
 
         // v1.56.171 BUG9: cvar change-detection. Since kx_ commands are now cvars,
         // there's no Con-handler to run side effects. We poll the cvar each tick
@@ -355,6 +465,17 @@ void CBotNet::OnUpdate()
         CGameClient *pGame = GameClient();
         if(!pGame->m_Snap.m_pLocalInfo)
                 return;
+
+        // v6.7: Smart Copy Moves Trigger — capture the top-N allow list exactly
+        // when copy moves (or the smart gate itself) turns ON while copy moves
+        // is active. Later top changes do NOT re-capture until re-enable.
+        const bool copyOn = g_Config.m_ClDummyCopyMoves != 0;
+        const bool smartOn = g_Config.m_KxSmartCopyMoves != 0;
+        if(smartOn && copyOn && g_Config.m_KxSmartCopyApply == 0 &&
+                (!m_PrevClDummyCopyMoves || !m_PrevKxSmartCopyMoves))
+                SmartCopyRecompute();
+        m_PrevClDummyCopyMoves = copyOn ? 1 : 0;
+        m_PrevKxSmartCopyMoves = smartOn ? 1 : 0;
 
         // Auto-bots: automatically add all local dummies to bots list
         // so they don't attack each other and will rescue each other

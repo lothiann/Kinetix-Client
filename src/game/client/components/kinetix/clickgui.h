@@ -288,6 +288,31 @@ private:
         bool m_ArrayInfoRectValid = false;
         IGraphics::CTextureHandle m_ArrayInfoLogo;
 
+        // v6.7: ArrayPlayer HUD — now-playing media card. Same editor/drag
+        // model as ArrayInfo; with Dynamic Scale enabled the bottom-right
+        // corner resizes the card instead of moving it.
+        bool m_ArrayPlayerEditor = false;
+        bool m_ArrayPlayerDragging = false;
+        bool m_ArrayPlayerResizing = false;
+        vec2 m_ArrayPlayerDragStartMouse = vec2(0.0f, 0.0f);
+        vec2 m_ArrayPlayerDragStartPos = vec2(0.0f, 0.0f);
+        vec2 m_ArrayPlayerResizeStartMouse = vec2(0.0f, 0.0f);
+        int m_ArrayPlayerResizeStartW = 0;
+        int m_ArrayPlayerResizeStartH = 0;
+        float m_ArrayPlayerHue = 0.0f;
+        float m_ArrayPlayerRectX = 0.0f;
+        float m_ArrayPlayerRectY = 0.0f;
+        float m_ArrayPlayerRectW = 0.0f;
+        float m_ArrayPlayerRectH = 0.0f;
+        bool m_ArrayPlayerRectValid = false;
+        IGraphics::CTextureHandle m_ArrayPlayerArt;
+        uint64_t m_ArrayPlayerArtSerial = 0;
+        // v6.7: media transport buttons (previous / play-pause / next).
+        // Screen-space rects stored by RenderArrayPlayer for the click handlers.
+        float m_aArrayPlayerBtnRect[3][4] = {};
+        bool m_ArrayPlayerBtnRectValid = false;
+        bool m_ArrayPlayerBtnWasDown = false; // edge latch for the HUD-only path
+
         // v1.56.60: advance all per-row / per-panel animations toward their targets.
         // Called once per frame from OnRender before any drawing.
         void UpdateAnimations(float dt);
@@ -315,6 +340,10 @@ private:
         void HandleFileBrowserClick(vec2 mousePos);
 
         // v6.3: ArrayList HUD — enabled-feature list rendered in game.
+        // ArrayListBuildEnabled builds the REAL enabled list (no editor sample);
+        // both the ArrayList and the ArrayInfo "X Functions" count use it so
+        // they can never disagree (v6.7).
+        void ArrayListBuildEnabled(std::vector<std::string> &vOut) const;
         void ArrayListBuildList(std::vector<std::string> &vOut) const;
         void ArrayListUpdateHistory(const std::vector<std::string> &vEnabled);
         void UpdateArrayList(float dt);
@@ -331,6 +360,15 @@ private:
         bool ShouldRenderArrayInfo() const;
         bool ArrayInfoPositionModified() const;
         void ResetArrayInfoPosition();
+
+        // v6.7: ArrayPlayer HUD — now-playing media card rendered in game.
+        void UpdateArrayPlayer(float dt);
+        void RenderArrayPlayer(float alpha);
+        bool ArrayPlayerHitTest(vec2 mousePos) const;
+        bool ArrayPlayerResizeHitTest(vec2 mousePos) const;
+        bool ShouldRenderArrayPlayer() const;
+        bool ArrayPlayerPositionModified() const;
+        void ResetArrayPlayerPosition();
 
         // Panel geometry — scaled up again 1.2x in v1.56.39 for readability.
         static constexpr float PANEL_WIDTH = 300.0f;
@@ -440,6 +478,14 @@ private:
         // Line color were handled in HandleTextInput). pRow is the SRow being
         // edited (already has m_aInputBuf synced from m_InputBuf by the caller).
         void ApplyInputCommit(void *pRow);
+
+        // Tail half of the toggle dispatch else-if chain in HandleMouseDown
+        // (see .cpp — the full chain tripped MSVC's C1061 block-nesting
+        // limit). Runs as the chain's final else-if; returns true when a
+        // branch matched. pTarget/pRow/pPanel are SRow*/SRow*/SPanel* —
+        // void* like ApplyInputCommit because SRow/SPanel live in an
+        // anonymous namespace in the .cpp.
+        bool HandleToggleTail(void *pTarget, void *pRow, void *pPanel);
 
         // Low-level draw helpers (all screen-space px).
         void DrawRoundedRect(float x, float y, float w, float h, float radius, int corners, ColorRGBA color);

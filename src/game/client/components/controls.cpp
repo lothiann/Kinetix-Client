@@ -633,11 +633,20 @@ int CControls::SnapInput(int *pData)
                         if(latencyMs > 0)
                                 GameClient()->RecordActiveInput(m_aInputData[g_Config.m_ClDummy]);
 
+                        // v6.7: Smart Copy Moves — Always mode rebuilds the top-N allow
+                        // list every tick (Trigger mode keeps the list captured in
+                        // CBotNet::OnUpdate until copy moves is re-enabled).
+                        if(g_Config.m_KxSmartCopyMoves && g_Config.m_KxSmartCopyApply == 1)
+                                GameClient()->m_BotNet.SmartCopyRecompute();
+
                         for(int D = 0; D < MAX_DUMMIES; D++)
                         {
                                 if(D == g_Config.m_ClDummy)
                                         continue;
                                 if(D != 0 && !GameClient()->Client()->DummyConnected(D))
+                                        continue;
+                                // v6.7: Smart Copy Moves — only allow-listed dummies receive the copy.
+                                if(g_Config.m_KxSmartCopyMoves && !GameClient()->m_BotNet.m_aSmartCopyAllow[D])
                                         continue;
 
                                 CNetObj_PlayerInput *pDummyInput = &GameClient()->m_aDummyInput[D];
@@ -669,6 +678,14 @@ int CControls::SnapInput(int *pData)
                                         const bool copyAim       = (!filter || g_Config.m_KxDummyCopyMovesFilterAim) && !tfHooking;
                                         const bool copyFire      = !filter || g_Config.m_KxDummyCopyMovesFilterFire;
                                         const bool copyWeapon    = !filter || g_Config.m_KxDummyCopyMovesFilterWeapon;
+                                        // Fix Dummy Hammer: vanilla Copy Moves writes the followed
+                                        // player's weapon into the dummy every tick, so toggling
+                                        // cl_dummy_hammer alternated hammer/pistol (the off tick
+                                        // restored the copied weapon before the release was sent).
+                                        // Keep the weapon sticky while the dummy is hammering or
+                                        // already holds the hammer.
+                                        const bool keepHammerWeapon = g_Config.m_KxFixDummyHammer != 0 &&
+                                                (g_Config.m_ClDummyHammer != 0 || pDummyInput->m_WantedWeapon == WEAPON_HAMMER + 1);
 
                                         if(copyDirection)
                                                 pDummyInput->m_Direction = srcInput.m_Direction;
@@ -698,13 +715,13 @@ int CControls::SnapInput(int *pData)
                                                         pDummyInput->m_TargetY = srcInput.m_TargetY;
                                                 }
                                         }
-                                        if(copyWeapon)
+                                        if(copyWeapon && !keepHammerWeapon)
                                                 pDummyInput->m_WantedWeapon = srcInput.m_WantedWeapon;
 
                                         if(!g_Config.m_ClDummyControl && copyFire)
                                                 pDummyInput->m_Fire += srcInput.m_Fire - srcPrev.m_Fire;
 
-                                        if(copyWeapon)
+                                        if(copyWeapon && !keepHammerWeapon)
                                         {
                                                 pDummyInput->m_NextWeapon += srcInput.m_NextWeapon - srcPrev.m_NextWeapon;
                                                 pDummyInput->m_PrevWeapon += srcInput.m_PrevWeapon - srcPrev.m_PrevWeapon;

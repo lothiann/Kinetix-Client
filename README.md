@@ -70,7 +70,7 @@ ClickGUI is opened with the `cl_clickgui` toggle (bind a key: `bind <key> toggle
   - BalanceBot *(expandable)* → Vertical Filter, Radius Filter, Stand Radius, DDrace Team, Target ID, Team, Friend, Dummy, Clanmate, Freeze, Off while freeze, FNG Freeze, Targets, Targets IDs
   - Preserve input
   - Custom latency *(expandable)* → Latency (ms)
-  - Auto fly *(expandable)* → Max Distance, Predict
+  - Auto fly
   - Auto Triple Fly *(expandable)* → Dummy mode, Dummy ID, Target mode, Target IDs, Trigger radius, Radius
   - Copy Moves Filter *(expandable)* → Filter: Jump, Filter: Direction, Filter: Hook, Filter: Aim, Filter: Fire, Filter: Weapon
   - Mirror direction
@@ -274,7 +274,7 @@ Keeps X-axis balance against the nearest matching player (drives the current dum
 |----------|-------------|
 | Preserve input | Keep dummy movement inputs while flying. |
 | Custom latency | Expandable: adjust the input replay latency (ms). |
-| Auto fly | Expandable: auto-hammer for hammerfly — **Max Distance** (5–63), **Predict** (next-tick physics). |
+| Auto fly | Auto-hammer for hammerfly: every tick it checks whether a hammer press would really hit the active player (reload timer, freeze, weapon, team collision, strike geometry). Only then it aims and presses for one tick; otherwise the dummy's own input and aim stay untouched. |
 | Auto Triple Fly | Acting dummy auto-hooks a target entering the trigger radius and holds while farther than the radius. Children: Dummy mode, Dummy ID, Target mode, Target IDs, Trigger radius, Radius. |
 | Fly Ride | Pilot (active dummy) hooks/hammers the nearest dummy; WASD moves the anchor. |
 
@@ -766,9 +766,7 @@ All Kinetix settings are `kx_*` cvars, plus the overlay toggle `cl_clickgui`. Th
 | `kx_dummy_copy_moves_filter_weapon` | Copy Moves Filter: copy weapon (wanted/next/prev weapon) |
 | `kx_dummy_copy_smart_aim` | Smart aim: inactive dummies aim at the same world point as the player (smart mode) |
 | `kx_dummy_direction` | Whether dummy is moving (requires cl_dummy_control 1) |
-| `kx_dummy_hammer_auto` | Auto-hammer: dummy hammers the active player every tick when in hammer radius (overrides custom latency) |
-| `kx_dummy_hammer_auto_max_dist` | Auto Fly: max distance (in world units) between dummy and active player for hammer to fire. Real DDNet hammer max reach = 63 center-to-center (ProjStartPos offset 21 + FindEntities radius 14 + target ProximityRadius 28). Default 50 = small safety margin. Max 63 = exact real reach. |
-| `kx_dummy_hammer_auto_predict` | Auto Fly: predict next-tick position of active player AND dummy before range check. Full physics: runs a real one-tick simulation (gravity, velocity ramp, friction, input, hook, map + player collision), falls back to linear pos+vel if unavailable. When on, hammer fires if the tees WILL be in range next tick (even if currently slightly out of range). Catches fast-moving players. |
+| `kx_dummy_hammer_auto` | Auto Fly: every tick, check whether a hammer press would really hit the active player (one-tick simulation: reload timer, freeze, weapon, team collision, strike geometry). If it would — aim at the player and press for one tick; otherwise the dummy's own input (and aim) is sent untouched |
 | `kx_dummy_hammer_custom_latency` | Use custom hammer latency instead of default 500ms |
 | `kx_dummy_hammer_keep_inputs` | Preserve dummy movement inputs (direction/jump/hook) during hammerfly; aim is still overridden for hammer direction |
 | `kx_dummy_hammer_latency_ms` | Hammer latency in milliseconds (only used when kx_dummy_hammer_custom_latency is on) |

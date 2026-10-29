@@ -241,45 +241,18 @@ void CBotNet::UpdateTripleFly()
         }
         const vec2 actingPos = pGame->m_aClients[actingCid].m_Predicted.m_Pos;
 
-        if(g_Config.m_KxDummyHammerAuto != 0)
+        // Auto Fly coexistence — exactly the same one-tick hit check Auto Fly
+        // uses in OnSnapInput (1:1, shared helper). While that shot is really
+        // going to land, release the hook so the hammer press is not competing
+        // with triple fly's aim; otherwise keep holding it.
+        if(g_Config.m_KxDummyHammerAuto != 0 && pGame->DummyHammerCanHit(actingD, activeD))
         {
-                const int autoId = pGame->m_aLocalIds[activeD];
-                bool canHammerNow = false;
-                if(autoId >= 0 && autoId < 128 && pGame->m_aClients[autoId].m_Active)
+                if(m_TripleFlyHooking)
                 {
-                                        vec2 activeTestPos = pGame->m_aClients[autoId].m_Predicted.m_Pos;
-                                        vec2 dummyTestPos = actingPos;
-                                        // v1.56.246: full one-tick physics prediction — same helper as
-                                        // OnSnapInput Auto Fly (gravity, velramp, hook, collisions);
-                                        // linear pos+vel as the fallback.
-                                        if(g_Config.m_KxDummyHammerAutoPredict)
-                                        {
-                                                if(!pGame->PredictedPosNextTick(autoId, actingCid, activeTestPos, dummyTestPos))
-                                                {
-                                                        activeTestPos += pGame->m_aClients[autoId].m_Predicted.m_Vel;
-                                                        dummyTestPos += pGame->m_aClients[actingCid].m_Predicted.m_Vel;
-                                                }
-                                        }
-                        const vec2 delta = activeTestPos - dummyTestPos;
-                        const float maxDist = (float)g_Config.m_KxDummyHammerAutoMaxDist;
-                        if(length_squared(delta) <= maxDist * maxDist)
-                                canHammerNow = true;
+                        TripleFlyReleaseHook(pGame, actingD);
+                        m_TripleFlyHooking = false;
                 }
-                if(canHammerNow)
-                {
-                        const int FireDelayTicks = pGame->m_aTuning[actingD].GetWeaponFireDelay(WEAPON_HAMMER) * Client()->GameTickSpeed();
-                        if(Client()->GameTick(g_Config.m_ClDummy) - pGame->m_aDummyLastFireTick[actingD] < FireDelayTicks)
-                                canHammerNow = false;
-                }
-                if(canHammerNow)
-                {
-                        if(m_TripleFlyHooking)
-                        {
-                                TripleFlyReleaseHook(pGame, actingD);
-                                m_TripleFlyHooking = false;
-                        }
-                        return;
-                }
+                return;
         }
 
         int targetCid = -1;

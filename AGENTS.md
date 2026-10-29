@@ -37,7 +37,7 @@ When porting Kinetix to a newer DDNet release, do **not** diff the current Kinet
 - **Commit messages** — short, one line, in the form `v6.0: short description`. Do not write huge lists of every change.
 - **Commit language** — every commit message must be written in English only.
 - **Builds** — do not build by default: after changes, report that everything is ready for building and verification. If the user explicitly says "compile"/"build"/"rebuild", then build.
-- **Field order in header files** — if you changed the order of fields in a `.h` file, an incremental rebuild is not enough: run a full rebuild (Rebuild All).
+- **Field order in header files** — if you changed the order of fields in a `.h` file, an incremental rebuild is not enough: run a full rebuild (Rebuild All). Adding, removing or reordering `#include` directives in a header is **not** a field-order change and does not require a full rebuild.
 
 ## Build
 

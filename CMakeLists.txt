@@ -809,6 +809,16 @@ if(TARGET_OS STREQUAL "windows")
   list(APPEND PLATFORM_LIBS advapi32.lib) # Reg* and Crypt* functions
   list(APPEND PLATFORM_LIBS bcrypt.lib userenv.lib) # for Rust (https://github.com/rust-lang/rust/issues/91974)
   list(APPEND PLATFORM_LIBS ole32.lib) # CoInitialize(Ex)
+  # v6.7: C++/WinRT projections for the ArrayPlayer SMTC backend. If the SDK
+  # include dir is not available at configure time the media module compiles
+  # its no-op fallback instead (the HUD still works, just without a track).
+  if(DEFINED ENV{WindowsSdkDir} AND DEFINED ENV{WindowsSDKVersion})
+    set(KX_CPPWINRT_DIR "$ENV{WindowsSdkDir}Include/$ENV{WindowsSDKVersion}cppwinrt")
+    if(EXISTS "${KX_CPPWINRT_DIR}/winrt/base.h")
+      include_directories("${KX_CPPWINRT_DIR}")
+      list(APPEND PLATFORM_LIBS WindowsApp.lib)
+    endif()
+  endif()
   list(APPEND PLATFORM_LIBS shell32.lib)
   list(APPEND PLATFORM_LIBS ntdll.lib) # https://github.com/ddnet/ddnet/issues/6725
   list(APPEND PLATFORM_LIBS uuid.lib) # FOLDERID_RoamingAppData
@@ -2755,6 +2765,8 @@ if(CLIENT)
     components/kinetix/kinetix_internal.h
     components/kinetix/kinetix_lines.cpp
     components/kinetix/kinetix_lines.h
+    components/kinetix/media_info.cpp
+    components/kinetix/media_info.h
     components/kinetix/laser_unfreeze.cpp
     components/kinetix/fly_ride.cpp
     components/kinetix/triple_fly.cpp

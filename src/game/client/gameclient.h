@@ -658,6 +658,13 @@ public:
 	// available — callers fall back to linear pos+vel extrapolation.
 	bool PredictedPosNextTick(int CidA, int CidB, vec2 &OutPosA, vec2 &OutPosB);
 
+	// Auto Fly / Triple Fly — one-tick hammer prediction. True when a press sent
+	// by DummyD on this tick would really hit ActiveD on the tick the press is
+	// applied: exact reload timer, freeze / deep-freeze, the hammer as the firing
+	// weapon, team collision and the engine's own strike geometry (FireWeapon).
+	// pAim (optional) receives the aim vector (active - dummy) the press must use.
+	bool DummyHammerCanHit(int DummyD, int ActiveD, vec2 *pAim = nullptr);
+
 	// Apply copy-moves transformations (filter, mirror direction, mirror aim,
 	// smart aim) to a non-active dummy's input. Called after m_aDummyInput[D]
 	// is set from the player's input. Only active when cl_dummy_copy_moves is on.
@@ -749,6 +756,20 @@ public:
 	CNetObj_PlayerInput m_aHammerInput[MAX_DUMMIES];
 	unsigned int m_aDummyFire[MAX_DUMMIES];
 	int m_aDummyLastFireTick[MAX_DUMMIES] = {};
+	// Auto Fly — cl_dummy_hammer session state (auto fly mode only). A session
+	// starts when cl_dummy_hammer turns on and is fully reset when it turns off:
+	//   m_aHammerSession    — the session is running for this dummy
+	//   m_aHammerSessionHit — the dummy has already landed a hit this session
+	//   m_aHammerSessionAim — aim vector of the last hit (kept between hits)
+	bool m_aHammerSession[MAX_DUMMIES] = {};
+	bool m_aHammerSessionHit[MAX_DUMMIES] = {};
+	vec2 m_aHammerSessionAim[MAX_DUMMIES] = {};
+	// Auto Fly — Preserve Inputs aim tracking:
+	//   m_aHammerPipelineAim     — last pipeline aim seen (change detection)
+	//   m_aHammerPipelineOwnsAim — the pipeline currently owns the dummy aim
+	vec2 m_aHammerPipelineAim[MAX_DUMMIES] = {};
+	bool m_aHammerPipelineOwnsAim[MAX_DUMMIES] = {};
+
 	bool m_ReceivedDDNetPlayer;
 	bool m_ReceivedDDNetPlayerFinishTimes;
 	bool m_ReceivedDDNetPlayerFinishTimesMillis;

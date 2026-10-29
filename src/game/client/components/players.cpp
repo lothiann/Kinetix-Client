@@ -124,6 +124,20 @@ float CPlayers::GetPlayerTargetAngle(
         }
         if(IsDummyId)
         {
+                // Auto Fly: before the first hit of a cl_dummy_hammer session the
+                // auto-fly aim system sets no aim of its own and Preserve Inputs
+                // keeps the pipeline aim (Copy Moves / Triple Fly). The hammer
+                // buffer is only synced when the dummy input is sent, so render
+                // the live pipeline aim directly — otherwise switching the render
+                // source to m_aHammerInput flashes the stale leftover aim.
+                if(g_Config.m_ClDummyHammer && g_Config.m_KxDummyHammerAuto &&
+                        g_Config.m_KxDummyHammerKeepInputs && !GameClient()->m_aHammerSessionHit[MatchingDummy])
+                {
+                        const CNetObj_PlayerInput &Pipeline = GameClient()->m_aDummyInput[MatchingDummy];
+                        if(Pipeline.m_TargetX != 0 || Pipeline.m_TargetY != 0)
+                                return angle(vec2(Pipeline.m_TargetX, Pipeline.m_TargetY));
+                }
+
                 const CNetObj_PlayerInput &Input = g_Config.m_ClDummyHammer ? GameClient()->m_aHammerInput[MatchingDummy] : GameClient()->m_aDummyInput[MatchingDummy];
                 return angle(vec2(Input.m_TargetX, Input.m_TargetY));
         }
