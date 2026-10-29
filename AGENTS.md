@@ -36,8 +36,9 @@ When porting Kinetix to a newer DDNet release, do **not** diff the current Kinet
 - **Commits** — only on an explicit request from the user. Never commit on your own after finishing a task: make the changes, report, and wait.
 - **Commit messages** — short, one line, in the form `v6.0: short description`. Do not write huge lists of every change.
 - **Commit language** — every commit message must be written in English only.
-- **Builds** — do not build by default: after changes, report that everything is ready for building and verification. If the user explicitly says "compile"/"build"/"rebuild", then build.
-- **Field order in header files** — if you changed the order of fields in a `.h` file, an incremental rebuild is not enough: run a full rebuild (Rebuild All). Adding, removing or reordering `#include` directives in a header is **not** a field-order change and does not require a full rebuild.
+- **Builds** — do not build by default: after changes, report that everything is ready for building and verification. If the user explicitly says "compile"/"build"/"rebuild", then build the Windows/VS target.
+- **Android builds** — build Android only on an explicit request, e.g. **«Скомпилируй на Android»** or a close equivalent. A plain "compile"/"build" means the Windows build.
+- **Field order in header files** — if you changed the order of fields in a `.h` file, an incremental rebuild is not enough: run a full rebuild (Rebuild All). Adding, removing or reordering `#include` directives in a header is **not** a field-order change and does not require a full rebuild. This rule is for the Windows/VS build only — the Android toolchain tracks header dependencies itself and never needs a clean/full rebuild for this.
 
 ## Build
 
@@ -77,4 +78,18 @@ scripts/build.bat rebuild    clean + full rebuild (-r, --rebuild)
 scripts/build.bat clean      clean only (-c, --clean)
 ```
 
-`rebuild` is required when the order of fields in `.h` files changes.
+`rebuild` is required when the order of fields in `.h` files changes (Windows/VS build only — see the Android note below).
+
+### Android
+
+The Android build uses `scripts/android/cmake_android.sh` and does **not** use the Visual Studio / Ninja setup above. The APK is signed with the debug keystore and written to `build-android-release`.
+
+By default build **both architectures** — two chained invocations. The two ABIs end up merged into a **single `.apk`** (not two separate APKs):
+
+```bash
+TW_KEY_NAME="C:/Users/admin/.android/debug.keystore" bash scripts/android/cmake_android.sh arm64 "Kinetix" "org.kinetix.client" Release build-android-release && \
+TW_KEY_NAME="C:/Users/admin/.android/debug.keystore" bash scripts/android/cmake_android.sh arm "Kinetix" "org.kinetix.client" Release build-android-release
+```
+
+- The Android toolchain tracks `.h` dependencies itself: a changed header (including added/removed/reordered fields) does **not** require a clean/full rebuild — just run the Android build again. The Windows "field order ⇒ Rebuild All" rule does not apply here.
+- Build Android **only on an explicit request**: the user has to say something like **«Скомпилируй на Android»** (a close equivalent is fine). A generic "compile"/"build" means the Windows build.
