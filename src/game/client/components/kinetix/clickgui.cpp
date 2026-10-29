@@ -1917,6 +1917,7 @@ static void SearchUpdateMatches()
         g_SearchRegexValid = false;
         if(g_SearchRegex && g_SearchQuery[0])
         {
+#if defined(__cpp_exceptions) || defined(__EXCEPTIONS) || defined(_CPPUNWIND)
                 try
                 {
                         std::regex::flag_type Flags = std::regex::ECMAScript;
@@ -1929,6 +1930,12 @@ static void SearchUpdateMatches()
                 {
                         g_SearchRegexValid = false;
                 }
+#else
+                // std::regex reports invalid patterns by throwing; this build is
+                // compiled with exceptions disabled (Android), so leave regex
+                // search unavailable instead of aborting on a bad pattern.
+                g_SearchRegexValid = false;
+#endif
         }
         const bool Active = g_SearchQuery[0] != 0;
         for(int p = 0; p < NUM_PANELS; ++p)

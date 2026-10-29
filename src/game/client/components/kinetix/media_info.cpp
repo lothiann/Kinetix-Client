@@ -22,6 +22,14 @@ static std::mutex &s_Mutex = *new std::mutex();
 static std::atomic<bool> s_Started{false};
 static std::atomic<int> s_PendingMediaCmd{-1}; // 0 = prev, 1 = play/pause, 2 = next
 
+// Monotonic clock used by KxMedia::GetPosition() on every platform. Must live
+// outside the Windows-only block: on Android/Linux the function body below is
+// not compiled, but GetPosition() still calls it.
+static double KxNowSeconds()
+{
+	return (double)time_get() / (double)time_freq();
+}
+
 // ----------------------------------------------------------------------------
 // Windows backend: SMTC for metadata/timeline/art + a WASAPI loopback capture
 // of the default render endpoint for the visualizer spectrum bars.
@@ -47,11 +55,6 @@ static std::atomic<int> s_PendingMediaCmd{-1}; // 0 = prev, 1 = play/pause, 2 = 
 #include <winrt/Windows.Storage.Streams.h>
 
 using namespace winrt::Windows::Storage::Streams;
-
-static double KxNowSeconds()
-{
-	return (double)time_get() / (double)time_freq();
-}
 
 namespace
 {

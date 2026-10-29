@@ -177,21 +177,59 @@ void CBotNet::SmartDummySwitch()
 
                 long long Key = (long long)D;
                 const int Cid = pGame->m_aLocalIds[D];
-                if(Order != 0 && haveRef && Cid >= 0 && Cid < 128 && pGame->m_aClients[Cid].m_Active)
+                // Position of the candidate dummy. The active snapshot only holds
+                // a character while it is inside the active tee's view
+                // (CCharacter::IsSnappingCharacterInView), but every connection
+                // always receives its own character (the server never clips the
+                // snapping client), so an off-screen dummy is read from its own
+                // connection's snapshot.
+                bool HavePos = false;
+                vec2 DummyPos(0.0f, 0.0f);
+                if(Cid >= 0 && Cid < 128)
                 {
-                        const vec2 DummyPos = pGame->m_aClients[Cid].m_Predicted.m_Pos;
-                        if(Order == 1)
+                        if(pGame->m_Snap.m_aCharacters[Cid].m_Active)
                         {
-                                const vec2 d = DummyPos - ActivePos;
-                                Key = (long long)(d.x * d.x + d.y * d.y);
+                                DummyPos = pGame->m_aClients[Cid].m_Predicted.m_Pos;
+                                HavePos = true;
                         }
-                        else if(Order == 2)
+                        else
                         {
-                                const vec2 d = DummyPos - AimPoint;
-                                Key = (long long)(d.x * d.x + d.y * d.y);
+                                const CNetObj_Character *pChar = (const CNetObj_Character *)Client()->SnapFindItemConn(
+                                        D, IClient::SNAP_CURRENT, NETOBJTYPE_CHARACTER, Cid);
+                                if(pChar)
+                                {
+                                        DummyPos = vec2((float)pChar->m_X, (float)pChar->m_Y);
+                                        HavePos = true;
+                                }
                         }
-                        else // Last Active
-                                Key = -(long long)(m_aDummyActiveSeq[D] + 1);
+                }
+                if(Order == 3)
+                {
+                        // Last Active: recency is tracked client-side, so it also
+                        // works for unloaded dummies.
+                        Key = -(long long)(m_aDummyActiveSeq[D] + 1);
+                }
+                else if(Order != 0)
+                {
+                        if(haveRef && HavePos)
+                        {
+                                if(Order == 1)
+                                {
+                                        const vec2 d = DummyPos - ActivePos;
+                                        Key = (long long)(d.x * d.x + d.y * d.y);
+                                }
+                                else // Nearest To Aim
+                                {
+                                        const vec2 d = DummyPos - AimPoint;
+                                        Key = (long long)(d.x * d.x + d.y * d.y);
+                                }
+                        }
+                        else
+                        {
+                                // No character at all (dead / not spawned yet):
+                                // keep it after every positioned candidate.
+                                Key = 0x4000000000000000LL;
+                        }
                 }
 
                 if(!DummyPassesFilters(D, g_Config.m_KxSdsTeam, g_Config.m_KxSdsDdraceTeam, g_Config.m_KxSdsDdraceTeamId,

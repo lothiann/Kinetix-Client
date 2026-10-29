@@ -284,7 +284,12 @@ bool CBotNet::DummyPassesFilters(int Dummy, int teamFilter, int ddraceTeamFilter
 {
         CGameClient *pGame = GameClient();
         const int Cid = pGame->m_aLocalIds[Dummy];
-        if(Cid < 0 || Cid >= 128 || !pGame->m_aClients[Cid].m_Active || !pGame->m_Snap.m_aCharacters[Cid].m_Active)
+        // v6.9: only require the player info (always snapped). The character
+        // object itself is dropped from the snapshot when it is outside the
+        // active tee's view (CCharacter::IsSnappingCharacterInView), so a far /
+        // off-screen dummy must still be a valid switch candidate — SDS has to
+        // reach dummies in the state where they are unloaded.
+        if(Cid < 0 || Cid >= 128 || !pGame->m_aClients[Cid].m_Active)
                 return false;
         const int LocalId = pGame->m_aLocalIds[g_Config.m_ClDummy];
         if(LocalId < 0 || LocalId >= 128)
@@ -359,8 +364,12 @@ bool CBotNet::DummyPassesFilters(int Dummy, int teamFilter, int ddraceTeamFilter
                 if(targetsFilterMode == 2 && anyValid && found)
                         return false;
         }
-        // Freeze filter: 0=both 1=freeze 2=no_freeze.
-        const bool isFrozen = pGame->m_aClients[Cid].m_FreezeEnd != 0 || pGame->m_aClients[Cid].m_LiveFrozen;
+        // Freeze filter: 0=both 1=freeze 2=no_freeze. The freeze state only
+        // lives in the character object, which is missing while the dummy is
+        // outside the active tee's view. Unknown state counts as not frozen, so
+        // an unloaded dummy never passes the "freeze only" filter.
+        const bool CharLoaded = pGame->m_Snap.m_aCharacters[Cid].m_Active;
+        const bool isFrozen = CharLoaded && (pGame->m_aClients[Cid].m_FreezeEnd != 0 || pGame->m_aClients[Cid].m_LiveFrozen);
         if(freezeFilter == 1 && !isFrozen)
                 return false;
         if(freezeFilter == 2 && isFrozen)
@@ -419,21 +428,56 @@ void CBotNet::SmartCopyRecompute()
 
                 long long Key = (long long)D;
                 const int Cid = pGame->m_aLocalIds[D];
-                if(Order != 0 && haveRef && Cid >= 0 && Cid < 128 && pGame->m_aClients[Cid].m_Active)
+                // Position of the candidate dummy — from the active snapshot when
+                // the character is in view, otherwise from the dummy's own
+                // connection snapshot (the server always snaps the snapping
+                // client's own character).
+                bool HavePos = false;
+                vec2 DummyPos(0.0f, 0.0f);
+                if(Cid >= 0 && Cid < 128)
                 {
-                        const vec2 DummyPos = pGame->m_aClients[Cid].m_Predicted.m_Pos;
-                        if(Order == 1)
+                        if(pGame->m_Snap.m_aCharacters[Cid].m_Active)
                         {
-                                const vec2 d = DummyPos - ActivePos;
-                                Key = (long long)(d.x * d.x + d.y * d.y);
+                                DummyPos = pGame->m_aClients[Cid].m_Predicted.m_Pos;
+                                HavePos = true;
                         }
-                        else if(Order == 2)
+                        else
                         {
-                                const vec2 d = DummyPos - AimPoint;
-                                Key = (long long)(d.x * d.x + d.y * d.y);
+                                const CNetObj_Character *pChar = (const CNetObj_Character *)Client()->SnapFindItemConn(
+                                        D, IClient::SNAP_CURRENT, NETOBJTYPE_CHARACTER, Cid);
+                                if(pChar)
+                                {
+                                        DummyPos = vec2((float)pChar->m_X, (float)pChar->m_Y);
+                                        HavePos = true;
+                                }
                         }
-                        else // Last Active: most recently active first, never-active last
-                                Key = -(long long)(m_aDummyActiveSeq[D] + 1);
+                }
+                if(Order == 3)
+                {
+                        // Last Active: most recently active first, never-active last.
+                        Key = -(long long)(m_aDummyActiveSeq[D] + 1);
+                }
+                else if(Order != 0)
+                {
+                        if(haveRef && HavePos)
+                        {
+                                if(Order == 1)
+                                {
+                                        const vec2 d = DummyPos - ActivePos;
+                                        Key = (long long)(d.x * d.x + d.y * d.y);
+                                }
+                                else // Nearest To Aim
+                                {
+                                        const vec2 d = DummyPos - AimPoint;
+                                        Key = (long long)(d.x * d.x + d.y * d.y);
+                                }
+                        }
+                        else
+                        {
+                                // No character at all (dead / not spawned yet):
+                                // keep it after every positioned candidate.
+                                Key = 0x4000000000000000LL;
+                        }
                 }
 
                 if(!DummyPassesFilters(D, g_Config.m_KxSmartCopyTeam, g_Config.m_KxSmartCopyDdraceTeam,

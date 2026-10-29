@@ -721,12 +721,64 @@ bool CGameClient::DummyHammerCanHit(int DummyD, int ActiveD, vec2 *pAim)
         if(!pDummy || !pActive)
                 return false;
 
-        // FireWeapon: frozen tees cannot fire at all; a deep-frozen tee cannot
+        // FireWeapon: a live-frozen tee can never fire; a deep-frozen tee cannot
         // fire the hammer unless sv_deepfly is enabled.
-        if(pDummy->m_FreezeTime > 0 || pDummy->Core()->m_LiveFrozen)
+        if(pDummy->Core()->m_LiveFrozen)
                 return false;
         if(pDummy->Core()->m_DeepFrozen && !g_Config.m_SvDeepfly)
                 return false;
+
+        // A regular freeze has a one-tick window: a hammer hit calls
+        // pTarget->Unfreeze() during the same tick's input phase, and inputs are
+        // applied in client-id order. Instead of re-deriving that window by
+        // hand, run the client's own one-tick prediction on a copy of the
+        // predicted world — the exact CopyWorld + OnDirectInput + Tick sequence
+        // OnPredict uses — with the pending active input and the candidate
+        // dummy input. The engine itself applies the unfreeze in the correct
+        // order; a hammer that connects sets the reload timer (only set when
+        // Hits > 0), which is the engine's own answer to "would this shot
+        // land". This is why the client already predicts the freeze hit
+        // correctly and the duplicated analytic checks did not.
+        if(pDummy->m_FreezeTime > 0)
+        {
+                const vec2 AimF = pActive->GetPos() - pDummy->GetPos();
+                CGameWorld FutureWorld;
+                FutureWorld.CopyWorld(&m_PredictedWorld);
+                CCharacter *pDummyF = FutureWorld.GetCharacterById(DummyCid);
+                CCharacter *pActiveF = FutureWorld.GetCharacterById(ActiveCid);
+                if(!pDummyF || !pActiveF)
+                        return false;
+
+                // The press OnSnapInput is about to send for this dummy.
+                CNetObj_PlayerInput DummyIn = m_aHammerInput[DummyD];
+                DummyIn.m_Fire = (DummyIn.m_Fire + 1) | 1;
+                DummyIn.m_WantedWeapon = WEAPON_HAMMER + 1;
+                DummyIn.m_TargetX = (int)AimF.x;
+                DummyIn.m_TargetY = (int)AimF.y;
+                CNetObj_PlayerInput ActiveIn = m_Controls.m_aInputData[ActiveD];
+
+                const int ReloadBefore = pDummyF->GetReloadTimer();
+                if(ActiveCid < DummyCid)
+                {
+                        pActiveF->OnDirectInput(&ActiveIn);
+                        pDummyF->OnDirectInput(&DummyIn);
+                }
+                else
+                {
+                        pDummyF->OnDirectInput(&DummyIn);
+                        pActiveF->OnDirectInput(&ActiveIn);
+                }
+                FutureWorld.m_GameTick = FutureWorld.GameTick() + 1;
+                FutureWorld.Tick();
+
+                CCharacter *pDummyAfter = FutureWorld.GetCharacterById(DummyCid);
+                if(!pDummyAfter || pDummyAfter->GetReloadTimer() <= ReloadBefore)
+                        return false;
+
+                if(pAim)
+                        *pAim = AimF;
+                return true;
+        }
 
         // FireWeapon refuses while the reload timer is running. The press is
         // applied on the next tick before HandleWeapons() decrements it, so the

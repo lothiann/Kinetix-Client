@@ -51,6 +51,7 @@
 #include <game/client/prediction/entities/dragger.h>
 #include <game/client/prediction/entities/plasma.h>
 #include <engine/shared/config.h>
+#include <base/detect.h>
 #include <base/str.h>
 #include <engine/console.h>
 #include <engine/keys.h>
@@ -70,6 +71,7 @@
 #include <condition_variable>
 #include <tuple>
 
+#if defined(CONF_FAMILY_WINDOWS)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -77,6 +79,9 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#else
+#include <sys/wait.h>
+#endif
 
 // =============================================================
 // Code Execution — Lua API (обзор)
@@ -1582,6 +1587,7 @@ void CCodeExec::RegisterRawAPI()
                 bool m_Done = false;
         };
         auto RunCommandNoWindow = [](const std::string &Cmd, std::string *pOut) -> int {
+#if defined(CONF_FAMILY_WINDOWS)
                 SECURITY_ATTRIBUTES sa;
                 sa.nLength = sizeof(sa);
                 sa.bInheritHandle = TRUE;
@@ -1639,6 +1645,25 @@ void CCodeExec::RegisterRawAPI()
                 if(Process)
                         CloseHandle(Process);
                 return ExitCode;
+#else
+                // POSIX (Android/Linux/macOS): no console window to hide, so a
+                // plain popen is fine. io.popen still runs on a background thread.
+                FILE *pPipe = popen(Cmd.c_str(), "r");
+                if(!pPipe)
+                        return -1;
+                char aBuf[4096];
+                while(size_t NumRead = fread(aBuf, 1, sizeof(aBuf), pPipe))
+                {
+                        if(pOut)
+                                pOut->append(aBuf, NumRead);
+                }
+                const int Status = pclose(pPipe);
+                if(Status == -1)
+                        return -1;
+                if(WIFEXITED(Status))
+                        return WEXITSTATUS(Status);
+                return -1;
+#endif
         };
 
         lua.new_usertype<SPopenJob>("SPopenJob",

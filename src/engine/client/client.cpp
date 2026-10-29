@@ -1195,6 +1195,17 @@ const void *CClient::SnapFindItem(int SnapId, int Type, int Id) const
         return m_aapSnapshots[g_Config.m_ClDummy][SnapId]->m_pAltSnap->FindItem(Type, Id);
 }
 
+// v6.9: item lookup in a specific connection's snapshot (dummy support).
+const void *CClient::SnapFindItemConn(int Conn, int SnapId, int Type, int Id) const
+{
+        if(Conn < 0 || Conn >= MAX_DUMMIES || SnapId < 0 || SnapId >= NUM_SNAPSHOT_TYPES)
+                return nullptr;
+        if(!m_aapSnapshots[Conn][SnapId] || !m_aapSnapshots[Conn][SnapId]->m_pAltSnap)
+                return nullptr;
+
+        return m_aapSnapshots[Conn][SnapId]->m_pAltSnap->FindItem(Type, Id);
+}
+
 int CClient::SnapNumItems(int SnapId) const
 {
         dbg_assert(SnapId >= 0 && SnapId < NUM_SNAPSHOT_TYPES, "invalid SnapId");

@@ -302,6 +302,11 @@ public:
         // TODO: Refactor: should redo this a bit i think, too many virtual calls
         virtual int SnapNumItems(int SnapId) const = 0;
         virtual const void *SnapFindItem(int SnapId, int Type, int Id) const = 0;
+        // v6.9: look up an item in another connection's snapshot. Every
+        // connection always receives its own character (the server never
+        // clips the snapping client), so this is the only way to get the
+        // position of a dummy that is outside the active tee's view.
+        virtual const void *SnapFindItemConn(int Conn, int SnapId, int Type, int Id) const = 0;
         virtual CSnapItem SnapGetItem(int SnapId, int Index) const = 0;
 
         virtual void SnapSetStaticsize(int ItemType, int Size) = 0;
