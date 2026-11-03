@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <optional>
 #include <regex>
 #include <string>
 #include <utility>
@@ -31,6 +32,7 @@
 #include <base/str.h>
 #include <base/time.h>
 #include <base/vmath.h>
+#include <base/windows.h>
 
 #include <engine/client.h>
 #include <engine/graphics.h>
@@ -50,7 +52,7 @@
 #include <game/version.h> // v1.56.177: GAME_NAME, GAME_RELEASE_VERSION, DDNET_VERSION_NUMBER, GIT_SHORTREV_HASH (used by Info panel)
 
 #ifdef _WIN32
-extern "C" __declspec(dllimport) unsigned long __stdcall GetModuleFileNameA(void *hModule, char *lpFilename, unsigned long nSize);
+extern "C" __declspec(dllimport) unsigned long __stdcall GetModuleFileNameW(void *hModule, wchar_t *lpFilename, unsigned long nSize);
 #endif
 
 // v1.56.285: ClickGUI resize cursor feedback (implemented in input.cpp — that
@@ -832,6 +834,43 @@ static SRow g_SmartCopyMovesChildren[] = {
                 "Target id list (used when Targets = Only/Ignore)."},
 };
 
+// v6.9: AledBot — unfreeze a frozen dummy with a hammer in the first non-freeze
+// tile. Children (index order): Trigger Ticks, Ticks, Silent, Sort Target Dummy,
+// Use Dummies Mode, Apply Mode, Apply Dummies, filters + inputs.
+static const char *const g_AledSortOpts[] = {"ID", "Nearest To Me", "Nearest To Aim", "Last Active"};
+static const char *const g_AledUseDummiesOpts[] = {"Never", "Dummy Freezes", "Active Dummy Freezes", "Both"};
+static const char *const g_AledApplyModeOpts[] = {"Trigger", "Always"};
+static SRow g_AledBotChildren[] = {
+        {ERowType::Slider, "Trigger Ticks", nullptr, false, false, 0.0f, 30.0f, 1.0f, 0.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "React this many ticks before the dummy enters the freeze (0 = only once it is frozen)."},
+        {ERowType::Slider, "Ticks", nullptr, false, false, 1.0f, 250.0f, 1.0f, 50.0f, "t", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Simulation horizon for the aled plan."},
+        {ERowType::Toggle, "Silent", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Don't touch the client-side aim (compatible with Fake Aim)."},
+        {ERowType::Dropdown, "Sort Target Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_AledSortOpts, 4, 0, nullptr, 0,
+                "How the frozen target dummy is picked."},
+        {ERowType::Dropdown, "Use Dummies Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_AledUseDummiesOpts, 4, 0, nullptr, 0,
+                "When dummies may act: never / target is not the active dummy / target is the active dummy / both."},
+        {ERowType::Dropdown, "Apply Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_AledApplyModeOpts, 2, 0, nullptr, 0,
+                "Trigger = only the top-N acting dummies; Always = every acting dummy."},
+        {ERowType::Slider, "Apply Dummies", nullptr, false, false, 1.0f, 8.0f, 1.0f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "How many acting dummies may be used."},
+        {ERowType::Dropdown, "Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TeamFilterOpts, 5, 0, nullptr, 0,
+                "Team filter for the target dummy."},
+        {ERowType::Dropdown, "DDrace Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_DDraceTeamOpts, 4, 0, nullptr, 0,
+                "DDrace team filter for the target dummy."},
+        {ERowType::Input, "Target ID", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0,
+                "Explicit DDrace team id (used when DDrace Team = Target)."},
+        {ERowType::Dropdown, "Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0,
+                "Friend filter (both / ignore / only)."},
+        {ERowType::Dropdown, "Clanmate", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0,
+                "Clanmate filter (both / ignore / only)."},
+        {ERowType::Dropdown, "Targets", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0,
+                "Include only / ignore specific target ids."},
+        {ERowType::Input, "Targets IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0,
+                "Target id list (used when Targets = Only/Ignore)."},
+};
+
 // v1.56.260: Functions panel merged with the former Advanced rows (Laser unfreeze,
 // Fake Aim, Basic Avoid Freeze). Trajectory/ESP/Hitboxes moved to the Visuals
 // panel; Random Aim rows removed (feature deleted).
@@ -892,6 +931,9 @@ static SRow g_FunctionsRows[] = {
                 "Spoof the aim the server sees (fake aim)."},
         {ERowType::Expandable, "Avoid Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AvoidFreezeChildren, 12,
                 "Auto-escape a freeze by overriding the input."},
+        // v6.9: AledBot — hammer a frozen dummy so it unfreezes outside the freeze tile.
+        {ERowType::Expandable, "AledBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AledBotChildren, 14,
+                "Bot for aleds: unfreeze a frozen dummy in the first non-freeze tile."},
 };
 
 // ---------- Settings panel (6) ----------
@@ -3030,6 +3072,45 @@ static bool SmartCopyChildVisible(const SRow *pChildren, int childCount, int idx
         }
         return true;
 }
+// v6.9: AledBot — everything after "Use Dummies Mode" is only shown when
+// dummies may act at all (Use Dummies Mode != Never).
+static bool AledBotChildVisible(const SRow *pChildren, int childCount, int idx)
+{
+        if(idx < 0 || idx >= childCount)
+                return false;
+        const SRow &row = pChildren[idx];
+        bool useDummies = false;
+        for(int i = 0; i < childCount; ++i)
+        {
+                if(str_comp(pChildren[i].pName, "Use Dummies Mode") == 0)
+                {
+                        useDummies = pChildren[i].valueIdx != 0;
+                        break;
+                }
+        }
+        if(str_comp(row.pName, "Apply Mode") == 0 || str_comp(row.pName, "Apply Dummies") == 0 ||
+                str_comp(row.pName, "Team") == 0 || str_comp(row.pName, "DDrace Team") == 0 ||
+                str_comp(row.pName, "Target ID") == 0 || str_comp(row.pName, "Friend") == 0 ||
+                str_comp(row.pName, "Clanmate") == 0 || str_comp(row.pName, "Targets") == 0 ||
+                str_comp(row.pName, "Targets IDs") == 0)
+        {
+                if(!useDummies)
+                        return false;
+        }
+        if(str_comp(row.pName, "Target ID") == 0)
+        {
+                for(int i = 0; i < childCount; ++i)
+                        if(str_comp(pChildren[i].pName, "DDrace Team") == 0)
+                                return useDummies && pChildren[i].valueIdx == 3;
+        }
+        if(str_comp(row.pName, "Targets IDs") == 0)
+        {
+                for(int i = 0; i < childCount; ++i)
+                        if(str_comp(pChildren[i].pName, "Targets") == 0)
+                                return useDummies && pChildren[i].valueIdx != 0;
+        }
+        return true;
+}
 // v1.56.129: BAF — "Angles" + "Silent" visible only when Aim toggle is on.
 static bool AfChildVisible(const SRow *pChildren, int childCount, int idx)
 {
@@ -3766,7 +3847,16 @@ static void KxComputeExeHash()
         char aExePath[1024];
         aExePath[0] = 0;
 #ifdef _WIN32
-        GetModuleFileNameA(nullptr, aExePath, (unsigned long)sizeof(aExePath));
+        // The wide API must be used here: the ANSI variant returns the path in the
+        // system code page (e.g. cp1251), which is not valid UTF-8 for paths with
+        // non-ASCII characters and would trip the assertion in
+        // windows_utf8_to_wide() when the file is opened below.
+        wchar_t aExePathW[1024];
+        aExePathW[0] = 0;
+        GetModuleFileNameW(nullptr, aExePathW, (unsigned long)(sizeof(aExePathW) / sizeof(aExePathW[0])));
+        const std::optional<std::string> ExePathUtf8 = windows_wide_to_utf8(aExePathW);
+        if(ExePathUtf8.has_value())
+                str_copy(aExePath, ExePathUtf8->c_str(), sizeof(aExePath));
 #endif
         if(aExePath[0])
         {
@@ -5074,6 +5164,9 @@ void CClickGui::OnRender()
                                 // v6.7: Smart Dummy Switch expandable is master toggle.
                                 else if(str_comp(row.pName, "Smart dummy switch") == 0)
                                         row.on = g_Config.m_KxSdsEnabled != 0;
+                                // v6.9: AledBot expandable is master toggle.
+                                else if(str_comp(row.pName, "AledBot") == 0)
+                                        row.on = g_Config.m_KxAledEnabled != 0;
                                 // Pathfinder top-level sliders/toggles
                                 else if(str_comp(row.pName, "A* Weight") == 0)
                                         row.value = g_Config.m_KxPfAStarWeight / 100.0f;
@@ -5146,7 +5239,7 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
+if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                         // v6.7: Smart Copy Moves children (index-keyed: Sort Type,
                                         // Apply Mode, Apply Dummies slider, filters + inputs).
@@ -6717,6 +6810,57 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                         }
                                 }
                         }
+                        else if(row.type == ERowType::Expandable && str_comp(row.pName, "AledBot") == 0)
+                        {
+                                for(int c = 0; c < row.childCount; ++c)
+                                {
+                                        SRow &child = row.pChildren[c];
+                                        switch(c)
+                                        {
+                                        case 0:
+                                                if(!(m_DragSliderPanel == p && m_DragSliderRow == r && m_DragSliderChild == c))
+                                                        child.value = (float)g_Config.m_KxAledTriggerTicks;
+                                                break;
+                                        case 1:
+                                                if(!(m_DragSliderPanel == p && m_DragSliderRow == r && m_DragSliderChild == c))
+                                                        child.value = (float)g_Config.m_KxAledTicks;
+                                                break;
+                                        case 2: child.on = g_Config.m_KxAledSilent != 0; break;
+                                        case 3: child.valueIdx = g_Config.m_KxAledSort; break;
+                                        case 4: child.valueIdx = g_Config.m_KxAledUseDummies; break;
+                                        case 5: child.valueIdx = g_Config.m_KxAledApplyMode; break;
+                                        case 6:
+                                        {
+                                                const int MaxCnt = g_DummyLimit >= 2 ? g_DummyLimit - 1 : 1;
+                                                child.max = (float)MaxCnt;
+                                                if(g_Config.m_KxAledApplyDummies > MaxCnt)
+                                                        g_Config.m_KxAledApplyDummies = MaxCnt;
+                                                if(!(m_DragSliderPanel == p && m_DragSliderRow == r && m_DragSliderChild == c))
+                                                        child.value = (float)g_Config.m_KxAledApplyDummies;
+                                                break;
+                                        }
+                                        case 7: child.valueIdx = g_Config.m_KxAledTeam; break;
+                                        case 8: child.valueIdx = g_Config.m_KxAledDdraceTeam; break;
+                                        case 9:
+                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                {
+                                                        str_format(child.m_aInputBuf, sizeof(child.m_aInputBuf), "%d", g_Config.m_KxAledDdraceTeamId);
+                                                        child.m_InputInitialized = true;
+                                                }
+                                                break;
+                                        case 10: child.valueIdx = g_Config.m_KxAledFriend; break;
+                                        case 11: child.valueIdx = g_Config.m_KxAledClanmate; break;
+                                        case 12: child.valueIdx = g_Config.m_KxAledTargetsMode; break;
+                                        case 13:
+                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                {
+                                                        str_copy(child.m_aInputBuf, g_Config.m_KxAledTargets, sizeof(child.m_aInputBuf));
+                                                        child.m_InputInitialized = true;
+                                                }
+                                                break;
+                                        }
+                                }
+                        }
                         else if(p == 4 && row.type == ERowType::Expandable && str_comp(row.pName, "Smart dummy switch") == 0)
                         {
                                 for(int c = 0; c < row.childCount; ++c)
@@ -7203,8 +7347,15 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                         else if(str_comp(pTarget->pName, "Ratio") == 0 && str_comp(row.pName, "Freedom Path") == 0)
                                 g_Config.m_KxPfFreedomRatio = (int)(pTarget->value * 10.0f + 0.5f);
                         // v6.7: Smart Copy Moves top-N slider.
-                        else if(str_comp(pTarget->pName, "Apply Dummies") == 0)
+                        else if(str_comp(pTarget->pName, "Apply Dummies") == 0 && str_comp(row.pName, "Smart Copy Moves") == 0)
                                 g_Config.m_KxSmartCopyCount = (int)pTarget->value;
+                        // v6.9: AledBot sliders.
+                        else if(str_comp(pTarget->pName, "Trigger Ticks") == 0 && str_comp(row.pName, "AledBot") == 0)
+                                g_Config.m_KxAledTriggerTicks = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Ticks") == 0 && str_comp(row.pName, "AledBot") == 0)
+                                g_Config.m_KxAledTicks = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Apply Dummies") == 0 && str_comp(row.pName, "AledBot") == 0)
+                                g_Config.m_KxAledApplyDummies = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Trigger radius") == 0 && str_comp(row.pName, "Auto Triple Fly") == 0)
                                 g_Config.m_KxTripleFlyTriggerRadius = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Radius") == 0 && str_comp(row.pName, "Auto Triple Fly") == 0)
@@ -8993,8 +9144,15 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 else if(str_comp(pTarget->pName, "Ratio") == 0 && str_comp(row.pName, "Freedom Path") == 0)
                                         g_Config.m_KxPfFreedomRatio = (int)(pTarget->value * 10.0f + 0.5f);
                                 // v6.7: Smart Copy Moves top-N slider.
-                                else if(str_comp(pTarget->pName, "Apply Dummies") == 0)
+                                else if(str_comp(pTarget->pName, "Apply Dummies") == 0 && str_comp(row.pName, "Smart Copy Moves") == 0)
                                         g_Config.m_KxSmartCopyCount = (int)pTarget->value;
+                                // v6.9: AledBot sliders.
+                                else if(str_comp(pTarget->pName, "Trigger Ticks") == 0 && str_comp(row.pName, "AledBot") == 0)
+                                        g_Config.m_KxAledTriggerTicks = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Ticks") == 0 && str_comp(row.pName, "AledBot") == 0)
+                                        g_Config.m_KxAledTicks = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Apply Dummies") == 0 && str_comp(row.pName, "AledBot") == 0)
+                                        g_Config.m_KxAledApplyDummies = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Trigger radius") == 0 && str_comp(row.pName, "Auto Triple Fly") == 0)
                                         g_Config.m_KxTripleFlyTriggerRadius = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Radius") == 0 && str_comp(row.pName, "Auto Triple Fly") == 0)
@@ -9356,6 +9514,11 @@ bool CClickGui::HandleToggleTail(void *pTargetV, void *pRowV, void *pPanelV)
                 g_Config.m_KxSdsNoRepeat = pTarget->on ? 1 : 0;
                 GameClient()->m_BotNet.SdsResetVisited();
         }
+        // v6.9: AledBot expandable is master toggle.
+        else if(str_comp(pTarget->pName, "AledBot") == 0)
+                g_Config.m_KxAledEnabled = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Silent") == 0 && str_comp(row.pName, "AledBot") == 0)
+                g_Config.m_KxAledSilent = pTarget->on ? 1 : 0;
         // v1.56.187: Copy Moves Latency expandable is master toggle.
         else if(str_comp(pTarget->pName, "Copy Moves Latency") == 0)
                 g_Config.m_KxCopyMovesLatencyEnabled = pTarget->on ? 1 : 0;
@@ -9777,7 +9940,7 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
+if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                 const float crh = RowHeightForRow(child);
                                 if(r == m_DropdownRow && c == m_DropdownChild)
@@ -9838,6 +10001,23 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                                 g_Config.m_KxSmartCopyFreeze = o;
                                                         else if(str_comp(target.pName, "Targets") == 0 && str_comp(row.pName, "Smart Copy Moves") == 0)
                                                                 g_Config.m_KxSmartCopyTargetsMode = o;
+                                                        // v6.9: AledBot dropdowns.
+                                                        else if(str_comp(target.pName, "Sort Target Dummy") == 0 && str_comp(row.pName, "AledBot") == 0)
+                                                                g_Config.m_KxAledSort = o;
+                                                        else if(str_comp(target.pName, "Use Dummies Mode") == 0 && str_comp(row.pName, "AledBot") == 0)
+                                                                g_Config.m_KxAledUseDummies = o;
+                                                        else if(str_comp(target.pName, "Apply Mode") == 0 && str_comp(row.pName, "AledBot") == 0)
+                                                                g_Config.m_KxAledApplyMode = o;
+                                                        else if(str_comp(target.pName, "Team") == 0 && str_comp(row.pName, "AledBot") == 0)
+                                                                g_Config.m_KxAledTeam = o;
+                                                        else if(str_comp(target.pName, "DDrace Team") == 0 && str_comp(row.pName, "AledBot") == 0)
+                                                                g_Config.m_KxAledDdraceTeam = o;
+                                                        else if(str_comp(target.pName, "Friend") == 0 && str_comp(row.pName, "AledBot") == 0)
+                                                                g_Config.m_KxAledFriend = o;
+                                                        else if(str_comp(target.pName, "Clanmate") == 0 && str_comp(row.pName, "AledBot") == 0)
+                                                                g_Config.m_KxAledClanmate = o;
+                                                        else if(str_comp(target.pName, "Targets") == 0 && str_comp(row.pName, "AledBot") == 0)
+                                                                g_Config.m_KxAledTargetsMode = o;
                                                         // v1.56.273: Spoof Spectate mode.
                                                         else if(str_comp(target.pName, "Mode") == 0 && str_comp(row.pName, "Spoof Spectate") == 0)
                                                                 g_Config.m_KxSpoofSpectateMode = o;
@@ -10173,7 +10353,7 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
+if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                 const float crh = RowHeightForRow(child);
                                 if(r == m_DropdownRow && c == m_DropdownChild)
@@ -10458,7 +10638,7 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
+if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                 if(!SearchKeepsChild(child))
                                         continue;
@@ -10606,6 +10786,9 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
                         str_copy(g_Config.m_KxSmartCopyTargets, pRow->m_aInputBuf, sizeof(g_Config.m_KxSmartCopyTargets));
                 else if(str_comp(pOwner, "Smart dummy switch") == 0)
                         str_copy(g_Config.m_KxSdsTargets, pRow->m_aInputBuf, sizeof(g_Config.m_KxSdsTargets));
+                // v6.9: AledBot → Targets IDs.
+                else if(str_comp(pOwner, "AledBot") == 0)
+                        str_copy(g_Config.m_KxAledTargets, pRow->m_aInputBuf, sizeof(g_Config.m_KxAledTargets));
         }
         // Block children: string IDs.
         else if(str_comp(pRow->pName, "Main ID") == 0)
@@ -10651,6 +10834,9 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
                         g_Config.m_KxSmartCopyDdraceTeamId = atoi(pRow->m_aInputBuf);
                 else if(str_comp(pOwner, "Smart dummy switch") == 0)
                         g_Config.m_KxSdsDdraceTeamId = atoi(pRow->m_aInputBuf);
+                // v6.9: AledBot → DDrace team Target ID.
+                else if(str_comp(pOwner, "AledBot") == 0)
+                        g_Config.m_KxAledDdraceTeamId = atoi(pRow->m_aInputBuf);
         }
         // v1.56.283: Visuals custom-color Color input — the Sprite/Entity
         // dropdowns on the "Custom colors" owner row select the cvar.
@@ -10946,6 +11132,7 @@ static SArrayListFeature g_ArrayListFeatures[] = {
         {"Laser Unfreeze", &g_Config.m_KxLaserUnfreeze},
         {"Fake Aim", &g_Config.m_KxFakeAim},
         {"Avoid Freeze", &g_Config.m_KxAvoidFreeze},
+        {"AledBot", &g_Config.m_KxAledEnabled},
         // Visuals panel.
         {"Custom Colors", &g_Config.m_KxCustomColors},
         {"Hide Particles", &g_Config.m_KxHideParticles},
@@ -12475,7 +12662,7 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
+if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                 if(!SearchKeepsChild(row.pChildren[c]))
                                         continue;
@@ -12567,7 +12754,7 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
+if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                                 if(!SearchKeepsChild(row.pChildren[c]))
                                                         continue;
@@ -12659,7 +12846,7 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
+if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                 if(!SearchKeepsChild(row.pChildren[c]))
                                         continue;
@@ -13627,7 +13814,7 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
+if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                         if(!SearchKeepsChild(row.pChildren[c]))
                                                 continue;
@@ -13668,7 +13855,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c)) continue;
                                 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
                                         continue;
-                                if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c))) continue;
+                                if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c))) continue;
                                 if(!SearchKeepsChild(row.pChildren[c]))
                                         continue;
                                 const YGNodeRef pn = rowNodes[preIdx];
@@ -13718,7 +13905,7 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)))
+if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                 if(!SearchKeepsChild(child))
                                         continue;

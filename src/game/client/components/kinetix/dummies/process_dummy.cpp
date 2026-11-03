@@ -20,6 +20,10 @@ void CBotNet::ProcessDummy(int Dummy)
                 return;
         }
 
+        // v6.9: AledBot — replays its recorded input plan, or builds a new one.
+        if(ProcessAledBot(pGame, pInput, Dummy, State, LocalID))
+                return;
+
         // No feature active — clear inputs and bail.
         if(HandleNoFeatureIdle(pGame, pInput, Dummy, State))
                 return;

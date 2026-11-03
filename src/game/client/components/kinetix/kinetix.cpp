@@ -556,7 +556,7 @@ void CBotNet::OnUpdate()
         //
         // Solution: skip the entire ProcessDummy loop when no botnet features are
         // active. This makes the default dummy input pipeline byte-identical to DDNet.
-        bool anyBotnetFeature = g_Config.m_KxHelpers || g_Config.m_KxCopyMoves;
+        bool anyBotnetFeature = g_Config.m_KxHelpers || g_Config.m_KxCopyMoves || g_Config.m_KxAledEnabled;
         if(!anyBotnetFeature)
         {
                 for(int D = 0; D < MAX_DUMMIES; D++)

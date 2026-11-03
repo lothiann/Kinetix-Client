@@ -17,6 +17,14 @@ void CBotNet::ResetAndCommitInput(CGameClient *pGame, CNetObj_PlayerInput *pInpu
         if((pInput->m_Fire & 1) != 0)
                 pInput->m_Fire++;
         pInput->m_Fire &= INPUT_STATE_MASK;
+        // The HUD key arrows (cl_show_direction) are rendered from
+        // m_aInputData[Dummy]. A dummy that just went idle or frozen keeps its
+        // last committed direction there, which left a ghost arrow until the
+        // unfreeze. Clear the movement fields only - the weapon counters must
+        // survive for the OnDummySwap save/restore.
+        pGame->m_Controls.m_aInputData[Dummy].m_Direction = 0;
+        pGame->m_Controls.m_aInputData[Dummy].m_Jump = 0;
+        pGame->m_Controls.m_aInputData[Dummy].m_Hook = 0;
         // REMOVED: pGame->m_Controls.m_aInputData[Dummy] = *pInput;
         // This line clobbered m_aInputData[D] (which holds the player's last sent
         // input for non-active slots, set by copy_moves/dummy_control in controls.cpp

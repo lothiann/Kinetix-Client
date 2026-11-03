@@ -1807,6 +1807,21 @@ MACRO_CONFIG_INT(KxSdsClanmate, kx_sds_clanmate, 0, 0, 2, CFGFLAG_CLIENT | CFGFL
 MACRO_CONFIG_INT(KxSdsTargetsMode, kx_sds_targets_mode, 0, 0, 2, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Smart dummy switch targets filter: 0=both 1=only 2=ignore")
 MACRO_CONFIG_STR(KxSdsTargets, kx_sds_targets, 64, "", CFGFLAG_CLIENT | CFGFLAG_SAVE, "Smart dummy switch targets filter IDs (empty or no valid IDs = off)")
 MACRO_CONFIG_INT(KxSdsFreeze, kx_sds_freeze, 0, 0, 2, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Smart dummy switch freeze filter: 0=both 1=freeze 2=no_freeze")
+MACRO_CONFIG_INT(KxAledEnabled, kx_aled_enabled, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "AledBot master toggle (unfreeze a frozen dummy in the first non-freeze tile)")
+MACRO_CONFIG_INT(KxAledTriggerTicks, kx_aled_trigger_ticks, 0, 0, 30, CFGFLAG_CLIENT | CFGFLAG_SAVE, "AledBot reacts this many ticks before the dummy enters the freeze (0 = only once it is frozen)")
+MACRO_CONFIG_INT(KxAledTicks, kx_aled_ticks, 50, 1, 250, CFGFLAG_CLIENT | CFGFLAG_SAVE, "AledBot simulation horizon in ticks")
+MACRO_CONFIG_INT(KxAledSilent, kx_aled_silent, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "AledBot silent aim (don't touch the client-side aim)")
+MACRO_CONFIG_INT(KxAledSort, kx_aled_sort, 1, 0, 3, CFGFLAG_CLIENT | CFGFLAG_SAVE, "AledBot target dummy sort: 0=id 1=nearest by me 2=nearest by aim 3=last active")
+MACRO_CONFIG_INT(KxAledUseDummies, kx_aled_use_dummies, 0, 0, 3, CFGFLAG_CLIENT | CFGFLAG_SAVE, "AledBot use dummies: 0=never 1=dummy freezes 2=active dummy freezes 3=both")
+MACRO_CONFIG_INT(KxAledApplyMode, kx_aled_apply_mode, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "AledBot apply mode: 0=trigger 1=always")
+MACRO_CONFIG_INT(KxAledApplyDummies, kx_aled_apply_dummies, 1, 1, 8, CFGFLAG_CLIENT | CFGFLAG_SAVE, "AledBot apply dummies (top-N used for the input search)")
+MACRO_CONFIG_INT(KxAledTeam, kx_aled_team, 0, 0, 4, CFGFLAG_CLIENT | CFGFLAG_SAVE, "AledBot team filter: 0=both 1=my 2=war 3=blue 4=red")
+MACRO_CONFIG_INT(KxAledDdraceTeam, kx_aled_ddrace_team, 0, 0, 3, CFGFLAG_CLIENT | CFGFLAG_SAVE, "AledBot DDrace team filter: 0=both 1=my 2=other 3=target")
+MACRO_CONFIG_INT(KxAledDdraceTeamId, kx_aled_ddrace_team_id, 0, 0, 63, CFGFLAG_CLIENT | CFGFLAG_SAVE, "AledBot DDrace team id (used when DDrace team filter = target)")
+MACRO_CONFIG_INT(KxAledFriend, kx_aled_friend, 0, 0, 2, CFGFLAG_CLIENT | CFGFLAG_SAVE, "AledBot friend filter: 0=both 1=ignore 2=only")
+MACRO_CONFIG_INT(KxAledClanmate, kx_aled_clanmate, 0, 0, 2, CFGFLAG_CLIENT | CFGFLAG_SAVE, "AledBot clanmate filter: 0=both 1=ignore 2=only")
+MACRO_CONFIG_INT(KxAledTargetsMode, kx_aled_targets_mode, 0, 0, 2, CFGFLAG_CLIENT | CFGFLAG_SAVE, "AledBot targets filter: 0=both 1=only 2=ignore")
+MACRO_CONFIG_STR(KxAledTargets, kx_aled_targets, 64, "", CFGFLAG_CLIENT | CFGFLAG_SAVE, "AledBot targets filter IDs (empty or no valid IDs = off)")
 
 // v1.56.263: Admin Alarm (Visuals panel) — per-level, like AimBot per-weapon:
 // the Level dropdown selects which level's settings are being edited. The

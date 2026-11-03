@@ -504,6 +504,10 @@ public:
         // Process one inactive dummy
         void ProcessDummy(int Dummy);
 
+        // v6.9: AledBot — plan/replay hammer inputs that unfreeze a frozen dummy
+        // in the first non-freeze tile. Returns true when it owns this tick.
+        bool ProcessAledBot(CGameClient *pGame, CNetObj_PlayerInput *pInput, int Dummy, CBotNetDummy &State, int LocalID);
+
         // Helpers (attack/rescue/escort) — the whole feature for one dummy
         // tick: target selection, movement, aim/hook/fire (attack.cpp).
         void UpdateHelpers(CGameClient *pGame, CNetObj_PlayerInput *pInput, int Dummy, CBotNetDummy &State, int LocalID);
