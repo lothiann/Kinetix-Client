@@ -1,0 +1,15 @@
+{
+  "list_updated": "2026-11-07 17:43",
+  "last_supported_version": "v2",
+  "scripts": [
+    {
+      "file": "example.lua",
+      "name": "Example Script",
+      "version": "1.0",
+      "ce_version": 2,
+      "author": "LothianN",
+      "description": "Minimal example demonstrating the script metadata header.",
+      "updated": "2026-11-07"
+    }
+  ]
+}
