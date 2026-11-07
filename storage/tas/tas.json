@@ -1,5 +1,15 @@
 {
-  "list_updated": "",
-  "last_supported_version": "v1",
-  "items": []
+  "list_updated": "2026-11-07 19:35",
+  "last_supported_version": "v2.0",
+  "items": [
+    {
+      "file": "example.tas",
+      "map": "Test",
+      "name": "Minimal example demonstrating the script metadata header.",
+      "author": "LothianN",
+      "version": "v2.0",
+      "created": "19:34 | 07.11.2026",
+      "updated": "2026-11-07"
+    }
+  ]
 }
