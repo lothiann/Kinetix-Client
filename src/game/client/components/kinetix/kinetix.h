@@ -14,6 +14,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -257,6 +258,7 @@ struct CBotNetDummy
 };
 
 class CGameWorld;
+class IHttpRequest;
 
 // =========================================================
 // CBotNet — botnet component (all inactive dummies)
@@ -524,6 +526,30 @@ public:
         void SyncStrToDummyIDs(const char *pStr, bool *pList); // dummy slots (empty = all)
         bool IsHelpersDummy(int Dummy); // listed slot AND not the current dummy
 
+        void ApplyMoonwalk(CNetObj_PlayerInput &Input, const CNetObj_PlayerInput &Last, bool Left, bool Right);
+        void ApplyQuickStop(CNetObj_PlayerInput &Input, float VelocityX, bool CanMove, bool Grounded);
+        CNetObj_PlayerInput JetRide(CNetObj_PlayerInput Input);
+        CNetObj_PlayerInput HookRide(CNetObj_PlayerInput Input);
+        bool UpdateFastInput();
+        const CNetObj_PlayerInput &FastInput() const { return m_FastInput; }
+        void UpdateFunctions();
+
+        vec2 m_JetRidePos = vec2(0, 0);
+        bool m_JetRideActive = false;
+        vec2 m_HookRidePos = vec2(0, 0);
+        bool m_HookRideActive = false;
+        CNetObj_PlayerInput m_FastInput{};
+        int64_t m_LastTeamAttempt = 0;
+        int64_t m_AntiAfkStarted = 0;
+        bool m_AntiAfkNegative = false;
+        bool m_AutoVoted = false;
+        char m_aAutoVoteDescription[256] = "";
+        int m_AutoVoteLastSeconds = -1;
+        int64_t m_LastKickAttempt = 0;
+        bool m_VerifyRequested = false;
+        int m_VerifyFailures = 0;
+        std::shared_ptr<IHttpRequest> m_pVerifyRequest;
+
         // Pathfinder (shared map, per-dummy flow)
         void LoadMapGrid();
         bool IsTileWalkable(int tx, int ty);
@@ -617,8 +643,10 @@ public:
         void PfAStarResimulatePath(int targetIdx);  // re-simulate path root→target, fill m_PfVPath
         float PfAStarHeuristic(const vec2 &pos, const vec2 &endPos);
         void PfThreadWorker();
+        void PfSearchWorker();
         void PfRheaWorker();
         void PfBmctsWorker();
+        float PfSearchScore(const PfChunkResult &res, bool LightTiles);
         bool PfEvalSequence(const PfAState &cur, int curFreeze, int tickOffset,
                 const std::vector<CNetObj_PlayerInput> &inSeq, PfChunkResult &out);
         float PfSeqScore(const std::vector<vec2> &vFinishes, const PfChunkResult &res, bool freezeSupport);

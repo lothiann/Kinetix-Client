@@ -394,7 +394,11 @@ void CGameWorld::CreateExplosion(vec2 Pos, int Owner, int Weapon, bool NoDamage,
 		l = 1 - std::clamp((l - InnerRadius) / (Radius - InnerRadius), 0.0f, 1.0f);
 		float Strength;
 		CCharacter *pOwnerChar = GetCharacterById(Owner);
-		if(Owner == -1 || !pOwnerChar)
+		// Reference: the speculative avoid world uses the active local tuning,
+		// not the projectile owner's tune zone.
+		if(m_WorldConfig.m_KxAfExplosionTuning)
+			Strength = m_WorldConfig.m_KxAfExplosionStrength;
+		else if(Owner == -1 || !pOwnerChar)
 			Strength = GlobalTuning()->m_ExplosionStrength;
 		else
 			Strength = pOwnerChar->GetTuning(pOwnerChar->GetOverriddenTuneZone())->m_ExplosionStrength;
@@ -736,6 +740,68 @@ void CGameWorld::CopyWorld(CGameWorld *pFrom)
 			{
 				pCopy->m_pParent = pEnt;
 				pEnt->m_pChild = pCopy;
+				this->InsertEntity(pCopy);
+			}
+		}
+	}
+	m_IsValidCopy = true;
+}
+
+// Like CopyWorld, but the snapshot is fully isolated: neither the world nor the
+// copied entities are linked to the source, so the source is never written to
+// and speculative ticks cannot reach it. Required for cloning the avoid world
+// from several worker threads at once.
+void CGameWorld::CopyWorldIsolated(const CGameWorld *pFrom)
+{
+	if(!pFrom || pFrom == this)
+		return;
+	CGameWorld *pSource = const_cast<CGameWorld *>(pFrom);
+	m_IsValidCopy = false;
+	m_pParent = nullptr;
+	m_pChild = nullptr;
+
+	m_GameTick = pSource->m_GameTick;
+	m_pCollision = pSource->m_pCollision;
+	m_WorldConfig = pSource->m_WorldConfig;
+	m_pTuningList = pSource->m_pTuningList;
+	m_pMapBugs = pSource->m_pMapBugs;
+	m_Teams = pSource->m_Teams;
+	m_Core.m_vSwitchers = pSource->m_Core.m_vSwitchers;
+	m_PredictedEvents = pSource->m_PredictedEvents;
+	m_LocalClientId = pSource->m_LocalClientId;
+
+	// delete the previous entities
+	Clear();
+	for(int i = 0; i < MAX_CLIENTS; i++)
+	{
+		m_apCharacters[i] = nullptr;
+		m_Core.m_apCharacters[i] = nullptr;
+	}
+	// copy and add the new entities, deliberately without parent/child links
+	for(int Type = 0; Type < NUM_ENTTYPES; Type++)
+	{
+		for(CEntity *pEnt = pSource->FindLast(Type); pEnt; pEnt = pEnt->TypePrev())
+		{
+			CEntity *pCopy = nullptr;
+			if(Type == ENTTYPE_PROJECTILE)
+				pCopy = new CProjectile(*((CProjectile *)pEnt));
+			else if(Type == ENTTYPE_LASER)
+				pCopy = new CLaser(*((CLaser *)pEnt));
+			else if(Type == ENTTYPE_DRAGGER)
+				pCopy = new CDragger(*((CDragger *)pEnt));
+			else if(Type == ENTTYPE_CHARACTER)
+				pCopy = new CCharacter(*((CCharacter *)pEnt));
+			else if(Type == ENTTYPE_PICKUP)
+				pCopy = new CPickup(*((CPickup *)pEnt));
+			else if(Type == ENTTYPE_PLASMA)
+				pCopy = new CPlasma(*((CPlasma *)pEnt));
+			if(pCopy)
+			{
+				pCopy->m_pParent = nullptr;
+				pCopy->m_pChild = nullptr;
+				// Keep the source's lifetime state, as CopyWorld does. Clearing
+				// destruction markers would resurrect entities in speculative ticks;
+				// isolation comes from detached parent/child links instead.
 				this->InsertEntity(pCopy);
 			}
 		}

@@ -17,7 +17,10 @@ Usage:
 import datetime
 import json
 import os
+import re
+import struct
 import sys
+import zlib
 
 STORAGE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -82,10 +85,76 @@ def update_scripts():
     return output, len(scripts)
 
 
+def parse_tas_header(path):
+    """Extracts the text header of a .tas file (KXT magic + zlib blob:
+    [int32 BinSize]["Key": "Value", ... NUL][binary tick data]).
+    Returns (header, bin_version): header maps header keys to values,
+    bin_version is the binary format version from the tick block (1/2)."""
+    with open(path, "rb") as f:
+        data = f.read()
+    if len(data) < 16 or data[0:3] != b"KXT" or data[3:4] not in (b"1", b"2"):
+        return {}, 0
+    try:
+        _, comp_size = struct.unpack_from("<ii", data, 4)
+        blob = zlib.decompress(data[12:12 + comp_size])
+    except (struct.error, zlib.error):
+        return {}, 0
+    nul = blob.find(b"\x00", 4)
+    if nul < 0:
+        return {}, 0
+    text = blob[4:nul].decode("utf-8", "replace")
+    bin_version = struct.unpack_from("<i", blob, nul + 1)[0] if nul + 5 <= len(blob) else 0
+    return dict(re.findall(r'"(\w+)":\s*"([^"]*)"', text)), bin_version
+
+
+def tas_version_display(raw):
+    """Header stores "20" — displayed as "v2.0" (like the client UI)."""
+    if re.fullmatch(r"\d+", raw or "") and len(raw) >= 2:
+        return f"v{raw[0]}.{raw[1:]}"
+    return f"v{raw}" if raw else ""
+
+
 def update_tas():
-    # TODO: walk storage/tas/*.tas and rewrite tas.json once the client
-    # gains the TAS repository UI.
-    return None, 0
+    tas_dir = os.path.join(STORAGE_DIR, "tas")
+    output = os.path.join(tas_dir, "tas.json")
+    items = []
+    versions = []
+    for name in sorted(os.listdir(tas_dir)):
+        if not name.lower().endswith(".tas"):
+            continue
+        path = os.path.join(tas_dir, name)
+        header, bin_version = parse_tas_header(path)
+        updated = datetime.date.fromtimestamp(os.path.getmtime(path)).isoformat()
+        version_raw = header.get("Version", "")
+        if re.fullmatch(r"\d+", version_raw):
+            versions.append(int(version_raw))
+        # v2 files renamed the header field "Name" to "Description"; v1
+        # files keep "Name" and the value is listed as the description.
+        if bin_version >= 2:
+            description = header.get("Description", "")
+        else:
+            description = header.get("Name", "")
+        items.append({
+            "file": name,
+            "map": header.get("Map", ""),
+            "description": description or os.path.splitext(name)[0],
+            "author": header.get("Author", ""),
+            "version": tas_version_display(version_raw),
+            "created": header.get("Created", updated),
+            "updated": updated,
+        })
+
+    # Last supported TAS version = the highest header Version among the files.
+    last = f"v{max(versions) // 10}.{max(versions) % 10}" if versions else "v0.0"
+    data = {
+        "list_updated": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "last_supported_version": last,
+        "items": items,
+    }
+    with open(output, "w", encoding="utf-8", newline="\n") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+    return output, len(items)
 
 
 def main():

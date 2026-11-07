@@ -8,6 +8,8 @@
 #include <engine/client.h>
 #include <engine/discord.h>
 
+#include <cstdlib>
+
 #if defined(CONF_DISCORD)
 #include <discord_game_sdk.h>
 
@@ -40,10 +42,14 @@ class CDiscord : public IDiscord
 	IDiscordCore *m_pCore;
 	IDiscordActivityEvents m_ActivityEvents;
 	IDiscordActivityManager *m_pActivityManager;
+	bool m_Enabled = false;
+	bool m_Initialized = false;
 
 public:
-	bool Init(FDiscordCreate pfnDiscordCreate)
+	bool Init(FDiscordCreate pfnDiscordCreate, int64_t ClientId)
 	{
+		if(!pfnDiscordCreate)
+			return true;
 		m_pCore = nullptr;
 		mem_zero(&m_ActivityEvents, sizeof(m_ActivityEvents));
 
@@ -53,7 +59,7 @@ public:
 		DiscordCreateParams Params;
 		DiscordCreateParamsSetDefault(&Params);
 
-		Params.client_id = 752165779117441075; // DDNet
+		Params.client_id = ClientId;
 		Params.flags = EDiscordCreateFlags::DiscordCreateFlags_NoRequireDiscord;
 		Params.event_data = this;
 		Params.activity_events = &m_ActivityEvents;
@@ -76,10 +82,30 @@ public:
 		return false;
 	}
 
+	void Initialize(bool Enabled, int ApplicationId, const char *pCustomId) override
+	{
+		if(m_Initialized)
+			return;
+		m_Initialized = true;
+		m_Enabled = Enabled;
+		// Presets: 0 = DDNet, 1 = DDNet 2, anything else = custom app id.
+		static constexpr int64_t aIds[] = {752165779117441075LL, 0x0a703aca7c800033LL};
+		int64_t ClientId = 0;
+		if(ApplicationId >= 0 && ApplicationId < (int)(sizeof(aIds) / sizeof(aIds[0])))
+			ClientId = aIds[ApplicationId];
+		else if(pCustomId && pCustomId[0])
+			ClientId = std::strtoll(pCustomId, nullptr, 10);
+		if(ClientId <= 0)
+			return;
+		Init(GetDiscordCreate(), ClientId);
+	}
+
 	void Update() override
 	{
+		if(!m_pCore)
+			return;
 		// update every 5 seconds, rate limit is 5 updates per 20 seconds
-		if(m_UpdateActivity && time_get() > m_LastActivityUpdate + time_freq() * 5)
+		if(m_Enabled && m_UpdateActivity && time_get() > m_LastActivityUpdate + time_freq() * 5)
 		{
 			m_UpdateActivity = false;
 			m_LastActivityUpdate = time_get();
@@ -194,18 +220,7 @@ public:
 
 static IDiscord *CreateDiscordImpl()
 {
-	FDiscordCreate pfnDiscordCreate = GetDiscordCreate();
-	if(!pfnDiscordCreate)
-	{
-		return nullptr;
-	}
-	CDiscord *pDiscord = new CDiscord();
-	if(pDiscord->Init(pfnDiscordCreate))
-	{
-		delete pDiscord;
-		return nullptr;
-	}
-	return pDiscord;
+	return new CDiscord();
 }
 #else
 static IDiscord *CreateDiscordImpl()

@@ -91,12 +91,12 @@ int PfEffortHookAngles()
 
 static int PfEffortIndex()
 {
-	return g_Config.m_KxPfEffort < 0 ? 0 : (g_Config.m_KxPfEffort > 5 ? 5 : g_Config.m_KxPfEffort);
+	return g_Config.m_KxPfEffort < 0 ? 0 : (g_Config.m_KxPfEffort > 2 ? 2 : g_Config.m_KxPfEffort);
 }
 
 int PfEffortBeamWidth()
 {
-	if(g_Config.m_KxPfEffort == 6)
+	if(g_Config.m_KxPfEffort == 3)
 	{
 		int v = g_Config.m_KxPfBeamWidth;
 		return v < 8 ? 8 : (v > 4096 ? 4096 : v);
@@ -107,7 +107,7 @@ int PfEffortBeamWidth()
 
 int PfEffortAStarWeight()
 {
-	if(g_Config.m_KxPfEffort == 6)
+	if(g_Config.m_KxPfEffort == 3)
 	{
 		int v = g_Config.m_KxPfAStarWeight;
 		return v < 100 ? 100 : (v > 2000 ? 2000 : v);
@@ -124,7 +124,7 @@ int PfEffortRheaPop()
 
 int PfEffortRheaGens()
 {
-	if(g_Config.m_KxPfEffort == 6)
+	if(g_Config.m_KxPfEffort == 3)
 	{
 		int v = g_Config.m_KxPfRheaGenerations;
 		return v < 1 ? 1 : (v > 100 ? 100 : v);
@@ -139,9 +139,29 @@ int PfEffortMctsIters()
 	return s_aIters[PfEffortIndex()];
 }
 
+int PfEffortSearchTicks()
+{
+	return pf_clamp(g_Config.m_KxPfTicks, 100, 10000);
+}
+
+int PfEffortSearchInputs()
+{
+	return pf_clamp(g_Config.m_KxPfInputs, 4, 5000);
+}
+
+int PfEffortSearchInputTicks()
+{
+	return pf_clamp(g_Config.m_KxPfInputTicks, 1, 30);
+}
+
+int PfEffortSearchGenerations()
+{
+	return pf_clamp(g_Config.m_KxPfDosage, 1, 5000);
+}
+
 bool PfEffortScoreDist() { return true; }
 bool PfEffortScoreFlow() { return true; }
-bool PfEffortFreezeSupport() { return g_Config.m_KxPfEffort == 6 ? g_Config.m_KxPfFreezeSupport != 0 : false; }
+bool PfEffortFreezeSupport() { return g_Config.m_KxPfFreezeSupport != 0; }
 bool PfEffortFineDeath() { return true; }
 
 static vec2 PfNearestFinishPos(const std::vector<vec2> &vFinishes, const vec2 &pos)
@@ -856,45 +876,8 @@ void CBotNet::PfThreadWorker()
 		return;
 	}
 
-	int algo = pf_clamp(g_Config.m_KxPfAlgorithm, 0, 3);
-	if(algo == 2)
-	{
-		PfRheaWorker();
-		return;
-	}
-	if(algo == 3)
-	{
-		PfBmctsWorker();
-		return;
-	}
-
-	while(!m_PfThreadCancel.load(std::memory_order_relaxed))
-	{
-		int result = PfAStarStep();
-
-		// Live preview: often early (so the first chunk shows up fast),
-		// then throttled — the full path copy under the mutex is not free.
-		if(m_PfAExpandCount <= 8 || m_PfAExpandCount % 256 == 0)
-			PfAStarUpdatePreview();
-
-		if(result == 1)
-		{
-			dbg_msg("pathfinder", "A* goal reached: %d expansions, %zu nodes",
-				m_PfAExpandCount, m_PfANodes.size());
-			m_PfThreadResult.store(1);
-			m_PfThreadRunning.store(false);
-			return;
-		}
-		if(result < 0)
-		{
-			m_PfThreadResult.store(-1);
-			m_PfThreadRunning.store(false);
-			return;
-		}
-	}
-
-	m_PfThreadResult.store(-1);
-	m_PfThreadRunning.store(false);
+	// TODO: future Pathfinder algorithms can be plugged in here.
+	PfSearchWorker();
 }
 
 bool CBotNet::PfEvalSequence(const PfAState &cur, int curFreeze, int tickOffset,
@@ -984,6 +967,285 @@ void CBotNet::PfSeqFinalize(PfAState cur, int curFreeze, int tickOffset, std::ve
 	node.HookSegs = std::move(fullSegs);
 	m_PfANodes.push_back(std::move(node));
 	m_PfAGoalIdx = (int)m_PfANodes.size() - 1;
+}
+
+float CBotNet::PfSearchScore(const PfChunkResult &res, bool LightTiles)
+{
+	if(res.died && !res.reachedFinish)
+		return 1e18f;
+	if(res.forbiddenTicks > 0)
+		return 1e18f;
+	if(!LightTiles && res.freezeTicks > 0)
+		return 1e18f;
+	if(res.reachedFinish)
+		return -1e9f;
+	float Score = PfAStarHeuristic(res.endPos, PfNearestFinishPos(PfActiveFinishTiles(), res.endPos));
+	float Travelled = 0.0f;
+	if(m_PfFlowField && m_MapWidth > 1 && m_MapHeight > 1)
+	{
+		for(size_t I = 1; I < res.traj.size(); ++I)
+		{
+			const vec2 Delta = res.traj[I] - res.traj[I - 1];
+			Travelled += length(Delta);
+			const int TX = pf_clamp((int)(res.traj[I].x / 32.0f), 1, m_MapWidth - 2);
+			const int TY = pf_clamp((int)(res.traj[I].y / 32.0f), 1, m_MapHeight - 2);
+			const float DX = m_PfFlowField[TY * m_MapWidth + TX + 1] - m_PfFlowField[TY * m_MapWidth + TX - 1];
+			const float DY = m_PfFlowField[(TY + 1) * m_MapWidth + TX] - m_PfFlowField[(TY - 1) * m_MapWidth + TX];
+			const vec2 Gradient(DX, DY);
+			if(length(Gradient) > 0.0001f && length(Delta) > 0.0001f)
+				Score += dot(normalize(Delta), normalize(Gradient)) * 0.5f;
+		}
+	}
+	return Score - Travelled * 0.25f;
+}
+
+void CBotNet::PfSearchWorker()
+{
+	const std::vector<vec2> &vFinishes = PfActiveFinishTiles();
+	const int LocalID = m_PfLocalID;
+	const int SearchTicks = PfEffortSearchTicks();
+	const int Inputs = PfEffortSearchInputs();
+	const int InputTicks = PfEffortSearchInputTicks();
+	const int Generations = PfEffortSearchGenerations();
+	const bool LightTiles = PfEffortFreezeSupport();
+	const float Radius = 400.0f;
+	if(vFinishes.empty() || Inputs <= 0 || InputTicks <= 0)
+	{
+		m_PfThreadResult.store(-1);
+		m_PfThreadRunning.store(false);
+		return;
+	}
+
+	PfAState Cur;
+	Cur.Pos = m_PfCurPos;
+	Cur.Vel = m_PfCurVel;
+	Cur.HookState = m_PfCurHookState;
+	Cur.HookPos = m_PfCurHookPos;
+	Cur.HookDir = m_PfCurHookDir;
+	Cur.HookTick = m_PfCurHookTick;
+	Cur.Jumped = m_PfCurJumped;
+	Cur.JumpedTotal = 0;
+	if(CCharacter *pBaseChar = m_PfBaseWorld ? m_PfBaseWorld->GetCharacterById(LocalID) : nullptr)
+		Cur.JumpedTotal = pBaseChar->GetCore().m_JumpedTotal;
+	int CurFreeze = m_PfCurFreezeTime;
+	int TickOffset = 0;
+	int LastIdx = 0;
+	int FrozenTicks = 0;
+
+	struct CSearchCandidate
+	{
+		std::vector<CNetObj_PlayerInput> m_vInputs;
+		float m_Score = 1e18f;
+	};
+	std::vector<CSearchCandidate> vPopulation;
+	vPopulation.reserve(Inputs);
+
+	uint64_t Rng = 0x9E3779B97F4A7C15ull ^ (uint64_t)(uint32_t)m_PfSimStartTick;
+	auto Next = [&]() -> uint64_t {
+		Rng ^= Rng << 13;
+		Rng ^= Rng >> 7;
+		Rng ^= Rng << 17;
+		return Rng;
+	};
+	auto Unit = [&]() -> float { return (float)(Next() >> 40) * (1.0f / 16777216.0f); };
+	auto RandInt = [&](int Count) -> int { return Count > 0 ? (int)(Next() % (uint64_t)Count) : 0; };
+	auto AimRandom = [&](CNetObj_PlayerInput &In) {
+		const vec2 Dir = direction(Unit() * 2.0f * pi);
+		In.m_TargetX = (int)(Dir.x * Radius);
+		In.m_TargetY = (int)(Dir.y * Radius);
+	};
+
+	for(int I = 0; I < Inputs; ++I)
+	{
+		CSearchCandidate Candidate;
+		Candidate.m_vInputs.reserve(InputTicks);
+		bool Hook = (Next() & 1) != 0;
+		int Direction = RandInt(3) - 1;
+		bool Jump = (Next() & 1) != 0;
+		int T = 0;
+		while(T < InputTicks)
+		{
+			CNetObj_PlayerInput In{};
+			if(Direction == 0)
+				Direction = RandInt(3) - 1;
+			In.m_Direction = Direction;
+			if(!Hook)
+				Hook = RandInt(2) == 1;
+			In.m_Hook = Hook ? 1 : 0;
+			if(!Jump)
+				Jump = (Next() & 1) != 0;
+			In.m_Jump = Jump ? 1 : 0;
+			if(Next() & 1)
+				In.m_Fire = 1;
+			AimRandom(In);
+			const int Repeats = Hook ? 5 : (In.m_Direction != 0 ? 3 : 1);
+			for(int J = 0; J < Repeats && T < InputTicks; ++J, ++T)
+				Candidate.m_vInputs.push_back(In);
+		}
+		vPopulation.push_back(std::move(Candidate));
+	}
+
+	const float DosageBase = pf_clamp(g_Config.m_KxPfDosage, 1, 500) / 100.0f;
+	for(int SearchTick = 0; SearchTick < SearchTicks && !m_PfThreadCancel.load(std::memory_order_relaxed); SearchTick += InputTicks)
+	{
+		for(auto &Candidate : vPopulation)
+		{
+			PfChunkResult Res;
+			if(!PfEvalSequence(Cur, CurFreeze, TickOffset, Candidate.m_vInputs, Res))
+				Candidate.m_Score = 1e18f;
+			else
+				Candidate.m_Score = PfSearchScore(Res, LightTiles);
+		}
+		std::sort(vPopulation.begin(), vPopulation.end(), [](const CSearchCandidate &A, const CSearchCandidate &B) {
+			return A.m_Score < B.m_Score;
+		});
+		if(vPopulation.empty() || m_PfThreadCancel.load(std::memory_order_relaxed))
+			break;
+		if(vPopulation.front().m_Score <= -1e9f)
+			break;
+
+		float Mutation = DosageBase;
+		for(int Generation = 0; Generation < Generations && !m_PfThreadCancel.load(std::memory_order_relaxed); ++Generation)
+		{
+			const int EliteCount = std::max(1, (int)(Inputs * 0.2f));
+			std::vector<CSearchCandidate> vNext;
+			vNext.reserve(Inputs);
+			for(int I = 0; I < EliteCount && I < (int)vPopulation.size(); ++I)
+				vNext.push_back(vPopulation[I]);
+
+			std::vector<const CSearchCandidate *> vParents;
+			vParents.reserve(std::max(1, (Inputs - EliteCount) / 2));
+			for(int I = 0; I < (Inputs - EliteCount) / 2; ++I)
+			{
+				const CSearchCandidate *pBest = nullptr;
+				for(int Draw = 0; Draw < 5; ++Draw)
+				{
+					const CSearchCandidate *pCandidate = &vPopulation[RandInt((int)vPopulation.size())];
+					if(!pBest || pCandidate->m_Score < pBest->m_Score)
+						pBest = pCandidate;
+				}
+				if(pBest)
+					vParents.push_back(pBest);
+			}
+			if(vParents.empty())
+				break;
+
+			while((int)vNext.size() < Inputs)
+			{
+				const CSearchCandidate *pA = vParents[RandInt((int)vParents.size())];
+				const CSearchCandidate *pB = vParents[RandInt((int)vParents.size())];
+				const float Choice = Unit();
+				const size_t Size = std::min(pA->m_vInputs.size(), pB->m_vInputs.size());
+				CSearchCandidate Child;
+				Child.m_vInputs.reserve(Size);
+				if(Choice < 0.4f)
+				{
+					Child.m_vInputs.insert(Child.m_vInputs.end(), pA->m_vInputs.begin(), pA->m_vInputs.begin() + Size / 2);
+					Child.m_vInputs.insert(Child.m_vInputs.end(), pB->m_vInputs.begin() + Size / 2, pB->m_vInputs.begin() + Size);
+				}
+				else
+				{
+					for(size_t J = 0; J < Size; ++J)
+					{
+						if(Choice < 0.6f)
+							Child.m_vInputs.push_back((Next() & 1) ? pB->m_vInputs[J] : pA->m_vInputs[J]);
+						else
+						{
+							CNetObj_PlayerInput In = pA->m_vInputs[J];
+							const CNetObj_PlayerInput &Other = pB->m_vInputs[J];
+							In.m_TargetX = (In.m_TargetX + Other.m_TargetX) / 2;
+							In.m_TargetY = (In.m_TargetY + Other.m_TargetY) / 2;
+							Child.m_vInputs.push_back(In);
+						}
+					}
+				}
+				for(auto &In : Child.m_vInputs)
+				{
+					if(Unit() < Mutation * 0.7f)
+						In.m_Direction = RandInt(3) - 1;
+					if(Unit() < Mutation * 0.45f)
+						In.m_Hook = (Next() & 1) ? 1 : 0;
+					if(Unit() < Mutation * 0.7f)
+						In.m_Jump = (Next() & 1) ? 1 : 0;
+					if(Unit() < Mutation * 0.7f)
+						In.m_Fire = (Next() & 1) ? 1 : 0;
+					if(Unit() < Mutation * 0.7f)
+						AimRandom(In);
+				}
+				PfChunkResult Res;
+				if(!PfEvalSequence(Cur, CurFreeze, TickOffset, Child.m_vInputs, Res))
+					Child.m_Score = 1e18f;
+				else
+					Child.m_Score = PfSearchScore(Res, LightTiles);
+				vNext.push_back(std::move(Child));
+			}
+			std::sort(vNext.begin(), vNext.end(), [](const CSearchCandidate &A, const CSearchCandidate &B) {
+				return A.m_Score < B.m_Score;
+			});
+			vPopulation = std::move(vNext);
+			if(vPopulation.empty() || vPopulation.front().m_Score <= -1e9f)
+				break;
+			Mutation = std::max(0.1f, Mutation * 0.96f);
+		}
+
+		if(vPopulation.empty() || m_PfThreadCancel.load(std::memory_order_relaxed))
+			break;
+
+		const CSearchCandidate &Best = vPopulation.front();
+		PfChunkResult Res;
+		if(!PfEvalSequence(Cur, CurFreeze, TickOffset, Best.m_vInputs, Res))
+			break;
+
+		AStarNode Node;
+		Node.Core = Cur;
+		PfSeqApplyEnd(Node.Core, Res);
+		Node.FreezeTime = Res.endFreezeTime;
+		Node.Grounded = false;
+		Node.G = (float)(TickOffset + (int)Best.m_vInputs.size());
+		Node.H = PfAStarHeuristic(Node.Core.Pos, PfNearestFinishPos(vFinishes, Node.Core.Pos));
+		Node.F = Node.G + Node.H;
+		Node.ParentIdx = LastIdx;
+		Node.PrimIdx = 0;
+		Node.PrimTicks = (int)Best.m_vInputs.size();
+		Node.TickOffset = TickOffset;
+		Node.FreezeChainTicks = 0;
+		Node.ForbiddenChainTicks = Res.forbiddenTicks;
+		Node.Traj = Res.traj;
+		Node.Inputs = Best.m_vInputs;
+		Node.HookSegs = Res.hookSegs;
+		{
+			std::lock_guard<std::mutex> Lock(m_PfDataMutex);
+			m_PfANodes.push_back(std::move(Node));
+		}
+		LastIdx = (int)m_PfANodes.size() - 1;
+		TickOffset += (int)Best.m_vInputs.size();
+		Cur = m_PfANodes[LastIdx].Core;
+		CurFreeze = m_PfANodes[LastIdx].FreezeTime;
+		m_PfAExpandCount = TickOffset;
+		if(m_PfANodes[LastIdx].H < m_PfABestH.load(std::memory_order_relaxed))
+			m_PfABestH.store(m_PfANodes[LastIdx].H, std::memory_order_relaxed);
+		PfAStarResimulatePath(LastIdx);
+
+		if(Res.reachedFinish)
+		{
+			m_PfAGoalIdx = LastIdx;
+			dbg_msg("pathfinder", "search done: %d ticks", TickOffset);
+			m_PfThreadResult.store(1);
+			m_PfThreadRunning.store(false);
+			return;
+		}
+		if(Res.died && !Res.reachedFinish)
+			break;
+		if(!LightTiles && Res.freezeTicks > 0)
+			break;
+		FrozenTicks += Res.freezeTicks;
+		if(LightTiles && FrozenTicks > 250)
+			break;
+	}
+
+	dbg_msg("pathfinder", "search stopped: %d ticks", TickOffset);
+	m_PfThreadResult.store(-1);
+	m_PfThreadRunning.store(false);
 }
 
 void CBotNet::PfRheaWorker()

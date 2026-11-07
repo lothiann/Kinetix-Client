@@ -2,6 +2,10 @@
 #include <game/client/components/kinetix/kinetix_internal.h>
 #include <game/client/components/chat.h>
 
+#include <engine/http.h>
+
+#include <memory>
+
 // =========================================================
 // CONSTRUCTOR / DESTRUCTOR
 // =========================================================
@@ -486,6 +490,8 @@ void CBotNet::OnUpdate()
         // Runs on the active player's input (not dummies).
         UpdateLaserUnfreeze();
 
+        UpdateFunctions();
+
         // v1.56.151: Fly Ride — pilot hooks/hammers nearest dummy, WASD moves anchor.
         UpdateFlyRide();
 
@@ -735,3 +741,342 @@ void CBotNet::UpdateAdminAlarm()
 // =========================================================
 // CONSOLE COMMANDS
 // =========================================================
+
+static bool KxFunctionFrozen(CGameClient *pGame, int Id)
+{
+        if(Id < 0 || Id >= MAX_CLIENTS)
+                return false;
+        return pGame->m_aClients[Id].m_FreezeEnd != 0 || pGame->m_aClients[Id].m_LiveFrozen;
+}
+
+static void KxAimAt(CNetObj_PlayerInput &Input, vec2 Dir, float Radius)
+{
+        const float Len = length(Dir);
+        if(Len <= 0.0f)
+                return;
+        Input.m_TargetX = (int)(Dir.x / Len * Radius);
+        Input.m_TargetY = (int)(Dir.y / Len * Radius);
+}
+
+void CBotNet::ApplyMoonwalk(CNetObj_PlayerInput &Input, const CNetObj_PlayerInput &Last, bool Left, bool Right)
+{
+        if(g_Config.m_KxMoonwalk && Left && Right)
+                Input.m_Direction = Last.m_Direction ? -Last.m_Direction : 1;
+}
+
+void CBotNet::ApplyQuickStop(CNetObj_PlayerInput &Input, float VelocityX, bool CanMove, bool Grounded)
+{
+        if(!g_Config.m_KxQuickStop || !CanMove || Input.m_Direction != 0)
+                return;
+        if(g_Config.m_KxQuickStopGrounded && !Grounded)
+                return;
+        Input.m_Direction = VelocityX > 1.0f ? -1 : (VelocityX < -1.0f ? 1 : 0);
+}
+
+CNetObj_PlayerInput CBotNet::JetRide(CNetObj_PlayerInput Input)
+{
+        CGameClient *pGame = GameClient();
+        const int Slot = g_Config.m_ClDummy;
+        const int Id = pGame->m_aLocalIds[Slot];
+        if(Id < 0 || Id >= MAX_CLIENTS)
+                return Input;
+        const bool Playing = (Input.m_PlayerFlags & PLAYERFLAG_PLAYING) && !pGame->m_Snap.m_SpecInfo.m_Active;
+        const vec2 Pos = pGame->m_aClients[Id].m_Predicted.m_Pos;
+        if(!g_Config.m_KxJetRide || !Playing)
+        {
+                if(m_JetRideActive)
+                {
+                        m_JetRideActive = false;
+                        Input.m_Fire = 0;
+                }
+                m_JetRidePos = Pos;
+                return Input;
+        }
+        if(KxFunctionFrozen(pGame, Id) || m_JetRidePos == vec2(0, 0) || distance(Pos, m_JetRidePos) > 210.0f)
+        {
+                m_JetRidePos = Pos;
+                return Input;
+        }
+        CCharacter *pLocal = pGame->m_PredictedWorld.GetCharacterById(Id);
+        if(!pLocal)
+                return Input;
+        if(pLocal->GetWeaponAmmo(pLocal->GetActiveWeapon()) == 0 || !pLocal->Core()->m_Jetpack)
+        {
+                m_JetRidePos = Pos;
+                return Input;
+        }
+        if(pGame->m_aClients[Id].m_RenderCur.m_Weapon != WEAPON_GUN || !pLocal->GetWeaponGot(WEAPON_GUN))
+                return Input;
+
+        KxAimAt(Input, vec2(0, 1), pGame->m_Controls.GetMaxMouseDistance());
+        m_JetRideActive = true;
+        if(pGame->Input()->KeyIsPressed(KEY_W))
+                m_JetRidePos.y -= 5.0f;
+        if(pGame->Input()->KeyIsPressed(KEY_S))
+                m_JetRidePos.y += 5.0f;
+        if(pGame->Input()->KeyIsPressed(KEY_D))
+                m_JetRidePos.x += 5.0f;
+        if(pGame->Input()->KeyIsPressed(KEY_A))
+                m_JetRidePos.x -= 5.0f;
+
+        const vec2 MouseDirection = normalize(pGame->m_Controls.m_aMousePos[Slot]);
+        const float Force = (pGame->m_aTuning[Slot].m_JetpackStrength / 100.0f) / 6.11f;
+        vec2 Vel = pGame->m_aClients[Id].m_Predicted.m_Vel;
+        Vel.x -= MouseDirection.x * Force;
+        if(Vel.x + Pos.x - m_JetRidePos.x > 1.0f)
+                Input.m_Direction = -1;
+        else
+                Input.m_Direction = m_JetRidePos.x - Pos.x - Vel.x > 1.0f ? 1 : 0;
+        float TargetVelocity = std::max(std::abs(Pos.y - m_JetRidePos.y) / 6.685f, 1.0f);
+        if(Pos.y > m_JetRidePos.y)
+                TargetVelocity *= -0.55f;
+        else if(Pos.y < m_JetRidePos.y)
+                TargetVelocity *= 0.55f;
+        else
+                TargetVelocity = 0.0f;
+        Input.m_Fire = Vel.y + MouseDirection.y * Force <= TargetVelocity ? 0 : 1;
+        return Input;
+}
+
+CNetObj_PlayerInput CBotNet::HookRide(CNetObj_PlayerInput Input)
+{
+        CGameClient *pGame = GameClient();
+        const int Slot = g_Config.m_ClDummy;
+        const int Id = pGame->m_aLocalIds[Slot];
+        if(Id < 0 || Id >= MAX_CLIENTS)
+                return Input;
+        const bool Playing = (Input.m_PlayerFlags & PLAYERFLAG_PLAYING) && !pGame->m_Snap.m_SpecInfo.m_Active;
+        const vec2 Pos = pGame->m_aClients[Id].m_Predicted.m_Pos;
+        const vec2 Velocity = pGame->m_aClients[Id].m_Predicted.m_Vel;
+        if(!g_Config.m_KxHookRide || !Playing)
+        {
+                if(m_HookRideActive)
+                {
+                        m_HookRideActive = false;
+                        Input.m_Hook = 0;
+                }
+                m_HookRidePos = Pos;
+                return Input;
+        }
+        if(!KxFunctionFrozen(pGame, Id) && m_HookRidePos != vec2(0, 0) &&
+                std::abs(Pos.x - m_HookRidePos.x) <= 10.0f)
+        {
+                m_HookRideActive = true;
+                if(pGame->Input()->KeyIsPressed(KEY_D))
+                        m_HookRidePos.x += 5.5f;
+                if(pGame->Input()->KeyIsPressed(KEY_A))
+                        m_HookRidePos.x -= 5.5f;
+                if(pGame->Input()->KeyIsPressed(KEY_W))
+                        m_HookRidePos.y -= 3.5f;
+                if(pGame->Input()->KeyIsPressed(KEY_S))
+                        m_HookRidePos.y += 3.5f;
+
+                CCollision *pCollision = pGame->Collision();
+                float Range = pGame->m_aTuning[Slot].m_HookLength;
+                const int LastIndex = pCollision->GetPureMapIndex(Pos + vec2(Range, Range));
+                vec2 Best(0, 0);
+                for(int Index = 0; Index < LastIndex; ++Index)
+                {
+                        if(pCollision->GetTileIndex(Index) != TILE_SOLID)
+                                continue;
+                        const vec2 Point = pCollision->GetPos(Index);
+                        if(Point.y > Pos.y)
+                                continue;
+                        const float Dist = distance(Point, Pos);
+                        if(Dist > Range)
+                                continue;
+                        const vec2 Delta = Point - Pos;
+                        const float Degrees = std::atan2(Delta.y, Delta.x) * 180.0f / pi + 90.0f;
+                        if(Degrees > 45.0f && Degrees < 315.0f)
+                                continue;
+                        if(pCollision->IntersectLine(Pos, Point, nullptr, nullptr) == TILE_NOHOOK)
+                                continue;
+                        Range = Dist;
+                        Best = Point;
+                }
+                if(Best != vec2(0, 0))
+                {
+                        if(Pos.x + Velocity.x - m_HookRidePos.x > 1.0f)
+                                Input.m_Direction = -1;
+                        else if(m_HookRidePos.x - Pos.x + Velocity.x > 1.0f)
+                                Input.m_Direction = 1;
+                        float TargetVelocity = std::max(std::abs(Pos.y - m_HookRidePos.y) / 6.685f, 1.0f);
+                        if(Pos.y > m_HookRidePos.y)
+                                TargetVelocity *= -0.55f;
+                        else if(Pos.y < m_HookRidePos.y)
+                                TargetVelocity *= 0.55f;
+                        else
+                                TargetVelocity = 0.0f;
+                        if(TargetVelocity < Velocity.y)
+                        {
+                                KxAimAt(Input, Best - Pos, pGame->m_Controls.GetMaxMouseDistance());
+                                Input.m_Hook = 1;
+                                return Input;
+                        }
+                }
+                Input.m_Hook = 0;
+        }
+        else
+                m_HookRidePos = Pos;
+        return Input;
+}
+
+bool CBotNet::UpdateFastInput()
+{
+        if(!g_Config.m_KxFastInput || GameClient()->m_Tas.IsPlaying())
+                return false;
+        CControls &Controls = GameClient()->m_Controls;
+        const int Slot = g_Config.m_ClDummy;
+        // Build the input this tick is about to send, then compare the action
+        // fields with the previous cache (aim is not part of the comparison).
+        CNetObj_PlayerInput Input = Controls.m_aInputData[Slot];
+        Input.m_Direction = (Controls.m_aInputDirectionRight[Slot] != 0) - (Controls.m_aInputDirectionLeft[Slot] != 0);
+        if(g_Config.m_ClSubTickAiming)
+        {
+                Input.m_TargetX = (int)Controls.m_aMousePos[Slot].x;
+                Input.m_TargetY = (int)Controls.m_aMousePos[Slot].y;
+        }
+        const bool Changed = Input.m_Direction != m_FastInput.m_Direction ||
+                             Input.m_Jump != m_FastInput.m_Jump ||
+                             Input.m_Fire != m_FastInput.m_Fire ||
+                             Input.m_Hook != m_FastInput.m_Hook ||
+                             Input.m_WantedWeapon != m_FastInput.m_WantedWeapon ||
+                             Input.m_NextWeapon != m_FastInput.m_NextWeapon ||
+                             Input.m_PrevWeapon != m_FastInput.m_PrevWeapon;
+        m_FastInput = Input;
+        return Changed;
+}
+
+void CBotNet::UpdateFunctions()
+{
+        CGameClient *pGame = GameClient();
+        const int Slot = g_Config.m_ClDummy;
+        const int ClientId = pGame->m_aLocalIds[Slot];
+        const int64_t Now = time_get();
+        const int64_t Frequency = time_freq();
+
+        // Auto Team: only leave team 0, prefer the configured team, otherwise
+        // pick a free one. The 3 s retry covers an unacknowledged command.
+        if(!g_Config.m_KxAutoTeam || ClientId < 0 || pGame->m_Teams.Team(ClientId) != 0)
+                m_LastTeamAttempt = 0;
+        else if((pGame->m_Controls.m_aInputData[Slot].m_PlayerFlags & PLAYERFLAG_PLAYING) &&
+                (m_LastTeamAttempt == 0 || Now - m_LastTeamAttempt >= 3 * Frequency))
+        {
+                bool aOccupied[64] = {false};
+                for(int Id = 0; Id < MAX_CLIENTS; ++Id)
+                {
+                        if(Id == ClientId || !pGame->m_aClients[Id].m_Active)
+                                continue;
+                        const int Team = pGame->m_Teams.Team(Id);
+                        if(Team > 0 && Team < 64)
+                                aOccupied[Team] = true;
+                }
+                int aEmpty[63];
+                int NumEmpty = 0;
+                for(int Team = 1; Team < 64; ++Team)
+                        if(!aOccupied[Team])
+                                aEmpty[NumEmpty++] = Team;
+                m_LastTeamAttempt = Now;
+                if(NumEmpty == 0)
+                        pGame->Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "AutoTeam", "No empty team found");
+                else
+                {
+                        const int Preferred = g_Config.m_KxAutoTeamPreferred;
+                        const int Team = Preferred > 0 && Preferred < 64 && !aOccupied[Preferred] ?
+                                                 Preferred : aEmpty[rand() % NumEmpty];
+                        char aCommand[32];
+                        str_format(aCommand, sizeof(aCommand), "/team %d", Team);
+                        pGame->m_Chat.SendChat(0, aCommand);
+                        pGame->m_Chat.SendChat(0, "/lock");
+                }
+        }
+
+        if(!g_Config.m_KxAntiAfk || !pGame->m_Snap.m_pLocalCharacter || pGame->m_Snap.m_SpecInfo.m_Active)
+        {
+                m_AntiAfkStarted = 0;
+                m_AntiAfkNegative = false;
+        }
+        else if(m_AntiAfkStarted == 0)
+                m_AntiAfkStarted = Now;
+        else if(Now - m_AntiAfkStarted >= (int64_t)g_Config.m_KxAntiAfkSeconds * Frequency)
+        {
+                const float Sign = m_AntiAfkNegative ? -1.0f : 1.0f;
+                const vec2 Step = vec2((1 + rand() % 50) * Sign, (1 + rand() % 50) * Sign);
+                const vec2 Direction = pGame->m_Controls.m_aMousePos[Slot] + Step;
+                const float Len = length(Direction);
+                if(Len > 0.0f)
+                {
+                        const float Radius = pGame->m_Controls.GetMaxMouseDistance();
+                        pGame->m_Controls.m_aMousePos[Slot] = vec2((int)(Direction.x / Len * Radius), (int)(Direction.y / Len * Radius));
+                }
+                m_AntiAfkNegative = !m_AntiAfkNegative;
+                m_AntiAfkStarted = Now;
+        }
+
+        const int Seconds = pGame->m_Voting.SecondsLeft();
+        if(Seconds < 0)
+        {
+                m_AutoVoted = false;
+                m_aAutoVoteDescription[0] = '\0';
+        }
+        else if(str_comp(m_aAutoVoteDescription, pGame->m_Voting.VoteDescription()) != 0 || Seconds > m_AutoVoteLastSeconds)
+        {
+                m_AutoVoted = false;
+                str_copy(m_aAutoVoteDescription, pGame->m_Voting.VoteDescription(), sizeof(m_aAutoVoteDescription));
+        }
+        m_AutoVoteLastSeconds = Seconds;
+        if(g_Config.m_KxAutoVote && Seconds >= 0 && !m_AutoVoted && !pGame->m_Voting.TakenChoice())
+        {
+                pGame->m_Voting.Vote(g_Config.m_KxAutoVoteF4 ? -1 : 1);
+                m_AutoVoted = true;
+        }
+
+        if(!g_Config.m_KxAutoVoteKick || Seconds >= 0)
+                m_LastKickAttempt = 0;
+        else if(m_LastKickAttempt == 0 || Now - m_LastKickAttempt >= 3 * Frequency)
+        {
+                int Target = g_Config.m_KxAutoVoteKickTarget;
+                bool Ok = true;
+                if(g_Config.m_KxAutoVoteKickMode == 1)
+                        Ok = Target != ClientId && Target >= 0 && Target < MAX_CLIENTS && pGame->m_aClients[Target].m_Active;
+                else
+                {
+                        int aIds[MAX_CLIENTS];
+                        int Num = 0;
+                        for(int Id = 0; Id < MAX_CLIENTS; ++Id)
+                                if(Id != ClientId && pGame->m_aClients[Id].m_Active &&
+                                        pGame->m_aClients[Id].m_Team != TEAM_SPECTATORS &&
+                                        pGame->m_Teams.SameTeam(Id, ClientId))
+                                        aIds[Num++] = Id;
+                        Ok = Num > 0;
+                        if(Ok)
+                                Target = aIds[rand() % Num];
+                }
+                if(Ok)
+                {
+                        m_LastKickAttempt = Now;
+                        char aCommand[192];
+                        str_format(aCommand, sizeof(aCommand), "callvote kick %d \"%s\"", Target, g_Config.m_KxAutoVoteKickReason);
+                        pGame->Console()->ExecuteLine(aCommand, IConsole::CLIENT_ID_UNSPECIFIED);
+                }
+        }
+
+        // Auto Verify: visit the verification site once per session so DDOS
+        // protected servers accept this IP. Fire and forget — the request only
+        // has to reach the site, so nothing blocks on it.
+        if(g_Config.m_KxAutoVerify && !m_VerifyRequested)
+        {
+                m_VerifyRequested = true;
+                std::shared_ptr<IHttpRequest> pRequest = HttpGet("https://ger10.ddnet.tw/");
+                pRequest->Timeout(CTimeout{10000, 0, 8000, 10});
+                Http()->Run(pRequest);
+                m_pVerifyRequest = pRequest;
+        }
+        else if(m_pVerifyRequest && m_pVerifyRequest->Done())
+        {
+                if(m_pVerifyRequest->State() == EHttpState::DONE || ++m_VerifyFailures >= 3)
+                        m_pVerifyRequest = nullptr;
+                else
+                        m_VerifyRequested = false;
+        }
+}

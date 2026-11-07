@@ -341,8 +341,6 @@ if(NOT MSVC AND NOT HAIKU)
 
   # Disable exceptions as DDNet does not use them.
   add_cxx_compiler_flag_if_supported(OUR_FLAGS -fno-exceptions)
-  # sol2 (Lua bindings) must be told we compile without exceptions
-  add_compile_definitions(SOL_NO_EXCEPTIONS)
 
   # Inaccurate floating point numbers cause problems on mingw-w64-gcc when
   # compiling for x86, might cause problems elsewhere. So don't store floats
@@ -3153,7 +3151,7 @@ if(CLIENT)
     # tidy-alphabetical-start
     ${CMAKE_SOURCE_DIR}/src/engine/external
     ${CMAKE_SOURCE_DIR}/src/engine/external/lua
-    ${CMAKE_SOURCE_DIR}/src/engine/external/sol2
+    ${CMAKE_SOURCE_DIR}/src/engine/external/luabridge3
     ${DISCORDSDK_INCLUDE_DIRS}
     ${FFMPEG_INCLUDE_DIRS}
     ${FREETYPE_INCLUDE_DIRS}

@@ -1057,11 +1057,11 @@ void CBotNet::RtPfThreadWorker()
 	std::vector<CNetObj_PlayerInput> vTail; // committed but not yet published ticks
 	std::vector<vec2> vTailPath;
 	std::vector<RtPfTailSeg> vTailSegs;
+	std::vector<CNetObj_PlayerInput> qPlan; // queued ticks of the current sequence
 	int stallStreak = 0; // consecutive committed ticks without progress
 	vec2 stallAnchor(0, 0); // where the current stall began
 
 	// Planner tuning
-	const int Lookahead = 12;  // sim depth per candidate
 	const int TailMax = 48;    // stalled ticks held unpublished before the tail flushes
 	const int StallLimit = 24; // stalled ticks tolerated before the DFS escape kicks in
 	const int ChainMax = 512;  // rollback stack cap (only the back is ever popped)
@@ -1074,10 +1074,17 @@ void CBotNet::RtPfThreadWorker()
 	// like the tab does.
 	bool guideAir = false;
 
+	// Target point mode: the planner follows a world-space point (the mouse
+	// cursor or another player) instead of the finish flow field.
+	bool targetPointMode = false;
+	vec2 targetPoint(0, 0);
+
 	// distance guidance for scoring: the RT flow field (field mode) or
 	// straight-line distance to the nearest finish scaled like the tab's air
 	// heuristic (air mode).
 	auto fieldDist = [&](const vec2 &pos) -> float {
+		if(targetPointMode)
+			return distance(pos, targetPoint) / 16.0f;
 		if(guideAir)
 		{
 			float bestAir = 1e18f;
@@ -1213,7 +1220,7 @@ void CBotNet::RtPfThreadWorker()
 				curFreeze = m_RtPfRebuildFreeze;
 				simTick = m_RtPfAnchorTick; // keep the sim's absolute tick aligned with the live one
 			}
-			unplayed = (int)m_RtPfInputs.size() - m_RtPfPlayIdx + (int)m_RtPfOutInputs.size();
+			unplayed = (int)m_RtPfInputs.size() - m_RtPfPlayIdx + (int)m_RtPfOutInputs.size() + (int)qPlan.size();
 		}
 		if(unplayed < 0)
 			unplayed = 0;
@@ -1230,6 +1237,7 @@ void CBotNet::RtPfThreadWorker()
 			vTail.clear();
 			vTailPath.clear();
 			vTailSegs.clear();
+			qPlan.clear();
 			stallStreak = 0;
 			stallAnchor = cur.Pos;
 			// guidance mode for this plan: air-distance fallback when the tile
@@ -1394,6 +1402,23 @@ void CBotNet::RtPfThreadWorker()
 		// counter is low (setup moves, lateral crawls — net movement away from
 		// the stall anchor resets it); a stalled-out tick is a dead end and the
 		// DFS backtrack explores other branches.
+		const int TargetMode = pf_clamp(g_Config.m_KxRtPfMode, 0, 2);
+		targetPointMode = false;
+		if(TargetMode == 1)
+		{
+			targetPoint = GameClient()->m_Controls.m_aMousePos[g_Config.m_ClDummy];
+			targetPointMode = true;
+		}
+		else if(TargetMode == 2)
+		{
+			const int WantId = g_Config.m_KxRtPfTargetId;
+			if(WantId >= 0 && WantId < MAX_CLIENTS && WantId != LocalID &&
+				GameClient()->m_Snap.m_aCharacters[WantId].m_Active)
+			{
+				targetPoint = GameClient()->m_aClients[WantId].m_Predicted.m_Pos;
+				targetPointMode = true;
+			}
+		}
 		CCharacter *pBot = RtPfPlaceBot(m_RtPfSimWorld, m_RtPfBaseWorld, LocalID, cur, curFreeze, simTick);
 		if(!pBot)
 		{
@@ -1402,10 +1427,192 @@ void CBotNet::RtPfThreadWorker()
 			continue;
 		}
 
-		int HookAngles = PfEffortHookAngles();
 		CNetObj_PlayerInput aCands[128];
 		int nCands = 0;
+		bool singleTick = false;
+		if(!qPlan.empty())
 		{
+			aCands[0] = qPlan.front();
+			qPlan.erase(qPlan.begin());
+			nCands = 1;
+			singleTick = true;
+		}
+		else
+		{
+			// Generate a population of guided movement sequences, simulate each
+			// from the current state and queue the best one for replay.
+			const int Population = pf_clamp(g_Config.m_KxRtPfPopulation, 128, 8192);
+			const int Depth = pf_clamp(g_Config.m_KxRtPfDepth, 5, 50);
+			const int Sequence = pf_clamp(g_Config.m_KxRtPfSequence, 1, 20);
+			uint64_t rng = (uint64_t)simTick * 0x9E3779B97F4A7C15ull + (uint64_t)(uint32_t)LocalID;
+			auto rnd = [&]() -> uint64_t {
+				rng ^= rng << 13;
+				rng ^= rng >> 7;
+				rng ^= rng << 17;
+				return rng;
+			};
+			auto unit = [&]() -> float { return (float)(rnd() >> 40) * (1.0f / 16777216.0f); };
+			auto rndInt = [&](int n) -> int { return n > 0 ? (int)(rnd() % (uint64_t)n) : 0; };
+			auto guideDir = [&](vec2 Pos) -> vec2 {
+				if(targetPointMode)
+				{
+					const vec2 Delta = targetPoint - Pos;
+					return length(Delta) > 0.01f ? normalize(Delta) : vec2(0, 0);
+				}
+				if(guideAir)
+				{
+					vec2 Best = vec2(0, 0);
+					float BestDist = 1e18f;
+					for(const vec2 &fp : *pFinishes)
+					{
+						const float d = distance(Pos, fp);
+						if(d < BestDist)
+						{
+							BestDist = d;
+							Best = fp;
+						}
+					}
+					return BestDist < 1e18f && BestDist > 0.01f ? normalize(Best - Pos) : vec2(0, 0);
+				}
+				if(!m_RtPfFlowField || m_MapWidth <= 1 || m_MapHeight <= 1)
+					return vec2(0, 0);
+				const int tx = pf_clamp((int)(Pos.x / 32.0f), 1, m_MapWidth - 2);
+				const int ty = pf_clamp((int)(Pos.y / 32.0f), 1, m_MapHeight - 2);
+				const float dx = m_RtPfFlowField[ty * m_MapWidth + tx + 1] - m_RtPfFlowField[ty * m_MapWidth + tx - 1];
+				const float dy = m_RtPfFlowField[(ty + 1) * m_MapWidth + tx] - m_RtPfFlowField[(ty - 1) * m_MapWidth + tx];
+				const vec2 Grad(dx, dy);
+				return length(Grad) > 0.0001f ? -normalize(Grad) : vec2(0, 0);
+			};
+			const float StartDist = fieldDist(cur.Pos);
+			float BestSeqScore = -1e9f;
+			bool BestSeqSafe = false;
+			std::vector<CNetObj_PlayerInput> vBestSeq;
+			const auto SearchStart = std::chrono::steady_clock::now();
+			const int BudgetMs = pf_clamp(g_Config.m_KxRtPfBudgetMs, 0, 50);
+			for(int pi = 0; pi < Population; ++pi)
+			{
+				if(BudgetMs > 0 && std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - SearchStart).count() >= BudgetMs)
+					break;
+				std::vector<CNetObj_PlayerInput> vSeq;
+				vSeq.reserve(Depth);
+				vec2 SimPos = cur.Pos;
+				const vec2 SimVel = cur.Vel;
+				CNetObj_PlayerInput In;
+				mem_zero(&In, sizeof(In));
+				const bool Guided = (pi & 1) == 0;
+				for(int t = 0; t < Depth; ++t)
+				{
+					if(Guided)
+					{
+						const vec2 Dir = guideDir(SimPos);
+						In.m_TargetX = (int)(Dir.x * 500.0f);
+						In.m_TargetY = (int)(Dir.y * 500.0f);
+						In.m_Direction = unit() < 0.8f ? (Dir.x < -0.1f ? -1 : (Dir.x > 0.1f ? 1 : 0)) : rndInt(3) - 1;
+						In.m_Jump = (Dir.y < -0.5f && unit() < 0.5f) ? 1 : (unit() < 0.1f ? (int)(rnd() >> 63) : 0);
+						if(unit() < 0.5f)
+							In.m_Hook = (int)(rnd() >> 63);
+					}
+					else if(t % 3 == 0)
+					{
+						In.m_Direction = rndInt(3) - 1;
+						In.m_Hook = (int)(rnd() >> 63);
+						In.m_Jump = (int)(rnd() >> 63);
+						const float Frac = unit();
+						const float Angle = (Frac + Frac) * pi;
+						In.m_TargetX = (int)(cosf(Angle) * 500.0f);
+						In.m_TargetY = (int)(sinf(Angle) * 500.0f);
+					}
+					In.m_Fire = 0;
+					vSeq.push_back(In);
+					SimPos += SimVel * 0.02f;
+				}
+				bool Banned = false;
+				for(const CNetObj_PlayerInput &banned : vTried)
+				{
+					if(banned.m_Direction == vSeq[0].m_Direction && banned.m_Jump == vSeq[0].m_Jump &&
+						banned.m_Hook == vSeq[0].m_Hook && banned.m_TargetX == vSeq[0].m_TargetX &&
+						banned.m_TargetY == vSeq[0].m_TargetY)
+					{
+						Banned = true;
+						break;
+					}
+				}
+				if(Banned)
+					continue;
+				pBot = RtPfPlaceBot(m_RtPfSimWorld, m_RtPfBaseWorld, LocalID, cur, curFreeze, simTick);
+				if(!pBot)
+					break;
+				vec2 PrevPos = cur.Pos;
+				bool Died = false;
+				int FreezeTicks = 0;
+				float AlignPenalty = 0.0f;
+				for(int t = 0; t < Depth; ++t)
+				{
+					const CNetObj_PlayerInput &in = vSeq[t];
+					pBot->OnDirectInput(&in);
+					m_RtPfSimWorld->m_GameTick = simTick + t + 1;
+					pBot->OnPredictedInput(&in);
+					m_RtPfSimWorld->Tick();
+					if(!m_RtPfSimWorld->GetCharacterById(LocalID))
+					{
+						Died = true;
+						break;
+					}
+					if(pBot->m_FreezeTime <= 0)
+						PfCheckFreeze(m_RtPfSimWorld, pBot, PrevPos, pBot->m_Pos);
+					if(PfLineTouchesForbidden(m_pRtForbiddenGrid, m_MapWidth, m_MapHeight, PrevPos, pBot->m_Pos))
+					{
+						Died = true;
+						break;
+					}
+					if(pBot->m_FreezeTime > 0)
+					{
+						if(g_Config.m_KxPfFreezeSupport == 0)
+						{
+							Died = true;
+							break;
+						}
+						FreezeTicks++;
+						break;
+					}
+					if(!guideAir)
+					{
+						const vec2 Dir = guideDir(pBot->m_Pos);
+						if(length(Dir) > 0.01f && length(pBot->Core()->m_Vel) > 1.0f)
+							AlignPenalty += 1.0f - dot(Dir, normalize(pBot->Core()->m_Vel));
+					}
+					PrevPos = pBot->m_Pos;
+				}
+				if(Died)
+					continue;
+				const float EndDist = fieldDist(pBot->m_Pos);
+				const bool OffRoute = EndDist >= 1e17f;
+				const float Progress = OffRoute ? 0.0f : (StartDist - EndDist);
+				float Score = Progress - AlignPenalty * 0.02f - FreezeTicks * 10000.0f;
+				if(OffRoute)
+					Score -= 5000.0f;
+				const bool Safe = FreezeTicks == 0;
+				if((Safe && !BestSeqSafe) || (Safe == BestSeqSafe && Score > BestSeqScore))
+				{
+					BestSeqSafe = Safe;
+					BestSeqScore = Score;
+					vBestSeq = std::move(vSeq);
+				}
+			}
+			if(!vBestSeq.empty())
+			{
+				aCands[0] = vBestSeq.front();
+				nCands = 1;
+				singleTick = true;
+				const int QueueN = std::min(Sequence, (int)vBestSeq.size()) - 1;
+				for(int i = 1; i <= QueueN; ++i)
+					qPlan.push_back(vBestSeq[i]);
+			}
+		}
+		if(nCands == 0)
+		{
+			// Fallback: the original candidate fan when the sequence search finds nothing.
+			int HookAngles = PfEffortHookAngles();
 			// KHelpersBuildCandidates works on the Helpers planner snapshot; the RT
 			// worker keeps its state as PfAState - same fields, convert explicitly.
 			KHelpersState curK;
@@ -1465,8 +1672,10 @@ void CBotNet::RtPfThreadWorker()
 
 			// fixed lookahead: repeat the candidate's input and score the total
 			// progress — like the Pathfinder planner's windows — then commit
-			// ONLY this candidate's first tick
-			for(int t = 0; t < Lookahead; t++)
+			// ONLY this candidate's first tick. A queued sequence tick is
+			// already validated, so it is simulated for a single tick only.
+			const int EvalDepth = singleTick ? 1 : 12;
+			for(int t = 0; t < EvalDepth; t++)
 			{
 				CNetObj_PlayerInput in = aCands[ci];
 				if(in.m_Jump && t > 0)
@@ -1613,6 +1822,8 @@ void CBotNet::RtPfThreadWorker()
 
 		if(!committed)
 		{
+			// The queued sequence belongs to the abandoned branch.
+			qPlan.clear();
 			// Nothing survived (everything dies / hits forbidden zones / was
 			// banned / stalled out) — the DFS pops back to the last choice
 			// and tries another branch. With nothing left to undo the plan

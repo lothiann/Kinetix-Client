@@ -89,6 +89,11 @@ public:
 		bool m_PredictEvents;
 		bool m_PredictTeleports = false; // fake world only: tile teleport support
 		bool m_OldLaser;
+		// Kinetix Avoid Freeze speculative world only; ordinary prediction
+		// keeps the vanilla behavior (both default to it).
+		bool m_KxAfNoDeathContact = false;   // death-tile contact does not set m_IsInFreeze
+		bool m_KxAfExplosionTuning = false;  // explosions use m_KxAfExplosionStrength
+		float m_KxAfExplosionStrength = 0.0f;
 	} m_WorldConfig;
 
 	bool m_IsValidCopy;
@@ -105,6 +110,7 @@ public:
 	void ResetDoorCollision();
 	void NetObjEnd();
 	void CopyWorld(CGameWorld *pFrom);
+	void CopyWorldIsolated(const CGameWorld *pFrom);
 	CEntity *FindMatch(int ObjId, int ObjType, const void *pObjData);
 	void Clear();
 

@@ -8,329 +8,247 @@
 #include <base/vmath.h>
 #include <base/math.h>
 #include <base/time.h>
-#include <climits>
 
-// Laser unfreeze — predictive laser self-unfreeze.
-//
-// PHASE 1 (trigger): predict next `trigger_ticks` ticks without laser.
-//   If character becomes frozen → activate raycast phase.
-//   If character is ALREADY frozen → skip entirely (don't fire).
-//
-// PHASE 2 (raycast): for each angle in FOV/Angles:
-//   - Create a fresh FutureWorld copy
-//   - Spawn a CLaser at current pos, aimed at the test angle
-//   - Predict `ticks` ticks, tracking ALL bounce positions
-//   - Score: tick count when character unfreezes (lower = better)
-//   - If never unfreezes → score = INT_MAX (skip)
-//
-// PHASE 3 (execute): if best candidate found (score < INT_MAX):
-//   - Switch to laser weapon (m_WantedWeapon = 5)
-//   - Set aim to FIRST BOUNCE POSITION (world coords → screen offset)
-//   - Silent mode: set m_SilentAimActive instead of SetMousePos
-//   - Show attempt: store full laser path for rendering
-//   - Fire (m_Fire parity press)
+#include <algorithm>
+#include <climits>
+#include <vector>
+
+static void KxLaserTick(CGameWorld &World, int ClientId, const CNetObj_PlayerInput &Input)
+{
+    if(CCharacter *pLocal = World.GetCharacterById(ClientId))
+    {
+        pLocal->OnDirectInput(&Input);
+        ++World.m_GameTick;
+        pLocal->OnPredictedInput(&Input);
+        World.Tick();
+    }
+}
+
+static void KxLaserRemoveLasers(CGameWorld &World)
+{
+    for(CEntity *pEntity = World.FindFirst(CGameWorld::ENTTYPE_LASER); pEntity;)
+    {
+        CEntity *pNext = pEntity->TypeNext();
+        delete pEntity;
+        pEntity = pNext;
+    }
+}
+
+static bool KxLaserFrozen(const CCharacter *pCharacter)
+{
+    return !pCharacter || pCharacter->m_FreezeTime > 0 || pCharacter->Core()->m_DeepFrozen || pCharacter->Core()->m_IsInFreeze;
+}
+
+struct SKxBeamResult
+{
+    bool m_Found = false;
+    vec2 m_Aim = vec2(0, 0);
+    int m_Bounces = 0;
+    std::vector<vec2> m_vPath;
+};
+
+// Simulates a laser fired in the given direction: the beam is followed until it
+// hits the local tee (the only character left in the copied world) and the
+// freeze clears. The bounce count of that hit is returned.
+static SKxBeamResult KxProbeBeam(CGameWorld &Source, int ClientId, CNetObj_PlayerInput Input, int Ticks)
+{
+    SKxBeamResult Result;
+    CGameWorld World;
+    World.CopyWorld(&Source);
+    World.m_WorldConfig.m_PredictWeapons = true;
+    World.m_WorldConfig.m_InfiniteAmmo = true;
+    if(!World.GetCharacterById(ClientId))
+        return Result;
+    for(int Id = 0; Id < MAX_CLIENTS; ++Id)
+    {
+        if(Id == ClientId)
+            continue;
+        if(CCharacter *pChar = World.GetCharacterById(Id))
+            delete pChar;
+    }
+    KxLaserRemoveLasers(World);
+
+    Input.m_Fire = 1;
+    int LastBounce = -1;
+    for(int Step = 0; Step <= Ticks; ++Step)
+    {
+        KxLaserTick(World, ClientId, Input);
+        CCharacter *pLocal = World.GetCharacterById(ClientId);
+        if(!pLocal)
+            return Result;
+        for(CEntity *pEntity = World.FindFirst(CGameWorld::ENTTYPE_LASER); pEntity; pEntity = pEntity->TypeNext())
+        {
+            CLaser *pLaser = static_cast<CLaser *>(pEntity);
+            if(pLaser->GetOwner() != ClientId)
+                continue;
+            Result.m_vPath.push_back(pLaser->GetPos());
+            if(pLaser->GetEnergy() < 0.0f)
+            {
+                // A laser only dies when it hits a character; every other
+                // character was removed above, so this is a self hit.
+                Input.m_Fire = 0;
+                if(LastBounce < 0)
+                    LastBounce = pLaser->GetBounces();
+            }
+        }
+        if(LastBounce >= 0 && !KxLaserFrozen(pLocal))
+        {
+            Result.m_Found = true;
+            Result.m_Bounces = LastBounce;
+            return Result;
+        }
+    }
+    return Result;
+}
+
+static SKxBeamResult KxSearchUnfreeze(CGameWorld &Source, int ClientId, const CNetObj_PlayerInput &Input,
+    vec2 Mouse, int Ticks, int Points, float Fov, bool MostBounces, float MouseRadius)
+{
+    SKxBeamResult Best;
+    CCharacter *pLocal = Source.GetCharacterById(ClientId);
+    if(!pLocal || Points <= 0 || Fov <= 0)
+        return Best;
+
+    struct SCandidate
+    {
+        vec2 m_Aim;
+        int m_Bounces;
+    };
+    std::vector<SCandidate> vCandidates;
+    const float Span = Fov < 315.0f ? Fov * pi / 180.0f : 2.0f * pi;
+    const float Center = angle(Mouse);
+    for(int Index = 0; Index < Points; ++Index)
+    {
+        const float Radians = Index * (Span / std::max(1, Points - 1)) + (Center - Span * 0.5f);
+        const vec2 Direction = direction(Radians);
+        CNetObj_PlayerInput Candidate = Input;
+        Candidate.m_TargetX = (int)(Direction.x * MouseRadius);
+        Candidate.m_TargetY = (int)(Direction.y * MouseRadius);
+        const SKxBeamResult Probe = KxProbeBeam(Source, ClientId, Candidate, Ticks);
+        if(Probe.m_Found)
+            vCandidates.push_back({Direction * MouseRadius, Probe.m_Bounces});
+    }
+    if(vCandidates.empty())
+        return Best;
+    std::sort(vCandidates.begin(), vCandidates.end(), [&](const SCandidate &A, const SCandidate &B) {
+        return MostBounces ? A.m_Bounces > B.m_Bounces : A.m_Bounces < B.m_Bounces;
+    });
+    Best.m_Found = true;
+    Best.m_Aim = vCandidates.front().m_Aim;
+    Best.m_Bounces = vCandidates.front().m_Bounces;
+    return Best;
+}
 
 void CBotNet::UpdateLaserUnfreeze()
 {
     static bool s_WasFiring = false;
-    // Throttle: Phase 1 (trigger prediction) is expensive (full CopyWorld).
-    // Run it only every Nth tick instead of every tick. Predicting 1-5 ticks
-    // ahead every 5 ticks still catches freeze well before it happens.
-    // This cuts the per-tick CopyWorld cost by ~5x and avoids the previous
-    // 50x/sec full-world-clone that caused the FPS collapse.
-    static int s_ThrottleCounter = 0;
-
-    if(!g_Config.m_KxLaserUnfreeze)
-    {
-        if(s_WasFiring)
-        {
-            CGameClient *pGame = GameClient();
-            if(pGame)
-            {
-                CNetObj_PlayerInput *pInput = &pGame->m_Controls.m_aInputData[g_Config.m_ClDummy];
-                if((pInput->m_Fire & 1) != 0)
-                    pInput->m_Fire = (pInput->m_Fire + 1) & ~1;
-            }
-            s_WasFiring = false;
-        }
-        s_ThrottleCounter = 0;
-        return;
-    }
-
-    // Throttle Phase 1: only run trigger prediction every 5 ticks.
-    // On off-ticks we keep the last willFreeze decision (held in static).
-    // Phase 2 (raycast) only runs when willFreeze is true, so it is naturally
-    // rare and does not need its own throttle.
-    constexpr int THROTTLE_PHASE1 = 5;
-    static bool s_HeldWillFreeze = false;
-
-    s_ThrottleCounter++;
-    if(s_ThrottleCounter < THROTTLE_PHASE1)
-    {
-        // Reuse last decision on off-ticks. Still must release fire if we
-        // were firing but the held decision flipped to false.
-        if(!s_HeldWillFreeze && s_WasFiring)
-        {
-            CGameClient *pGame = GameClient();
-            if(pGame)
-            {
-                CNetObj_PlayerInput *pInput = &pGame->m_Controls.m_aInputData[g_Config.m_ClDummy];
-                if((pInput->m_Fire & 1) != 0)
-                    pInput->m_Fire = (pInput->m_Fire + 1) & ~1;
-            }
-            s_WasFiring = false;
-        }
-        // If held willFreeze is true, fall through to Phase 2 on every tick
-        // (cheap relative to Phase 1, and only fires while about to freeze).
-        if(!s_HeldWillFreeze)
-            return;
-    }
-    else
-    {
-        s_ThrottleCounter = 0; // reset for next window
-        // fall through to run Phase 1 this tick
-    }
 
     CGameClient *pGame = GameClient();
-    if(!pGame || !pGame->m_Snap.m_pLocalInfo)
-        return;
+    const int Slot = g_Config.m_ClDummy;
+    const int LocalId = pGame ? pGame->m_aLocalIds[Slot] : -1;
+    CNetObj_PlayerInput *pInput = pGame ? &pGame->m_Controls.m_aInputData[Slot] : nullptr;
 
-    int LocalID = pGame->m_Snap.m_LocalClientId;
-    if(LocalID < 0)
-        return;
+    auto ReleaseFire = [&]() {
+        if(s_WasFiring && pInput && (pInput->m_Fire & 1))
+            pInput->m_Fire = (pInput->m_Fire + 1) & ~1;
+        s_WasFiring = false;
+    };
 
-    CCharacter *pPredChar = pGame->m_PredictedWorld.GetCharacterById(LocalID);
-    if(!pPredChar)
-        return;
-
-    // ── SKIP if already frozen ───────────────────────────────────
-    if(pPredChar->m_FreezeTime > 0 || pPredChar->Core()->m_DeepFrozen)
+    if(!g_Config.m_KxLaserUnfreeze || !pGame || !pGame->m_Snap.m_pLocalInfo || LocalId < 0 || LocalId >= MAX_CLIENTS)
     {
-        if(s_WasFiring)
-        {
-            CNetObj_PlayerInput *pInput = &pGame->m_Controls.m_aInputData[g_Config.m_ClDummy];
-            if((pInput->m_Fire & 1) != 0)
-                pInput->m_Fire = (pInput->m_Fire + 1) & ~1;
-            s_WasFiring = false;
-        }
-        s_HeldWillFreeze = false;
+        ReleaseFire();
         return;
     }
 
-    // ── PHASE 1: trigger prediction (throttled — runs every 5 ticks) ─
-    bool willFreeze = s_HeldWillFreeze; // keep last if skipping Phase 1
-    if(s_ThrottleCounter == 0) // we just reset it above => this is a Phase 1 tick
+    const bool Playing = (pInput->m_PlayerFlags & PLAYERFLAG_PLAYING) && !pGame->m_Snap.m_SpecInfo.m_Active &&
+                         Client()->State() == IClient::STATE_ONLINE;
+    if(!Playing || (pInput->m_Fire & 1))
     {
-        int triggerTicks = g_Config.m_KxLaserUnfreezeTriggerTicks;
-        if(triggerTicks < 1) triggerTicks = 1;
-        if(triggerTicks > 5) triggerTicks = 5;
-
-        willFreeze = false;
-
-        {
-            CGameWorld TriggerWorld;
-            TriggerWorld.CopyWorld(&pGame->m_PredictedWorld);
-
-            // IMPORTANT: use `delete` (not RemoveEntity) for characters we
-            // don't want. CopyWorld allocates them with `new`, but
-            // RemoveEntity only unlinks from the list — it does NOT free the
-            // object. Using RemoveEntity here leaked up to MAX_CLIENTS-1
-            // CCharacter objects every tick (thousands/sec), which was the
-            // root cause of the FPS collapse. `delete` runs the destructor
-            // which itself calls RemoveEntity, then frees the memory.
-            for(int i = 0; i < MAX_CLIENTS; i++)
-            {
-                if(i == LocalID)
-                    continue;
-                if(CCharacter *pChar = TriggerWorld.GetCharacterById(i))
-                    delete pChar;
-            }
-
-            CCharacter *pTriggerChar = TriggerWorld.GetCharacterById(LocalID);
-            if(!pTriggerChar)
-                return;
-
-            CNetObj_PlayerInput TriggerInput = pTriggerChar->Core()->m_Input;
-            int StartTick = TriggerWorld.GameTick();
-
-            for(int t = 0; t < triggerTicks; t++)
-            {
-                pTriggerChar->OnDirectInput(&TriggerInput);
-                TriggerWorld.m_GameTick = StartTick + t + 1;
-                pTriggerChar->OnPredictedInput(&TriggerInput);
-                TriggerWorld.Tick();
-
-                if(!TriggerWorld.GetCharacterById(LocalID))
-                    break;
-
-                if(pTriggerChar->m_FreezeTime > 0)
-                {
-                    willFreeze = true;
-                    break;
-                }
-            }
-        }
-        s_HeldWillFreeze = willFreeze;
-    }
-
-    if(!willFreeze)
-    {
-        if(s_WasFiring)
-        {
-            CNetObj_PlayerInput *pInput = &pGame->m_Controls.m_aInputData[g_Config.m_ClDummy];
-            if((pInput->m_Fire & 1) != 0)
-                pInput->m_Fire = (pInput->m_Fire + 1) & ~1;
-            s_WasFiring = false;
-        }
+        s_WasFiring = false;
         return;
     }
 
-    // ── PHASE 2: raycast — find best angle ───────────────────────
-    int fov = g_Config.m_KxLaserUnfreezeFov;
-    int numAngles = g_Config.m_KxLaserUnfreezeAngles;
-    int simTicks = g_Config.m_KxLaserUnfreezeTicks;
-
-    if(fov < 5) fov = 5;
-    if(fov > 360) fov = 360;
-    if(numAngles < 1) numAngles = 1;
-    if(numAngles > 144) numAngles = 144;
-    if(simTicks < 1) simTicks = 1;
-    if(simTicks > 50) simTicks = 50;
-
-    vec2 curAim = pGame->m_Controls.m_aMousePos[g_Config.m_ClDummy];
-    float curAngle = 0.0f;
-    if(length(curAim) > 0.001f)
-        curAngle = atan2f(curAim.y, curAim.x);
-
-    float laserReach = pPredChar->Core()->m_Tuning.m_LaserReach;
-    if(laserReach <= 0.0f)
-        laserReach = 800.0f;
-
-    vec2 myPos = pPredChar->m_Pos;
-
-    float halfFovRad = (fov * 0.5f) * (pi / 180.0f);
-    float angleStep = (numAngles > 1) ? (2.0f * halfFovRad) / (numAngles - 1) : 0.0f;
-    float startAngle = curAngle - halfFovRad;
-
-    int bestScore = INT_MAX;
-    vec2 bestBouncePos = vec2(0, 0);
-    std::vector<vec2> bestPath;  // Full laser path for Show attempt
-    bool foundCandidate = false;
-
-    for(int a = 0; a < numAngles; a++)
+    CGameWorld &Source = pGame->m_PredictedWorld;
+    CCharacter *pLocal = Source.GetCharacterById(LocalId);
+    if(!pLocal || KxLaserFrozen(pLocal) || !pLocal->GetWeaponGot(WEAPON_LASER))
     {
-        float testAngle = startAngle + a * angleStep;
-        vec2 laserDir = vec2(cosf(testAngle), sinf(testAngle));
+        ReleaseFire();
+        return;
+    }
 
-        CGameWorld RayWorld;
-        RayWorld.CopyWorld(&pGame->m_PredictedWorld);
+    CNetObj_PlayerInput ProbeInput = *pInput;
+    ProbeInput.m_TargetX = (int)pGame->m_Controls.m_aMousePos[Slot].x;
+    ProbeInput.m_TargetY = (int)pGame->m_Controls.m_aMousePos[Slot].y;
 
-        // `delete` (not RemoveEntity) — see Phase 1 comment above.
-        // RemoveEntity only unlinks and leaks the new'd object.
-        for(int i = 0; i < MAX_CLIENTS; i++)
+    // Only bother when the tee is about to freeze within the next three ticks.
+    {
+        bool WillFreeze = false;
+        CGameWorld LifeWorld;
+        LifeWorld.CopyWorld(&Source);
+        LifeWorld.m_WorldConfig.m_PredictWeapons = true;
+        if(!LifeWorld.GetCharacterById(LocalId))
+            return;
+        for(int Step = 0; Step <= 3; ++Step)
         {
-            if(i == LocalID)
-                continue;
-            if(CCharacter *pChar = RayWorld.GetCharacterById(i))
-                delete pChar;
-        }
-
-        CCharacter *pRayChar = RayWorld.GetCharacterById(LocalID);
-        if(!pRayChar)
-            continue;
-
-        CLaser *pLaser = new CLaser(&RayWorld, myPos, laserDir, laserReach, LocalID, WEAPON_LASER);
-
-        CNetObj_PlayerInput RayInput = pRayChar->Core()->m_Input;
-        int StartTick = RayWorld.GameTick();
-        int score = INT_MAX;
-
-        // Track full laser path for Show attempt
-        std::vector<vec2> laserPath;
-        laserPath.push_back(myPos);
-        vec2 prevFrom = myPos;
-        bool gotBounce = false;
-
-        for(int t = 0; t < simTicks; t++)
-        {
-            pRayChar->OnDirectInput(&RayInput);
-            RayWorld.m_GameTick = StartTick + t + 1;
-            pRayChar->OnPredictedInput(&RayInput);
-            RayWorld.Tick();
-
-            // Track bounce positions
-            if(pLaser)
+            KxLaserTick(LifeWorld, LocalId, ProbeInput);
+            if(KxLaserFrozen(LifeWorld.GetCharacterById(LocalId)))
             {
-                vec2 laserFrom = pLaser->GetFrom();
-                if(distance(laserFrom, prevFrom) > 1.0f)
-                {
-                    laserPath.push_back(laserFrom);
-                    prevFrom = laserFrom;
-                    gotBounce = true;
-                }
-            }
-
-            if(!RayWorld.GetCharacterById(LocalID))
-                break;
-
-            if(pRayChar->m_FreezeTime == 0 && !pRayChar->Core()->m_DeepFrozen)
-            {
-                score = t + 1;
-                // Add final laser position to path
-                if(pLaser)
-                    laserPath.push_back(pLaser->GetPos());
+                WillFreeze = Step <= 2;
                 break;
             }
         }
-
-        if(score < bestScore && gotBounce && laserPath.size() >= 2)
+        if(!WillFreeze)
         {
-            bestScore = score;
-            bestBouncePos = laserPath[1];  // First bounce position
-            bestPath = laserPath;
-            foundCandidate = true;
+            ReleaseFire();
+            return;
         }
     }
 
-    if(!foundCandidate)
-        return;
+    // The weapon is prepared before the search, like the reference does; the
+    // probe itself uses the already copied input.
+    pInput->m_WantedWeapon = WEAPON_LASER + 1;
 
-    // ── PHASE 3: execute ─────────────────────────────────────────
-    vec2 aimOffset = bestBouncePos - myPos;
+    const float MouseRadius = pGame->m_Controls.GetMaxMouseDistance();
+    const vec2 Mouse = pGame->m_Controls.m_aMousePos[Slot];
+
+    vec2 Aim;
+    SKxBeamResult Result = KxProbeBeam(Source, LocalId, ProbeInput, g_Config.m_KxLaserUnfreezeCurDirTicks);
+    if(Result.m_Found)
+        Aim = vec2(ProbeInput.m_TargetX, ProbeInput.m_TargetY);
+    else
+    {
+        Result = KxSearchUnfreeze(Source, LocalId, ProbeInput, Mouse, g_Config.m_KxLaserUnfreezeTicks,
+            g_Config.m_KxLaserUnfreezeAngles, (float)g_Config.m_KxLaserUnfreezeFov,
+            g_Config.m_KxLaserUnfreezeMostBounces != 0, MouseRadius);
+        if(!Result.m_Found)
+            return;
+        Aim = Result.m_Aim;
+    }
 
     if(g_Config.m_KxLaserUnfreezeSilent)
     {
-        // Silent mode: don't change m_aMousePos (visible crosshair).
-        // Set the aim override flag — SnapInput will use this offset
-        // for m_TargetX/Y right before sending to server.
         pGame->m_Controls.m_SilentAimActive = true;
-        pGame->m_Controls.m_SilentAimOffset = aimOffset;
+        pGame->m_Controls.m_SilentAimOffset = Aim;
     }
     else
+        SetMousePos(pGame, Slot, Aim);
+
+    if(g_Config.m_KxLaserUnfreezeShowAttempt)
     {
-        // Normal mode: set both m_aMousePos and m_TargetX/Y
-        // TODO: remove ghost when show for me — visible crosshair moves to
-        // laser bounce aim, but for a few frames the player's real angle
-        // flickers through. Same issue as fake aim showForMe before
-        // v1.56.135 sync.
-        SetMousePos(pGame, g_Config.m_ClDummy, aimOffset);
+        CNetObj_PlayerInput PathInput = ProbeInput;
+        PathInput.m_TargetX = (int)Aim.x;
+        PathInput.m_TargetY = (int)Aim.y;
+        SKxBeamResult Path = KxProbeBeam(Source, LocalId, PathInput, g_Config.m_KxLaserUnfreezeTicks);
+        if(Path.m_vPath.size() >= 2)
+        {
+            m_LaserUnfreezePath = std::move(Path.m_vPath);
+            m_LaserUnfreezePathTime = time_get();
+        }
     }
-
-    CNetObj_PlayerInput *pInput = &pGame->m_Controls.m_aInputData[g_Config.m_ClDummy];
-
-    if(g_Config.m_KxLaserUnfreezeAuto)
-        pInput->m_WantedWeapon = WEAPON_LASER + 1;
 
     if((pInput->m_Fire & 1) == 0)
         pInput->m_Fire = (pInput->m_Fire + 1) | 1;
     s_WasFiring = true;
-
-    // Store path for Show attempt rendering
-    if(g_Config.m_KxLaserUnfreezeShowAttempt && bestPath.size() >= 2)
-    {
-        m_LaserUnfreezePath = bestPath;
-        m_LaserUnfreezePathTime = time_get();
-    }
 }
 
 // ── Render laser unfreeze path (Show attempt) ───────────────────

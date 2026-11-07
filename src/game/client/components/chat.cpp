@@ -854,8 +854,10 @@ void CChat::AddLine(int ClientId, int Team, const char *pLine)
         {
                 str_copy(CurrentLine.m_aName, "— ");
         }
-        else
+        else if(CurrentLine.m_ClientId >= 0)
         {
+                // negative ids (LUA_MSG etc.) have no author — resolving one
+                // here would index m_aClients out of bounds
                 const auto &LineAuthor = GameClient()->m_aClients[CurrentLine.m_ClientId];
 
                 if(LineAuthor.m_Active)

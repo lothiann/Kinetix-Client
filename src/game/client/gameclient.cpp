@@ -3433,9 +3433,14 @@ void CGameClient::OnPredict()
                 }
         }
 
-        int PredictionTick = Client()->GetPredictionTick();
+        // Fast Input: predict one extra tick so the locally prepared input
+        // reaches the screen a tick earlier. The extra tick consumes the input
+        // SnapInput built ahead of prediction (see CBotNet::UpdateFastInput).
+        const bool FastInput = g_Config.m_KxFastInput != 0;
+        const int EndTick = Client()->PredGameTick(g_Config.m_ClDummy) + (FastInput ? 1 : 0);
+        int PredictionTick = FastInput ? Client()->PredGameTick(g_Config.m_ClDummy) + (g_Config.m_KxFastInputOthers ? 1 : 0) : Client()->GetPredictionTick();
         // predict
-        for(int Tick = Client()->GameTick(g_Config.m_ClDummy) + 1; Tick <= Client()->PredGameTick(g_Config.m_ClDummy); Tick++)
+        for(int Tick = Client()->GameTick(g_Config.m_ClDummy) + 1; Tick <= EndTick; Tick++)
         {
                 // fetch the previous characters
                 if(Tick == PredictionTick)
@@ -3445,7 +3450,7 @@ void CGameClient::OnPredict()
                                         m_aClients[i].m_PrevPredicted = pChar->GetCore();
                 }
 
-                if(Tick == Client()->PredGameTick(g_Config.m_ClDummy))
+                if(Tick == EndTick)
                 {
                         m_PredictedPrevChar = pLocalChar->GetCore();
                         m_aClients[m_Snap.m_LocalClientId].m_PrevPredicted = pLocalChar->GetCore();
@@ -3465,6 +3470,8 @@ void CGameClient::OnPredict()
 
                 // apply inputs and tick - collect all inputs in CID order
                 CNetObj_PlayerInput *pInputData = (CNetObj_PlayerInput *)Client()->GetInput(Tick, ActiveConn);
+                if(FastInput && Tick == EndTick)
+                        pInputData = const_cast<CNetObj_PlayerInput *>(&m_BotNet.FastInput());
 
                 // Collect dummy input data
                 // Use GetInput from the input buffer only. Do NOT fall back to
@@ -3550,7 +3557,7 @@ void CGameClient::OnPredict()
                                         m_aClients[i].m_Predicted = pChar->GetCore();
                 }
 
-                if(Tick == Client()->PredGameTick(g_Config.m_ClDummy))
+                if(Tick == EndTick)
                 {
                         m_PredictedChar = pLocalChar->GetCore();
                         m_aClients[m_Snap.m_LocalClientId].m_Predicted = pLocalChar->GetCore();

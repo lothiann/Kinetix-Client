@@ -14,15 +14,45 @@
 #undef NOGDI
 #include <windows.h>
 #include <commdlg.h>
+#include <wchar.h>
 #pragma pop_macro("NOGDI")
 
-// UTF-8 -> UTF-16 helper for the dialog paths.
+// UTF-8 -> UTF-16 helper for the dialog paths. Storage paths use forward
+// slashes; GetOpenFileNameW ignores an lpstrInitialDir with them (falls back
+// to the last-visited folder) and fails outright with FNERR_INVALIDFILENAME
+// when the same path lands in lpstrFile — normalize to backslashes.
 static void KxUtf8ToWide(const char *pUtf8, wchar_t *pWide, int WideSize)
 {
 	pWide[0] = L'\0';
 	if(!pUtf8 || !pUtf8[0] || WideSize <= 0)
 		return;
-	MultiByteToWideChar(CP_UTF8, 0, pUtf8, -1, pWide, WideSize);
+	if(MultiByteToWideChar(CP_UTF8, 0, pUtf8, -1, pWide, WideSize) <= 0)
+	{
+		pWide[0] = L'\0';
+		return;
+	}
+	for(wchar_t *p = pWide; *p; p++)
+	{
+		if(*p == L'/')
+			*p = L'\\';
+	}
+}
+
+// v6.12: the common dialog remembers the last visited folder per process and
+// lpstrInitialDir can lose to it. Prefilling lpstrFile with "<dir>\*.ext"
+// has top precedence, so the dialog ALWAYS opens in the given Kinetix folder.
+static void KxBuildInitialFile(wchar_t *pBuf, int BufSize, const char *pInitialDir, const wchar_t *pPattern)
+{
+	KxUtf8ToWide(pInitialDir, pBuf, BufSize);
+	const int Len = (int)wcslen(pBuf);
+	if(Len <= 0 || Len >= BufSize - 8)
+		return;
+	if(pBuf[Len - 1] != L'\\')
+	{
+		pBuf[Len] = L'\\';
+		pBuf[Len + 1] = L'\0';
+	}
+	wcsncat(pBuf, pPattern, BufSize - wcslen(pBuf) - 1);
 }
 
 bool KxPickScriptFile(char *pBuf, int BufSize, const char *pInitialDir)
@@ -38,6 +68,9 @@ bool KxPickScriptFile(char *pBuf, int BufSize, const char *pInitialDir)
 	wchar_t aWideDir[1024];
 	KxUtf8ToWide(pInitialDir, aWideDir, 1024);
 	LPCWSTR pDir = aWideDir[0] ? aWideDir : NULL;
+
+	// v6.12: prefill with "<dir>\*.lua" so the dialog opens in Kinetix/Scripts.
+	KxBuildInitialFile(aWidePath, 1024, pInitialDir, L"*.lua");
 
 	OPENFILENAMEW Ofn;
 	mem_zero(&Ofn, sizeof(Ofn));
@@ -73,6 +106,9 @@ bool KxPickTasFile(char *pBuf, int BufSize, const char *pInitialDir)
 	wchar_t aWideDir[1024];
 	KxUtf8ToWide(pInitialDir, aWideDir, 1024);
 	LPCWSTR pDir = aWideDir[0] ? aWideDir : NULL;
+
+	// v6.12: prefill with "<dir>\*.tas" so the dialog opens in Kinetix/TAS.
+	KxBuildInitialFile(aWidePath, 1024, pInitialDir, L"*.tas");
 
 	OPENFILENAMEW Ofn;
 	mem_zero(&Ofn, sizeof(Ofn));

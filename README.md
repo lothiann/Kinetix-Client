@@ -48,7 +48,7 @@ Main feature groups:
 3. **Movement & combat bots** — Helpers (Block), AimBot, TriggerBot, Auto Fire, BalanceBot, Auto/Triple Fly, Fly Ride, Avoid Freeze, Laser Unfreeze, Fake Aim.
 4. **Pathfinding** — the classic Pathfinder (BFS / Beam / RHEA / BMCTS with a state-lattice A*), a chunk-based **mini TAS maker**, and the **Real-Time Pathfinder** (worker-thread planner reproduced on the live player).
 5. **TAS** — record/play/replay, rewind/forward, auto rewind-forward per tile, Fake Aim during playback.
-6. **Scripting** — **Code Execution (Lua)** via sol2, with near-total access to the DDNet classes.
+6. **Scripting** — **Code Execution (Lua)** via LuaBridge3, with near-total access to the DDNet classes.
 7. **Visuals** — Trajectory prediction, ESP, Hitboxes, custom/rainbow colours for sprites & entities, line rendering (size/colour/opacity/rainbow/gradient/layer).
 8. **Utility** — Spoofer (client name/version/hash, zoom, spectate), IRC over emotes, Admin Alarm, smart binds.
 
@@ -496,7 +496,7 @@ Commands registered by Kinetix (in addition to the `kx_*` cvars, which are also 
 
 ## Code Execution
 
-Kinetix embeds a Lua interpreter (sol2) exposed through the **Code Execution (Lua)** panel and the `kx_exec` command. Scripts get direct access to virtually all DDNet client classes (`gc`), the `IClient` API (`cl`), the config (`config`), the console, HTTP, subprocesses, and graphics/sound/input/text helpers.
+Kinetix embeds a Lua interpreter (LuaBridge3) exposed through the **Code Execution (Lua)** panel and the `kx_exec` command. Scripts get direct access to virtually all DDNet client classes (`gc`), the `IClient` API (`cl`), the config (`config`), the console, HTTP, subprocesses, and graphics/sound/input/text helpers.
 
 ```lua
 -- example: print the local player's position every second

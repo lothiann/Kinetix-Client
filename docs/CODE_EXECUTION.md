@@ -1,6 +1,6 @@
 # Code Execution (Lua)
 
-Kinetix embeds a full **Lua 5.4** interpreter (bound through [sol2](https://github.com/ThePhD/sol2)). It is exposed by:
+Kinetix embeds a full **Lua 5.4** interpreter (bound through [LuaBridge3](https://github.com/kunitoki/LuaBridge3)). It is exposed by:
 
 - the **Code Execution (Lua)** ClickGUI panel (built-in multiline editor with syntax highlighting, Run/Stop and a file picker),
 - the console command `kx_exec "s[code]"`,
@@ -13,6 +13,11 @@ Scripts are not sandboxed: they receive **direct C++ access** to `CGameClient` a
 ## Table of Contents
 
 - [Running scripts](#running-scripts)
+- [Script metadata header](#script-metadata-header)
+- [Code Execution (CE) versions](#code-execution-ce-versions)
+- [GitHub Scripts](#github-scripts)
+- [Script Warnings](#script-warnings)
+- [LuaCT — Lua Compatibility Test](#luact--lua-compatibility-test)
 - [Execution model](#execution-model)
 - [Globals](#globals)
   - [print](#print)
@@ -52,6 +57,109 @@ kx_exec_stop
 From Lua, scripts can also run other code via `console.execute(...)`, load files with `console.execute_file(path)`, run helper processes with `io.popen(...)`, or execute more Lua by calling `gc.m_CodeExec:Execute(code)`.
 
 The built-in editor buffer is `65536` bytes (`gc.m_CodeExec.m_aCodeBuffer`).
+
+---
+
+## Script metadata header
+
+A script can carry metadata in its leading comment block. The client parses it
+when a script file is selected and shows it in the Code Execution panel; the
+`storage/update_metadata.py` tool parses the same lines for `scripts.json`.
+The header ends at the first line that is not a `--` comment.
+
+```lua
+-- NAME: My Script
+-- VERSION: 1.0
+-- CEV: 2
+-- AUTHOR: Nickname
+-- DESCRIPTION: Short description of what the script does.
+```
+
+| Key | Shown as | Meaning |
+|-----|----------|---------|
+| `NAME` | `NAME: …` | Script name. |
+| `VERSION` | `VERSION: …` | Script version (free form). |
+| `CEV` | `CE Version: v…` | Code Execution API version the script targets (number, see below). |
+| `AUTHOR` | `AUTHOR: …` | Author name. |
+| `DESCRIPTION` | `DESCRIPTION: …` | Short description. |
+
+---
+
+## Code Execution (CE) versions
+
+`CE Version` identifies the generation of the binding API a script was written
+against:
+
+- **v1** — the old sol2 bindings era.
+- **v2** — the current LuaBridge3 bindings era (this client is v2).
+
+The client shows its own CE version in the LuaCT block (`CE Version: v…`).
+A script declaring a **higher** `CEV` than the client supports gets an
+`Unsupported Version` warning (see below).
+
+---
+
+## GitHub Scripts
+
+The **GitHub Scripts** section of the Code Execution panel lists the scripts
+from the client repository (`storage/scripts/` in
+`github.com/lothiann/Kinetix-Client`):
+
+- **Update List** — downloads `storage/scripts/scripts.json` from the repo
+  (`raw.githubusercontent.com`, `master` branch). Only the metadata is
+  downloaded here, so GitHub's rate limit is never hit by bulk fetching;
+  individual `.lua` files are downloaded only on demand.
+- `List Updated` — timestamp from the metadata (`list_updated`), or the error
+  message when the download failed.
+- `Scripts: N` — number of scripts in the list.
+- `Last Supported Version: v…` — the newest CE version any listed script
+  requires.
+- Per script: `Name`, `Version`, `CE Version`, `Author`, `Description` and a
+  **Load** button. Load downloads the `.lua` file into `Kinetix/Scripts/`
+  (the same folder the file picker reads) and immediately selects it in Code
+  Execution, ready to Execute.
+
+The list download uses the client's own HTTP stack — it does not require the
+"Access To The Internet" script permission.
+
+Repository side: add or edit scripts under `storage/scripts/`, run
+`python storage/update_metadata.py` and commit both the scripts and the
+updated `scripts.json`. The same tool maintains `storage/tas/tas.json` for
+the TAS repository (see the TAS panel's **GitHub TASes** section).
+
+---
+
+## Script Warnings
+
+After a script file is selected, the Code Execution panel shows **red
+warnings** below the Execute button — only what the script actually uses but
+is currently denied:
+
+| Warning | Shown when |
+|---------|------------|
+| `- Access To The Internet` | The script uses `net.*` but the permission is disabled in Execution Settings. |
+| `- OS Commands` | The script uses `os.execute` / `io.popen` but the permission is disabled. |
+| `- Files` | The script uses file functions (`io.open`, `io.lines`, `io.input`, `io.output`, `os.remove`, `os.rename`, `dofile`, `loadfile`) while the Sandbox is enabled (paths outside the sandbox will be denied). |
+| `- Unsupported Version: v…` | The script's `CEV` header is higher than the client's CE version. |
+
+With no warnings the section is hidden entirely.
+
+---
+
+## LuaCT — Lua Compatibility Test
+
+The LuaCT block runs a built-in test chunk that checks every registered
+binding for existence and accessibility (structural checks only, no
+side effects) and reports:
+
+- `LuaCT: XX.X% | N/N` — pass rate.
+- `CE Version: v…` — the client's Code Execution API version.
+- `SoFE: min | avg | max` — **Speed Of Function Execution**: the minimum,
+  average and maximum wall time of a single binding-access test, in
+  milliseconds. Tests interrupted by the instruction-budget yield are
+  excluded from the statistics (their wall time would include the suspended
+  gap).
+- `Failed: …` — names of failed tests (only when there are failures).
 
 ---
 
@@ -102,7 +210,7 @@ local u = vec2(1, 0)
 | `v.dot(w)` | Dot product. |
 | `v.distance(w)` | Distance between two vectors. |
 | `v.angle()` | Angle of the vector (radians). |
-| Operators | `+`, `-`, `*` (vector and scalar), `/` (scalar), unary `-`. |
+| Operators | `+`, `-`, `*` (vector `v * scalar`), `/` (scalar), unary `-`. Note: the reversed form `scalar * v` is not supported. |
 
 ### CONST
 
@@ -331,6 +439,8 @@ All of these can be reached from `gc`/`cl` and manipulated directly.
 
 Exposed via `gc.m_<Component>`: `CCamera`, `CChat`, `CControls`, `CEffects`, `CFlow`, `CVoting`, `CSpectator`, `CEmoticon`, `CMotd`, `CBroadcast`, `CGhost`, `CParticles`, `CDamageInd`, `CSounds`, `CMenus`, `CBinds`, `CGameConsole`, `CHud`, `CRaceDemo`, `CLocalServer`, `CImportantAlert`, `CScoreboard`, `CStatboard`, `CSkins`, `CConfig`.
 
+The remaining components reachable as `gc.m_<Component>` (`CPlayers`, `CNamePlates`, `CFreezeBars`, `CItems`, `CMapImages`, `CMapSounds`, `CBackground`, `CMenuBackground`, `CMapLayers`, `CDebugHud`, `CTouchControls`, `CCountryFlags`, `CSkins7`, `CRenderTools`, `CRenderMap`, `CInfoMessages`, `CCensor`, `CTooltips`) are registered as (empty) usertypes — they can be passed around and identity-compared, but expose no members yet.
+
 Highlights:
 
 - **`CChat`** — `GetRecentLines(n)` (returns `{time, clientid, team, name, text}` entries), `SendChat(team, msg)`, `SendChatQueued(msg)`, `SendChatFrom(dummy, team, msg)`, `AddLine(cid, team, msg)`, `Echo(msg)`, `RegisterCommand(name, params, help)`.
@@ -414,6 +524,8 @@ config.set("kx_helpers", config.get("kx_helpers") == 1 and 0 or 1)
 ## Notes & limitations
 
 - Only one script runs at a time; executing a new script stops the previous one.
+- Bindings are registered with [LuaBridge3](https://github.com/kunitoki/LuaBridge3) at client startup. If registration fails, the error is printed to the console/log (`code_exec: binding registration failed: …`) instead of crashing; the affected globals would then be missing.
+- All `CONST.*` values are plain Lua numbers (integers).
 - No true sandbox — scripts can read/write files (via `io`/`os` and DDNet's `io` storage) and spawn processes.
 - Drawing calls issued from a script happen during the coroutine resume in `OnRender`; screen mapping and text colour are saved/restored around the resume.
 - `io.popen` / `os.execute` are Windows-oriented (`CreateProcessA` with `CREATE_NO_WINDOW`).

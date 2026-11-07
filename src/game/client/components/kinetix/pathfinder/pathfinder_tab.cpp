@@ -1166,6 +1166,25 @@ void CBotNet::RenderPathfinderPath()
 		}
 	}
 
+	if(g_Config.m_KxPfDrawStartEndPos)
+	{
+		const vec2 aPos[] = {vPath.front(), vPath.back()};
+		const ColorRGBA aColor[] = {ColorRGBA(0.2f, 1.0f, 0.2f, 1.0f), ColorRGBA(1.0f, 0.2f, 0.2f, 1.0f)};
+		Graphics()->LinesBegin();
+		for(int i = 0; i < 2; i++)
+		{
+			Graphics()->SetColor(aColor[i]);
+			IGraphics::CLineItem aBox[] = {
+				IGraphics::CLineItem(aPos[i] + vec2(-16, -16), aPos[i] + vec2(16, -16)),
+				IGraphics::CLineItem(aPos[i] + vec2(16, -16), aPos[i] + vec2(16, 16)),
+				IGraphics::CLineItem(aPos[i] + vec2(16, 16), aPos[i] + vec2(-16, 16)),
+				IGraphics::CLineItem(aPos[i] + vec2(-16, 16), aPos[i] + vec2(-16, -16)),
+			};
+			Graphics()->LinesDraw(aBox, 4);
+		}
+		Graphics()->LinesEnd();
+	}
+
 	// Main path with optional speed gradient (rainbow hue sweep).
 	auto fnSpeedColor = [](float speed) -> ColorRGBA {
 		const float MAX_SPEED = 30.0f;
@@ -1174,7 +1193,7 @@ void CBotNet::RenderPathfinderPath()
 		return color_cast<ColorRGBA>(ColorHSLA(hue / 360.0f, 1.0f, 0.5f, true));
 	};
 
-	if(LineSize > 0 && !tasHasRun)
+	if(g_Config.m_KxPfShowPath && LineSize > 0 && !tasHasRun)
 	{
 		float HalfWidth = 0.5f + (float)(LineSize - 1) * 0.25f;
 		Graphics()->QuadsBegin();
@@ -1211,7 +1230,7 @@ void CBotNet::RenderPathfinderPath()
 		}
 		Graphics()->QuadsEnd();
 	}
-	else if(!tasHasRun)
+	else if(g_Config.m_KxPfShowPath && !tasHasRun)
 	{
 		Graphics()->LinesBegin();
 		for(size_t i = 1; i < vPath.size(); i++)

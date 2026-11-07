@@ -31,6 +31,10 @@
 #include <base/math.h>
 #include <base/vmath.h>
 
+#include <memory>
+#include <string>
+#include <vector>
+
 #include <engine/shared/config.h>
 
 #include <generated/protocol.h>
@@ -336,12 +340,60 @@ public:
 	bool FilePicked() const { return m_FilePicked; }
 	const char *PickedPath() const { return m_aPickedPath; }
 	const char *PickedMap() const { return m_aPickedMap; }
-	const char *PickedName() const { return m_aPickedName; }
+	const char *PickedDescription() const { return m_aPickedDescription; }
 	const char *PickedAuthor() const { return m_aPickedAuthor; }
 	const char *PickedCreated() const { return m_aPickedCreated; }
 	void PickFile(const char *pPath);
 	void UnpickFile();
-	void SaveTake(const char *pMap, const char *pName, const char *pAuthor);
+	// v6.12: parses a .tas image from memory (GitHub Load) without touching
+	// the disk; m_aPickedPath stays empty and the take is loaded into the
+	// buffer. Returns false on any parse error.
+	bool LoadTakeMem(const void *pData, unsigned Len);
+	void SaveTake(const char *pMap, const char *pDescription, const char *pAuthor);
+
+	// --- GitHub TAS repository (storage/tas in the client repo) ---
+	// Mirrors the CCodeExec GitHub Scripts machinery: only tas.json metadata
+	// is downloaded by "Update List"; the .tas file itself downloads on
+	// Load (download + select) / Download (download only).
+	struct SGitHubTas
+	{
+		std::string m_File;
+		std::string m_Map;
+		std::string m_Description;
+		std::string m_Author;
+		std::string m_Version; // display form, e.g. "v2.0"
+		std::string m_Created;
+	};
+	enum EGitHubState
+	{
+		GITHUB_IDLE = 0,
+		GITHUB_UPDATING,
+		GITHUB_READY,
+		GITHUB_ERROR,
+	};
+	enum EGitHubLoadState
+	{
+		GITHUB_LOAD_IDLE = 0,
+		GITHUB_LOAD_LOADING,
+		GITHUB_LOAD_DONE,
+		GITHUB_LOAD_ERROR,
+	};
+	EGitHubState GitHubState() const { return (EGitHubState)m_GitHubState; }
+	const char *GitHubError() const { return m_aGitHubError; }
+	const std::string &GitHubListUpdated() const { return m_GitHubListUpdated; }
+	const std::string &GitHubLastSupportedVersion() const { return m_GitHubLastSupportedVersion; }
+	const std::vector<SGitHubTas> &GitHubItems() const { return m_vGitHubItems; }
+	void GitHubUpdateList();
+	// Select=true: download, then pick the file in the TAS panel.
+	void GitHubLoadItem(int Idx, bool Select);
+	EGitHubLoadState GitHubLoadState() const { return (EGitHubLoadState)m_GitHubLoadState; }
+	const char *GitHubLoadFile() const { return m_aGitHubLoadFile; }
+	bool GitHubLoadSelect() const { return m_GitHubLoadSelect; }
+	// In-memory .tas image of a finished Load (valid until GitHubClearLoadDone).
+	const std::string &GitHubLoadContent() const { return m_GitHubLoadContent; }
+	const char *GitHubLoadError() const { return m_aGitHubLoadError; }
+	void GitHubClearLoadDone();
+	void GitHubUpdateJobs();
 
 	// v6.3: "Reset Record" — clears the record/saved take and unloads the
 	// picked .tas file. The playground world is NOT touched.
@@ -630,9 +682,26 @@ private:
 	bool m_TakeFromFile = false;
 	char m_aPickedPath[512] = {};
 	char m_aPickedMap[128] = {};
-	char m_aPickedName[128] = {};
+	char m_aPickedDescription[128] = {};
 	char m_aPickedAuthor[128] = {};
 	char m_aPickedCreated[64] = {};
+
+	// GitHub TAS repository state
+	int m_GitHubState = GITHUB_IDLE;
+	int m_GitHubLoadState = GITHUB_LOAD_IDLE;
+	bool m_GitHubLoadSelect = false;
+	char m_aGitHubError[256] = "";
+	char m_aGitHubLoadError[256] = "";
+	char m_aGitHubLoadFile[128] = "";
+	std::string m_GitHubLoadContent; // Load: .tas image kept in memory only
+	std::string m_GitHubListUpdated;
+	std::string m_GitHubLastSupportedVersion;
+	std::string m_GitHubLoadTarget;
+	std::vector<SGitHubTas> m_vGitHubItems;
+	std::shared_ptr<class IHttpRequest> m_pGitHubListJob;
+	std::shared_ptr<class IHttpRequest> m_pGitHubLoadJob;
+	void GitHubFinishList(class IHttpRequest *pReq);
+	void GitHubFinishLoad(class IHttpRequest *pReq);
 
 };
 

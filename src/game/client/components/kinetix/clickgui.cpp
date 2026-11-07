@@ -620,8 +620,10 @@ static SRow g_LaserUnfreezeChildren[] = {
                 "Number of candidate angles to scan."},
         {ERowType::Slider, "Ticks", nullptr, false, false, 1.0f, 50.0f, 1.0f, 10.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Ticks to simulate ahead for the laser prediction."},
-        {ERowType::Slider, "Trigger ticks", nullptr, false, false, 1.0f, 5.0f, 1.0f, 3.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Ticks the predicted unfreeze must hold before firing."},
+        {ERowType::Slider, "Current dir ticks", nullptr, false, false, 1.0f, 100.0f, 1.0f, 21.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Ticks simulated for the current aim before the angle search starts."},
+        {ERowType::Toggle, "Most bounces", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Prefer the candidate with the most bounces instead of the least."},
         {ERowType::Toggle, "Silent", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Aim the laser silently (your own view stays unchanged)."},
         {ERowType::Toggle, "Show attempt", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
@@ -779,30 +781,57 @@ static SRow g_HitboxesChildren[] = {
 };
 // v1.56.121: "Avoid Freeze" expandable.
 static SRow g_AvoidFreezeChildren[] = {
+        {ERowType::Label, "Tiles", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Override input while frozen to escape the freeze."},
-        {ERowType::Toggle, "Teleport", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Emit teleport input to escape the freeze."},
-        {ERowType::Toggle, "Death", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Emit death input to escape the freeze."},
-        {ERowType::Toggle, "Direction", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Emit direction input to escape the freeze."},
-        {ERowType::Toggle, "Jump", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Emit jump input to escape the freeze."},
+                "Avoid freeze tiles."},
+        {ERowType::Toggle, "Teleports", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Avoid teleport tiles."},
+        {ERowType::Toggle, "Deaths", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Avoid death tiles."},
+        {ERowType::Toggle, "Unfreeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Keep the plan safe after leaving a freeze tile."},
+        {ERowType::Slider, "Unfreeze Ticks", nullptr, false, false, 1.0f, 100.0f, 1.0f, 26.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Ticks simulated after leaving a freeze tile."},
+        {ERowType::Label, "Behaviour", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "NSIF", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Reuse the stored plan tail when no safe result was found."},
+        {ERowType::Toggle, "Simulate Players", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Simulate nearby players instead of the local tee alone."},
+        {ERowType::Slider, "Afk Protection", nullptr, false, false, 0.0f, 60000.0f, 100.0f, 0.0f, " ms", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Suspend while no input changed for this many milliseconds (0 = off)."},
+        {ERowType::Slider, "Check Ticks", nullptr, false, false, 1.0f, 100.0f, 1.0f, 26.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Ticks checked for survival in the search."},
+        {ERowType::Slider, "Kick Ticks", nullptr, false, false, 1.0f, 100.0f, 1.0f, 26.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Ticks checked by the cheap constant-input guard."},
         {ERowType::Toggle, "Hook", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Emit hook input to escape the freeze."},
+                "Allow hook inputs in the search."},
+        {ERowType::Toggle, "Fire", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Allow the search to change fire inputs."},
+        {ERowType::Toggle, "Direction", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Allow direction changes."},
+        {ERowType::Toggle, "Jump", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Allow jump inputs in the search."},
         {ERowType::Toggle, "Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Emit aim input to escape the freeze."},
+                "Scan hook directions in the FOV for a safer aim."},
+        {ERowType::Slider, "Angles", nullptr, false, false, 1.0f, 50.0f, 1.0f, 5.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Number of FOV segments scanned for the aim."},
         {ERowType::Slider, "FOV", nullptr, false, false, 5.0f, 360.0f, 5.0f, 90.0f, "\xc2\xb0", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Field of view for detecting the freeze tile (degrees)."},
-        {ERowType::Slider, "Angles", nullptr, false, false, 1.0f, 144.0f, 1.0f, 9.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Number of candidate angles to try."},
+                "Aim search field of view (degrees)."},
         {ERowType::Toggle, "Silent", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Send the escape inputs silently (your own view stays unchanged)."},
-        {ERowType::Slider, "Ticks", nullptr, false, false, 1.0f, 20.0f, 1.0f, 10.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Ticks over which the escape input is sent."},
-        {ERowType::Slider, "Ticks Before", nullptr, false, false, 1.0f, 10.0f, 1.0f, 3.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Ticks before the freeze to pre-empt it."},
+                "Keep the visible aim unchanged."},
+        {ERowType::Toggle, "Auto Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Use the aim with the longest survival."},
+        {ERowType::Toggle, "Aim Assist", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Use the aim that is closest to the mouse."},
+        {ERowType::Toggle, "Track Point", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Track a hook point while it keeps the tee safe."},
+        {ERowType::Toggle, "Safe Tracking", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Only accept a track point when the plan stays safe."},
+        {ERowType::Label, "Visuals", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Track Point", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Draw the tracked hook point."},
+        {ERowType::Toggle, "Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Draw the aim assist / auto aim points."},
 };
 // v6.7: Smart Copy Moves expandable — header is the master toggle. Children:
 // sort/apply dropdowns + top-N slider + ESP-style filters (no Dummy filter —
@@ -871,6 +900,37 @@ static SRow g_AledBotChildren[] = {
                 "Target id list (used when Targets = Only/Ignore)."},
 };
 
+static SRow g_QuickStopChildren[] = {
+        {ERowType::Toggle, "Grounded only", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Brake only while standing on the ground."},
+};
+static SRow g_AutoTeamChildren[] = {
+        {ERowType::Slider, "Preferred team", nullptr, false, false, 1.0f, 63.0f, 1.0f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Team number to join when it is free."},
+};
+static SRow g_AntiAfkChildren[] = {
+        {ERowType::Slider, "Interval", nullptr, false, false, 1.0f, 300.0f, 1.0f, 100.0f, "s", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Seconds between mouse nudges."},
+};
+static const char *const g_AutoVoteOpts[] = {"Yes", "No"};
+static SRow g_AutoVoteChildren[] = {
+        {ERowType::Dropdown, "Vote", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_AutoVoteOpts, 2, 0, nullptr, 0,
+                "Answer every vote with yes or no."},
+};
+static const char *const g_AutoVoteKickModeOpts[] = {"Random", "Target"};
+static SRow g_AutoVoteKickChildren[] = {
+        {ERowType::Dropdown, "Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_AutoVoteKickModeOpts, 2, 0, nullptr, 0,
+                "Kick a random client or the configured target id."},
+        {ERowType::Input, "Target ID", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0,
+                "Client id kicked in Target mode."},
+        {ERowType::Input, "Reason", nullptr, false, false, 0, 0, 0, 0, nullptr, "krx detected", "reason...", nullptr, 0, 0, nullptr, 0,
+                "Reason shown in the kick vote."},
+};
+static SRow g_FastInputChildren[] = {
+        {ERowType::Toggle, "Others", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Apply the early tick to other tees as well (makes dragging easier)."},
+};
+
 // v1.56.260: Functions panel merged with the former Advanced rows (Laser unfreeze,
 // Fake Aim, Basic Avoid Freeze). Trajectory/ESP/Hitboxes moved to the Visuals
 // panel; Random Aim rows removed (feature deleted).
@@ -888,6 +948,14 @@ static SRow g_FunctionsRows[] = {
                 "Automatically fire at a fixed tick rate."},
         {ERowType::Expandable, "BalanceBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BalanceBotChildren, 14,
                 "Balance against a target by standing above/below it."},
+        {ERowType::Toggle, "Moonwalk", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Hold both directions to walk backwards."},
+        {ERowType::Expandable, "Quick Stop", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_QuickStopChildren, 1,
+                "Brake with the opposite direction when you release the keys."},
+        {ERowType::Toggle, "Hide Chat Bubble", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Keep playing (and the helpers active) while chat or the menu is open."},
+        {ERowType::Expandable, "Fast Input", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_FastInputChildren, 1,
+                "Predict your input one tick earlier (lower visual delay)."},
         // Fly sub-section
         {ERowType::Toggle, "Preserve input", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Keep your own input while a fly/hammer feature is active."},
@@ -921,15 +989,27 @@ static SRow g_FunctionsRows[] = {
         // v1.56.151: Fly Ride — pilot hooks/hammers nearest dummy, WASD moves anchor.
         {ERowType::Toggle, "Fly Ride", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "PROTOTYPE / in development — ride the nearest dummy (WASD moves the anchor)."},
+        {ERowType::Toggle, "Jet Ride (Beta)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Fly with the gun jetpack; WASD moves the target point."},
+        {ERowType::Toggle, "Hook Ride (Beta)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Stay hooked above a target point; WASD moves it."},
         // v1.56.186: Copy Moves Latency — staggered input replay delay for inactive dummies.
         {ERowType::Expandable, "Copy Moves Latency", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CopyMovesLatencyChildren, 1,
                 "Staggered input-replay delay for inactive dummies."},
+        {ERowType::Expandable, "Auto Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AutoTeamChildren, 1,
+                "Join and lock a free team on spawn."},
+        {ERowType::Expandable, "Anti Afk", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AntiAfkChildren, 1,
+                "Nudge the mouse periodically so the server does not mark you as afk."},
+        {ERowType::Expandable, "Auto Vote", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AutoVoteChildren, 1,
+                "Answer every vote automatically."},
+        {ERowType::Expandable, "Auto Vote Kick", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AutoVoteKickChildren, 3,
+                "Start kick votes while no other vote is running."},
         // v1.56.260: former Advanced rows (Trajectory/ESP/Hitboxes now live in Visuals).
-        {ERowType::Expandable, "Laser unfreeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LaserUnfreezeChildren, 7,
+        {ERowType::Expandable, "Laser unfreeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LaserUnfreezeChildren, 8,
                 "Predictive laser self-unfreeze."},
         {ERowType::Expandable, "Fake Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_FakeAimChildren, 7,
                 "Spoof the aim the server sees (fake aim)."},
-        {ERowType::Expandable, "Avoid Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AvoidFreezeChildren, 12,
+        {ERowType::Expandable, "Avoid Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AvoidFreezeChildren, 27,
                 "Auto-escape a freeze by overriding the input."},
         // v6.9: AledBot — hammer a frozen dummy so it unfreezes outside the freeze tile.
         {ERowType::Expandable, "AledBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AledBotChildren, 14,
@@ -1038,6 +1118,13 @@ static SRow g_ClickGuiSettingsChildren[] = {
         {ERowType::Slider, "ToolTips Main Opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Opacity of the tooltip border."},
         {ERowType::Slider, "ToolTips Panel Opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Opacity of the tooltip background."},
 };
+static const char *const g_DiscordRpcIdOpts[] = {"DDNet", "DDNet 2", "Custom"};
+static SRow g_DiscordRpcChildren[] = {
+        {ERowType::Dropdown, "App ID", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_DiscordRpcIdOpts, 3, 0, nullptr, 0,
+                "Which Discord application the presence is published under."},
+        {ERowType::Input, "Custom ID", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "id...", nullptr, 0, 0, nullptr, 0,
+                "Custom Discord application id (App ID = Custom)."},
+};
 static SRow g_SettingsRows[] = {
         {ERowType::Expandable, "ClickGUI Settings", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ClickGuiSettingsChildren, 22, "Master switch: off = built-in default look."},
         {ERowType::Expandable, "Line rendering", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LineRenderingChildren, 9,
@@ -1051,18 +1138,22 @@ static SRow g_SettingsRows[] = {
                 "Spoof the zoom level reported to the server."},
         {ERowType::Expandable, "Spoof Spectate", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_SpoofSpectateChildren, 4,
                 "Spoof spectate coordinates / follow target."},
+        {ERowType::Toggle, "Auto Verify", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Visit the verification site so DDOS protected servers accept you."},
+        {ERowType::Expandable, "Discord RPC", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_DiscordRpcChildren, 2,
+                "Discord Rich Presence (applied on the next start)."},
 };
 
 // ---------- Pathfinder panel (7) ----------
 // "Visuals" visual expandable.
 static SRow g_VisualsChildren[] = {
-        {ERowType::Toggle, "Show field", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Show hooks", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Show branches", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Show speed", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Path", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Speed", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Hooks", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Field", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Start/End Pos", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
-static const char *const g_PfEffortOpts[] = {"Very Low", "Low", "Medium", "High", "Ultra", "Max", "Custom"};
-static const char *const g_PfAlgorithmOpts[] = {"BFS", "Beam", "RHEA", "BMCTS"};
+static const char *const g_PfEffortOpts[] = {"Low", "Medium", "Max"};
 static SRow g_PfFreedomPathChildren[] = {
         {ERowType::Slider, "Ratio", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "x", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Freedom path ratio (x)."},
@@ -1073,34 +1164,46 @@ static char g_PfDyn_Time[96];
 static bool g_PfShowRunLabels = false;
 static bool g_PfShowStatLabels = false;
 
-// v1.56.283: "Settings" visual expandable - effort-based knobs in one place.
-// kx_pf_hook_angles removed entirely: the hook fan is always 36 rays.
+static SRow g_PfTunnelChildren[] = {
+        {ERowType::Slider, "Size", nullptr, false, false, 0.0f, 10.0f, 1.0f, 2.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Size of the generated tunnel."},
+        {ERowType::Button, "Generate", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Generate a tunnel using the tunnel size."},
+};
 static SRow g_PfSettingsChildren[] = {
-        {ERowType::Slider, "A* Weight", nullptr, false, false, 1.0f, 20.0f, 0.01f, 3.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "A* path cost weight (requires Effort = Custom)."},
-        {ERowType::Slider, "Evolutions", nullptr, false, false, 1.0f, 100.0f, 1.0f, 10.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "RHEA evolution count (Effort = Custom + Algorithm = RHEA)."},
-        {ERowType::Slider, "Beam width", nullptr, false, false, 8.0f, 4096.0f, 1.0f, 128.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Beam search width (Effort = Custom + Algorithm = Beam)."},
-        {ERowType::Slider, "Performance", nullptr, false, false, 1.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Pathfinder performance budget (0-100%)."},
-        {ERowType::Toggle, "Freeze Support (Beta)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Let the pathfinder route through freeze tiles."},
+        {ERowType::Slider, "Max Ticks", nullptr, false, false, 100.0f, 10000.0f, 100.0f, 10000.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Maximum ticks the search may simulate."},
+        {ERowType::Slider, "Performance", nullptr, false, false, 1.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Pathfinder performance budget (0-100%)."},
+        {ERowType::Label, "Tweaker", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Slider, "Tweaker Inputs", nullptr, false, false, 4.0f, 5000.0f, 1.0f, 160.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Candidate sequences per generation."},
+        {ERowType::Slider, "Tweaker Ticks", nullptr, false, false, 1.0f, 30.0f, 1.0f, 8.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Ticks per candidate sequence."},
+        {ERowType::Slider, "Tweaker Dosage", nullptr, false, false, 1.0f, 5000.0f, 1.0f, 160.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Generations per batch."},
+        {ERowType::Toggle, "Freeze Support (Beta)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Let the pathfinder route through freeze tiles."},
+        {ERowType::Slider, "Unfreeze Radius", nullptr, false, false, 0.0f, 20.0f, 1.0f, 3.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Unfreeze search radius in tiles."},
 };
 static SRow g_PathfinderRows[] = {
-        {ERowType::Dropdown, "Effort", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_PfEffortOpts, 7, 0, nullptr, 0,
-                "Search effort preset (Very Low … Max / Custom)."},
-        {ERowType::Dropdown, "Algorithm", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_PfAlgorithmOpts, 4, 0, nullptr, 0,
-                "Search algorithm (BFS / Beam / RHEA / BMCTS)."},
+        {ERowType::Dropdown, "Effort", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_PfEffortOpts, 3, 0, nullptr, 0,
+                "Search effort preset (Low / Medium / Max)."},
+        {ERowType::Label, "Map", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Expandable, "Freedom Path", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_PfFreedomPathChildren, 1,
                 "Allow freer paths through the search space."},
-        {ERowType::Expandable, "Settings", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_PfSettingsChildren, 5, "Effort-based pathfinder knobs: visible rows depend on Effort/Algorithm."},
-        {ERowType::Expandable, "Visuals", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_VisualsChildren, 4,
+        {ERowType::Expandable, "Tunnel", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_PfTunnelChildren, 2,
+                "Generate a tunnel through the map."},
+        {ERowType::Expandable, "Settings", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_PfSettingsChildren, 8,
+                "Search and tweaker settings."},
+        {ERowType::Expandable, "Visuals", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_VisualsChildren, 5,
                 "Pathfinder visualization toggles."},
         // v1.56.150: DoubleButton — Pathfinding (left) + Play (right, visible only when FINISHED).
         {ERowType::DoubleButton, "Pathfinding", "Paste", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Compute a path from your tee to the finish.", "Paste a path from the clipboard."},
         {ERowType::DoubleButton, "Editor Forbidden Tiles", "Clear Forbidden Tiles", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Open the forbidden-tiles editor.", "Clear all forbidden tiles."},
-        {ERowType::Slider, "Tunnel size", nullptr, false, false, 0.0f, 10.0f, 1.0f, 2.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Size of the generated tunnel."},
-        {ERowType::Button, "Generate tunnel", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Generate a tunnel using the tunnel size."},
         {ERowType::DoubleButton, "Editor Finish Tiles", "Clear Finish Tiles", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Open the finish-tiles editor.", "Clear all finish tiles."},
         {ERowType::Label, g_PfDyn_Progress, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
@@ -1245,21 +1348,182 @@ static char g_ExecScriptPath[1024];
 static char g_ExecScriptName[128];
 static bool g_ExecScriptViaStorage = false;
 static bool g_ExecLoaded = false;
+// v6.12: GitHub Load — script image kept in memory only (nothing on disk,
+// no File: path line); executed straight from this buffer.
+static bool g_ExecFromMem = false;
+static std::vector<char> g_vExecScriptMem;
 static bool g_ExecHasName = false;
 static bool g_ExecHasVersion = false;
 static bool g_ExecHasAuthor = false;
 static bool g_ExecHasDesc = false;
 
+// Execution Settings: shell dropdown options are filled by ExecDetectShells()
+// (only shells actually found on this system are offered).
+static const char *g_aExecShellOpts[CCodeExec::NUM_SHELLS] = {nullptr};
+static int g_ExecShellOptToId[CCodeExec::NUM_SHELLS] = {0};
+static int g_ExecShellOptCount = 0;
+static bool g_ExecShellsDetected = false;
+static bool g_ExecSettingsLoaded = false;
+static const char *const g_ExecShellNames[CCodeExec::NUM_SHELLS] = {"Powershell", "CMD", "Git Bash", "MSYS"};
+// LuaCT visibility mirrors for the static child-visibility function
+// (refreshed every frame by UpdateCodeExecRows).
+static int g_LuaCTVisState = 0;
+static int g_LuaCTVisFails = 0;
+static bool g_LuaCTVisHasSoFE = false;
+
+// Script Warnings visibility mirrors (refreshed every frame).
+static bool g_ExecWarnAny = false;
+static bool g_ExecWarnInternet = false;
+static bool g_ExecWarnOs = false;
+static bool g_ExecWarnFiles = false;
+static bool g_ExecWarnVersion = false;
+
+// GitHub Scripts visibility mirrors (refreshed every frame).
+static bool g_GitHubBuiltReady = false;
+static bool g_GitHubVisListDone = false; // READY or ERROR — header labels exist
+static int g_GitHubLoadRequestedIdx = -1;
+
+// Script CE Version metadata (parsed from the "-- CEV: n" header line).
+static char g_ExecDyn_CE[96];
+static bool g_ExecHasCE = false;
+static int g_ExecCEVersion = 0;
+// Feature usage of the loaded script (for Script Warnings).
+static bool g_ExecUsesInternet = false;
+static bool g_ExecUsesOs = false;
+static bool g_ExecUsesFiles = false;
+
+static char g_ExecWarn_Header[32] = "Script Warnings:";
+static char g_ExecWarn_Internet[64];
+static char g_ExecWarn_Os[64];
+static char g_ExecWarn_Files[64];
+static char g_ExecWarn_Version[96];
+
+// LuaCT CE Version + SoFE (speed of function execution) labels.
+static char g_LuaCTDyn_CE[64];
+static char g_LuaCTDyn_SoFE[128];
+
+// GitHub Scripts dynamic labels + per-script row buffers.
+static char g_GitHubDyn_Btn[16] = "Update List";
+static char g_GitHubDyn_Updated[128];
+static char g_GitHubDyn_Count[64];
+static char g_GitHubDyn_Supported[96];
+static char g_GitHubDyn_ScriptsHdr[16] = "Scripts:";
+static char g_GitHubDyn_Sep[] = "----------";
+static const int GITHUB_MAX_SCRIPTS = 32;
+static char g_aGitHubName[GITHUB_MAX_SCRIPTS][96];
+static char g_aGitHubVersion[GITHUB_MAX_SCRIPTS][64];
+static char g_aGitHubCE[GITHUB_MAX_SCRIPTS][64];
+static char g_aGitHubAuthor[GITHUB_MAX_SCRIPTS][96];
+static char g_aGitHubDesc[GITHUB_MAX_SCRIPTS][256];
+static char g_aGitHubLoadBtn[GITHUB_MAX_SCRIPTS][16];
+static std::vector<SRow> g_vGitHubChildren;
+static int g_GitHubBuiltCount = -1;
+
+// Load buttons of the GitHub Scripts list are identified by their label
+// buffer pointers (the text itself changes between "Load" and "...").
+static bool IsGitHubLoadButtonName(const char *pName, int *pOutIdx)
+{
+        for(int i = 0; i < GITHUB_MAX_SCRIPTS; i++)
+        {
+                if(pName == g_aGitHubLoadBtn[i])
+                {
+                        if(pOutIdx)
+                                *pOutIdx = i;
+                        return true;
+                }
+        }
+        return false;
+}
+
+// GitHub TASes (TAS panel): dynamic labels + per-item row buffers.
+static char g_TasGitHubDyn_Btn[16] = "Update List";
+static char g_TasGitHubDyn_Updated[128];
+static char g_TasGitHubDyn_Count[64];
+static char g_TasGitHubDyn_Supported[96];
+static char g_TasGitHubDyn_ItemsHdr[16] = "TASes:";
+static char g_TasGitHubDyn_Sep[] = "----------";
+static const int GITHUB_TAS_MAX_ITEMS = 32;
+static char g_aGitHubTasMap[GITHUB_TAS_MAX_ITEMS][96];
+static char g_aGitHubTasDesc[GITHUB_TAS_MAX_ITEMS][160];
+static char g_aGitHubTasAuthor[GITHUB_TAS_MAX_ITEMS][96];
+static char g_aGitHubTasVersion[GITHUB_TAS_MAX_ITEMS][64];
+static char g_aGitHubTasCreated[GITHUB_TAS_MAX_ITEMS][64];
+static char g_aGitHubTasLoadBtn[GITHUB_TAS_MAX_ITEMS][16];
+static std::vector<SRow> g_vGitHubTasChildren;
+static bool g_TasGitHubVisListDone = false;
+static bool g_TasGitHubBuiltReady = false;
+static int g_TasGitHubLoadRequestedIdx = -1;
+
+static bool IsGitHubTasLoadButtonName(const char *pName, int *pOutIdx)
+{
+        for(int i = 0; i < GITHUB_TAS_MAX_ITEMS; i++)
+        {
+                if(pName == g_aGitHubTasLoadBtn[i])
+                {
+                        if(pOutIdx)
+                                *pOutIdx = i;
+                        return true;
+                }
+        }
+        return false;
+}
+
+static SRow g_ExecSettingsChildren[] = {
+        {ERowType::Toggle, "Access To The Internet", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Allow scripts to use net.* HTTP requests."},
+        {ERowType::Toggle, "OS Commands", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Allow scripts to run OS commands (os.execute / io.popen)."},
+        {ERowType::Dropdown, "Shell", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Shell used for OS commands. Missing shells are not offered."},
+        {ERowType::Toggle, "Sandbox", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Restrict script file access to Kinetix/Sandbox in the user directory. Relative paths resolve inside it, absolute paths outside are denied."},
+        {ERowType::Toggle, "Debug", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Log every script function call/return to the console log (lua_debug)."},
+};
+
+// LuaCT (Lua Compatibility Test)
+static char g_LuaCTDyn_Btn[16] = "Start";
+static char g_LuaCTDyn_Result[128] = "";
+static char g_LuaCTDyn_Failed[512] = "";
+static SRow g_LuaCTChildren[] = {
+        {ERowType::Button, g_LuaCTDyn_Btn, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Run the Lua Compatibility Test against all bindings. Clear removes the results."},
+        {ERowType::Label, g_LuaCTDyn_Result, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_LuaCTDyn_CE, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Version of the Code Execution binding API in this client (v1 = sol2 era, v2 = LuaBridge3 era)."},
+        {ERowType::Label, g_LuaCTDyn_SoFE, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "SoFE (Speed Of Function Execution): minimum / average / maximum time of a single binding-access test."},
+        {ERowType::Label, g_LuaCTDyn_Failed, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
+
 static SRow g_CodeExecRows[] = {
-        {ERowType::Button, "Pick File", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Pick a Lua script file to execute."},
+        {ERowType::Expandable, "GitHub Scripts", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+                nullptr, 0, // children are rebuilt from scripts.json in UpdateCodeExecRows
+                "Script repository (storage/scripts in the client repo). Update List downloads only the metadata; Load loads the script into Code Execution from memory (nothing is saved to disk); Download saves it to Kinetix/Scripts."},
+        {ERowType::DoubleButton, "Pick File", "Unpick File", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Pick a Lua script file to execute.", "Unload the current script."},
         {ERowType::Label, g_ExecDyn_Path, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Label, g_ExecDyn_Name, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Label, g_ExecDyn_Version, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_ExecDyn_CE, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Code Execution API version the script."},
         {ERowType::Label, g_ExecDyn_Author, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Label, g_ExecDyn_Desc, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Expandable, "Execution Settings", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+                g_ExecSettingsChildren, (int)(sizeof(g_ExecSettingsChildren) / sizeof(g_ExecSettingsChildren[0])),
+                "Master toggle: off = all execution permissions disabled. On: internet access, OS commands, sandbox and debug logging for scripts."},
+        {ERowType::Expandable, "LuaCT", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+                g_LuaCTChildren, (int)(sizeof(g_LuaCTChildren) / sizeof(g_LuaCTChildren[0])),
+                "Lua Compatibility Test — checks every binding for existence and access, shows the Code Execution API version (CE Version) and SoFE — Speed Of Function Execution (min/avg/max binding call time)."},
         {ERowType::Button, g_ExecDyn_Btn, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Execute the loaded Lua script."},
+        // Script Warnings — red labels, each visible only when its warning is
+        // active (see CodeExecRowVisible + the Label render color rule).
+        {ERowType::Label, g_ExecWarn_Header, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_ExecWarn_Internet, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_ExecWarn_Os, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_ExecWarn_Files, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_ExecWarn_Version, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 
 // ---------- TAS panel (8) ----------
@@ -1296,6 +1560,8 @@ static bool g_TasFilePicked = false;
                 {ERowType::Toggle, "Show Speed", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
                 {ERowType::Toggle, "Trajectory", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                         "Draw the TAS trajectory."},
+                {ERowType::Toggle, "Start/End Pos", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                        "Draw the start and the end position of the replay."},
         };
 
 // ---------- Spawner (child of the TAS panel, .tas v2.0) ----------
@@ -1489,6 +1755,9 @@ static SRow g_TasPgChildren[TAS_PG_ROW_COUNT] = {
 };
 
 static SRow g_TasRows[] = {
+	{ERowType::Expandable, "GitHub TASes", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+		nullptr, 0, // children are rebuilt from tas.json in UpdateTasRows
+		"TAS repository (storage/tas in the client repo). Update List downloads only the metadata; Load loads the .tas file into the TAS panel from memory (nothing is saved to disk); Download saves it to Kinetix/TAS."},
 	{ERowType::Dropdown, "Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TasModeOpts, 2, 0, nullptr, 0,
 		"Play a recorded TAS or record a new one."},
 	{ERowType::DoubleButton, "Pick File", "Unpick File", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
@@ -1497,8 +1766,8 @@ static SRow g_TasRows[] = {
 		"Start / stop the current action (Play or Record).", "Clear the record/saved buffer and unload the picked .tas file."},
 	{ERowType::Input, "Map", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "map...", nullptr, 0, 0, nullptr, 0,
 		"Map name saved with the TAS."},
-	{ERowType::Input, "Name", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "name...", nullptr, 0, 0, nullptr, 0,
-		"TAS name."},
+	{ERowType::Input, "Description", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "description...", nullptr, 0, 0, nullptr, 0,
+		"TAS description."},
 	{ERowType::Input, "Author", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "author...", nullptr, 0, 0, nullptr, 0,
 		"TAS author."},
 	{ERowType::Label, g_TasDyn_SaveCreated, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
@@ -1514,7 +1783,7 @@ static SRow g_TasRows[] = {
                 "Auto rewind/forward on freeze/teleport/death tiles."},
         {ERowType::Expandable, "Fake Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TasFakeAimChildren, 1,
                 "Spoof the rendered aim during playback."},
-        {ERowType::Expandable, "Visuals", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TasVisualsChildren, 4,
+        {ERowType::Expandable, "Visuals", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TasVisualsChildren, 5,
                 "TAS visualization toggles."},
         {ERowType::Expandable, "Playground Settings", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TasPgChildren, TAS_PG_ROW_COUNT,
                 "Virtual RCON, virtual chat and practice inside the playground."},
@@ -1531,13 +1800,14 @@ static SRow g_TasRows[] = {
 // deviation from the planned path exceeds the trigger (Anti-TAS chaos).
 // The tile editors are SEPARATE from the Pathfinder tab (own mode/tiles/grids).
 static SRow g_RtVisualsChildren[] = {
-        {ERowType::Toggle, "Show Path", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Show Hooks", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Show Field", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Show Previous Path", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Previous Path", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Draw the previous planned path as well."},
-        // Visible only when Show Path or Show Previous Path is on (TasVisualsChildVisible).
-        {ERowType::Toggle, "Show Speed", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Path", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        // Visible only when Path is on.
+        {ERowType::Toggle, "Speed", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Hooks", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Field", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Start/End Pos", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 // v1.56.281: "Reconstruct" expandable — the header checkbox is the master
 // toggle (kx_rt_pf_reconstruct); the trigger slider lives inside it.
@@ -1548,23 +1818,46 @@ static SRow g_RtReconstructChildren[] = {
 // v1.56.281: "Future Limit" expandable — the header checkbox is the master
 // toggle (kx_rt_pf_future_limit); the Future Ticks slider lives inside it.
 static SRow g_RtFutureLimitChildren[] = {
-        {ERowType::Slider, "Future Ticks", nullptr, false, false, 1.0f, 150.0f, 1.0f, 50.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Ticks", nullptr, false, false, 1.0f, 150.0f, 1.0f, 50.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "How far ahead the plan is allowed to extend (ticks)."},
 };
+// Sequence search knobs: population of movement sequences per planning step,
+// ticks simulated per sequence and how many of the winner's ticks are replayed.
+static const char *const g_RtModeOpts[] = {"Finish", "Cursor", "Target"};
+static SRow g_RtSettingsChildren[] = {
+        {ERowType::Toggle, "Simulate Players", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Simulate nearby players instead of the local tee alone."},
+        {ERowType::Slider, "Population", nullptr, false, false, 128.0f, 8192.0f, 1.0f, 128.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Movement sequences generated per planning step."},
+        {ERowType::Slider, "Exploration Depth", nullptr, false, false, 5.0f, 50.0f, 1.0f, 12.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Ticks simulated per generated sequence."},
+        {ERowType::Slider, "Top Candidates", nullptr, false, false, 1.0f, 100.0f, 1.0f, 4.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Top candidates validated before replay."},
+        {ERowType::Slider, "Sequence Length", nullptr, false, false, 1.0f, 20.0f, 1.0f, 8.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Ticks of the best sequence replayed before re-planning."},
+        {ERowType::Slider, "Search Budget", nullptr, false, false, 0.0f, 50.0f, 1.0f, 8.0f, " ms", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Search time budget in milliseconds (0 = unlimited)."},
+};
 static SRow g_RtPathfinderRows[] = {
+        {ERowType::Dropdown, "Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_RtModeOpts, 3, 0, nullptr, 0,
+                "What the planner drives toward: the finish, the cursor or a target client."},
+        {ERowType::Input, "Target ID", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0,
+                "Client id used when Mode = Target."},
         {ERowType::Expandable, "Reconstruct", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RtReconstructChildren, 1,
                 "Re-anchor the plan from the live position on deviation."},
         {ERowType::Expandable, "Future Limit", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RtFutureLimitChildren, 1,
                 "Limit how far ahead the plan may extend."},
-        {ERowType::Expandable, "Visuals", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RtVisualsChildren, 5,
+        {ERowType::Expandable, "Settings", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RtSettingsChildren, 6,
+                "Sequence search settings."},
+        {ERowType::Expandable, "Visuals", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RtVisualsChildren, 6,
                 "RT pathfinder visualization toggles."},
         // Label toggles Pathfinding (green) / Stop (red) via m_RtPfState (no Finish state).
-        {ERowType::Button, "RT Pathfinding", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Button, "Pathfinding", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Start / stop the real-time pathfinder."},
-        {ERowType::DoubleButton, "RT Editor Forbidden Tiles", "Clear Forbidden Tiles", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Open the RT forbidden-tiles editor.", "Clear all RT forbidden tiles."},
-        {ERowType::DoubleButton, "RT Editor Finish Tiles", "Clear Finish Tiles", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Open the RT finish-tiles editor.", "Clear all RT finish tiles."},
+        {ERowType::DoubleButton, "Editor Forbidden Tiles", "Clear Forbidden Tiles", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Open the forbidden-tiles editor.", "Clear all forbidden tiles."},
+        {ERowType::DoubleButton, "Editor Finish Tiles", "Clear Finish Tiles", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Open the finish-tiles editor.", "Clear all finish tiles."},
 };
 
 // ---------- Visuals panel (v1.56.260) ----------
@@ -1689,6 +1982,8 @@ static SRow g_ArrayListChildren[] = {
                 "Vertical gap between features (the blocks move with it)."},
         {ERowType::Slider, "ArrayList Size", nullptr, false, false, 0.1f, 2.0f, 0.1f, 1.0f, "x", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Overall scale of the HUD (like ClickGUI Scale)."},
+        {ERowType::Toggle, "Show In ClickGUI", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Draw the HUD ABOVE the ClickGUI instead of under it (draggable while the GUI is open)."},
         {ERowType::Input, "Text Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ffffff", "hex...", nullptr, 0, 0, nullptr, 0,
                 "Text color of the list (hex RGB)."},
         {ERowType::Toggle, "Rainbow Text", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
@@ -1735,6 +2030,8 @@ static SRow g_ArrayInfoChildren[] = {
                 "Vertical gap between info lines (the blocks move with it)."},
         {ERowType::Slider, "ArrayInfo Size", nullptr, false, false, 0.1f, 2.0f, 0.1f, 1.0f, "x", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Overall scale of the info bar (like ClickGUI Scale)."},
+        {ERowType::Toggle, "Show In ClickGUI", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Draw the info bar ABOVE the ClickGUI instead of under it (draggable while the GUI is open)."},
         {ERowType::Input, "Text Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ffffff", "hex...", nullptr, 0, 0, nullptr, 0,
                 "Text color of the info line (hex RGB)."},
         {ERowType::Toggle, "Rainbow Text", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
@@ -1767,6 +2064,8 @@ static SRow g_ArrayPlayerChildren[] = {
                 "Vertical gap between the track title and the artist."},
         {ERowType::Slider, "ArrayPlayer Size", nullptr, false, false, 0.1f, 2.0f, 0.1f, 1.0f, "x", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Overall scale of the player (like ClickGUI Scale)."},
+        {ERowType::Toggle, "Show In ClickGUI", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Draw the player ABOVE the ClickGUI instead of under it (draggable while the GUI is open)."},
         {ERowType::Input, "Text Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ffffff", "hex...", nullptr, 0, 0, nullptr, 0,
                 "Text color of the player (hex RGB)."},
         {ERowType::Toggle, "Dynamic Scale", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
@@ -1808,11 +2107,11 @@ static SRow g_VisualsRows[] = {
                 "Bypass the asset (map) lock."},
         {ERowType::Expandable, "Admin Alarm", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AdminAlarmChildren, 5,
                 "Local alarm when an admin/helper/moderator is present."},
-        {ERowType::Expandable, "ArrayList", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ArrayListChildren, 16,
+        {ERowType::Expandable, "ArrayList", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ArrayListChildren, 17,
                 "On-screen list of enabled features (drag to move)."},
-        {ERowType::Expandable, "ArrayInfo", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ArrayInfoChildren, 21,
+        {ERowType::Expandable, "ArrayInfo", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ArrayInfoChildren, 22,
                 "On-screen info bar (drag to move)."},
-        {ERowType::Expandable, "ArrayPlayer", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ArrayPlayerChildren, 16,
+        {ERowType::Expandable, "ArrayPlayer", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ArrayPlayerChildren, 17,
                 "On-screen now-playing media card (drag to move)."},
 };
 
@@ -2018,13 +2317,20 @@ static bool PfRowVisible(const SRow *pRows, int rowCount, int idx)
         if(idx < 0 || idx >= rowCount)
                 return false;
         const SRow &row = pRows[idx];
-        if(str_comp(row.pName, "A* Weight") == 0 || str_comp(row.pName, "Hook angles") == 0 ||
-           str_comp(row.pName, "Freeze Support (Beta)") == 0)
-                return g_Config.m_KxPfEffort == 6;
-        if(str_comp(row.pName, "Beam width") == 0)
-                return g_Config.m_KxPfEffort == 6 && g_Config.m_KxPfAlgorithm == 1;
-        if(str_comp(row.pName, "Evolutions") == 0)
-                return g_Config.m_KxPfEffort == 6 && g_Config.m_KxPfAlgorithm == 2;
+        if(str_comp(row.pName, "Speed") == 0)
+        {
+                for(int i = 0; i < rowCount; ++i)
+                        if(str_comp(pRows[i].pName, "Path") == 0)
+                                return pRows[i].on;
+                return false;
+        }
+        if(str_comp(row.pName, "Unfreeze Radius") == 0)
+        {
+                for(int i = 0; i < rowCount; ++i)
+                        if(str_comp(pRows[i].pName, "Freeze Support (Beta)") == 0)
+                                return pRows[i].on;
+                return false;
+        }
         if(row.pName == g_PfDyn_Progress || row.pName == g_PfDyn_Eta)
                 return g_PfShowRunLabels;
         if(row.pName == g_PfDyn_Time)
@@ -2061,7 +2367,7 @@ static bool CodeExecRowVisible(const SRow *pRows, int rowCount, int idx)
                 return false;
         const SRow &row = pRows[idx];
         if(row.pName == g_ExecDyn_Path)
-                return g_ExecLoaded;
+                return g_ExecLoaded && g_ExecScriptPath[0] != '\0'; // v6.12: hidden for in-memory GitHub loads
         if(row.pName == g_ExecDyn_Name)
                 return g_ExecHasName;
         if(row.pName == g_ExecDyn_Version)
@@ -2070,6 +2376,18 @@ static bool CodeExecRowVisible(const SRow *pRows, int rowCount, int idx)
                 return g_ExecHasAuthor;
         if(row.pName == g_ExecDyn_Desc)
                 return g_ExecHasDesc;
+        if(row.pName == g_ExecDyn_CE)
+                return g_ExecHasCE;
+        if(row.pName == g_ExecWarn_Header)
+                return g_ExecWarnAny;
+        if(row.pName == g_ExecWarn_Internet)
+                return g_ExecWarnInternet;
+        if(row.pName == g_ExecWarn_Os)
+                return g_ExecWarnOs;
+        if(row.pName == g_ExecWarn_Files)
+                return g_ExecWarnFiles;
+        if(row.pName == g_ExecWarn_Version)
+                return g_ExecWarnVersion;
         return true;
 }
 
@@ -2094,7 +2412,7 @@ static bool TasRowVisible(const SRow *pRows, int rowCount, int idx)
         }
         if(row.pName == g_TasDyn_SaveCreated)
                 return g_TasFileHasBuffer;
-        if(str_comp(row.pName, "Map") == 0 || str_comp(row.pName, "Name") == 0 ||
+        if(str_comp(row.pName, "Map") == 0 || str_comp(row.pName, "Description") == 0 ||
                 str_comp(row.pName, "Author") == 0 || str_comp(row.pName, "Save") == 0)
                 return g_TasFileHasBuffer;
         return true;
@@ -2295,6 +2613,49 @@ static bool TasRowChildrenVisible(const SRow &row, int c)
                 return TasVisualsChildVisible(row.pChildren, row.childCount, c);
         if(str_comp(row.pName, "Spawner") == 0)
                 return TasSpawnerChildVisible(row.pChildren, row.childCount, c);
+        if(str_comp(row.pName, "Execution Settings") == 0)
+        {
+                const SRow &Child = row.pChildren[c];
+                // The Shell dropdown only appears while OS Commands is enabled.
+                if(str_comp(Child.pName, "Shell") == 0)
+                {
+                        for(int i = 0; i < row.childCount; ++i)
+                                if(str_comp(row.pChildren[i].pName, "OS Commands") == 0)
+                                        return row.pChildren[i].on;
+                }
+                return true;
+        }
+        if(str_comp(row.pName, "LuaCT") == 0)
+        {
+                const SRow &Child = row.pChildren[c];
+                // g_LuaCTVis* are refreshed every frame by UpdateCodeExecRows
+                // (GameClient() is not reachable from this static context).
+                if(Child.pName == g_LuaCTDyn_Result)
+                        return g_LuaCTVisState == CCodeExec::LUACT_RESULTS;
+                if(Child.pName == g_LuaCTDyn_SoFE)
+                        return g_LuaCTVisState == CCodeExec::LUACT_RESULTS && g_LuaCTVisHasSoFE;
+                if(Child.pName == g_LuaCTDyn_Failed)
+                        return g_LuaCTVisState == CCodeExec::LUACT_RESULTS && g_LuaCTVisFails > 0;
+                return true;
+        }
+        if(str_comp(row.pName, "GitHub Scripts") == 0)
+        {
+                const SRow &Child = row.pChildren[c];
+                // Header labels only exist once the list was updated; the
+                // updated label doubles as the error message line.
+                if(Child.pName == g_GitHubDyn_Updated || Child.pName == g_GitHubDyn_Count ||
+                        Child.pName == g_GitHubDyn_Supported || Child.pName == g_GitHubDyn_ScriptsHdr)
+                        return g_GitHubVisListDone;
+                return true;
+        }
+        if(str_comp(row.pName, "GitHub TASes") == 0)
+        {
+                const SRow &Child = row.pChildren[c];
+                if(Child.pName == g_TasGitHubDyn_Updated || Child.pName == g_TasGitHubDyn_Count ||
+                        Child.pName == g_TasGitHubDyn_Supported || Child.pName == g_TasGitHubDyn_ItemsHdr)
+                        return g_TasGitHubVisListDone;
+                return true;
+        }
         return true;
 }
 
@@ -2319,6 +2680,130 @@ static bool ExecParseHeaderLine(const char *pLine, int LineLen, const char *pKey
         mem_copy(pValue, pVal, ValLen);
         pValue[ValLen] = '\0';
         return true;
+}
+
+// Resets the loaded-script display state (shared by disk pick / memory load /
+// unpick).
+static void ExecResetScriptState()
+{
+        g_ExecLoaded = false;
+        g_ExecHasName = false;
+        g_ExecHasVersion = false;
+        g_ExecHasCE = false;
+        g_ExecHasAuthor = false;
+        g_ExecHasDesc = false;
+        g_ExecCEVersion = 0;
+        g_ExecUsesInternet = false;
+        g_ExecUsesOs = false;
+        g_ExecUsesFiles = false;
+}
+
+// Scans a script image in memory for the metadata header + feature usage
+// (shared by the disk pick and the GitHub memory load).
+static void ExecScanScriptContent(const char *pContent, unsigned Len)
+{
+        const char *p = pContent;
+        if(Len >= 3 && (unsigned char)p[0] == 0xEF && (unsigned char)p[1] == 0xBB && (unsigned char)p[2] == 0xBF)
+                p += 3;
+        const char *pScanStart = p;
+        const char *pEnd = pContent + Len;
+        int LinesChecked = 0;
+        while(p < pEnd && LinesChecked < 32)
+        {
+                const char *pLineEnd = p;
+                while(pLineEnd < pEnd && *pLineEnd != '\n' && *pLineEnd != '\r')
+                        pLineEnd++;
+                LinesChecked++;
+
+                const char *pKey = p;
+                int KeyLen = (int)(pLineEnd - pKey);
+                while(KeyLen > 0 && (*pKey == ' ' || *pKey == '\t'))
+                {
+                        pKey++;
+                        KeyLen--;
+                }
+                if(KeyLen < 2 || pKey[0] != '-' || pKey[1] != '-')
+                        break;
+                pKey += 2;
+                KeyLen -= 2;
+                while(KeyLen > 0 && (*pKey == ' ' || *pKey == '\t'))
+                {
+                        pKey++;
+                        KeyLen--;
+                }
+
+                char aValue[288];
+                if(ExecParseHeaderLine(pKey, KeyLen, "NAME", aValue, sizeof(aValue)))
+                {
+                        str_format(g_ExecDyn_Name, sizeof(g_ExecDyn_Name), "NAME: %s", aValue);
+                        g_ExecHasName = true;
+                }
+                else if(ExecParseHeaderLine(pKey, KeyLen, "VERSION", aValue, sizeof(aValue)))
+                {
+                        str_format(g_ExecDyn_Version, sizeof(g_ExecDyn_Version), "VERSION: %s", aValue);
+                        g_ExecHasVersion = true;
+                }
+                else if(ExecParseHeaderLine(pKey, KeyLen, "CEV", aValue, sizeof(aValue)))
+                {
+                        g_ExecCEVersion = atoi(aValue);
+                        str_format(g_ExecDyn_CE, sizeof(g_ExecDyn_CE), "CE Version: v%d", g_ExecCEVersion);
+                        g_ExecHasCE = true;
+                }
+                else if(ExecParseHeaderLine(pKey, KeyLen, "AUTHOR", aValue, sizeof(aValue)))
+                {
+                        str_format(g_ExecDyn_Author, sizeof(g_ExecDyn_Author), "AUTHOR: %s", aValue);
+                        g_ExecHasAuthor = true;
+                }
+                else if(ExecParseHeaderLine(pKey, KeyLen, "DESCRIPTION", aValue, sizeof(aValue)))
+                {
+                        str_format(g_ExecDyn_Desc, sizeof(g_ExecDyn_Desc), "DESCRIPTION: %s", aValue);
+                        g_ExecHasDesc = true;
+                }
+
+                p = pLineEnd;
+                while(p < pEnd && (*p == '\n' || *p == '\r'))
+                        p++;
+        }
+
+        // Feature usage scan for the Script Warnings list.
+        auto Contains = [pScanStart, pEnd](const char *pNeedle) {
+                const int NLen = str_length(pNeedle);
+                for(const char *pScan = pScanStart; pScan + NLen <= pEnd; pScan++)
+                        if(str_comp_num(pScan, pNeedle, NLen) == 0)
+                                return true;
+                return false;
+        };
+        g_ExecUsesInternet = Contains("net.get") || Contains("net.post");
+        g_ExecUsesOs = Contains("os.execute") || Contains("io.popen");
+        g_ExecUsesFiles = Contains("io.open") || Contains("io.lines") || Contains("io.input") ||
+                Contains("io.output") || Contains("os.remove") || Contains("os.rename") ||
+                Contains("dofile") || Contains("loadfile");
+}
+
+// v6.12: GitHub Load — the script image stays in memory only; nothing is
+// written to disk and the File: path line is not shown.
+static void ExecLoadScriptFromMemory(const char *pName, const char *pContent, unsigned Len)
+{
+        g_ExecScriptViaStorage = false;
+        g_ExecScriptPath[0] = '\0';
+        g_ExecDyn_Path[0] = '\0';
+        str_copy(g_ExecScriptName, pName ? pName : "", sizeof(g_ExecScriptName));
+        ExecResetScriptState();
+        if(pContent && Len > 0)
+                ExecScanScriptContent(pContent, Len);
+        g_ExecLoaded = true;
+}
+
+// v6.12: "Unpick File" — unload the loaded script (memory buffer or disk pick).
+static void ExecUnloadScript()
+{
+        g_ExecFromMem = false;
+        g_vExecScriptMem.clear();
+        g_ExecScriptViaStorage = false;
+        g_ExecScriptPath[0] = '\0';
+        g_ExecScriptName[0] = '\0';
+        g_ExecDyn_Path[0] = '\0';
+        ExecResetScriptState();
 }
 
 // Fake Aim: Speed hidden for Robot (1) and Real (5); Jitter only for Chaos (4).
@@ -2944,7 +3429,7 @@ static bool VisualRainbowChildVisible(const SRow *pChildren, int childCount, int
                         HasSprite = true;
                 else if(str_comp(pChildren[i].pName, "Rainbow Main Color") == 0)
                         HasRainbowMain = true;
-                else if(str_comp(pChildren[i].pName, "A* Weight") == 0)
+                else if(str_comp(pChildren[i].pName, "Max Ticks") == 0)
                         HasAStarWeight = true;
         }
         if(HasSprite)
@@ -3003,17 +3488,13 @@ static bool VisualRainbowChildVisible(const SRow *pChildren, int childCount, int
         }
         if(HasAStarWeight)
         {
-                // Pathfinder Settings: A* Weight + Freeze Support need Custom
-                // effort (6); Beam width also Beam algorithm (1); Evolutions
-                // also RHEA (2); Performance is always visible.
-                if(str_comp(ch.pName, "Performance") == 0)
-                        return true;
-                if(g_Config.m_KxPfEffort != 6)
+                if(str_comp(ch.pName, "Unfreeze Radius") == 0)
+                {
+                        for(int i = 0; i < childCount; ++i)
+                                if(str_comp(pChildren[i].pName, "Freeze Support (Beta)") == 0)
+                                        return pChildren[i].on;
                         return false;
-                if(str_comp(ch.pName, "Beam width") == 0)
-                        return g_Config.m_KxPfAlgorithm == 1;
-                if(str_comp(ch.pName, "Evolutions") == 0)
-                        return g_Config.m_KxPfAlgorithm == 2;
+                }
                 return true;
         }
         return true;
@@ -3111,22 +3592,22 @@ static bool AledBotChildVisible(const SRow *pChildren, int childCount, int idx)
         }
         return true;
 }
-// v1.56.129: BAF — "Angles" + "Silent" visible only when Aim toggle is on.
+// Children indented under a parent toggle are visible only while it is on.
 static bool AfChildVisible(const SRow *pChildren, int childCount, int idx)
 {
         if(idx < 0 || idx >= childCount)
                 return false;
-        const SRow &row = pChildren[idx];
-        if(str_comp(row.pName, "FOV") == 0 || str_comp(row.pName, "Angles") == 0 || str_comp(row.pName, "Silent") == 0)
+        switch(idx)
         {
-                for(int i = 0; i < childCount; ++i)
-                {
-                        if(str_comp(pChildren[i].pName, "Aim") == 0)
-                                return pChildren[i].on;
-                }
-                return false;
+        case 5: return pChildren[4].on;   // Unfreeze Ticks
+        case 17:                          // Angles
+        case 18:                          // FOV
+        case 19:                          // Silent
+        case 20:                          // Auto Aim
+        case 21: return pChildren[16].on; // Aim Assist
+        case 23: return pChildren[22].on; // Safe Tracking
+        default: return true;
         }
-        return true;
 }
 // v1.56.178: Trajectory — "Show for current" hidden when Type=Tee (no projectiles
 // for the tee type — it predicts tee movement only).
@@ -3259,7 +3740,10 @@ static bool IsVisualExpandableName(const char *pName)
                 str_comp(pName, "TAS") == 0 ||
                 str_comp(pName, "Settings") == 0 ||
                 str_comp(pName, "Binds") == 0 ||
-                str_comp(pName, "Spawner") == 0;
+                str_comp(pName, "Spawner") == 0 ||
+                str_comp(pName, "LuaCT") == 0 ||
+                str_comp(pName, "GitHub Scripts") == 0 ||
+                str_comp(pName, "GitHub TASes") == 0;
 }
 
 static float RowHeight(ERowType t)
@@ -3337,7 +3821,9 @@ static float RowHeightForRow(const SRow &row)
 {
         if(row.type != ERowType::Label)
                 return RowHeight(row.type);
-        return std::max(ROW_H_TOGGLE, 10.0f + 20.0f * (float)std::max(1, row.m_LabelLines));
+        // Labels are tighter than control rows: 17 px per wrapped text line
+        // plus 6 px padding, instead of the full 30 px toggle height.
+        return 6.0f + 17.0f * (float)std::max(1, row.m_LabelLines);
 }
 
 } // anonymous namespace
@@ -3986,6 +4472,286 @@ void CClickGui::UpdateCodeExecRows()
 {
         CCodeExec &CE = GameClient()->m_CodeExec;
         str_copy(g_ExecDyn_Btn, CE.GetState() == CCodeExec::STATE_RUNNING ? "Stop" : "Execute", sizeof(g_ExecDyn_Btn));
+
+        // Shell detection runs once; the dropdown offers only found shells.
+        if(!g_ExecShellsDetected)
+        {
+                g_ExecShellsDetected = true;
+                CCodeExec::DetectShells();
+                g_ExecShellOptCount = 0;
+                for(int Id = 0; Id < CCodeExec::NUM_SHELLS; ++Id)
+                {
+                        if(CCodeExec::ShellAvailable(Id))
+                        {
+                                g_aExecShellOpts[g_ExecShellOptCount] = g_ExecShellNames[Id];
+                                g_ExecShellOptToId[g_ExecShellOptCount] = Id;
+                                ++g_ExecShellOptCount;
+                        }
+                }
+                if(g_ExecShellOptCount == 0)
+                {
+                        g_aExecShellOpts[0] = g_ExecShellNames[CCodeExec::SHELL_CMD];
+                        g_ExecShellOptToId[0] = CCodeExec::SHELL_CMD;
+                        g_ExecShellOptCount = 1;
+                }
+        }
+
+        // Execution Settings children <-> config (loaded once, saved back live).
+        // The expandable header is the master toggle (kx_exec_settings): off =
+        // safe defaults, all execution permissions are forced off.
+        SRow *pSet = g_ExecSettingsChildren;
+        SRow *pExecMaster = nullptr;
+        for(SRow &R : g_CodeExecRows)
+        {
+                if(str_comp(R.pName, "Execution Settings") == 0)
+                        pExecMaster = &R;
+        }
+        if(!g_ExecSettingsLoaded)
+        {
+                g_ExecSettingsLoaded = true;
+                if(pExecMaster)
+                        pExecMaster->on = g_Config.m_KxExecSettings != 0;
+                pSet[0].on = g_Config.m_KxExecInternet != 0;
+                pSet[1].on = g_Config.m_KxExecOs != 0;
+                pSet[3].on = g_Config.m_KxExecSandbox != 0;
+                pSet[4].on = g_Config.m_KxExecDebug != 0;
+                int ShellId = g_Config.m_KxExecShell;
+                int SelIdx = 0;
+                for(int i = 0; i < g_ExecShellOptCount; ++i)
+                        if(g_ExecShellOptToId[i] == ShellId)
+                                SelIdx = i;
+                pSet[2].pOptions = g_aExecShellOpts;
+                pSet[2].optionCount = g_ExecShellOptCount;
+                pSet[2].valueIdx = SelIdx;
+        }
+        pSet[2].pOptions = g_aExecShellOpts;
+        pSet[2].optionCount = g_ExecShellOptCount;
+        if(pSet[2].valueIdx >= pSet[2].optionCount)
+                pSet[2].valueIdx = 0;
+        if(pExecMaster)
+                g_Config.m_KxExecSettings = pExecMaster->on ? 1 : 0;
+        // Children stay freely editable while the master is off — the master
+        // only gates the effective permissions (bindings check m_KxExecSettings
+        // alongside the individual flags).
+        g_Config.m_KxExecInternet = pSet[0].on ? 1 : 0;
+        g_Config.m_KxExecOs = pSet[1].on ? 1 : 0;
+        g_Config.m_KxExecShell = g_ExecShellOptToId[pSet[2].valueIdx];
+        g_Config.m_KxExecSandbox = pSet[3].on ? 1 : 0;
+        g_Config.m_KxExecDebug = pSet[4].on ? 1 : 0;
+
+        // LuaCT button label + result labels.
+        const int LuaCTState = CE.LuaCTState();
+        g_LuaCTVisState = LuaCTState;
+        g_LuaCTVisFails = 0;
+        for(const CCodeExec::SLuaCTResult &R : CE.LuaCTResults())
+                if(!R.m_Ok)
+                        ++g_LuaCTVisFails;
+        if(LuaCTState == CCodeExec::LUACT_RUNNING)
+                str_copy(g_LuaCTDyn_Btn, "Stop", sizeof(g_LuaCTDyn_Btn));
+        else if(LuaCTState == CCodeExec::LUACT_RESULTS)
+                str_copy(g_LuaCTDyn_Btn, "Clear", sizeof(g_LuaCTDyn_Btn));
+        else
+                str_copy(g_LuaCTDyn_Btn, "Start", sizeof(g_LuaCTDyn_Btn));
+
+        g_LuaCTDyn_Result[0] = '\0';
+        g_LuaCTDyn_Failed[0] = '\0';
+        if(LuaCTState == CCodeExec::LUACT_RESULTS)
+        {
+                int Passed = 0, Failed = 0;
+                for(const CCodeExec::SLuaCTResult &R : CE.LuaCTResults())
+                {
+                        if(R.m_Ok)
+                                ++Passed;
+                        else
+                                ++Failed;
+                }
+                const int Total = Passed + Failed;
+                if(Total > 0)
+                        str_format(g_LuaCTDyn_Result, sizeof(g_LuaCTDyn_Result),
+                                "LuaCT: %.1f%% | %d/%d", 100.0f * Passed / Total, Passed, Total);
+                if(Failed > 0)
+                {
+                        // List failed names (truncated to the label buffer).
+                        str_copy(g_LuaCTDyn_Failed, "Failed: ", sizeof(g_LuaCTDyn_Failed));
+                        for(const CCodeExec::SLuaCTResult &R : CE.LuaCTResults())
+                        {
+                                if(R.m_Ok)
+                                        continue;
+                                const size_t Len = str_length(g_LuaCTDyn_Failed);
+                                if(Len + str_length(R.m_Name.c_str()) + 3 >= sizeof(g_LuaCTDyn_Failed))
+                                {
+                                        str_append(g_LuaCTDyn_Failed, ", ...", sizeof(g_LuaCTDyn_Failed));
+                                        break;
+                                }
+                                if(Len > str_length("Failed: "))
+                                        str_append(g_LuaCTDyn_Failed, ", ", sizeof(g_LuaCTDyn_Failed));
+                                str_append(g_LuaCTDyn_Failed, R.m_Name.c_str(), sizeof(g_LuaCTDyn_Failed));
+                        }
+                }
+        }
+
+        // LuaCT CE Version + SoFE (min/avg/max over the timed tests).
+        str_format(g_LuaCTDyn_CE, sizeof(g_LuaCTDyn_CE), "CE Version: v%d", KX_CE_VERSION);
+        g_LuaCTDyn_SoFE[0] = '\0';
+        g_LuaCTVisHasSoFE = false;
+        if(LuaCTState == CCodeExec::LUACT_RESULTS)
+        {
+                double Min = 0.0, Max = 0.0, Sum = 0.0;
+                int Timed = 0;
+                for(const CCodeExec::SLuaCTResult &R : CE.LuaCTResults())
+                {
+                        if(!R.m_Timed)
+                                continue;
+                        if(Timed == 0 || R.m_Time < Min)
+                                Min = R.m_Time;
+                        if(R.m_Time > Max)
+                                Max = R.m_Time;
+                        Sum += R.m_Time;
+                        ++Timed;
+                }
+                if(Timed > 0)
+                {
+                        str_format(g_LuaCTDyn_SoFE, sizeof(g_LuaCTDyn_SoFE),
+                                "SoFE: %.3fms | %.3fms | %.3fms",
+                                Min * 1000.0, (Sum / Timed) * 1000.0, Max * 1000.0);
+                        g_LuaCTVisHasSoFE = true;
+                }
+        }
+
+        // GitHub Scripts section: poll jobs, refresh labels, (re)build the
+        // per-script children from the parsed metadata.
+        CE.GitHubUpdateJobs();
+        const int GitHubState = CE.GitHubState();
+        g_GitHubVisListDone = GitHubState == CCodeExec::GITHUB_READY || GitHubState == CCodeExec::GITHUB_ERROR;
+        g_GitHubBuiltReady = GitHubState == CCodeExec::GITHUB_READY;
+        g_GitHubDyn_Updated[0] = '\0';
+        g_GitHubDyn_Count[0] = '\0';
+        g_GitHubDyn_Supported[0] = '\0';
+        if(GitHubState == CCodeExec::GITHUB_UPDATING)
+                str_copy(g_GitHubDyn_Btn, "Updating...", sizeof(g_GitHubDyn_Btn));
+        else
+                str_copy(g_GitHubDyn_Btn, "Update List", sizeof(g_GitHubDyn_Btn));
+        if(GitHubState == CCodeExec::GITHUB_READY)
+        {
+                str_format(g_GitHubDyn_Updated, sizeof(g_GitHubDyn_Updated), "List Updated: %s", CE.GitHubListUpdated().c_str());
+                str_format(g_GitHubDyn_Count, sizeof(g_GitHubDyn_Count), "Scripts: %d", (int)CE.GitHubScripts().size());
+                str_format(g_GitHubDyn_Supported, sizeof(g_GitHubDyn_Supported), "Last Supported Version: %s", CE.GitHubLastSupportedVersion().c_str());
+        }
+        else if(GitHubState == CCodeExec::GITHUB_ERROR)
+        {
+                str_format(g_GitHubDyn_Updated, sizeof(g_GitHubDyn_Updated), "Update failed: %s", CE.GitHubError());
+        }
+
+        const int ScriptCount = g_GitHubBuiltReady ? (int)CE.GitHubScripts().size() : 0;
+        const int BuildCount = ScriptCount < GITHUB_MAX_SCRIPTS ? ScriptCount : GITHUB_MAX_SCRIPTS;
+        {
+                // Rebuilt every frame: a few dozen small rows.
+                g_vGitHubChildren.clear();
+                auto AddLabel = [&](char *pBuf) {
+                        SRow Row = {};
+                        Row.type = ERowType::Label;
+                        Row.pName = pBuf;
+                        // v6.12: these children are recreated every frame, which
+                        // resets m_LabelLines to 1. Recompute it here — the hit-test
+                        // and dropdown traversal heights read it while the cached
+                        // Yoga layout keeps the height from the rebuild pass.
+                        Row.m_LabelLines = KxLabelLineCount(pBuf,
+                                PANEL_WIDTH - BODY_PADDING * 2.0f - SUB_LIST_INDENT - 8.0f);
+                        g_vGitHubChildren.push_back(Row);
+                };
+                auto AddButton = [&](char *pBuf) {
+                        SRow Row = {};
+                        Row.type = ERowType::Button;
+                        Row.pName = pBuf;
+                        g_vGitHubChildren.push_back(Row);
+                };
+                AddButton(g_GitHubDyn_Btn);
+                AddLabel(g_GitHubDyn_Updated);
+                AddLabel(g_GitHubDyn_Count);
+                AddLabel(g_GitHubDyn_Supported);
+                AddLabel(g_GitHubDyn_ScriptsHdr);
+                for(int i = 0; i < BuildCount; i++)
+                {
+                        const CCodeExec::SGitHubScript &S = CE.GitHubScripts()[i];
+                        str_format(g_aGitHubName[i], sizeof(g_aGitHubName[i]), "Name: %s", S.m_Name.c_str());
+                        str_format(g_aGitHubVersion[i], sizeof(g_aGitHubVersion[i]), "Version: %s", S.m_Version.c_str());
+                        str_format(g_aGitHubCE[i], sizeof(g_aGitHubCE[i]), "CE Version: v%d", S.m_CeVersion);
+                        str_format(g_aGitHubAuthor[i], sizeof(g_aGitHubAuthor[i]), "Author: %s", S.m_Author.c_str());
+                        str_format(g_aGitHubDesc[i], sizeof(g_aGitHubDesc[i]), "Description: %s", S.m_Description.c_str());
+                        str_copy(g_aGitHubLoadBtn[i], "Load", sizeof(g_aGitHubLoadBtn[i]));
+                        AddLabel(g_GitHubDyn_Sep);
+                        AddLabel(g_aGitHubName[i]);
+                        AddLabel(g_aGitHubVersion[i]);
+                        AddLabel(g_aGitHubCE[i]);
+                        AddLabel(g_aGitHubAuthor[i]);
+                        AddLabel(g_aGitHubDesc[i]);
+                        AddButton(g_aGitHubLoadBtn[i]);
+                        g_vGitHubChildren.back().type = ERowType::DoubleButton;
+                        g_vGitHubChildren.back().pName2 = "Download";
+                        g_vGitHubChildren.back().pToolTip = "Load the script into Code Execution from memory (nothing is saved to disk).";
+                        g_vGitHubChildren.back().pToolTip2 = "Download the script to Kinetix/Scripts.";
+                }
+                if(BuildCount > 0)
+                        AddLabel(g_GitHubDyn_Sep);
+                g_GitHubBuiltCount = BuildCount;
+        }
+        // Load button shows "..." while its download is in flight.
+        for(int i = 0; i < BuildCount; i++)
+                str_copy(g_aGitHubLoadBtn[i],
+                        (CE.GitHubLoadState() == CCodeExec::GITHUB_LOAD_LOADING && i == g_GitHubLoadRequestedIdx) ? "..." : "Load",
+                        sizeof(g_aGitHubLoadBtn[i]));
+        for(SRow &R : g_CodeExecRows)
+        {
+                if(str_comp(R.pName, "GitHub Scripts") == 0)
+                {
+                        R.pChildren = g_vGitHubChildren.empty() ? nullptr : g_vGitHubChildren.data();
+                        R.childCount = (int)g_vGitHubChildren.size();
+                        break;
+                }
+        }
+        // v6.12: A finished Load keeps the script in memory — it is loaded
+        // into the execution buffer (no disk write, no File: path line).
+        // Download (no Select) already wrote the file to Kinetix/Scripts.
+        if(CE.GitHubLoadState() == CCodeExec::GITHUB_LOAD_DONE)
+        {
+                const std::string &Content = CE.GitHubLoadContent();
+                if(CE.GitHubLoadSelect() && !Content.empty())
+                {
+                        g_ExecFromMem = true;
+                        g_vExecScriptMem.assign(Content.begin(), Content.end());
+                        ExecLoadScriptFromMemory(CE.GitHubLoadFile(), g_vExecScriptMem.data(),
+                                (unsigned)g_vExecScriptMem.size());
+                }
+                CE.GitHubClearLoadDone();
+        }
+
+        // v6.12: Script Warnings tell the user what the loaded script is
+        // ALLOWED to do under the current Execution Settings, mirroring the
+        // permission checks in the bindings: internet needs the master +
+        // Internet toggles, OS commands additionally need the Sandbox off,
+        // file access warns only while unrestricted (the sandbox would
+        // confine it), plus an unsupported CE version.
+        g_ExecWarnInternet = g_ExecLoaded && g_ExecUsesInternet && g_Config.m_KxExecSettings && g_Config.m_KxExecInternet;
+        g_ExecWarnOs = g_ExecLoaded && g_ExecUsesOs && g_Config.m_KxExecSettings && !g_Config.m_KxExecSandbox && g_Config.m_KxExecOs;
+        g_ExecWarnFiles = g_ExecLoaded && g_ExecUsesFiles && !(g_Config.m_KxExecSettings && g_Config.m_KxExecSandbox);
+        g_ExecWarnVersion = g_ExecLoaded && g_ExecCEVersion > KX_CE_VERSION;
+        g_ExecWarnAny = g_ExecWarnInternet || g_ExecWarnOs || g_ExecWarnFiles || g_ExecWarnVersion;
+        if(g_ExecWarnInternet)
+                str_copy(g_ExecWarn_Internet, "- Access To The Internet", sizeof(g_ExecWarn_Internet));
+        else
+                g_ExecWarn_Internet[0] = '\0';
+        if(g_ExecWarnOs)
+                str_copy(g_ExecWarn_Os, "- OS Commands", sizeof(g_ExecWarn_Os));
+        else
+                g_ExecWarn_Os[0] = '\0';
+        if(g_ExecWarnFiles)
+                str_copy(g_ExecWarn_Files, "- Files", sizeof(g_ExecWarn_Files));
+        else
+                g_ExecWarn_Files[0] = '\0';
+        if(g_ExecWarnVersion)
+                str_format(g_ExecWarn_Version, sizeof(g_ExecWarn_Version), "- Unsupported Version: v%d", g_ExecCEVersion);
+        else
+                g_ExecWarn_Version[0] = '\0';
 }
 
 static void TasSpawnerEnsureInput(SRow &Row)
@@ -4240,6 +5006,8 @@ void CClickGui::UpdateTasRows()
 							Child.on = g_Config.m_KxTasShowSpeed != 0;
 						else if(str_comp(Child.pName, "Trajectory") == 0)
 							Child.on = g_Config.m_KxTasShowTrajectory != 0;
+						else if(str_comp(Child.pName, "Start/End Pos") == 0)
+							Child.on = g_Config.m_KxTasDrawStartEndPos != 0;
 					}
 			}
 		}
@@ -4308,6 +5076,8 @@ void CClickGui::UpdateTasRows()
 							g_Config.m_KxTasShowSpeed = Child.on ? 1 : 0;
 						else if(str_comp(Child.pName, "Trajectory") == 0)
 							g_Config.m_KxTasShowTrajectory = Child.on ? 1 : 0;
+						else if(str_comp(Child.pName, "Start/End Pos") == 0)
+							g_Config.m_KxTasDrawStartEndPos = Child.on ? 1 : 0;
 					}
 			}
         }
@@ -4346,6 +5116,123 @@ void CClickGui::UpdateTasRows()
 	char aNowCreated[64];
 	str_timestamp_format(aNowCreated, sizeof(aNowCreated), "%H:%M | %d.%m.%Y");
 	str_format(g_TasDyn_SaveCreated, sizeof(g_TasDyn_SaveCreated), "Created: %s", aNowCreated);
+
+	// ---- GitHub TASes ----
+	Tas.GitHubUpdateJobs();
+	const int TasGitHubState = Tas.GitHubState();
+	g_TasGitHubVisListDone = TasGitHubState == CTas::GITHUB_READY || TasGitHubState == CTas::GITHUB_ERROR;
+	g_TasGitHubBuiltReady = TasGitHubState == CTas::GITHUB_READY;
+	str_copy(g_TasGitHubDyn_Btn, TasGitHubState == CTas::GITHUB_UPDATING ? "Updating..." : "Update List", sizeof(g_TasGitHubDyn_Btn));
+	g_TasGitHubDyn_Updated[0] = '\0';
+	g_TasGitHubDyn_Count[0] = '\0';
+	g_TasGitHubDyn_Supported[0] = '\0';
+	if(TasGitHubState == CTas::GITHUB_READY)
+	{
+		str_format(g_TasGitHubDyn_Updated, sizeof(g_TasGitHubDyn_Updated), "List Updated: %s", Tas.GitHubListUpdated().c_str());
+		str_format(g_TasGitHubDyn_Count, sizeof(g_TasGitHubDyn_Count), "TASes: %d", (int)Tas.GitHubItems().size());
+		str_format(g_TasGitHubDyn_Supported, sizeof(g_TasGitHubDyn_Supported), "Last Supported Version: %s", Tas.GitHubLastSupportedVersion().c_str());
+	}
+	else if(TasGitHubState == CTas::GITHUB_ERROR)
+	{
+		str_format(g_TasGitHubDyn_Updated, sizeof(g_TasGitHubDyn_Updated), "Update failed: %s", Tas.GitHubError());
+	}
+
+	const int TasItemCount = g_TasGitHubBuiltReady ? (int)Tas.GitHubItems().size() : 0;
+	const int TasBuildCount = TasItemCount < GITHUB_TAS_MAX_ITEMS ? TasItemCount : GITHUB_TAS_MAX_ITEMS;
+	{
+		// Rebuilt every frame: a few dozen small rows.
+		g_vGitHubTasChildren.clear();
+		auto AddLabel = [&](char *pBuf) {
+			SRow Row = {};
+			Row.type = ERowType::Label;
+			Row.pName = pBuf;
+			// v6.12: these children are recreated every frame, which
+			// resets m_LabelLines to 1. Recompute it here — the hit-test
+			// and dropdown traversal heights read it while the cached
+			// Yoga layout keeps the height from the rebuild pass.
+			Row.m_LabelLines = KxLabelLineCount(pBuf,
+				PANEL_WIDTH - BODY_PADDING * 2.0f - SUB_LIST_INDENT - 8.0f);
+			g_vGitHubTasChildren.push_back(Row);
+		};
+		auto AddButton = [&](char *pBuf) {
+			SRow Row = {};
+			Row.type = ERowType::Button;
+			Row.pName = pBuf;
+			g_vGitHubTasChildren.push_back(Row);
+		};
+		AddButton(g_TasGitHubDyn_Btn);
+		AddLabel(g_TasGitHubDyn_Updated);
+		AddLabel(g_TasGitHubDyn_Count);
+		AddLabel(g_TasGitHubDyn_Supported);
+		AddLabel(g_TasGitHubDyn_ItemsHdr);
+		for(int i = 0; i < TasBuildCount; i++)
+		{
+			const CTas::SGitHubTas &Item = Tas.GitHubItems()[i];
+			str_format(g_aGitHubTasMap[i], sizeof(g_aGitHubTasMap[i]), "Map: %s", Item.m_Map.c_str());
+			str_format(g_aGitHubTasDesc[i], sizeof(g_aGitHubTasDesc[i]), "Description: %s", Item.m_Description.c_str());
+			str_format(g_aGitHubTasAuthor[i], sizeof(g_aGitHubTasAuthor[i]), "Author: %s", Item.m_Author.c_str());
+			str_format(g_aGitHubTasVersion[i], sizeof(g_aGitHubTasVersion[i]), "TAS Version: %s", Item.m_Version.c_str());
+			str_format(g_aGitHubTasCreated[i], sizeof(g_aGitHubTasCreated[i]), "Created: %s", Item.m_Created.c_str());
+			str_copy(g_aGitHubTasLoadBtn[i], "Load", sizeof(g_aGitHubTasLoadBtn[i]));
+			AddLabel(g_TasGitHubDyn_Sep);
+			AddLabel(g_aGitHubTasMap[i]);
+			AddLabel(g_aGitHubTasDesc[i]);
+			AddLabel(g_aGitHubTasAuthor[i]);
+			AddLabel(g_aGitHubTasVersion[i]);
+			AddLabel(g_aGitHubTasCreated[i]);
+			AddButton(g_aGitHubTasLoadBtn[i]);
+			g_vGitHubTasChildren.back().type = ERowType::DoubleButton;
+			g_vGitHubTasChildren.back().pName2 = "Download";
+			g_vGitHubTasChildren.back().pToolTip = "Load the .tas file into the TAS panel from memory (nothing is saved to disk).";
+			g_vGitHubTasChildren.back().pToolTip2 = "Download the .tas file to Kinetix/TAS.";
+		}
+		if(TasBuildCount > 0)
+			AddLabel(g_TasGitHubDyn_Sep);
+	}
+	// Load button shows "..." while its download is in flight.
+	for(int i = 0; i < TasBuildCount; i++)
+		str_copy(g_aGitHubTasLoadBtn[i],
+			(Tas.GitHubLoadState() == CTas::GITHUB_LOAD_LOADING && i == g_TasGitHubLoadRequestedIdx) ? "..." : "Load",
+			sizeof(g_aGitHubTasLoadBtn[i]));
+	for(SRow &R : g_TasRows)
+	{
+		if(str_comp(R.pName, "GitHub TASes") == 0)
+		{
+			R.pChildren = g_vGitHubTasChildren.empty() ? nullptr : g_vGitHubTasChildren.data();
+			R.childCount = (int)g_vGitHubTasChildren.size();
+			break;
+		}
+	}
+	// v6.12: A finished Load parses the .tas image straight from memory
+	// (nothing is written to disk); Download already saved it to
+	// Kinetix/TAS. Both fill the Map/Description/Author inputs.
+	if(Tas.GitHubLoadState() == CTas::GITHUB_LOAD_DONE)
+	{
+		if(Tas.GitHubLoadSelect() && !Tas.GitHubLoadContent().empty())
+			Tas.LoadTakeMem(Tas.GitHubLoadContent().data(), (unsigned)Tas.GitHubLoadContent().size());
+		if(Tas.FilePicked())
+		{
+			for(SRow &R : g_TasRows)
+			{
+				if(str_comp(R.pName, "Map") == 0)
+				{
+					str_copy(R.m_aInputBuf, Tas.PickedMap(), sizeof(R.m_aInputBuf));
+					R.m_InputInitialized = true;
+				}
+				else if(str_comp(R.pName, "Description") == 0)
+				{
+					str_copy(R.m_aInputBuf, Tas.PickedDescription(), sizeof(R.m_aInputBuf));
+					R.m_InputInitialized = true;
+				}
+				else if(str_comp(R.pName, "Author") == 0)
+				{
+					str_copy(R.m_aInputBuf, Tas.PickedAuthor(), sizeof(R.m_aInputBuf));
+					R.m_InputInitialized = true;
+				}
+			}
+		}
+		Tas.GitHubClearLoadDone();
+	}
 }
 
 void CClickGui::OpenScriptPicker()
@@ -4401,16 +5288,14 @@ void CClickGui::OnScriptPicked(const char *pPath, bool ViaStorage)
         }
         str_copy(g_ExecScriptName, pFileName, sizeof(g_ExecScriptName));
 
-        g_ExecLoaded = false;
-        g_ExecHasName = false;
-        g_ExecHasVersion = false;
-        g_ExecHasAuthor = false;
-        g_ExecHasDesc = false;
-
+        // v6.12: only a disk pick shows the File: path line (a GitHub memory
+        // load clears g_ExecDyn_Path and leaves it empty).
         if(str_length(g_ExecScriptPath) > 56)
                 str_format(g_ExecDyn_Path, sizeof(g_ExecDyn_Path), "File: ..%s", g_ExecScriptPath + str_length(g_ExecScriptPath) - 54);
         else
                 str_format(g_ExecDyn_Path, sizeof(g_ExecDyn_Path), "File: %s", g_ExecScriptPath);
+
+        ExecResetScriptState();
 
         void *pContent = nullptr;
         unsigned Len = 0;
@@ -4423,61 +5308,7 @@ void CClickGui::OnScriptPicked(const char *pPath, bool ViaStorage)
 
         if(pContent)
         {
-                const char *p = (const char *)pContent;
-                if(Len >= 3 && (unsigned char)p[0] == 0xEF && (unsigned char)p[1] == 0xBB && (unsigned char)p[2] == 0xBF)
-                        p += 3;
-                const char *pEnd = (const char *)pContent + Len;
-                int LinesChecked = 0;
-                while(p < pEnd && LinesChecked < 32)
-                {
-                        const char *pLineEnd = p;
-                        while(pLineEnd < pEnd && *pLineEnd != '\n' && *pLineEnd != '\r')
-                                pLineEnd++;
-                        LinesChecked++;
-
-                        const char *pKey = p;
-                        int KeyLen = (int)(pLineEnd - pKey);
-                        while(KeyLen > 0 && (*pKey == ' ' || *pKey == '\t'))
-                        {
-                                pKey++;
-                                KeyLen--;
-                        }
-                        if(KeyLen < 2 || pKey[0] != '-' || pKey[1] != '-')
-                                break;
-                        pKey += 2;
-                        KeyLen -= 2;
-                        while(KeyLen > 0 && (*pKey == ' ' || *pKey == '\t'))
-                        {
-                                pKey++;
-                                KeyLen--;
-                        }
-
-                        char aValue[288];
-                        if(ExecParseHeaderLine(pKey, KeyLen, "NAME", aValue, sizeof(aValue)))
-                        {
-                                str_format(g_ExecDyn_Name, sizeof(g_ExecDyn_Name), "NAME: %s", aValue);
-                                g_ExecHasName = true;
-                        }
-                        else if(ExecParseHeaderLine(pKey, KeyLen, "VERSION", aValue, sizeof(aValue)))
-                        {
-                                str_format(g_ExecDyn_Version, sizeof(g_ExecDyn_Version), "VERSION: %s", aValue);
-                                g_ExecHasVersion = true;
-                        }
-                        else if(ExecParseHeaderLine(pKey, KeyLen, "AUTHOR", aValue, sizeof(aValue)))
-                        {
-                                str_format(g_ExecDyn_Author, sizeof(g_ExecDyn_Author), "AUTHOR: %s", aValue);
-                                g_ExecHasAuthor = true;
-                        }
-                        else if(ExecParseHeaderLine(pKey, KeyLen, "DESCRIPTION", aValue, sizeof(aValue)))
-                        {
-                                str_format(g_ExecDyn_Desc, sizeof(g_ExecDyn_Desc), "DESCRIPTION: %s", aValue);
-                                g_ExecHasDesc = true;
-                        }
-
-                        p = pLineEnd;
-                        while(p < pEnd && (*p == '\n' || *p == '\r'))
-                                p++;
-                }
+                ExecScanScriptContent((const char *)pContent, Len);
                 free(pContent);
         }
 
@@ -4490,7 +5321,19 @@ void CClickGui::ExecuteSelectedScript()
                 return;
         void *pContent = nullptr;
         unsigned Len = 0;
-        if(!Storage()->ReadFile(g_ExecScriptPath, g_ExecScriptViaStorage ? IStorage::TYPE_SAVE : IStorage::TYPE_ABSOLUTE, &pContent, &Len) || !pContent)
+        if(g_ExecFromMem)
+        {
+                // v6.12: GitHub Load — execute the in-memory copy; nothing was
+                // written to disk.
+                if(g_vExecScriptMem.empty())
+                {
+                        GameClient()->m_Chat.AddLine(CChat::LUA_MSG, 0, "Code Exec: script buffer is empty");
+                        return;
+                }
+                pContent = g_vExecScriptMem.data();
+                Len = (unsigned)g_vExecScriptMem.size();
+        }
+        else if(!Storage()->ReadFile(g_ExecScriptPath, g_ExecScriptViaStorage ? IStorage::TYPE_SAVE : IStorage::TYPE_ABSOLUTE, &pContent, &Len) || !pContent)
         {
                 GameClient()->m_Chat.AddLine(CChat::LUA_MSG, 0, "Code Exec: failed to read script file");
                 return;
@@ -4501,7 +5344,8 @@ void CClickGui::ExecuteSelectedScript()
                 CopyLen = sizeof(s_aCode) - 1;
         mem_copy(s_aCode, pContent, CopyLen);
         s_aCode[CopyLen] = '\0';
-        free(pContent);
+        if(!g_ExecFromMem)
+                free(pContent);
         GameClient()->m_CodeExec.Execute(s_aCode, g_ExecScriptName);
 }
 
@@ -5057,9 +5901,9 @@ void CClickGui::OnRender()
                                                 str_copy(R.m_aInputBuf, Tas.PickedMap(), sizeof(R.m_aInputBuf));
                                                 R.m_InputInitialized = true;
                                         }
-                                        else if(str_comp(R.pName, "Name") == 0)
+                                        else if(str_comp(R.pName, "Description") == 0)
                                         {
-                                                str_copy(R.m_aInputBuf, Tas.PickedName(), sizeof(R.m_aInputBuf));
+                                                str_copy(R.m_aInputBuf, Tas.PickedDescription(), sizeof(R.m_aInputBuf));
                                                 R.m_InputInitialized = true;
                                         }
                                         else if(str_comp(R.pName, "Author") == 0)
@@ -5167,19 +6011,35 @@ void CClickGui::OnRender()
                                 // v6.9: AledBot expandable is master toggle.
                                 else if(str_comp(row.pName, "AledBot") == 0)
                                         row.on = g_Config.m_KxAledEnabled != 0;
+                                else if(str_comp(row.pName, "Moonwalk") == 0)
+                                        row.on = g_Config.m_KxMoonwalk != 0;
+                                else if(str_comp(row.pName, "Quick Stop") == 0)
+                                        row.on = g_Config.m_KxQuickStop != 0;
+                                else if(str_comp(row.pName, "Hide Chat Bubble") == 0)
+                                        row.on = g_Config.m_KxHideChatBubble != 0;
+                                else if(str_comp(row.pName, "Jet Ride (Beta)") == 0)
+                                        row.on = g_Config.m_KxJetRide != 0;
+                                else if(str_comp(row.pName, "Hook Ride (Beta)") == 0)
+                                        row.on = g_Config.m_KxHookRide != 0;
+                                else if(str_comp(row.pName, "Auto Team") == 0)
+                                        row.on = g_Config.m_KxAutoTeam != 0;
+                                else if(str_comp(row.pName, "Anti Afk") == 0)
+                                        row.on = g_Config.m_KxAntiAfk != 0;
+                                else if(str_comp(row.pName, "Auto Vote") == 0)
+                                        row.on = g_Config.m_KxAutoVote != 0;
+                                else if(str_comp(row.pName, "Auto Vote Kick") == 0)
+                                        row.on = g_Config.m_KxAutoVoteKick != 0;
+                                else if(str_comp(row.pName, "Fast Input") == 0)
+                                        row.on = g_Config.m_KxFastInput != 0;
+                                else if(str_comp(row.pName, "Auto Verify") == 0)
+                                        row.on = g_Config.m_KxAutoVerify != 0;
+                                else if(str_comp(row.pName, "Discord RPC") == 0)
+                                        row.on = g_Config.m_KxDiscordRpc != 0;
                                 // Pathfinder top-level sliders/toggles
-                                else if(str_comp(row.pName, "A* Weight") == 0)
-                                        row.value = g_Config.m_KxPfAStarWeight / 100.0f;
-                                else if(str_comp(row.pName, "Beam width") == 0)
-                                        row.value = (float)g_Config.m_KxPfBeamWidth;
-                                else if(str_comp(row.pName, "Evolutions") == 0)
-                                        row.value = (float)g_Config.m_KxPfRheaGenerations;
                                 else if(str_comp(row.pName, "Performance") == 0)
                                         row.value = (float)g_Config.m_KxPfPerf;
                                 else if(str_comp(row.pName, "Effort") == 0)
                                         row.valueIdx = g_Config.m_KxPfEffort;
-                                else if(str_comp(row.pName, "Algorithm") == 0)
-                                        row.valueIdx = g_Config.m_KxPfAlgorithm;
                                 else if(str_comp(row.pName, "Freeze Support (Beta)") == 0)
                                         row.on = g_Config.m_KxPfFreezeSupport != 0;
                                 else if(str_comp(row.pName, "Freedom Path") == 0)
@@ -5199,6 +6059,22 @@ void CClickGui::OnRender()
                                 {
                                         row.on = g_Config.m_KxRtPfFutureLimit != 0;
                                         row.pChildren[0].value = (float)g_Config.m_KxRtPfFutureTicks;
+                                }
+                                else if(str_comp(row.pName, "Mode") == 0 && str_comp(g_Panels[p].pTitle, "Real-Time Pathfinder") == 0)
+                                        row.valueIdx = g_Config.m_KxRtPfMode;
+                                else if(str_comp(row.pName, "Target ID") == 0 && str_comp(g_Panels[p].pTitle, "Real-Time Pathfinder") == 0 && (!m_InputEditing || m_InputPanel != p || m_InputRow != r))
+                                {
+                                        str_format(row.m_aInputBuf, sizeof(row.m_aInputBuf), "%d", g_Config.m_KxRtPfTargetId);
+                                        row.m_InputInitialized = true;
+                                }
+                                else if(str_comp(row.pName, "Settings") == 0 && str_comp(g_Panels[p].pTitle, "Real-Time Pathfinder") == 0)
+                                {
+                                        row.pChildren[0].on = g_Config.m_KxRtPfPlayerPrediction != 0;
+                                        row.pChildren[1].value = (float)g_Config.m_KxRtPfPopulation;
+                                        row.pChildren[2].value = (float)g_Config.m_KxRtPfDepth;
+                                        row.pChildren[3].value = (float)g_Config.m_KxRtPfTopK;
+                                        row.pChildren[4].value = (float)g_Config.m_KxRtPfSequence;
+                                        row.pChildren[5].value = (float)g_Config.m_KxRtPfBudgetMs;
                                 }
                                 // Settings → IRC/Spoofer top-level expandables are master toggles.
                                 else if(str_comp(row.pName, "IRC") == 0)
@@ -5353,37 +6229,47 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                 child.value = (float)g_Config.m_KxLaserUnfreezeAngles;
                                         else if(str_comp(child.pName, "Ticks") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
                                                 child.value = (float)g_Config.m_KxLaserUnfreezeTicks;
-                                        else if(str_comp(child.pName, "Trigger ticks") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
-                                                child.value = (float)g_Config.m_KxLaserUnfreezeTriggerTicks;
+                                        else if(str_comp(child.pName, "Current dir ticks") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
+                                                child.value = (float)g_Config.m_KxLaserUnfreezeCurDirTicks;
+                                        else if(str_comp(child.pName, "Most bounces") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
+                                                child.on = g_Config.m_KxLaserUnfreezeMostBounces != 0;
                                         else if(str_comp(child.pName, "Silent") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
                                                 child.on = g_Config.m_KxLaserUnfreezeSilent != 0;
                                         else if(str_comp(child.pName, "Show attempt") == 0)
                                                 child.on = g_Config.m_KxLaserUnfreezeShowAttempt != 0;
-                                        // Basic Avoid Freeze children
-                                        else if(str_comp(child.pName, "Freeze") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
-                                                child.on = g_Config.m_KxAfAvoidFreeze != 0;
-                                        else if(str_comp(child.pName, "Teleport") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
-                                                child.on = g_Config.m_KxAfAvoidTeleport != 0;
-                                        else if(str_comp(child.pName, "Death") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
-                                                child.on = g_Config.m_KxAfAvoidDeath != 0;
-                                        else if(str_comp(child.pName, "Direction") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
-                                                child.on = g_Config.m_KxAfDirection != 0;
-                                        else if(str_comp(child.pName, "Jump") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
-                                                child.on = g_Config.m_KxAfJump != 0;
-                                        else if(str_comp(child.pName, "Hook") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
-                                                child.on = g_Config.m_KxAfHook != 0;
-                                        else if(str_comp(child.pName, "Aim") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
-                                                child.on = g_Config.m_KxAfAim != 0;
-                                        else if(str_comp(child.pName, "FOV") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
-                                                child.value = (float)g_Config.m_KxAfFov;
-                                        else if(str_comp(child.pName, "Angles") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
-                                                child.value = (float)g_Config.m_KxAfAngles;
-                                        else if(str_comp(child.pName, "Silent") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
-                                                child.on = g_Config.m_KxAfSilent != 0;
-                                        else if(str_comp(child.pName, "Ticks") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
-                                                child.value = (float)g_Config.m_KxAfTicks;
-                                        else if(str_comp(child.pName, "Ticks Before") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
-                                                child.value = (float)g_Config.m_KxAfTicksBefore;
+                                        // Avoid Freeze children (index-based: two pairs of
+                                        // rows share the same label — behaviour and visuals).
+                                        else if(str_comp(row.pName, "Avoid Freeze") == 0)
+                                        {
+                                                switch(c)
+                                                {
+                                                case 1: child.on = g_Config.m_KxAfAvoidFreeze != 0; break;
+                                                case 2: child.on = g_Config.m_KxAfAvoidTeleport != 0; break;
+                                                case 3: child.on = g_Config.m_KxAfAvoidDeath != 0; break;
+                                                case 4: child.on = g_Config.m_KxAfUnfreeze != 0; break;
+                                                case 5: child.value = (float)g_Config.m_KxAfUnfreezeTicks; break;
+                                                case 7: child.on = g_Config.m_KxAfNsif != 0; break;
+                                                case 8: child.on = g_Config.m_KxAfPlayerPrediction != 0; break;
+                                                case 9: child.value = (float)g_Config.m_KxAfAfkProtection; break;
+                                                case 10: child.value = (float)g_Config.m_KxAfCheckTicks; break;
+                                                case 11: child.value = (float)g_Config.m_KxAfKickTicks; break;
+                                                case 12: child.on = g_Config.m_KxAfHook != 0; break;
+                                                case 13: child.on = g_Config.m_KxAfFire != 0; break;
+                                                case 14: child.on = g_Config.m_KxAfDirection != 0; break;
+                                                case 15: child.on = g_Config.m_KxAfJump != 0; break;
+                                                case 16: child.on = g_Config.m_KxAfAim != 0; break;
+                                                case 17: child.value = (float)g_Config.m_KxAfAngles; break;
+                                                case 18: child.value = (float)g_Config.m_KxAfFov; break;
+                                                case 19: child.on = g_Config.m_KxAfSilent != 0; break;
+                                                case 20: child.on = g_Config.m_KxAfAutoAim != 0; break;
+                                                case 21: child.on = g_Config.m_KxAfAimAssist != 0; break;
+                                                case 22: child.on = g_Config.m_KxAfTrackPoint != 0; break;
+                                                case 23: child.on = g_Config.m_KxAfSafeTracking != 0; break;
+                                                case 25: child.on = g_Config.m_KxAfDrawTrackPoint != 0; break;
+                                                case 26: child.on = g_Config.m_KxAfDrawAim != 0; break;
+                                                default: break;
+                                                }
+                                        }
                                         // Fake Aim children
 					else if(str_comp(child.pName, "Mode") == 0 && str_comp(row.pName, "Fake Aim") == 0 && str_comp(g_Panels[p].pTitle, "Functions") == 0)
 						child.valueIdx = g_Config.m_KxFakeAimMode;
@@ -5425,6 +6311,41 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                         // v1.56.262: Auto Fire + BalanceBot children.
                                         else if(str_comp(child.pName, "Delay") == 0 && str_comp(row.pName, "Auto Fire") == 0)
                                                 child.value = (float)g_Config.m_KxAutoFireDelay;
+                                        else if(str_comp(row.pName, "Quick Stop") == 0)
+                                                child.on = g_Config.m_KxQuickStopGrounded != 0;
+                                        else if(str_comp(row.pName, "Auto Team") == 0)
+                                                child.value = (float)g_Config.m_KxAutoTeamPreferred;
+                                        else if(str_comp(row.pName, "Anti Afk") == 0)
+                                                child.value = (float)g_Config.m_KxAntiAfkSeconds;
+                                        else if(str_comp(row.pName, "Auto Vote") == 0)
+                                                child.valueIdx = g_Config.m_KxAutoVoteF4;
+                                        else if(str_comp(row.pName, "Auto Vote Kick") == 0)
+                                        {
+                                                if(str_comp(child.pName, "Mode") == 0)
+                                                        child.valueIdx = g_Config.m_KxAutoVoteKickMode;
+                                                else if(str_comp(child.pName, "Target ID") == 0 && (!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c))
+                                                {
+                                                        str_format(child.m_aInputBuf, sizeof(child.m_aInputBuf), "%d", g_Config.m_KxAutoVoteKickTarget);
+                                                        child.m_InputInitialized = true;
+                                                }
+                                                else if(str_comp(child.pName, "Reason") == 0 && (!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c))
+                                                {
+                                                        str_copy(child.m_aInputBuf, g_Config.m_KxAutoVoteKickReason, sizeof(child.m_aInputBuf));
+                                                        child.m_InputInitialized = true;
+                                                }
+                                        }
+                                        else if(str_comp(row.pName, "Fast Input") == 0)
+                                                child.on = g_Config.m_KxFastInputOthers != 0;
+                                        else if(str_comp(child.pName, "App ID") == 0 && str_comp(row.pName, "Discord RPC") == 0)
+                                                child.valueIdx = g_Config.m_KxDiscordId;
+                                        else if(str_comp(child.pName, "Custom ID") == 0 && str_comp(row.pName, "Discord RPC") == 0)
+                                        {
+                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                {
+                                                        str_copy(child.m_aInputBuf, g_Config.m_KxDiscordCustomId, sizeof(child.m_aInputBuf));
+                                                        child.m_InputInitialized = true;
+                                                }
+                                        }
                                         else if(str_comp(child.pName, "Vertical Filter") == 0 && str_comp(row.pName, "BalanceBot") == 0)
                                                 child.valueIdx = g_Config.m_KxBalanceBotVertical;
                                         else if(str_comp(child.pName, "Radius Filter") == 0 && str_comp(row.pName, "BalanceBot") == 0)
@@ -5642,29 +6563,37 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                         child.m_InputInitialized = true;
                                                 }
                                         }
-                                        // Pathfinder → Visuals children
-                                        else if(str_comp(child.pName, "Show field") == 0)
-                                                child.on = g_Config.m_KxPfShowField != 0;
-                                        else if(str_comp(child.pName, "Show hooks") == 0)
-                                                child.on = g_Config.m_KxPfShowHooks != 0;
-                                        else if(str_comp(child.pName, "Show branches") == 0)
-                                                child.on = g_Config.m_KxPfShowBranches != 0;
-                                        else if(str_comp(child.pName, "Show speed") == 0)
-                                                child.on = g_Config.m_KxPfShowSpeed != 0;
+                                        // Pathfinder → Visuals children (panel-gated: TAS and
+                                        // Real-Time Pathfinder use overlapping child labels).
+                                        else if(str_comp(row.pName, "Visuals") == 0 && str_comp(g_Panels[p].pTitle, "Pathfinder") == 0)
+                                        {
+                                                if(str_comp(child.pName, "Path") == 0)
+                                                        child.on = g_Config.m_KxPfShowPath != 0;
+                                                else if(str_comp(child.pName, "Speed") == 0)
+                                                        child.on = g_Config.m_KxPfShowSpeed != 0;
+                                                else if(str_comp(child.pName, "Hooks") == 0)
+                                                        child.on = g_Config.m_KxPfShowHooks != 0;
+                                                else if(str_comp(child.pName, "Field") == 0)
+                                                        child.on = g_Config.m_KxPfShowField != 0;
+                                                else if(str_comp(child.pName, "Start/End Pos") == 0)
+                                                        child.on = g_Config.m_KxPfDrawStartEndPos != 0;
+                                        }
                                         // v1.56.280: Real-Time Pathfinder Visuals children
                                         // (panel-gated: TAS/Pathfinder use overlapping child labels)
                                         else if(str_comp(row.pName, "Visuals") == 0 && str_comp(g_Panels[p].pTitle, "Real-Time Pathfinder") == 0)
                                         {
-                                                if(str_comp(child.pName, "Show Path") == 0)
-                                                        child.on = g_Config.m_KxRtPfShowPath != 0;
-                                                else if(str_comp(child.pName, "Show Hooks") == 0)
-                                                        child.on = g_Config.m_KxRtPfShowHooks != 0;
-                                                else if(str_comp(child.pName, "Show Field") == 0)
-                                                        child.on = g_Config.m_KxRtPfShowField != 0;
-                                                else if(str_comp(child.pName, "Show Previous Path") == 0)
+                                                if(str_comp(child.pName, "Previous Path") == 0)
                                                         child.on = g_Config.m_KxRtPfShowPrevPath != 0;
-                                                else if(str_comp(child.pName, "Show Speed") == 0)
+                                                else if(str_comp(child.pName, "Path") == 0)
+                                                        child.on = g_Config.m_KxRtPfShowPath != 0;
+                                                else if(str_comp(child.pName, "Speed") == 0)
                                                         child.on = g_Config.m_KxRtPfShowSpeed != 0;
+                                                else if(str_comp(child.pName, "Hooks") == 0)
+                                                        child.on = g_Config.m_KxRtPfShowHooks != 0;
+                                                else if(str_comp(child.pName, "Field") == 0)
+                                                        child.on = g_Config.m_KxRtPfShowField != 0;
+                                                else if(str_comp(child.pName, "Start/End Pos") == 0)
+                                                        child.on = g_Config.m_KxRtPfDrawStartEndPos != 0;
                                         }
                                 }
                         }
@@ -6340,6 +7269,8 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                 if(!Dragging)
                                                         child.value = g_Config.m_KxArrayListSize / 10.0f;
                                         }
+                                        else if(str_comp(child.pName, "Show In ClickGUI") == 0)
+                                                child.on = g_Config.m_KxArrayListShowInGui != 0;
                                         else if(str_comp(child.pName, "Text Color") == 0)
                                         {
                                                 if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
@@ -6431,6 +7362,8 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                 if(!Dragging)
                                                         child.value = g_Config.m_KxArrayInfoSize / 10.0f;
                                         }
+                                        else if(str_comp(child.pName, "Show In ClickGUI") == 0)
+                                                child.on = g_Config.m_KxArrayInfoShowInGui != 0;
                                         else if(str_comp(child.pName, "Text Color") == 0)
                                         {
                                                 if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
@@ -6492,6 +7425,8 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                 if(!Dragging)
                                                         child.value = g_Config.m_KxArrayPlayerSize / 10.0f;
                                         }
+                                        else if(str_comp(child.pName, "Show In ClickGUI") == 0)
+                                                child.on = g_Config.m_KxArrayPlayerShowInGui != 0;
                                         else if(str_comp(child.pName, "Text Color") == 0)
                                         {
                                                 if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
@@ -6590,28 +7525,38 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 {
                                         SRow &child = row.pChildren[c];
                                         const bool Dragging = (m_DragSliderPanel == p && m_DragSliderRow == r && m_DragSliderChild == c);
-                                        if(str_comp(child.pName, "A* Weight") == 0)
+                                        if(str_comp(child.pName, "Max Ticks") == 0)
                                         {
                                                 if(!Dragging)
-                                                        child.value = g_Config.m_KxPfAStarWeight / 100.0f;
-                                        }
-                                        else if(str_comp(child.pName, "Evolutions") == 0)
-                                        {
-                                                if(!Dragging)
-                                                        child.value = (float)g_Config.m_KxPfRheaGenerations;
-                                        }
-                                        else if(str_comp(child.pName, "Beam width") == 0)
-                                        {
-                                                if(!Dragging)
-                                                        child.value = (float)g_Config.m_KxPfBeamWidth;
+                                                        child.value = (float)g_Config.m_KxPfTicks;
                                         }
                                         else if(str_comp(child.pName, "Performance") == 0)
                                         {
                                                 if(!Dragging)
                                                         child.value = (float)g_Config.m_KxPfPerf;
                                         }
+                                        else if(str_comp(child.pName, "Tweaker Inputs") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = (float)g_Config.m_KxPfInputs;
+                                        }
+                                        else if(str_comp(child.pName, "Tweaker Ticks") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = (float)g_Config.m_KxPfInputTicks;
+                                        }
+                                        else if(str_comp(child.pName, "Tweaker Dosage") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = (float)g_Config.m_KxPfDosage;
+                                        }
                                         else if(str_comp(child.pName, "Freeze Support (Beta)") == 0)
                                                 child.on = g_Config.m_KxPfFreezeSupport != 0;
+                                        else if(str_comp(child.pName, "Unfreeze Radius") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = (float)g_Config.m_KxPfFreezeRadius;
+                                        }
                                 }
                         }
                         // v1.56.260: Panels Start X/Y + Drag-To-Sort.
@@ -7349,6 +8294,12 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                         // v6.7: Smart Copy Moves top-N slider.
                         else if(str_comp(pTarget->pName, "Apply Dummies") == 0 && str_comp(row.pName, "Smart Copy Moves") == 0)
                                 g_Config.m_KxSmartCopyCount = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Preferred team") == 0 && str_comp(row.pName, "Auto Team") == 0)
+                                g_Config.m_KxAutoTeamPreferred = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Interval") == 0 && str_comp(row.pName, "Anti Afk") == 0)
+                                g_Config.m_KxAntiAfkSeconds = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Kick target") == 0 && str_comp(row.pName, "Auto Vote Kick") == 0)
+                                g_Config.m_KxAutoVoteKickTarget = (int)pTarget->value;
                         // v6.9: AledBot sliders.
                         else if(str_comp(pTarget->pName, "Trigger Ticks") == 0 && str_comp(row.pName, "AledBot") == 0)
                                 g_Config.m_KxAledTriggerTicks = (int)pTarget->value;
@@ -7372,12 +8323,16 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 g_Config.m_KxLaserUnfreezeAngles = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Ticks") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
                                 g_Config.m_KxLaserUnfreezeTicks = (int)pTarget->value;
-                        else if(str_comp(pTarget->pName, "Trigger ticks") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
-                                g_Config.m_KxLaserUnfreezeTriggerTicks = (int)pTarget->value;
-                        else if(str_comp(pTarget->pName, "Ticks") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
-                                g_Config.m_KxAfTicks = (int)pTarget->value;
-                        else if(str_comp(pTarget->pName, "Ticks Before") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
-                                g_Config.m_KxAfTicksBefore = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Current dir ticks") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
+                                g_Config.m_KxLaserUnfreezeCurDirTicks = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Unfreeze Ticks") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                                g_Config.m_KxAfUnfreezeTicks = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Afk Protection") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                                g_Config.m_KxAfAfkProtection = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Check Ticks") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                                g_Config.m_KxAfCheckTicks = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Kick Ticks") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                                g_Config.m_KxAfKickTicks = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Angles") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
                                 g_Config.m_KxAfAngles = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "FOV") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
@@ -7536,14 +8491,18 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 g_Config.m_KxBalanceBotRadius = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Stand Radius") == 0)
                                 g_Config.m_KxBalanceBotStandRadius = (int)pTarget->value;
-                        else if(str_comp(pTarget->pName, "A* Weight") == 0)
-                                g_Config.m_KxPfAStarWeight = (int)(pTarget->value * 100.0f + 0.5f);
-                        else if(str_comp(pTarget->pName, "Beam width") == 0)
-                                g_Config.m_KxPfBeamWidth = (int)pTarget->value;
-                        else if(str_comp(pTarget->pName, "Evolutions") == 0)
-                                g_Config.m_KxPfRheaGenerations = (int)pTarget->value;
-                        else if(str_comp(pTarget->pName, "Performance") == 0)
+                        else if(str_comp(pTarget->pName, "Max Ticks") == 0 && str_comp(row.pName, "Settings") == 0)
+                                g_Config.m_KxPfTicks = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Performance") == 0 && str_comp(row.pName, "Settings") == 0)
                                 g_Config.m_KxPfPerf = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Tweaker Inputs") == 0 && str_comp(row.pName, "Settings") == 0)
+                                g_Config.m_KxPfInputs = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Tweaker Ticks") == 0 && str_comp(row.pName, "Settings") == 0)
+                                g_Config.m_KxPfInputTicks = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Tweaker Dosage") == 0 && str_comp(row.pName, "Settings") == 0)
+                                g_Config.m_KxPfDosage = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Unfreeze Radius") == 0 && str_comp(row.pName, "Settings") == 0)
+                                g_Config.m_KxPfFreezeRadius = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Tunnel size") == 0)
                                 g_Config.m_KxPfTunnelSize = (int)pTarget->value;
                         // v1.56.280: RT Pathfinder sliders (live while dragging)
@@ -7551,6 +8510,16 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 g_Config.m_KxRtPfTrigger = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Future Ticks") == 0)
                                 g_Config.m_KxRtPfFutureTicks = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Population") == 0)
+                                g_Config.m_KxRtPfPopulation = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Exploration Depth") == 0)
+                                g_Config.m_KxRtPfDepth = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Top Candidates") == 0)
+                                g_Config.m_KxRtPfTopK = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Sequence Length") == 0)
+                                g_Config.m_KxRtPfSequence = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Search Budget") == 0)
+                                g_Config.m_KxRtPfBudgetMs = (int)pTarget->value;
                         // v1.56.282: Dummy Manager — live dummy limit while dragging.
                         else if(str_comp(pTarget->pName, "Dummies") == 0)
                                 Client()->SetDummyLimit((int)pTarget->value);
@@ -7606,20 +8575,22 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
 
         Graphics()->TextureClear();
 
-        // v6.3: the HUD is ALWAYS drawn UNDER the ClickGUI — the blur capture and
-        // the blackout are painted over it, so it appears exactly as it will in
+        // v6.3: the HUD is drawn UNDER the ClickGUI — the blur capture and the
+        // blackout are painted over it, so it appears exactly as it will in
         // game (behind the dim/blur) instead of floating above the panels.
-        if(ArrayListVisible)
+        // v6.11: "Show In ClickGUI" opt-outs — those arrays are drawn ABOVE the
+        // panels instead (second pass after the panel render loop below).
+        if(ArrayListVisible && g_Config.m_KxArrayListShowInGui == 0)
         {
                 UpdateArrayList(Client()->RenderFrameTime());
                 RenderArrayList(1.0f);
         }
-        if(ArrayInfoVisible)
+        if(ArrayInfoVisible && g_Config.m_KxArrayInfoShowInGui == 0)
         {
                 UpdateArrayInfo(Client()->RenderFrameTime());
                 RenderArrayInfo(1.0f);
         }
-        if(ArrayPlayerVisible)
+        if(ArrayPlayerVisible && g_Config.m_KxArrayPlayerShowInGui == 0)
         {
                 UpdateArrayPlayer(Client()->RenderFrameTime());
                 RenderArrayPlayer(1.0f);
@@ -7836,8 +8807,31 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
         if(m_ResizePanel >= 0)
                 CursorShape = (m_ResizeEdge == 1) ? 7 : ((m_ResizeEdge == 2) ? 8 : 5);
 
-        // v6.3: the ArrayList HUD is drawn earlier (under the dim/blur), so there
-        // is no second render pass above the panels.
+        // v6.11: "Show In ClickGUI" pass — these arrays float ABOVE the panels
+        // (still under the dropdown popup / file browser / tooltips below).
+        // Update + Render run exactly once per frame: the under-pass above
+        // skipped them.
+        if(ArrayListVisible && g_Config.m_KxArrayListShowInGui != 0)
+        {
+                UpdateArrayList(Client()->RenderFrameTime());
+                RenderArrayList(1.0f);
+        }
+        // Hover feedback: the grab cursor over a draggable "Show In ClickGUI" HUD.
+        if((ArrayListVisible && g_Config.m_KxArrayListShowInGui != 0 && ArrayListHitTest(m_MousePos)) ||
+                (ArrayInfoVisible && g_Config.m_KxArrayInfoShowInGui != 0 && ArrayInfoHitTest(m_MousePos)) ||
+                (ArrayPlayerVisible && g_Config.m_KxArrayPlayerShowInGui != 0 && ArrayPlayerHitTest(m_MousePos)) ||
+                m_ArrayListDragging || m_ArrayInfoDragging || m_ArrayPlayerDragging)
+                CursorShape = 9;
+        if(ArrayInfoVisible && g_Config.m_KxArrayInfoShowInGui != 0)
+        {
+                UpdateArrayInfo(Client()->RenderFrameTime());
+                RenderArrayInfo(1.0f);
+        }
+        if(ArrayPlayerVisible && g_Config.m_KxArrayPlayerShowInGui != 0)
+        {
+                UpdateArrayPlayer(Client()->RenderFrameTime());
+                RenderArrayPlayer(1.0f);
+        }
 
         KxSetCursorShape(CursorShape);
 
@@ -7854,7 +8848,9 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
         // delta (RenderFrameTime) — the delta stays ~0.016 so the hover timer
         // never accumulated and the tooltip never appeared.
         const float ttNow = Client()->GlobalTime();
-        const bool ttAllowed = !m_Dragging && m_DragSliderPanel < 0 && !m_DropdownOpen && !m_InputEditing && !m_FileBrowserOpen && g_Config.m_KxUiShowTooltips != 0;
+        const bool ttAllowed = !m_Dragging && m_DragSliderPanel < 0 && !m_DropdownOpen && !m_InputEditing && !m_FileBrowserOpen && g_Config.m_KxUiShowTooltips != 0 &&
+                // v6.11: not while dragging a "Show In ClickGUI" HUD either.
+                !m_ArrayListDragging && !m_ArrayInfoDragging && !m_ArrayPlayerDragging;
         if(ttAllowed && m_pToolTipRow && ttNow - m_ToolTipRowTime <= 0.05f)
         {
                 if(m_pToolTipRow != m_pToolTipStable)
@@ -8249,6 +9245,7 @@ bool CClickGui::PointInRect(vec2 p, float x, float y, float w, float h) const
 
 void CClickGui::HandleMouseDown(vec2 mousePos)
 {
+        int GitHubLoadIdx = -1;
         // If a dropdown popup is open, check it FIRST (it's on top of everything).
         if(m_DropdownOpen)
         {
@@ -8293,6 +9290,8 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
 
         // v6.3: the ArrayList HUD is drawn UNDER the ClickGUI and is only
         // draggable in the editor (GUI closed), so clicks here go to the panels.
+        // v6.11: exception — "Show In ClickGUI" arrays float ABOVE the panels
+        // and are draggable directly while the GUI is open (no editor needed).
 
         // v6.7: ArrayPlayer media transport buttons — clickable with the GUI
         // open too (the card itself is not a ClickGUI panel).
@@ -8306,6 +9305,31 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 return;
                         }
                 }
+        }
+
+        // v6.11: "Show In ClickGUI" drag start (after the transport buttons so
+        // a click on a button never starts a drag). The drag delta itself is
+        // applied in UpdateArrayList/UpdateArrayInfo/UpdateArrayPlayer.
+        if(ShouldRenderArrayList() && g_Config.m_KxArrayListShowInGui != 0 && ArrayListHitTest(mousePos))
+        {
+                m_ArrayListDragging = true;
+                m_ArrayListDragStartMouse = mousePos;
+                m_ArrayListDragStartPos = vec2(m_ArrayListRectX, m_ArrayListRectY);
+                return;
+        }
+        if(ShouldRenderArrayInfo() && g_Config.m_KxArrayInfoShowInGui != 0 && ArrayInfoHitTest(mousePos))
+        {
+                m_ArrayInfoDragging = true;
+                m_ArrayInfoDragStartMouse = mousePos;
+                m_ArrayInfoDragStartPos = vec2(m_ArrayInfoRectX, m_ArrayInfoRectY);
+                return;
+        }
+        if(ShouldRenderArrayPlayer() && g_Config.m_KxArrayPlayerShowInGui != 0 && ArrayPlayerHitTest(mousePos))
+        {
+                m_ArrayPlayerDragging = true;
+                m_ArrayPlayerDragStartMouse = mousePos;
+                m_ArrayPlayerDragStartPos = vec2(m_ArrayPlayerRectX, m_ArrayPlayerRectY);
+                return;
         }
 
         // Iterate panels top-to-bottom (high z first) to find the topmost hit.
@@ -8499,6 +9523,13 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 g_Config.m_KxArrayPlayerRainbow = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Dynamic Scale") == 0 && str_comp(row.pName, "ArrayPlayer") == 0)
                                                 g_Config.m_KxArrayPlayerDynamicScale = pTarget->on ? 1 : 0;
+                                        // v6.11: "Show In ClickGUI" — HUD above the GUI + in-GUI dragging.
+                                        else if(str_comp(pTarget->pName, "Show In ClickGUI") == 0 && str_comp(row.pName, "ArrayList") == 0)
+                                                g_Config.m_KxArrayListShowInGui = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Show In ClickGUI") == 0 && str_comp(row.pName, "ArrayInfo") == 0)
+                                                g_Config.m_KxArrayInfoShowInGui = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Show In ClickGUI") == 0 && str_comp(row.pName, "ArrayPlayer") == 0)
+                                                g_Config.m_KxArrayPlayerShowInGui = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Show ToolTips") == 0)
                                                 g_Config.m_KxUiShowTooltips = pTarget->on ? 1 : 0;
                                         // v1.56.283: Custom colors — per-selection Enable
@@ -8633,7 +9664,7 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         // v1.56.150: Pathfinding is now DoubleButton (Pathfinding + Paste).
                                         // Left zone = Pathfinding toggle, right zone = Paste (kx_pf_paste).
                                         // Right zone active only when m_PfState == FINISHED.
-                                if(str_comp(pTarget->pName, "Pathfinding") == 0)
+                                if(str_comp(pTarget->pName, "Pathfinding") == 0 && pTarget->type == ERowType::DoubleButton && str_comp(panel.pTitle, "Pathfinder") == 0)
                                 {
                                         CBotNet &BN = GameClient()->m_BotNet;
                                         const bool playVisible = (BN.m_PfState == PF_STATE_FINISHED);
@@ -8725,7 +9756,7 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 }
                                         }
                                 }
-                                else if(str_comp(pTarget->pName, "Editor Forbidden Tiles") == 0 && pTarget->type == ERowType::DoubleButton)
+                                else if(str_comp(pTarget->pName, "Editor Forbidden Tiles") == 0 && pTarget->type == ERowType::DoubleButton && str_comp(panel.pTitle, "Pathfinder") == 0)
                                 {
                                         CBotNet &BN = GameClient()->m_BotNet;
                                         const float btnW = (rw - 6.0f) * 0.5f;
@@ -8738,7 +9769,7 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                         BN.LoadMapGrid();
                                         }
                                 }
-                                else if(str_comp(pTarget->pName, "Editor Finish Tiles") == 0 && pTarget->type == ERowType::DoubleButton)
+                                else if(str_comp(pTarget->pName, "Editor Finish Tiles") == 0 && pTarget->type == ERowType::DoubleButton && str_comp(panel.pTitle, "Pathfinder") == 0)
                                 {
                                         CBotNet &BN = GameClient()->m_BotNet;
                                         const float btnW = (rw - 6.0f) * 0.5f;
@@ -8756,7 +9787,7 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         GameClient()->m_BotNet.PfGenerateTunnel();
                                 }
                                 // v1.56.280: RT Pathfinding button — IDLE <-> RUNNING (no FINISHED state).
-                                else if(str_comp(pTarget->pName, "RT Pathfinding") == 0 && pTarget->type == ERowType::Button)
+                                else if(str_comp(pTarget->pName, "Pathfinding") == 0 && pTarget->type == ERowType::Button && str_comp(panel.pTitle, "Real-Time Pathfinder") == 0)
                                 {
                                         CBotNet &BN = GameClient()->m_BotNet;
                                         if(BN.m_RtPfState == 0)
@@ -8770,7 +9801,7 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         }
                                 }
                                 // RT tile editors — SEPARATE storage from the Pathfinder editors.
-                                else if(str_comp(pTarget->pName, "RT Editor Forbidden Tiles") == 0 && pTarget->type == ERowType::DoubleButton)
+                                else if(str_comp(pTarget->pName, "Editor Forbidden Tiles") == 0 && pTarget->type == ERowType::DoubleButton && str_comp(panel.pTitle, "Real-Time Pathfinder") == 0)
                                 {
                                         CBotNet &BN = GameClient()->m_BotNet;
                                         const float btnW = (rw - 6.0f) * 0.5f;
@@ -8783,7 +9814,7 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                         BN.LoadMapGrid();
                                         }
                                 }
-                                else if(str_comp(pTarget->pName, "RT Editor Finish Tiles") == 0 && pTarget->type == ERowType::DoubleButton)
+                                else if(str_comp(pTarget->pName, "Editor Finish Tiles") == 0 && pTarget->type == ERowType::DoubleButton && str_comp(panel.pTitle, "Real-Time Pathfinder") == 0)
                                 {
                                         CBotNet &BN = GameClient()->m_BotNet;
                                         const float btnW = (rw - 6.0f) * 0.5f;
@@ -8848,7 +9879,8 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         else
                                                 GameClient()->m_Tas.StepRewind();
                                 }
-                                else if(str_comp(pTarget->pName, "Pick File") == 0 && pTarget->type == ERowType::DoubleButton)
+                                else if(str_comp(pTarget->pName, "Pick File") == 0 && pTarget->type == ERowType::DoubleButton &&
+                                        str_comp(panel.pTitle, "TAS") == 0)
                                 {
                                         CTas &Tas = GameClient()->m_Tas;
                                         const float btnW = (rw - 6.0f) * 0.5f;
@@ -8875,9 +9907,9 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                                                 str_copy(R.m_aInputBuf, Tas.PickedMap(), sizeof(R.m_aInputBuf));
                                                                                 R.m_InputInitialized = true;
                                                                         }
-                                                                        else if(str_comp(R.pName, "Name") == 0)
+                                                                        else if(str_comp(R.pName, "Description") == 0)
                                                                         {
-                                                                                str_copy(R.m_aInputBuf, Tas.PickedName(), sizeof(R.m_aInputBuf));
+                                                                                str_copy(R.m_aInputBuf, Tas.PickedDescription(), sizeof(R.m_aInputBuf));
                                                                                 R.m_InputInitialized = true;
                                                                         }
                                                                         else if(str_comp(R.pName, "Author") == 0)
@@ -8894,21 +9926,30 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 else if(str_comp(pTarget->pName, "Save") == 0 && pTarget->type == ERowType::Button)
                                 {
                                         const char *pMap = "";
-                                        const char *pName = "";
+                                        const char *pDescription = "";
                                         const char *pAuthor = "";
                                         for(SRow &R : g_TasRows)
                                         {
                                                 if(str_comp(R.pName, "Map") == 0)
                                                         pMap = R.m_aInputBuf;
-                                                else if(str_comp(R.pName, "Name") == 0)
-                                                        pName = R.m_aInputBuf;
+                                                else if(str_comp(R.pName, "Description") == 0)
+                                                        pDescription = R.m_aInputBuf;
                                                 else if(str_comp(R.pName, "Author") == 0)
                                                         pAuthor = R.m_aInputBuf;
                                         }
-                                        GameClient()->m_Tas.SaveTake(pMap, pName, pAuthor);
+                                        GameClient()->m_Tas.SaveTake(pMap, pDescription, pAuthor);
                                 }
-                                else if(str_comp(pTarget->pName, "Pick File") == 0 && pTarget->type == ERowType::Button)
+                                else if(str_comp(pTarget->pName, "Pick File") == 0 && pTarget->type == ERowType::DoubleButton &&
+                                        str_comp(panel.pTitle, "Code Execution (Lua)") == 0)
                                 {
+                                        // v6.12: right half = "Unpick File" (only while a script
+                                        // is loaded); left half / full width = file picker.
+                                        const float btnW = (rw - 6.0f) * 0.5f;
+                                        if(g_ExecLoaded && mousePos.x >= rx + 2.0f + btnW)
+                                        {
+                                                ExecUnloadScript();
+                                                return;
+                                        }
                                         OpenScriptPicker();
                                         return;
                                 }
@@ -8919,6 +9960,47 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 CE.Stop();
                                         else
                                                 ExecuteSelectedScript();
+                                        return;
+                                }
+                                else if(pTarget->pName == g_LuaCTDyn_Btn)
+                                {
+                                        CCodeExec &CE = GameClient()->m_CodeExec;
+                                        if(CE.LuaCTState() == CCodeExec::LUACT_RUNNING)
+                                                CE.LuaCTStop();
+                                        else if(CE.LuaCTState() == CCodeExec::LUACT_RESULTS)
+                                                CE.LuaCTClear();
+                                        else
+                                                CE.LuaCTStart();
+                                        return;
+                                }
+                                else if(pTarget->pName == g_GitHubDyn_Btn)
+                                {
+                                        GameClient()->m_CodeExec.GitHubUpdateList();
+                                        return;
+                                }
+                                else if(pTarget->pName == g_TasGitHubDyn_Btn)
+                                {
+                                        GameClient()->m_Tas.GitHubUpdateList();
+                                        return;
+                                }
+                                else if((pTarget->type == ERowType::Button || pTarget->type == ERowType::DoubleButton) &&
+                                        IsGitHubLoadButtonName(pTarget->pName, &GitHubLoadIdx))
+                                {
+                                        // Left half = Load (download + select), right half
+                                        // of the DoubleButton = Download only.
+                                        const bool DownloadOnly = pTarget->type == ERowType::DoubleButton &&
+                                                mousePos.x >= rx + 2.0f + (rw - 6.0f) * 0.5f;
+                                        g_GitHubLoadRequestedIdx = GitHubLoadIdx;
+                                        GameClient()->m_CodeExec.GitHubLoadScript(GitHubLoadIdx, !DownloadOnly);
+                                        return;
+                                }
+                                else if((pTarget->type == ERowType::Button || pTarget->type == ERowType::DoubleButton) &&
+                                        IsGitHubTasLoadButtonName(pTarget->pName, &GitHubLoadIdx))
+                                {
+                                        const bool DownloadOnly = pTarget->type == ERowType::DoubleButton &&
+                                                mousePos.x >= rx + 2.0f + (rw - 6.0f) * 0.5f;
+                                        g_TasGitHubLoadRequestedIdx = GitHubLoadIdx;
+                                        GameClient()->m_Tas.GitHubLoadItem(GitHubLoadIdx, !DownloadOnly);
                                         return;
                                 }
                                 // v1.56.282: Dummy Manager — profile/tee buttons open the DDNet
@@ -9146,6 +10228,12 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 // v6.7: Smart Copy Moves top-N slider.
                                 else if(str_comp(pTarget->pName, "Apply Dummies") == 0 && str_comp(row.pName, "Smart Copy Moves") == 0)
                                         g_Config.m_KxSmartCopyCount = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Preferred team") == 0 && str_comp(row.pName, "Auto Team") == 0)
+                                        g_Config.m_KxAutoTeamPreferred = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Interval") == 0 && str_comp(row.pName, "Anti Afk") == 0)
+                                        g_Config.m_KxAntiAfkSeconds = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Kick target") == 0 && str_comp(row.pName, "Auto Vote Kick") == 0)
+                                        g_Config.m_KxAutoVoteKickTarget = (int)pTarget->value;
                                 // v6.9: AledBot sliders.
                                 else if(str_comp(pTarget->pName, "Trigger Ticks") == 0 && str_comp(row.pName, "AledBot") == 0)
                                         g_Config.m_KxAledTriggerTicks = (int)pTarget->value;
@@ -9169,12 +10257,16 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         g_Config.m_KxLaserUnfreezeAngles = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Ticks") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
                                         g_Config.m_KxLaserUnfreezeTicks = (int)pTarget->value;
-                                else if(str_comp(pTarget->pName, "Trigger ticks") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
-                                        g_Config.m_KxLaserUnfreezeTriggerTicks = (int)pTarget->value;
-                                else if(str_comp(pTarget->pName, "Ticks") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
-                                        g_Config.m_KxAfTicks = (int)pTarget->value;
-                                else if(str_comp(pTarget->pName, "Ticks Before") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
-                                        g_Config.m_KxAfTicksBefore = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Current dir ticks") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
+                                        g_Config.m_KxLaserUnfreezeCurDirTicks = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Unfreeze Ticks") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                                        g_Config.m_KxAfUnfreezeTicks = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Afk Protection") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                                        g_Config.m_KxAfAfkProtection = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Check Ticks") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                                        g_Config.m_KxAfCheckTicks = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Kick Ticks") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
+                                        g_Config.m_KxAfKickTicks = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Angles") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
                                         g_Config.m_KxAfAngles = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "FOV") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
@@ -9250,14 +10342,18 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         if(sel >= 0 && sel < CTrajectory::NUM_TRAJ_TYPES)
                                                 traj.m_aTypes[sel].m_PredictionTicks = (int)pTarget->value;
                                 }
-                                else if(str_comp(pTarget->pName, "A* Weight") == 0)
-                                        g_Config.m_KxPfAStarWeight = (int)(pTarget->value * 100.0f + 0.5f);
-                                else if(str_comp(pTarget->pName, "Beam width") == 0)
-                                        g_Config.m_KxPfBeamWidth = (int)pTarget->value;
-                                else if(str_comp(pTarget->pName, "Evolutions") == 0)
-                                        g_Config.m_KxPfRheaGenerations = (int)pTarget->value;
-                                else if(str_comp(pTarget->pName, "Performance") == 0)
+                                else if(str_comp(pTarget->pName, "Max Ticks") == 0 && str_comp(row.pName, "Settings") == 0)
+                                        g_Config.m_KxPfTicks = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Performance") == 0 && str_comp(row.pName, "Settings") == 0)
                                         g_Config.m_KxPfPerf = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Tweaker Inputs") == 0 && str_comp(row.pName, "Settings") == 0)
+                                        g_Config.m_KxPfInputs = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Tweaker Ticks") == 0 && str_comp(row.pName, "Settings") == 0)
+                                        g_Config.m_KxPfInputTicks = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Tweaker Dosage") == 0 && str_comp(row.pName, "Settings") == 0)
+                                        g_Config.m_KxPfDosage = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Unfreeze Radius") == 0 && str_comp(row.pName, "Settings") == 0)
+                                        g_Config.m_KxPfFreezeRadius = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Tunnel size") == 0)
                                         g_Config.m_KxPfTunnelSize = (int)pTarget->value;
                                 // v1.56.280: RT Pathfinder sliders (commit on click)
@@ -9265,6 +10361,16 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         g_Config.m_KxRtPfTrigger = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Future Ticks") == 0)
                                         g_Config.m_KxRtPfFutureTicks = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Population") == 0)
+                                        g_Config.m_KxRtPfPopulation = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Exploration Depth") == 0)
+                                        g_Config.m_KxRtPfDepth = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Top Candidates") == 0)
+                                        g_Config.m_KxRtPfTopK = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Sequence Length") == 0)
+                                        g_Config.m_KxRtPfSequence = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Search Budget") == 0)
+                                        g_Config.m_KxRtPfBudgetMs = (int)pTarget->value;
                                 return;
                         }
                         if(pTarget->type == ERowType::Dropdown || pTarget->type == ERowType::ToggleDropdown)
@@ -9519,6 +10625,34 @@ bool CClickGui::HandleToggleTail(void *pTargetV, void *pRowV, void *pPanelV)
                 g_Config.m_KxAledEnabled = pTarget->on ? 1 : 0;
         else if(str_comp(pTarget->pName, "Silent") == 0 && str_comp(row.pName, "AledBot") == 0)
                 g_Config.m_KxAledSilent = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Moonwalk") == 0)
+                g_Config.m_KxMoonwalk = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Quick Stop") == 0)
+                g_Config.m_KxQuickStop = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Grounded only") == 0 && str_comp(row.pName, "Quick Stop") == 0)
+                g_Config.m_KxQuickStopGrounded = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Hide Chat Bubble") == 0)
+                g_Config.m_KxHideChatBubble = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Jet Ride (Beta)") == 0)
+                g_Config.m_KxJetRide = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Hook Ride (Beta)") == 0)
+                g_Config.m_KxHookRide = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Auto Team") == 0)
+                g_Config.m_KxAutoTeam = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Anti Afk") == 0)
+                g_Config.m_KxAntiAfk = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Auto Vote") == 0)
+                g_Config.m_KxAutoVote = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Auto Vote Kick") == 0)
+                g_Config.m_KxAutoVoteKick = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Fast Input") == 0)
+                g_Config.m_KxFastInput = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Others") == 0 && str_comp(row.pName, "Fast Input") == 0)
+                g_Config.m_KxFastInputOthers = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Auto Verify") == 0)
+                g_Config.m_KxAutoVerify = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Discord RPC") == 0)
+                g_Config.m_KxDiscordRpc = pTarget->on ? 1 : 0;
         // v1.56.187: Copy Moves Latency expandable is master toggle.
         else if(str_comp(pTarget->pName, "Copy Moves Latency") == 0)
                 g_Config.m_KxCopyMovesLatencyEnabled = pTarget->on ? 1 : 0;
@@ -9545,25 +10679,36 @@ bool CClickGui::HandleToggleTail(void *pTargetV, void *pRowV, void *pPanelV)
                 g_Config.m_KxLaserUnfreezeAuto = pTarget->on ? 1 : 0;
         else if(str_comp(pTarget->pName, "Silent") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
                 g_Config.m_KxLaserUnfreezeSilent = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Most bounces") == 0 && str_comp(row.pName, "Laser unfreeze") == 0)
+                g_Config.m_KxLaserUnfreezeMostBounces = pTarget->on ? 1 : 0;
         else if(str_comp(pTarget->pName, "Show attempt") == 0)
                 g_Config.m_KxLaserUnfreezeShowAttempt = pTarget->on ? 1 : 0;
-        // Basic Avoid Freeze toggles
-        else if(str_comp(pTarget->pName, "Freeze") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
-                g_Config.m_KxAfAvoidFreeze = pTarget->on ? 1 : 0;
-        else if(str_comp(pTarget->pName, "Teleport") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
-                g_Config.m_KxAfAvoidTeleport = pTarget->on ? 1 : 0;
-        else if(str_comp(pTarget->pName, "Death") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
-                g_Config.m_KxAfAvoidDeath = pTarget->on ? 1 : 0;
-        else if(str_comp(pTarget->pName, "Direction") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
-                g_Config.m_KxAfDirection = pTarget->on ? 1 : 0;
-        else if(str_comp(pTarget->pName, "Jump") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
-                g_Config.m_KxAfJump = pTarget->on ? 1 : 0;
-        else if(str_comp(pTarget->pName, "Hook") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
-                g_Config.m_KxAfHook = pTarget->on ? 1 : 0;
-        else if(str_comp(pTarget->pName, "Aim") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
-                g_Config.m_KxAfAim = pTarget->on ? 1 : 0;
-        else if(str_comp(pTarget->pName, "Silent") == 0 && str_comp(row.pName, "Avoid Freeze") == 0)
-                g_Config.m_KxAfSilent = pTarget->on ? 1 : 0;
+        else if(str_comp(row.pName, "Avoid Freeze") == 0)
+        {
+                const int AfIdx = (row.pChildren && pTarget >= row.pChildren && pTarget < row.pChildren + row.childCount) ? (int)(pTarget - row.pChildren) : -1;
+                switch(AfIdx)
+                {
+                case 1: g_Config.m_KxAfAvoidFreeze = pTarget->on ? 1 : 0; break;
+                case 2: g_Config.m_KxAfAvoidTeleport = pTarget->on ? 1 : 0; break;
+                case 3: g_Config.m_KxAfAvoidDeath = pTarget->on ? 1 : 0; break;
+                case 4: g_Config.m_KxAfUnfreeze = pTarget->on ? 1 : 0; break;
+                case 7: g_Config.m_KxAfNsif = pTarget->on ? 1 : 0; break;
+                case 8: g_Config.m_KxAfPlayerPrediction = pTarget->on ? 1 : 0; break;
+                case 12: g_Config.m_KxAfHook = pTarget->on ? 1 : 0; break;
+                case 13: g_Config.m_KxAfFire = pTarget->on ? 1 : 0; break;
+                case 14: g_Config.m_KxAfDirection = pTarget->on ? 1 : 0; break;
+                case 15: g_Config.m_KxAfJump = pTarget->on ? 1 : 0; break;
+                case 16: g_Config.m_KxAfAim = pTarget->on ? 1 : 0; break;
+                case 19: g_Config.m_KxAfSilent = pTarget->on ? 1 : 0; break;
+                case 20: g_Config.m_KxAfAutoAim = pTarget->on ? 1 : 0; break;
+                case 21: g_Config.m_KxAfAimAssist = pTarget->on ? 1 : 0; break;
+                case 22: g_Config.m_KxAfTrackPoint = pTarget->on ? 1 : 0; break;
+                case 23: g_Config.m_KxAfSafeTracking = pTarget->on ? 1 : 0; break;
+                case 25: g_Config.m_KxAfDrawTrackPoint = pTarget->on ? 1 : 0; break;
+                case 26: g_Config.m_KxAfDrawAim = pTarget->on ? 1 : 0; break;
+                default: break;
+                }
+        }
         else if(str_comp(pTarget->pName, "Show for me") == 0)
                 g_Config.m_KxFakeAimShowForMe = pTarget->on ? 1 : 0;
         // v1.56.262: Fake Aim — Show Server-Side Aim.
@@ -9587,15 +10732,21 @@ bool CClickGui::HandleToggleTail(void *pTargetV, void *pRowV, void *pPanelV)
         // v1.56.257: Hitboxes expandable header = master toggle (like IRC/Spoofer).
         else if(str_comp(pTarget->pName, "Hitboxes") == 0)
                 g_Config.m_KxHitboxes = pTarget->on ? 1 : 0;
-        // Pathfinder → Visuals children
-        else if(str_comp(pTarget->pName, "Show field") == 0)
-                g_Config.m_KxPfShowField = pTarget->on ? 1 : 0;
-        else if(str_comp(pTarget->pName, "Show hooks") == 0)
-                g_Config.m_KxPfShowHooks = pTarget->on ? 1 : 0;
-        else if(str_comp(pTarget->pName, "Show branches") == 0)
-                g_Config.m_KxPfShowBranches = pTarget->on ? 1 : 0;
-        else if(str_comp(pTarget->pName, "Show speed") == 0)
-                g_Config.m_KxPfShowSpeed = pTarget->on ? 1 : 0;
+        // Pathfinder → Visuals children (panel-gated: TAS and Real-Time
+        // Pathfinder use overlapping child labels).
+        else if(str_comp(row.pName, "Visuals") == 0 && str_comp(panel.pTitle, "Pathfinder") == 0)
+        {
+                if(str_comp(pTarget->pName, "Path") == 0)
+                        g_Config.m_KxPfShowPath = pTarget->on ? 1 : 0;
+                else if(str_comp(pTarget->pName, "Speed") == 0)
+                        g_Config.m_KxPfShowSpeed = pTarget->on ? 1 : 0;
+                else if(str_comp(pTarget->pName, "Hooks") == 0)
+                        g_Config.m_KxPfShowHooks = pTarget->on ? 1 : 0;
+                else if(str_comp(pTarget->pName, "Field") == 0)
+                        g_Config.m_KxPfShowField = pTarget->on ? 1 : 0;
+                else if(str_comp(pTarget->pName, "Start/End Pos") == 0)
+                        g_Config.m_KxPfDrawStartEndPos = pTarget->on ? 1 : 0;
+        }
         // Pathfinder top-level
         else if(str_comp(pTarget->pName, "Freeze Support (Beta)") == 0)
                 g_Config.m_KxPfFreezeSupport = pTarget->on ? 1 : 0;
@@ -9610,16 +10761,23 @@ bool CClickGui::HandleToggleTail(void *pTargetV, void *pRowV, void *pPanelV)
         // use overlapping child labels — generic names are safe here).
         else if(str_comp(row.pName, "Visuals") == 0 && str_comp(panel.pTitle, "Real-Time Pathfinder") == 0)
         {
-                if(str_comp(pTarget->pName, "Show Path") == 0)
-                        g_Config.m_KxRtPfShowPath = pTarget->on ? 1 : 0;
-                else if(str_comp(pTarget->pName, "Show Hooks") == 0)
-                        g_Config.m_KxRtPfShowHooks = pTarget->on ? 1 : 0;
-                else if(str_comp(pTarget->pName, "Show Field") == 0)
-                        g_Config.m_KxRtPfShowField = pTarget->on ? 1 : 0;
-                else if(str_comp(pTarget->pName, "Show Previous Path") == 0)
+                if(str_comp(pTarget->pName, "Previous Path") == 0)
                         g_Config.m_KxRtPfShowPrevPath = pTarget->on ? 1 : 0;
-                else if(str_comp(pTarget->pName, "Show Speed") == 0)
+                else if(str_comp(pTarget->pName, "Path") == 0)
+                        g_Config.m_KxRtPfShowPath = pTarget->on ? 1 : 0;
+                else if(str_comp(pTarget->pName, "Speed") == 0)
                         g_Config.m_KxRtPfShowSpeed = pTarget->on ? 1 : 0;
+                else if(str_comp(pTarget->pName, "Hooks") == 0)
+                        g_Config.m_KxRtPfShowHooks = pTarget->on ? 1 : 0;
+                else if(str_comp(pTarget->pName, "Field") == 0)
+                        g_Config.m_KxRtPfShowField = pTarget->on ? 1 : 0;
+                else if(str_comp(pTarget->pName, "Start/End Pos") == 0)
+                        g_Config.m_KxRtPfDrawStartEndPos = pTarget->on ? 1 : 0;
+        }
+        else if(str_comp(row.pName, "Settings") == 0 && str_comp(panel.pTitle, "Real-Time Pathfinder") == 0)
+        {
+                if(str_comp(pTarget->pName, "Simulate Players") == 0)
+                        g_Config.m_KxRtPfPlayerPrediction = pTarget->on ? 1 : 0;
         }
         // Settings → IRC/Spoofer expandables are master toggles.
         else if(str_comp(pTarget->pName, "IRC") == 0)
@@ -9726,6 +10884,11 @@ void CClickGui::HandleMouseUp(vec2 mousePos)
         m_Dragging = false;
         m_DragPanelIdx = -1;
         m_ArrayListDragging = false;
+        // v6.11: "Show In ClickGUI" arrays are dragged with the GUI open —
+        // release must end those drags too.
+        m_ArrayInfoDragging = false;
+        m_ArrayPlayerDragging = false;
+        m_ArrayPlayerResizing = false;
         m_DragSliderPanel = -1;
         m_DragSliderRow = -1;
         m_DragSliderChild = -1;
@@ -9810,7 +10973,11 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
 			continue;
 		if(str_comp(panel.pTitle, "Pathfinder") == 0 && !PfRowVisible(panel.pRows, panel.rowCount, r))
 			continue;
-		if(str_comp(panel.pTitle, "TAS") == 0 && !TasRowVisible(panel.pRows, panel.rowCount, r))
+		if(str_comp(panel.pTitle, "Code Execution (Lua)") == 0 && !CodeExecRowVisible(panel.pRows, panel.rowCount, r))
+			continue;
+		if((str_comp(panel.pTitle, "TAS") == 0 && !TasRowVisible(panel.pRows, panel.rowCount, r)) || (str_comp(panel.pTitle, "Dummy Manager") == 0 && !DummyManagerRowVisible(panel.pRows, panel.rowCount, r)))
+			continue;
+		if(!SearchKeepsRow(row))
 			continue;
                 const float rh = RowHeightForRow(row);
                 if(r == m_DropdownRow && m_DropdownChild < 0)
@@ -9902,10 +11069,33 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                                                 g_Config.m_KxEspStyle = o;
                                         else if(str_comp(target.pName, "Box Style") == 0 && str_comp(row.pName, "ESP") == 0)
                                                 g_Config.m_KxEspBoxStyle = o;
-                                        else if(str_comp(target.pName, "Algorithm") == 0)
-                                                g_Config.m_KxPfAlgorithm = o;
                                         else if(str_comp(target.pName, "Effort") == 0)
+                                        {
                                                 g_Config.m_KxPfEffort = o;
+                                                if(o == 0)
+                                                {
+                                                        g_Config.m_KxPfTicks = 10000;
+                                                        g_Config.m_KxPfInputs = 88;
+                                                        g_Config.m_KxPfInputTicks = 8;
+                                                        g_Config.m_KxPfDosage = 88;
+                                                }
+                                                else if(o == 1)
+                                                {
+                                                        g_Config.m_KxPfTicks = 10000;
+                                                        g_Config.m_KxPfInputs = 160;
+                                                        g_Config.m_KxPfInputTicks = 8;
+                                                        g_Config.m_KxPfDosage = 160;
+                                                }
+                                                else
+                                                {
+                                                        g_Config.m_KxPfTicks = 10000;
+                                                        g_Config.m_KxPfInputs = 1000;
+                                                        g_Config.m_KxPfInputTicks = 8;
+                                                        g_Config.m_KxPfDosage = 300;
+                                                }
+                                        }
+                                        else if(str_comp(target.pName, "Mode") == 0 && str_comp(row.pName, "Mode") == 0)
+                                                g_Config.m_KxRtPfMode = o;
                                         m_DropdownOpen = false;
                                         return true;
                                 }
@@ -10107,6 +11297,12 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                                 g_Config.m_KxAdminAlarmLevel = o;
                                                         else if(str_comp(target.pName, "Vertical Filter") == 0 && str_comp(row.pName, "BalanceBot") == 0)
                                                                 g_Config.m_KxBalanceBotVertical = o;
+                                                        else if(str_comp(target.pName, "Vote") == 0 && str_comp(row.pName, "Auto Vote") == 0)
+                                                                g_Config.m_KxAutoVoteF4 = o;
+                                                        else if(str_comp(target.pName, "Mode") == 0 && str_comp(row.pName, "Auto Vote Kick") == 0)
+                                                                g_Config.m_KxAutoVoteKickMode = o;
+                                                        else if(str_comp(target.pName, "App ID") == 0 && str_comp(row.pName, "Discord RPC") == 0)
+                                                                g_Config.m_KxDiscordId = o;
                                                         else if(str_comp(target.pName, "Team") == 0 && str_comp(row.pName, "BalanceBot") == 0)
                                                                 g_Config.m_KxBbTeam = o;
                                                         // v1.56.275: BalanceBot DDrace Team.
@@ -10312,7 +11508,9 @@ void CClickGui::RenderDropdownPopup(float alpha)
                         continue;
 		if(str_comp(panel.pTitle, "Pathfinder") == 0 && !PfRowVisible(panel.pRows, panel.rowCount, r))
 			continue;
-		if(str_comp(panel.pTitle, "TAS") == 0 && !TasRowVisible(panel.pRows, panel.rowCount, r))
+		if(str_comp(panel.pTitle, "Code Execution (Lua)") == 0 && !CodeExecRowVisible(panel.pRows, panel.rowCount, r))
+			continue;
+		if((str_comp(panel.pTitle, "TAS") == 0 && !TasRowVisible(panel.pRows, panel.rowCount, r)) || (str_comp(panel.pTitle, "Dummy Manager") == 0 && !DummyManagerRowVisible(panel.pRows, panel.rowCount, r)))
 			continue;
 if(!SearchKeepsRow(row))
                                         continue;
@@ -10674,6 +11872,16 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
         SRow *pRow = (SRow *)pRowVoid;
         if(!pRow)
                 return;
+        if(pRow == &g_RtPathfinderRows[1])
+        {
+                g_Config.m_KxRtPfTargetId = str_toint(pRow->m_aInputBuf);
+                return;
+        }
+        if(pRow == &g_AutoVoteKickChildren[1])
+        {
+                g_Config.m_KxAutoVoteKickTarget = str_toint(pRow->m_aInputBuf);
+                return;
+        }
 
         // v1.56.282: Dummy Manager proxy inputs — identified by array membership
         // ("Main"/"Dummy N" names are too generic for the name chain below).
@@ -10684,6 +11892,17 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
                 str_copy(DD.m_aProfiles[D].m_aProxy, pRow->m_aInputBuf, sizeof(DD.m_aProfiles[D].m_aProxy));
                 DD.Save();
                 m_ProxyDirty = true;
+                return;
+        }
+
+        if(str_comp(pRow->pName, "Reason") == 0)
+        {
+                str_copy(g_Config.m_KxAutoVoteKickReason, pRow->m_aInputBuf, sizeof(g_Config.m_KxAutoVoteKickReason));
+                return;
+        }
+        if(str_comp(pRow->pName, "Custom ID") == 0)
+        {
+                str_copy(g_Config.m_KxDiscordCustomId, pRow->m_aInputBuf, sizeof(g_Config.m_KxDiscordCustomId));
                 return;
         }
 
@@ -11128,6 +12347,16 @@ static SArrayListFeature g_ArrayListFeatures[] = {
         {"Mirror Aim Y", &g_Config.m_KxDummyCopyMirrorAimY},
         {"Smart Aim", &g_Config.m_KxDummyCopySmartAim},
         {"Fly Ride", &g_Config.m_KxFlyRide},
+        {"Jet Ride", &g_Config.m_KxJetRide},
+        {"Hook Ride", &g_Config.m_KxHookRide},
+        {"Moonwalk", &g_Config.m_KxMoonwalk},
+        {"Quick Stop", &g_Config.m_KxQuickStop},
+        {"Hide Chat Bubble", &g_Config.m_KxHideChatBubble},
+        {"Fast Input", &g_Config.m_KxFastInput},
+        {"Auto Team", &g_Config.m_KxAutoTeam},
+        {"Anti Afk", &g_Config.m_KxAntiAfk},
+        {"Auto Vote", &g_Config.m_KxAutoVote},
+        {"Auto Vote Kick", &g_Config.m_KxAutoVoteKick},
         {"Copy Moves Latency", &g_Config.m_KxCopyMovesLatencyEnabled},
         {"Laser Unfreeze", &g_Config.m_KxLaserUnfreeze},
         {"Fake Aim", &g_Config.m_KxFakeAim},
@@ -11146,6 +12375,8 @@ static SArrayListFeature g_ArrayListFeatures[] = {
         {"IRC", &g_Config.m_KxIrcEnabled},
         {"Spoof Zoom", &g_Config.m_KxSpoofZoom},
         {"Spoof Spectate", &g_Config.m_KxSpoofSpectate},
+        {"Auto Verify", &g_Config.m_KxAutoVerify},
+        {"Discord RPC", &g_Config.m_KxDiscordRpc},
         // Pathfinder / Real-Time Pathfinder masters.
         {"Freedom Path", &g_Config.m_KxPfFreedom},
         {"Reconstruct", &g_Config.m_KxRtPfReconstruct},
@@ -12636,6 +13867,12 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                 if(!SearchKeepsRow(row))
                         continue;
                 sig = sig * 31u + (unsigned)r + 1u;
+                // v6.12: label text can change without the row set changing
+                // (dynamic buffers). Fold the wrapped line count into the
+                // signature so the cached Yoga heights rebuild when it changes.
+                if(row.type == ERowType::Label)
+                        sig = sig * 31u + (unsigned)KxLabelLineCount(row.pName,
+                                PANEL_WIDTH - BODY_PADDING * 2.0f - 8.0f);
                 if(row.type == ERowType::Expandable && row.pChildren && row.m_AnimExpand > 0.0f)
                 {
                         for(int c = 0; c < row.childCount; ++c)
@@ -12667,6 +13904,11 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 if(!SearchKeepsChild(row.pChildren[c]))
                                         continue;
                                 sig = sig * 31u + (unsigned)(c + 100);
+                                // v6.12: same as above for wrapped child labels
+                                // (GitHub Scripts/TASes descriptions etc.).
+                                if(row.pChildren[c].type == ERowType::Label)
+                                        sig = sig * 31u + (unsigned)KxLabelLineCount(row.pChildren[c].pName,
+                                                PANEL_WIDTH - BODY_PADDING * 2.0f - SUB_LIST_INDENT - 8.0f);
                         }
                 }
         }
@@ -12723,8 +13965,6 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
 			continue;
 		if(str_comp(panel.pTitle, "TAS") == 0 && !TasRowVisible(panel.pRows, panel.rowCount, r))
 			continue;
-				if(str_comp(panel.pTitle, "TAS") == 0 && !TasRowVisible(panel.pRows, panel.rowCount, r))
-					continue;
                                 if(!SearchKeepsRow(row))
                                         continue;
                                 addRowNode(row, false);
@@ -12817,6 +14057,10 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                         continue;
                 if(isCodeExecPanel && !CodeExecRowVisible(panel.pRows, panel.rowCount, r))
                         continue;
+                // v6.12: the TAS panel was missing here — hidden TAS rows must
+                // not contribute expand/hidden height like in the other passes.
+                if(str_comp(panel.pTitle, "TAS") == 0 && !TasRowVisible(panel.pRows, panel.rowCount, r))
+                        continue;
                 if(row.type == ERowType::Expandable && row.pChildren && row.m_AnimExpand > 0.0f && row.m_AnimExpand < 1.0f)
                 {
                         const float expandProgress = row.m_AnimExpand;
@@ -12850,7 +14094,9 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
         continue;
                                 if(!SearchKeepsChild(row.pChildren[c]))
                                         continue;
-                                childrenBlockH += RowHeight(row.pChildren[c].type);
+                                // v6.12: RowHeightForRow — wrapped Label children
+                                // are taller than the fixed RowHeight() value.
+                                childrenBlockH += RowHeightForRow(row.pChildren[c]);
                                 visibleCount++;
                         }
                         if(visibleCount > 1)
@@ -13346,20 +14592,15 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                         if(str_comp(row.pName, "Pathfinding") == 0)
                         {
                                 CBotNet &BN = GameClient()->m_BotNet;
-                                if(BN.m_PfState == PF_STATE_IDLE)
+                                if(BN.m_RtPfState == 0)
                                 {
                                         btnCol = ColorRGBA(0xff3da35a, true).WithAlpha(alpha); // green
                                         pLabel = "Pathfinding";
                                 }
-                                else if(BN.m_PfState == PF_STATE_RUNNING)
+                                else
                                 {
                                         btnCol = ColorRGBA(0xffc43d3d, true).WithAlpha(alpha); // red
                                         pLabel = "Stop";
-                                }
-                                else // FINISHED
-                                {
-                                        btnCol = ColorRGBA(0xffe69528, true).WithAlpha(alpha); // orange
-                                        pLabel = "Finish";
                                 }
                         }
                         // v1.56.280: RT Pathfinding - green (IDLE) / red (RUNNING), no Finish state.
@@ -13389,6 +14630,26 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 {
                                         btnCol = ColorRGBA(0xff3da35a, true).WithAlpha(alpha);
                                         pLabel = "Execute";
+                                }
+                        }
+                        // LuaCT: Start green / Stop red / Clear yellow.
+                        if(row.pName == g_LuaCTDyn_Btn)
+                        {
+                                const int LuaCTState = GameClient()->m_CodeExec.LuaCTState();
+                                if(LuaCTState == CCodeExec::LUACT_RUNNING)
+                                {
+                                        btnCol = ColorRGBA(0xffc43d3d, true).WithAlpha(alpha);
+                                        pLabel = "Stop";
+                                }
+                                else if(LuaCTState == CCodeExec::LUACT_RESULTS)
+                                {
+                                        btnCol = ColorRGBA(0xffe69528, true).WithAlpha(alpha);
+                                        pLabel = "Clear";
+                                }
+                                else
+                                {
+                                        btnCol = ColorRGBA(0xff3da35a, true).WithAlpha(alpha);
+                                        pLabel = "Start";
                                 }
                         }
                         if(row.pName == g_TasDyn_Action)
@@ -13534,10 +14795,10 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                 ColorRGBA(0xffffffff, true).WithAlpha(alpha));
                                 }
                         }
-                        else if(str_comp(row.pName, "RT Editor Forbidden Tiles") == 0 || str_comp(row.pName, "RT Editor Finish Tiles") == 0)
+                        else if((str_comp(row.pName, "Editor Forbidden Tiles") == 0 || str_comp(row.pName, "Editor Finish Tiles") == 0) && str_comp(panel.pTitle, "Real-Time Pathfinder") == 0)
                         {
                                 CBotNet &BN = GameClient()->m_BotNet;
-                                const bool isForbidden = (str_comp(row.pName, "RT Editor Forbidden Tiles") == 0);
+                                const bool isForbidden = (str_comp(row.pName, "Editor Forbidden Tiles") == 0);
                                 const bool editorActive = isForbidden ? (BN.m_RtPfEditorMode == 1) : (BN.m_RtPfEditorMode == 2);
                                 const bool clearVisible = isForbidden ? !BN.m_RtPfForbiddenTiles.empty() : !BN.m_RtPfCustomFinishTiles.empty();
                                 ColorRGBA leftCol = editorActive
@@ -13569,7 +14830,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                 ColorRGBA(0xffffffff, true).WithAlpha(alpha));
                                 }
                         }
-                        else if(str_comp(row.pName, "Editor Forbidden Tiles") == 0 || str_comp(row.pName, "Editor Finish Tiles") == 0)
+                        else if((str_comp(row.pName, "Editor Forbidden Tiles") == 0 || str_comp(row.pName, "Editor Finish Tiles") == 0) && str_comp(panel.pTitle, "Pathfinder") == 0)
                         {
                                 CBotNet &BN = GameClient()->m_BotNet;
                                 const bool isForbidden = (str_comp(row.pName, "Editor Forbidden Tiles") == 0);
@@ -13604,10 +14865,41 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                 ColorRGBA(0xffffffff, true).WithAlpha(alpha));
                         }
                         }
+                        // v6.12: TAS Pick File | Unpick — picker is green; the
+                        // Unpick half exists only while a file is picked.
+                        else if(str_comp(row.pName, "Pick File") == 0 && str_comp(panel.pTitle, "TAS") == 0)
+                        {
+                                const ColorRGBA leftCol = ColorRGBA(0xff3da35a, true).WithAlpha(alpha);
+                                if(!g_TasFilePicked)
+                                {
+                                        DrawRoundedRect(rx + 2.0f, ry + 2.0f, rw - 4.0f, rh - 4.0f, 4.0f,
+                                                IGraphics::CORNER_ALL, leftCol);
+                                        const float lw = TextRender()->TextWidth(16.0f, "Pick File");
+                                        DrawText(rx + (rw - lw) * 0.5f, ry + 8.0f, 16.0f, "Pick File",
+                                                ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                                }
+                                else
+                                {
+                                        const float btnW = (rw - 6.0f) * 0.5f;
+                                        DrawRoundedRect(rx + 2.0f, ry + 2.0f, btnW, rh - 4.0f, 4.0f,
+                                                IGraphics::CORNER_ALL, leftCol);
+                                        const float lw = TextRender()->TextWidth(14.0f, "Pick File");
+                                        DrawText(rx + 2.0f + (btnW - lw) * 0.5f, ry + 8.0f, 14.0f, "Pick File",
+                                                ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                                        const float rx2 = rx + 2.0f + btnW + 2.0f;
+                                        DrawRoundedRect(rx2, ry + 2.0f, btnW, rh - 4.0f, 4.0f,
+                                                IGraphics::CORNER_ALL, ColorRGBA(0xffc43d3d, true).WithAlpha(alpha));
+                                        const float rw2 = TextRender()->TextWidth(14.0f, "Unpick File");
+                                        DrawText(rx2 + (btnW - rw2) * 0.5f, ry + 8.0f, 14.0f, "Unpick File",
+                                                ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                                }
+                        }
+                        // v6.12: Code Exec Pick File | Unpick — picker is green; the
+                        // Unpick half exists only while a script is loaded.
                         else if(str_comp(row.pName, "Pick File") == 0)
                         {
-                                const ColorRGBA leftCol = KxColorWithAlpha(m_AccentColorRGBA, alpha * m_MainOpacity);
-                                if(!g_TasFilePicked)
+                                const ColorRGBA leftCol = ColorRGBA(0xff3da35a, true).WithAlpha(alpha);
+                                if(!g_ExecLoaded)
                                 {
                                         DrawRoundedRect(rx + 2.0f, ry + 2.0f, rw - 4.0f, rh - 4.0f, 4.0f,
                                                 IGraphics::CORNER_ALL, leftCol);
@@ -13724,14 +15016,19 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                         // v1.56.176: Label — non-interactive text row (Info panel).
                         // v6.2: wrapped to the row width; the row height comes from
                         // the wrapped line count computed in the layout pass.
+                        // Script Warnings labels render in red (identified by their
+                        // label buffer pointers, same way buttons match their text).
+                        const bool WarnLabel = row.pName == g_ExecWarn_Header || row.pName == g_ExecWarn_Internet ||
+                                row.pName == g_ExecWarn_Os || row.pName == g_ExecWarn_Files || row.pName == g_ExecWarn_Version;
                         std::vector<std::string> vLines;
                         KxWrapText(row.pName, rw - 8.0f, vLines);
-                        float LabelY = ry + 5.0f;
+                        float LabelY = ry + 2.0f;
                         for(const std::string &Line : vLines)
                         {
                                 DrawText(rx + 4.0f, LabelY, 16.0f, Line.c_str(),
-                                        ColorRGBA(0xffb8b8c8, true).WithAlpha(alpha));
-                                LabelY += 20.0f;
+                                        WarnLabel ? ColorRGBA(0xffc43d3d, true).WithAlpha(alpha)
+                                                  : ColorRGBA(0xffb8b8c8, true).WithAlpha(alpha));
+                                LabelY += 17.0f;
                         }
                         break;
                 }
@@ -14179,6 +15476,26 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                         // Connected/active state → green tint.
                                         if(child.on)
                                                 btnCol = ColorRGBA(0xff3da35a, true).WithAlpha(alpha);
+                                        // LuaCT: Start green / Stop red / Clear yellow.
+                                        if(child.pName == g_LuaCTDyn_Btn)
+                                        {
+                                                const int LuaCTState = GameClient()->m_CodeExec.LuaCTState();
+                                                if(LuaCTState == CCodeExec::LUACT_RUNNING)
+                                                {
+                                                        btnCol = ColorRGBA(0xffc43d3d, true).WithAlpha(alpha);
+                                                        pLabel = "Stop";
+                                                }
+                                                else if(LuaCTState == CCodeExec::LUACT_RESULTS)
+                                                {
+                                                        btnCol = ColorRGBA(0xffe69528, true).WithAlpha(alpha);
+                                                        pLabel = "Clear";
+                                                }
+                                                else
+                                                {
+                                                        btnCol = ColorRGBA(0xff3da35a, true).WithAlpha(alpha);
+                                                        pLabel = "Start";
+                                                }
+                                        }
                                         // v6.2: Spawner action colors — Spawn/Loop green, Kill/Stop red.
                                         if(str_comp(child.pName, "Spawn") == 0)
                                                 btnCol = ColorRGBA(0xff3da35a, true).WithAlpha(alpha);
@@ -14201,17 +15518,39 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                         // v6.2: wrapped like every other label.
                                         std::vector<std::string> vLines;
                                         KxWrapText(child.pName, crw - 8.0f, vLines);
-                                        float LabelY = cry + 5.0f;
+                                        float LabelY = cry + 2.0f;
                                         for(const std::string &Line : vLines)
                                         {
                                                 DrawText(crx + 4.0f, LabelY, 15.0f, Line.c_str(),
                                                         ColorRGBA(0xffb8b8c8, true).WithAlpha(alpha));
-                                                LabelY += 20.0f;
+                                                LabelY += 17.0f;
                                         }
                                         break;
                                 }
                                 case ERowType::DoubleButton:
                                 {
+                                        // v6.12: GitHub Scripts/TASes Load | Download. The
+                                        // dispatch splits this row into halves, but the generic
+                                        // Dummies fallback below draws !on rows full-width —
+                                        // so the Download half was never visible.
+                                        if(child.pName2 && str_comp(child.pName2, "Download") == 0)
+                                        {
+                                                const float btnW = (crw - 6.0f) * 0.5f;
+                                                const ColorRGBA Green = ColorRGBA(0xff3da35a, true).WithAlpha(alpha);
+                                                const ColorRGBA Orange = ColorRGBA(0xffe69528, true).WithAlpha(alpha);
+                                                DrawRoundedRect(crx + 2.0f, cry + 2.0f, btnW, crh - 4.0f, 4.0f,
+                                                        IGraphics::CORNER_ALL, Green);
+                                                const float lw1 = TextRender()->TextWidth(13.0f, child.pName);
+                                                DrawText(crx + 2.0f + (btnW - lw1) * 0.5f, cry + 8.0f, 13.0f, child.pName,
+                                                        ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                                                const float rx2 = crx + 2.0f + btnW + 2.0f;
+                                                DrawRoundedRect(rx2, cry + 2.0f, btnW, crh - 4.0f, 4.0f,
+                                                        IGraphics::CORNER_ALL, Orange);
+                                                const float lw2 = TextRender()->TextWidth(13.0f, "Download");
+                                                DrawText(rx2 + (btnW - lw2) * 0.5f, cry + 8.0f, 13.0f, "Download",
+                                                        ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                                                break;
+                                        }
                                         // v6.3: ArrayList Editor / Reset (child of the ArrayList
                                         // expandable). The right half appears only after the HUD
                                         // position was moved.

@@ -284,7 +284,9 @@ int CControls::SnapInput(int *pData)
         const bool SpecActive = GameClient()->m_Snap.m_SpecInfo.m_Active;
 
         // update player state
-        if(GameClient()->m_Chat.IsActive())
+        if(g_Config.m_KxHideChatBubble)
+                m_aInputData[g_Config.m_ClDummy].m_PlayerFlags = PLAYERFLAG_PLAYING;
+        else if(GameClient()->m_Chat.IsActive())
                 m_aInputData[g_Config.m_ClDummy].m_PlayerFlags = PLAYERFLAG_CHATTING;
         else if(GameClient()->m_Menus.IsActive())
                 m_aInputData[g_Config.m_ClDummy].m_PlayerFlags = PLAYERFLAG_IN_MENU;
@@ -463,6 +465,11 @@ int CControls::SnapInput(int *pData)
                         m_aInputData[g_Config.m_ClDummy].m_Direction = -1;
                 if(!m_aInputDirectionLeft[g_Config.m_ClDummy] && m_aInputDirectionRight[g_Config.m_ClDummy])
                         m_aInputData[g_Config.m_ClDummy].m_Direction = 1;
+
+                GameClient()->m_BotNet.ApplyMoonwalk(m_aInputData[g_Config.m_ClDummy], m_aLastData[g_Config.m_ClDummy],
+                        m_aInputDirectionLeft[g_Config.m_ClDummy] != 0, m_aInputDirectionRight[g_Config.m_ClDummy] != 0);
+                m_aInputData[g_Config.m_ClDummy] = GameClient()->m_BotNet.HookRide(m_aInputData[g_Config.m_ClDummy]);
+                m_aInputData[g_Config.m_ClDummy] = GameClient()->m_BotNet.JetRide(m_aInputData[g_Config.m_ClDummy]);
 
                 // v1.56.262: BalanceBot — keep X distance to the nearest matching
                 // player. Overrides the CURRENT dummy's direction EVERY tick (the
@@ -904,6 +911,30 @@ int CControls::SnapInput(int *pData)
                 CNetObj_PlayerInput InputBeforeAF = m_aInputData[g_Config.m_ClDummy];
                 GameClient()->m_AvoidFreeze.ApplyOverride();
                 if(mem_comp(&m_aInputData[g_Config.m_ClDummy], &InputBeforeAF, sizeof(InputBeforeAF)))
+                        Send = true;
+        }
+
+        // Quick Stop: brake with the opposite direction while no movement key
+        // is held (runs after Avoid, matching the reference pipeline).
+        if(g_Config.m_KxQuickStop)
+        {
+                const int QsId = GameClient()->m_aLocalIds[g_Config.m_ClDummy];
+                bool QsGrounded = false;
+                if(g_Config.m_KxQuickStopGrounded && QsId >= 0 && QsId < MAX_CLIENTS)
+                {
+                        const vec2 Pos = GameClient()->m_aClients[QsId].m_Predicted.m_Pos;
+                        QsGrounded = Collision()->CheckPoint(round_to_int(Pos.x + 14.0f), round_to_int(Pos.y + 19.0f)) ||
+                                     Collision()->CheckPoint(round_to_int(Pos.x - 14.0f), round_to_int(Pos.y + 19.0f)) ||
+                                     (Collision()->GetMoveRestrictions(Pos + vec2(0, 18.0f), 0.0f) & CANTMOVE_DOWN);
+                }
+                const bool QsCanBrake = QsId >= 0 && QsId < MAX_CLIENTS && Client()->State() == IClient::STATE_ONLINE &&
+                                        (m_aInputData[g_Config.m_ClDummy].m_PlayerFlags & PLAYERFLAG_PLAYING) &&
+                                        !GameClient()->m_Snap.m_SpecInfo.m_Active &&
+                                        GameClient()->m_aClients[QsId].m_FreezeEnd == 0 &&
+                                        !GameClient()->m_aClients[QsId].m_LiveFrozen;
+                CNetObj_PlayerInput InputBeforeQs = m_aInputData[g_Config.m_ClDummy];
+                GameClient()->m_BotNet.ApplyQuickStop(m_aInputData[g_Config.m_ClDummy], GameClient()->m_PredictedChar.m_Vel.x, QsCanBrake, QsGrounded);
+                if(mem_comp(&m_aInputData[g_Config.m_ClDummy], &InputBeforeQs, sizeof(InputBeforeQs)))
                         Send = true;
         }
 

@@ -4,12 +4,16 @@
 #include <game/client/components/kinetix/kinetix_internal.h>
 
 #include <base/dbg.h>
+#include <base/io.h>
 #include <base/mem.h>
 
 #include <engine/client.h>
 #include <engine/console.h>
 #include <engine/graphics.h>
+#include <engine/http.h>
 #include <engine/shared/config.h>
+#include <engine/shared/json.h>
+#include <engine/storage.h>
 #include <engine/textrender.h>
 
 #include <generated/client_data.h>
@@ -786,7 +790,26 @@ void CTas::RenderVisuals()
 		}
 	}
 
-
+	if(g_Config.m_KxTasDrawStartEndPos)
+	{
+		const vec2 aPos[] = {vTicks.front().Core.m_Pos, vTicks.back().Core.m_Pos};
+		const ColorRGBA aColor[] = {ColorRGBA(0.2f, 1.0f, 0.2f, 1.0f), ColorRGBA(1.0f, 0.2f, 0.2f, 1.0f)};
+		Graphics()->LinesBegin();
+		for(int i = 0; i < 2; i++)
+		{
+			if(aPos[i] == vec2(0, 0))
+				continue;
+			Graphics()->SetColor(aColor[i]);
+			IGraphics::CLineItem aBox[] = {
+				IGraphics::CLineItem(aPos[i] + vec2(-16, -16), aPos[i] + vec2(16, -16)),
+				IGraphics::CLineItem(aPos[i] + vec2(16, -16), aPos[i] + vec2(16, 16)),
+				IGraphics::CLineItem(aPos[i] + vec2(16, 16), aPos[i] + vec2(-16, 16)),
+				IGraphics::CLineItem(aPos[i] + vec2(-16, 16), aPos[i] + vec2(-16, -16)),
+			};
+			Graphics()->LinesDraw(aBox, 4);
+		}
+		Graphics()->LinesEnd();
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -4102,12 +4125,12 @@ void CTas::UnpickFile()
 	m_FilePicked = false;
 	m_aPickedPath[0] = '\0';
 	m_aPickedMap[0] = '\0';
-	m_aPickedName[0] = '\0';
+	m_aPickedDescription[0] = '\0';
 	m_aPickedAuthor[0] = '\0';
 	m_aPickedCreated[0] = '\0';
 }
 
-bool CTas::WriteTakeFile(const char *pPath, const char *pMap, const char *pName, const char *pAuthor, const char *pCreated)
+bool CTas::WriteTakeFile(const char *pPath, const char *pMap, const char *pDescription, const char *pAuthor, const char *pCreated)
 {
 	const std::vector<CTasTick> &vTake = m_Recording ? m_vRecord : m_vSaved;
 	if(vTake.empty())
@@ -4118,12 +4141,12 @@ bool CTas::WriteTakeFile(const char *pPath, const char *pMap, const char *pName,
 		"\"Format\": \"%s\",\n"
 		"\"Version\": \"20\",\n"
 		"\"Map\": \"%s\",\n"
-		"\"Name\": \"%s\",\n"
+		"\"Description\": \"%s\",\n"
 		"\"Author\": \"%s\",\n"
 		"\"Created\": \"%s\",\n"
 		"\"Ticks\": \"%d\",\n"
 		"\"Tps\": \"%.1f\"\n",
-		g_aKxTasFormat, pMap, pName, pAuthor, pCreated,
+		g_aKxTasFormat, pMap, pDescription, pAuthor, pCreated,
 		(int)vTake.size(), (double)m_Tps);
 	const int TextLen = str_length(aText) + 1;
 
@@ -4218,6 +4241,22 @@ bool CTas::LoadTakeFile(const char *pPath)
 	if(!Storage()->ReadFile(pPath, IStorage::TYPE_ABSOLUTE, &pRawData, &RawSize))
 		return false;
 
+	const bool Ok = LoadTakeMem(pRawData, RawSize);
+	free(pRawData);
+	if(Ok)
+		str_copy(m_aPickedPath, pPath, sizeof(m_aPickedPath));
+	return Ok;
+}
+
+// v6.12: parses a .tas image from memory and loads it into the take buffer.
+// Used by the GitHub TAS Load — the file is NOT written to disk, so
+// m_aPickedPath stays empty and Save writes a fresh file instead of
+// overwriting one.
+bool CTas::LoadTakeMem(const void *pRawData, unsigned RawSize)
+{
+	if(m_Recording || !pRawData || !RawSize)
+		return false;
+
 	bool Ok = false;
 	do
 	{
@@ -4247,7 +4286,6 @@ bool CTas::LoadTakeFile(const char *pPath)
 		char aAuthor[128] = {0};
 		char aCreated[64] = {0};
 		KxTasReadHeader(pText, TextLen - 1, "Map", aMap, sizeof(aMap));
-		KxTasReadHeader(pText, TextLen - 1, "Name", aName, sizeof(aName));
 		KxTasReadHeader(pText, TextLen - 1, "Author", aAuthor, sizeof(aAuthor));
 		KxTasReadHeader(pText, TextLen - 1, "Created", aCreated, sizeof(aCreated));
 
@@ -4265,6 +4303,10 @@ bool CTas::LoadTakeFile(const char *pPath)
 		const int TickSize = InputSize + CoreSize;
 		if(Version < 1 || Version > 2 || TickCount < 0 || TickCount > (BinSize - 16) / TickSize)
 			break;
+		// v6.12: the v2 format renamed the header field "Name" to "Description"
+		// (no fallback for v2 files written before the rename); v1 files keep
+		// "Name" and the value is displayed as the description.
+		KxTasReadHeader(pText, TextLen - 1, Version >= 2 ? "Description" : "Name", aName, sizeof(aName));
 
 		std::vector<CTasTick> vNew;
 		vNew.resize(TickCount);
@@ -4326,9 +4368,9 @@ bool CTas::LoadTakeFile(const char *pPath)
 			}
 
 		m_vSaved = std::move(vNew);
-		str_copy(m_aPickedPath, pPath, sizeof(m_aPickedPath));
+		m_aPickedPath[0] = '\0';
 		str_copy(m_aPickedMap, aMap, sizeof(m_aPickedMap));
-		str_copy(m_aPickedName, aName, sizeof(m_aPickedName));
+		str_copy(m_aPickedDescription, aName, sizeof(m_aPickedDescription));
 		str_copy(m_aPickedAuthor, aAuthor, sizeof(m_aPickedAuthor));
 		str_copy(m_aPickedCreated, aCreated, sizeof(m_aPickedCreated));
 		m_FilePicked = true;
@@ -4354,11 +4396,10 @@ bool CTas::LoadTakeFile(const char *pPath)
 		Ok = true;
 	} while(false);
 
-	free(pRawData);
 	return Ok;
 }
 
-void CTas::SaveTake(const char *pMap, const char *pName, const char *pAuthor)
+void CTas::SaveTake(const char *pMap, const char *pDescription, const char *pAuthor)
 {
 	const std::vector<CTasTick> &vTake = m_Recording ? m_vRecord : m_vSaved;
 	if(vTake.empty())
@@ -4382,7 +4423,9 @@ void CTas::SaveTake(const char *pMap, const char *pName, const char *pAuthor)
 
 	char aPath[512];
 	char aCreated[64];
-	if(m_FilePicked)
+	// v6.12: an in-memory GitHub Load sets m_FilePicked with an empty path —
+	// treat it as not file-backed so Save writes a fresh file.
+	if(m_FilePicked && m_aPickedPath[0])
 	{
 		str_copy(aPath, m_aPickedPath, sizeof(aPath));
 		str_copy(aCreated, m_aPickedCreated, sizeof(aCreated));
@@ -4401,13 +4444,185 @@ void CTas::SaveTake(const char *pMap, const char *pName, const char *pAuthor)
 		str_timestamp_format(aCreated, sizeof(aCreated), "%H:%M | %d.%m.%Y");
 	}
 
-	if(!WriteTakeFile(aPath, pMap ? pMap : "", pName ? pName : "", pAuthor ? pAuthor : "", aCreated))
+	if(!WriteTakeFile(aPath, pMap ? pMap : "", pDescription ? pDescription : "", pAuthor ? pAuthor : "", aCreated))
 		return;
 
 	if(m_FilePicked)
 	{
 		str_copy(m_aPickedMap, pMap ? pMap : "", sizeof(m_aPickedMap));
-		str_copy(m_aPickedName, pName ? pName : "", sizeof(m_aPickedName));
+		str_copy(m_aPickedDescription, pDescription ? pDescription : "", sizeof(m_aPickedDescription));
 		str_copy(m_aPickedAuthor, pAuthor ? pAuthor : "", sizeof(m_aPickedAuthor));
 	}
+}
+
+// =============================================================
+// GitHub TAS repository — storage/tas in the client repo
+// =============================================================
+// Same scheme as the Code Execution GitHub Scripts: "Update List" downloads
+// ONLY storage/tas/tas.json (metadata); the .tas file itself downloads on
+// demand into Kinetix/TAS/.
+static const char *const s_pGitHubTasRawBase =
+	"https://raw.githubusercontent.com/lothiann/Kinetix-Client/master/storage/tas/";
+
+static std::shared_ptr<IHttpRequest> GitHubTasRequest(const char *pUrl)
+{
+	std::shared_ptr<IHttpRequest> pReq = HttpGet(pUrl);
+	pReq->WriteToMemory();
+	pReq->LogProgress(HTTPLOG::FAILURE);
+	pReq->FailOnErrorStatus(false);
+	pReq->MaxResponseSize(512 * 1024 * 1024);
+	pReq->Timeout(CTimeout{4000, 120000, 1, 30});
+	return pReq;
+}
+
+void CTas::GitHubUpdateList()
+{
+	if(m_GitHubState == GITHUB_UPDATING)
+		return;
+	m_aGitHubError[0] = '\0';
+	m_pGitHubListJob = GitHubTasRequest((std::string(s_pGitHubTasRawBase) + "tas.json").c_str());
+	Http()->Run(m_pGitHubListJob);
+	m_GitHubState = GITHUB_UPDATING;
+}
+
+void CTas::GitHubLoadItem(int Idx, bool Select)
+{
+	if(m_GitHubLoadState == GITHUB_LOAD_LOADING || Idx < 0 || Idx >= (int)m_vGitHubItems.size())
+		return;
+	m_aGitHubLoadError[0] = '\0';
+	m_GitHubLoadSelect = Select;
+	m_GitHubLoadTarget = m_vGitHubItems[Idx].m_File;
+	const std::string Url = std::string(s_pGitHubTasRawBase) + m_GitHubLoadTarget;
+	m_pGitHubLoadJob = GitHubTasRequest(Url.c_str());
+	Http()->Run(m_pGitHubLoadJob);
+	m_GitHubLoadState = GITHUB_LOAD_LOADING;
+}
+
+void CTas::GitHubClearLoadDone()
+{
+	m_GitHubLoadState = GITHUB_LOAD_IDLE;
+	m_aGitHubLoadFile[0] = '\0';
+	m_GitHubLoadContent.clear();
+}
+
+void CTas::GitHubUpdateJobs()
+{
+	if(m_pGitHubListJob && m_pGitHubListJob->Done())
+	{
+		std::shared_ptr<IHttpRequest> pReq = m_pGitHubListJob;
+		m_pGitHubListJob = nullptr;
+		GitHubFinishList(pReq.get());
+	}
+	if(m_pGitHubLoadJob && m_pGitHubLoadJob->Done())
+	{
+		std::shared_ptr<IHttpRequest> pReq = m_pGitHubLoadJob;
+		m_pGitHubLoadJob = nullptr;
+		GitHubFinishLoad(pReq.get());
+	}
+}
+
+void CTas::GitHubFinishList(IHttpRequest *pReq)
+{
+	if(pReq->State() != EHttpState::DONE || pReq->StatusCode() != 200)
+	{
+		m_GitHubState = GITHUB_ERROR;
+		str_format(m_aGitHubError, sizeof(m_aGitHubError), "download failed (HTTP %d)", pReq->StatusCode());
+		return;
+	}
+	unsigned char *pData = nullptr;
+	size_t Len = 0;
+	pReq->Result(&pData, &Len);
+	if(!pData || Len == 0)
+	{
+		m_GitHubState = GITHUB_ERROR;
+		str_copy(m_aGitHubError, "empty response", sizeof(m_aGitHubError));
+		return;
+	}
+	json_value *pRoot = JsonParse((const json_char *)pData, Len);
+	if(!pRoot || pRoot->type != json_object)
+	{
+		json_value_free(pRoot);
+		m_GitHubState = GITHUB_ERROR;
+		str_copy(m_aGitHubError, "invalid tas.json", sizeof(m_aGitHubError));
+		return;
+	}
+	m_vGitHubItems.clear();
+	m_GitHubListUpdated.clear();
+	m_GitHubLastSupportedVersion.clear();
+	if(const json_value *pField = json_object_get(pRoot, "list_updated"))
+		m_GitHubListUpdated = json_string_get(pField);
+	if(const json_value *pField = json_object_get(pRoot, "last_supported_version"))
+		m_GitHubLastSupportedVersion = json_string_get(pField);
+	const json_value *pItems = json_object_get(pRoot, "items");
+	if(pItems && pItems->type == json_array)
+	{
+		for(int i = 0; i < json_array_length(pItems); i++)
+		{
+			const json_value *pObj = json_array_get(pItems, i);
+			if(!pObj || pObj->type != json_object)
+				continue;
+			SGitHubTas Item;
+			auto Field = [&](const char *pName) -> const char * {
+				const json_value *pValue = json_object_get(pObj, pName);
+				// Null-safe: a missing / non-string key must never crash
+				// the client (std::string::operator=(nullptr) does).
+				return pValue && pValue->type == json_string ? json_string_get(pValue) : "";
+			};
+			Item.m_File = Field("file");
+			Item.m_Map = Field("map");
+			Item.m_Description = Field("description");
+			Item.m_Author = Field("author");
+			Item.m_Version = Field("version");
+			Item.m_Created = Field("created");
+			if(!Item.m_File.empty())
+				m_vGitHubItems.push_back(std::move(Item));
+		}
+	}
+	json_value_free(pRoot);
+	m_GitHubState = GITHUB_READY;
+}
+
+void CTas::GitHubFinishLoad(IHttpRequest *pReq)
+{
+	if(pReq->State() != EHttpState::DONE || pReq->StatusCode() != 200)
+	{
+		m_GitHubLoadState = GITHUB_LOAD_ERROR;
+		str_format(m_aGitHubLoadError, sizeof(m_aGitHubLoadError), "download failed (HTTP %d)", pReq->StatusCode());
+		return;
+	}
+	unsigned char *pData = nullptr;
+	size_t Len = 0;
+	pReq->Result(&pData, &Len);
+	if(!pData || Len == 0)
+	{
+		m_GitHubLoadState = GITHUB_LOAD_ERROR;
+		str_copy(m_aGitHubLoadError, "empty response", sizeof(m_aGitHubLoadError));
+		return;
+	}
+	// v6.12: Load keeps the .tas image in memory only — the ClickGUI parses
+	// it into the take buffer via LoadTakeMem without any disk write.
+	// Download does the disk write (Kinetix/TAS).
+	str_copy(m_aGitHubLoadFile, m_GitHubLoadTarget.c_str(), sizeof(m_aGitHubLoadFile));
+	if(m_GitHubLoadSelect)
+	{
+		m_GitHubLoadContent.assign((const char *)pData, Len);
+		m_GitHubLoadState = GITHUB_LOAD_DONE;
+		return;
+	}
+	Storage()->CreateFolder("Kinetix", IStorage::TYPE_SAVE);
+	Storage()->CreateFolder("Kinetix/TAS", IStorage::TYPE_SAVE);
+	char aPath[IO_MAX_PATH_LENGTH];
+	str_format(aPath, sizeof(aPath), "Kinetix/TAS/%s", m_GitHubLoadTarget.c_str());
+	char aComplete[IO_MAX_PATH_LENGTH];
+	Storage()->GetCompletePath(IStorage::TYPE_SAVE, aPath, aComplete, sizeof(aComplete));
+	IOHANDLE File = io_open(aComplete, IOFLAG_WRITE);
+	if(!File)
+	{
+		m_GitHubLoadState = GITHUB_LOAD_ERROR;
+		str_copy(m_aGitHubLoadError, "failed to write the .tas file", sizeof(m_aGitHubLoadError));
+		return;
+	}
+	io_write(File, pData, Len);
+	io_close(File);
+	m_GitHubLoadState = GITHUB_LOAD_DONE;
 }

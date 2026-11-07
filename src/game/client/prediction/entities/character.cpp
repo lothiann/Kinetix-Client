@@ -1189,6 +1189,12 @@ void CCharacter::HandleTuneLayer()
 	int CurrentIndex = Collision()->GetMapIndex(m_Pos);
 	SetTuneZone(GameWorld()->m_WorldConfig.m_UseTuneZones ? Collision()->IsTune(CurrentIndex) : 0);
 	m_Core.m_Tuning = *GetTuning(GetOverriddenTuneZone());
+	if(GameWorld()->m_WorldConfig.m_KxAfExplosionTuning && m_IsLocal)
+	{
+		// Reference: the local tee keeps the avoid world's explosion tuning in
+		// sync with its current tune zone.
+		GameWorld()->m_WorldConfig.m_KxAfExplosionStrength = GetTuning(m_TuneZone)->m_ExplosionStrength;
+	}
 }
 
 void CCharacter::DDRaceTick()
@@ -1216,6 +1222,8 @@ void CCharacter::DDRaceTick()
 	HandleTuneLayer();
 
 	// check if the tee is in any type of freeze
+	// The avoid world excludes death-tile contact: the reference only marks
+	// terminal hazards through the death tile itself, not through m_IsInFreeze.
 	int Index = Collision()->GetPureMapIndex(m_Pos);
 	const int aTiles[] = {
 		Collision()->GetTileIndex(Index),
@@ -1224,20 +1232,22 @@ void CCharacter::DDRaceTick()
 	m_Core.m_IsInFreeze = false;
 	for(const int Tile : aTiles)
 	{
-		if(Tile == TILE_FREEZE || Tile == TILE_DFREEZE || Tile == TILE_LFREEZE || Tile == TILE_DEATH)
+		if(Tile == TILE_FREEZE || Tile == TILE_DFREEZE || Tile == TILE_LFREEZE ||
+			(!GameWorld()->m_WorldConfig.m_KxAfNoDeathContact && Tile == TILE_DEATH))
 		{
 			m_Core.m_IsInFreeze = true;
 			break;
 		}
 	}
-	m_Core.m_IsInFreeze |= (Collision()->GetCollisionAt(m_Pos.x + GetProximityRadius() / 3.f, m_Pos.y - GetProximityRadius() / 3.f) == TILE_DEATH ||
-				Collision()->GetCollisionAt(m_Pos.x + GetProximityRadius() / 3.f, m_Pos.y + GetProximityRadius() / 3.f) == TILE_DEATH ||
-				Collision()->GetCollisionAt(m_Pos.x - GetProximityRadius() / 3.f, m_Pos.y - GetProximityRadius() / 3.f) == TILE_DEATH ||
-				Collision()->GetCollisionAt(m_Pos.x - GetProximityRadius() / 3.f, m_Pos.y + GetProximityRadius() / 3.f) == TILE_DEATH ||
-				Collision()->GetFrontCollisionAt(m_Pos.x + GetProximityRadius() / 3.f, m_Pos.y - GetProximityRadius() / 3.f) == TILE_DEATH ||
-				Collision()->GetFrontCollisionAt(m_Pos.x + GetProximityRadius() / 3.f, m_Pos.y + GetProximityRadius() / 3.f) == TILE_DEATH ||
-				Collision()->GetFrontCollisionAt(m_Pos.x - GetProximityRadius() / 3.f, m_Pos.y - GetProximityRadius() / 3.f) == TILE_DEATH ||
-				Collision()->GetFrontCollisionAt(m_Pos.x - GetProximityRadius() / 3.f, m_Pos.y + GetProximityRadius() / 3.f) == TILE_DEATH);
+	if(!GameWorld()->m_WorldConfig.m_KxAfNoDeathContact)
+		m_Core.m_IsInFreeze |= (Collision()->GetCollisionAt(m_Pos.x + GetProximityRadius() / 3.f, m_Pos.y - GetProximityRadius() / 3.f) == TILE_DEATH ||
+					Collision()->GetCollisionAt(m_Pos.x + GetProximityRadius() / 3.f, m_Pos.y + GetProximityRadius() / 3.f) == TILE_DEATH ||
+					Collision()->GetCollisionAt(m_Pos.x - GetProximityRadius() / 3.f, m_Pos.y - GetProximityRadius() / 3.f) == TILE_DEATH ||
+					Collision()->GetCollisionAt(m_Pos.x - GetProximityRadius() / 3.f, m_Pos.y + GetProximityRadius() / 3.f) == TILE_DEATH ||
+					Collision()->GetFrontCollisionAt(m_Pos.x + GetProximityRadius() / 3.f, m_Pos.y - GetProximityRadius() / 3.f) == TILE_DEATH ||
+					Collision()->GetFrontCollisionAt(m_Pos.x + GetProximityRadius() / 3.f, m_Pos.y + GetProximityRadius() / 3.f) == TILE_DEATH ||
+					Collision()->GetFrontCollisionAt(m_Pos.x - GetProximityRadius() / 3.f, m_Pos.y - GetProximityRadius() / 3.f) == TILE_DEATH ||
+					Collision()->GetFrontCollisionAt(m_Pos.x - GetProximityRadius() / 3.f, m_Pos.y + GetProximityRadius() / 3.f) == TILE_DEATH);
 }
 
 void CCharacter::DDRacePostCoreTick()

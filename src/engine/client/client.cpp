@@ -3354,6 +3354,9 @@ void CClient::Update()
                         }
 
                         // only do sane predictions
+                        if(g_Config.m_KxFastInput && GameClient()->OnUpdateFastInput())
+                                Repredict = true;
+
                         if(Repredict)
                         {
                                 if(m_aPredTick[g_Config.m_ClDummy] > m_aCurGameTick[g_Config.m_ClDummy] && m_aPredTick[g_Config.m_ClDummy] < m_aCurGameTick[g_Config.m_ClDummy] + MaxLatencyTicks())
@@ -5622,6 +5625,8 @@ int main(int argc, const char **argv)
         {
                 pConsole->ExecuteFile(AUTOEXEC_FILE, IConsole::CLIENT_ID_UNSPECIFIED);
         }
+
+        pDiscord->Initialize(g_Config.m_KxDiscordRpc != 0, g_Config.m_KxDiscordId, g_Config.m_KxDiscordCustomId);
 
         if(g_Config.m_ClConfigVersion < 1)
         {

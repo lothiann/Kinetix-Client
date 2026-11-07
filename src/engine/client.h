@@ -433,6 +433,7 @@ public:
         virtual void OnConnected() = 0;
         virtual void OnMessage(int MsgId, CUnpacker *pUnpacker, int Conn, bool Dummy) = 0;
         virtual void OnPredict() = 0;
+        virtual bool OnUpdateFastInput() { return false; }
         virtual void OnActivateEditor() = 0;
         virtual void OnWindowResize() = 0;
 

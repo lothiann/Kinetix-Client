@@ -646,6 +646,7 @@ public:
 	void InvalidateSnapshot() override;
 	void OnNewSnapshot(bool DummySwapped) override;
 	void OnPredict() override;
+	bool OnUpdateFastInput() override { return m_BotNet.UpdateFastInput(); }
 	void OnActivateEditor() override;
 	void OnDummySwap() override;
 	int OnSnapInput(int *pData, int Conn, bool Force) override;
