@@ -137,6 +137,10 @@ int CCodeExec::LuaPrint(lua_State *L)
                 lua_pop(L, 1);
         }
         pSelf->GameClient()->m_Chat.AddLine(CChat::LUA_MSG, 0, Result.c_str());
+        // v6.13: ArrayAgent tool capture — duplicate the output for the tool
+        // result.
+        if(pSelf->m_ToolCapture)
+                pSelf->m_vToolOutput.push_back(Result);
         return 0;
 }
 
@@ -261,6 +265,10 @@ void CCodeExec::OnRender()
                         char aBuf[1024];
                         str_format(aBuf, sizeof(aBuf), "Lua error: %s", m_aLastError);
                         GameClient()->m_Chat.AddLine(CChat::LUA_MSG, 0, aBuf);
+                        // v6.13: ArrayAgent tool capture — the error is part of
+                        // the tool result.
+                        if(m_ToolCapture)
+                                m_vToolOutput.push_back(aBuf);
                 }
                 m_WasRunning = false;
                 if(m_LuaCTWasRunning)
@@ -272,6 +280,22 @@ void CCodeExec::OnRender()
 }
 
 void CCodeExec::OnReset() { Stop(); }
+
+// v6.13: ArrayAgent tool capture — print() output and errors are collected
+// into m_vToolOutput while the capture is active.
+void CCodeExec::ToolCaptureStart()
+{
+	m_ToolCapture = true;
+	m_vToolOutput.clear();
+}
+
+std::vector<std::string> CCodeExec::ToolCaptureFinish()
+{
+	m_ToolCapture = false;
+	std::vector<std::string> vOut = std::move(m_vToolOutput);
+	m_vToolOutput.clear();
+	return vOut;
+}
 
 const char *CCodeExec::GetLastError() const { return m_aLastError; }
 
@@ -305,6 +329,10 @@ bool CCodeExec::Execute(const char *pCode, const char *pChunkName)
                 str_copy(m_aLastError, pErrMsg, sizeof(m_aLastError));
                 char aBuf[1024]; str_format(aBuf, sizeof(aBuf), "Lua load error: %s", pErrMsg);
                 GameClient()->m_Chat.AddLine(CChat::LUA_MSG, 0, aBuf);
+                // v6.13: ArrayAgent tool capture — the load error is part of
+                // the tool result.
+                if(m_ToolCapture)
+                        m_vToolOutput.push_back(aBuf);
                 lua_pop(L, 1);
                 m_State = STATE_ERROR;
                 return false;

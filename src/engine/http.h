@@ -64,6 +64,11 @@ public:
 	void SkipByFileTime(bool SkipByFileTime) { m_SkipByFileTime = SkipByFileTime; }
 	void IpResolve(IPRESOLVE IpResolve) { m_IpResolve = IpResolve; }
 	void FailOnErrorStatus(bool FailOnErrorStatus) { m_FailOnErrorStatus = FailOnErrorStatus; }
+	// v6.13: allow plain HTTP for this request (the engine default is
+	// HTTPS-only). Intended for user-configured local endpoints (the ArrayAgent
+	// API endpoint); the global `http_allow_insecure` cvar still lifts the
+	// restriction for every request.
+	void AllowHttp(bool AllowHttp) { m_AllowHttp = AllowHttp; }
 	// Download to memory only. Get the result via `Result*`.
 	void WriteToMemory();
 	// Download to filesystem and memory.
@@ -124,6 +129,16 @@ public:
 	json_value *ResultJson() const;
 	const SHA256_DIGEST &ResultSha256() const;
 
+	// v6.13: streaming support — consume bytes that have arrived so far from
+	// the internal buffer (they stay in the buffer; the offset advances, so
+	// each call returns only NEW data). Thread-safe against OnData appends.
+	// Usable while the request is RUNNING; the final bytes remain available
+	// via Result() after DONE (Result is unaffected). Returns the number of
+	// bytes written to pOut (0 when nothing new arrived).
+	size_t StreamTake(unsigned char *pOut, size_t MaxBytes);
+	// Total bytes received so far (streaming position).
+	uint64_t StreamReceived() const { return m_ResponseLength; }
+
 	int StatusCode() const;
 	std::optional<int64_t> ResultAgeSeconds() const;
 	std::optional<int64_t> ResultLastModified() const;
@@ -152,6 +167,7 @@ protected:
 	bool m_SkipByFileTime = true;
 	IPRESOLVE m_IpResolve = IPRESOLVE::WHATEVER;
 	bool m_FailOnErrorStatus = true;
+	bool m_AllowHttp = false; // v6.13: per-request plain HTTP allowance
 	bool m_ValidateBeforeOverwrite = false;
 	std::optional<SHA256_DIGEST> m_ExpectedSha256 = std::nullopt;
 	int64_t m_IfModifiedSince = -1;
@@ -170,6 +186,11 @@ protected:
 	// If `m_WriteToMemory` is true.
 	size_t m_BufferSize = 0;
 	unsigned char *m_pBuffer = nullptr;
+	// v6.13: streaming consume position, guarded together with the buffer
+	// (OnData appends on the HTTP thread, StreamTake consumes on the game
+	// thread).
+	std::mutex m_StreamMutex;
+	size_t m_StreamOffset = 0;
 
 	// If `m_WriteToFile` is true.
 	IOHANDLE m_File = nullptr;

@@ -1426,6 +1426,32 @@ MACRO_CONFIG_INT(KxArrayPlayerShowInGui, kx_arrayplayer_show_ingui, 0, 0, 1, CFG
 MACRO_CONFIG_INT(KxArrayPlayerPosX, kx_arrayplayer_pos_x, 5000, -20000, 20000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayPlayer: X position as screen ratio (-20000-20000)")
 MACRO_CONFIG_INT(KxArrayPlayerPosY, kx_arrayplayer_pos_y, 5000, -20000, 20000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayPlayer: Y position as screen ratio (-20000-20000)")
 
+// v6.13: ArrayAgent — AI chat HUD (OpenAI-compatible endpoint).
+MACRO_CONFIG_INT(KxArrayAgentEnabled, kx_arrayagent_enabled, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayAgent: show the agent chat panel")
+MACRO_CONFIG_STR(KxArrayAgentEndpoint, kx_arrayagent_endpoint, 256, "", CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayAgent: API endpoint (OpenAI compatible, e.g. http://127.0.0.1:1234/v1)")
+MACRO_CONFIG_STR(KxArrayAgentApiKey, kx_arrayagent_api_key, 256, "", CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayAgent: API key (Bearer token)")
+MACRO_CONFIG_STR(KxArrayAgentModels, kx_arrayagent_models, 512, "", CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayAgent: model list, comma separated")
+MACRO_CONFIG_INT(KxArrayAgentShowMode, kx_arrayagent_show_mode, 0, 0, 3, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayAgent: where the panel is shown (0=In Game, 1=In ClickGUI, 2=In Game+ClickGUI (two positions), 3=Both (one position))")
+MACRO_CONFIG_INT(KxArrayAgentReasoning, kx_arrayagent_reasoning, 1, 0, 2, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayAgent: reasoning stream (0=Hide, 1=Show (collapsible), 2=Expand (always open))")
+MACRO_CONFIG_INT(KxArrayAgentXAnchor, kx_arrayagent_xanchor, 0, 0, 4, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayAgent: message sides (0=Auto, 1=Right, 2=Left, 3=Only Right, 4=Only Left)")
+MACRO_CONFIG_INT(KxArrayAgentStyle, kx_arrayagent_style, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayAgent: style (0=Group, 1=DDNet Group)")
+MACRO_CONFIG_INT(KxArrayAgentShowTime, kx_arrayagent_show_time, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayAgent: show message time/date")
+MACRO_CONFIG_INT(KxArrayAgentShowTimeWork, kx_arrayagent_show_time_work, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayAgent: show generation work time")
+MACRO_CONFIG_INT(KxArrayAgentShowUsage, kx_arrayagent_show_usage, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayAgent: show token usage")
+MACRO_CONFIG_INT(KxArrayAgentShowCopy, kx_arrayagent_show_copy, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayAgent: show per-message copy buttons")
+MACRO_CONFIG_INT(KxArrayAgentIndent, kx_arrayagent_indent, 6, 0, 40, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayAgent: gap between messages and screen edges (px)")
+MACRO_CONFIG_INT(KxArrayAgentSize, kx_arrayagent_size, 10, 1, 20, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayAgent: HUD scale x10 (1-20 = 0.1x-2.0x)")
+MACRO_CONFIG_INT(KxArrayAgentDynamicScale, kx_arrayagent_dynamic_scale, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayAgent: resize by dragging the bottom-right corner in the editor")
+MACRO_CONFIG_INT(KxArrayAgentWidth, kx_arrayagent_width, 480, 200, 1200, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayAgent: panel width (px)")
+MACRO_CONFIG_INT(KxArrayAgentHeight, kx_arrayagent_height, 560, 200, 1200, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayAgent: panel height (px)")
+MACRO_CONFIG_STR(KxArrayAgentMainColor, kx_arrayagent_main_color, 9, "ff9d4edd", CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayAgent: main (accent) color (hex ARGB)")
+MACRO_CONFIG_STR(KxArrayAgentPanelColor, kx_arrayagent_panel_color, 9, "ff161622", CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayAgent: panel background color (hex ARGB)")
+MACRO_CONFIG_STR(KxArrayAgentTextColor, kx_arrayagent_text_color, 9, "ffffffff", CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayAgent: text color (hex ARGB)")
+MACRO_CONFIG_INT(KxArrayAgentPosX, kx_arrayagent_pos_x, 5000, -20000, 20000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayAgent: X position as screen ratio (-20000-20000)")
+MACRO_CONFIG_INT(KxArrayAgentPosY, kx_arrayagent_pos_y, 5000, -20000, 20000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayAgent: Y position as screen ratio (-20000-20000)")
+MACRO_CONFIG_INT(KxArrayAgentPosXGui, kx_arrayagent_pos_x_gui, 5000, -20000, 20000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayAgent: ClickGUI-mode X position as screen ratio (Show Mode = In Game+ClickGUI)")
+MACRO_CONFIG_INT(KxArrayAgentPosYGui, kx_arrayagent_pos_y_gui, 5000, -20000, 20000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayAgent: ClickGUI-mode Y position as screen ratio (Show Mode = In Game+ClickGUI)")
+
 MACRO_CONFIG_INT(KxCustomColors, kx_custom_colors, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: custom colors (master; 0 = original look)")
 
 // v1.56.283: per-entity-category custom colors (Visuals > Custom colors > Sprite = Entities > Entity).

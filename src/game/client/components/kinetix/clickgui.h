@@ -313,6 +313,60 @@ private:
         bool m_ArrayPlayerBtnRectValid = false;
         bool m_ArrayPlayerBtnWasDown = false; // edge latch for the HUD-only path
 
+        // v6.13: ArrayAgent HUD — AI chat panel (chat state in CGameClient::m_Agent).
+        // Same editor/drag/resize model as ArrayPlayer, plus chat interaction:
+        // input field editing, model/effort dropdowns, message scroll.
+        bool m_AgentEditor = false;
+        bool m_AgentCollapsed = false; // header-only state (panel-style collapse)
+        float m_AgentCollapseAnim = 1.0f; // body collapse animation 0..1 (like the panel bodies)
+        // ClickGUI open/close fly-in anchor (same trick as the panels: the
+        // panel is lerped from a random offscreen point by m_AnimProgress).
+        vec2 m_AgentOffscreenPos = vec2(0.0f, 0.0f);
+        bool m_AgentOffscreenValid = false;
+        // Eases the agent collapse animation; must run EVERY frame (also on the
+        // HUD-only early path, which skips UpdateAnimations).
+        void UpdateAgentPanelAnim(float dt);
+        // Show Mode = In Game+ClickGUI: the editor edits either the game or the
+        // ClickGUI position (the ClickGUI Editor button sets this).
+        bool m_AgentEditorGuiPass = false;
+        // Scrollbar drag state (screen-space thumb rect cached by RenderArrayAgent).
+        bool m_AgentScrollbarDrag = false;
+        float m_AgentScrollbarGrabOffset = 0.0f;
+        float m_aAgentScrollbarThumbRect[4] = {};
+        bool m_AgentStickBottom = true; // auto-scroll while at the bottom
+        bool m_AgentDragging = false;
+        bool m_AgentResizing = false;
+        vec2 m_AgentDragStartMouse = vec2(0.0f, 0.0f);
+        vec2 m_AgentDragStartPos = vec2(0.0f, 0.0f);
+        vec2 m_AgentResizeStartMouse = vec2(0.0f, 0.0f);
+        int m_AgentResizeStartW = 0;
+        int m_AgentResizeStartH = 0;
+        float m_AgentRectX = 0.0f;
+        float m_AgentRectY = 0.0f;
+        float m_AgentRectW = 0.0f;
+        float m_AgentRectH = 0.0f;
+        bool m_AgentRectValid = false;
+        // Chat UI state (screen-space geometry cached by RenderArrayAgent).
+        float m_AgentScroll = 0.0f;
+        bool m_AgentInputEditing = false;
+        int m_AgentInputCursor = 0; // byte offset in the agent input buffer
+        int m_AgentDropdown = 0;    // 0 none, 1 model, 2 effort
+        int m_AgentDropdownHover = -1;
+        float m_aAgentDropdownRect[4] = {}; // the open dropdown's popup rect
+        float m_aAgentModelBtnRect[4] = {};
+        float m_aAgentEffortBtnRect[4] = {};
+        float m_aAgentSendRect[4] = {};
+        float m_aAgentInputRect[4] = {};
+        int m_AgentCopyHover = -1; // message index whose copy button is hovered
+        // Copy-button rects per message (x,y,w,h ×4), rebuilt each frame.
+        std::vector<float> m_AgentCopyRects;
+        // Clickable block headers ([ Code Execution > ] / Reasoning) rebuilt
+        // each frame: rects (x,y,w,h ×4) + message index + kind (0 tool, 1 reasoning).
+        std::vector<float> m_AgentToggleRects;
+        std::vector<int> m_AgentToggleMsgIdx;
+        std::vector<int> m_AgentToggleKind;
+        bool m_AgentWasDown = false;
+
         // v1.56.60: advance all per-row / per-panel animations toward their targets.
         // Called once per frame from OnRender before any drawing.
         void UpdateAnimations(float dt);
@@ -369,6 +423,22 @@ private:
         bool ShouldRenderArrayPlayer() const;
         bool ArrayPlayerPositionModified() const;
         void ResetArrayPlayerPosition();
+
+        // v6.13: ArrayAgent HUD — AI chat panel. Interaction helpers are
+        // called from OnInput (GUI closed) and HandleMouseDown (GUI open).
+        void UpdateArrayAgent(float dt);
+        void RenderArrayAgent(float alpha, bool GuiPass = false);
+        bool ArrayAgentHitTest(vec2 mousePos) const;
+        // Only the panel HEADER is draggable (the chat body must stay clickable).
+        bool ArrayAgentHeaderHitTest(vec2 mousePos) const;
+        bool ArrayAgentResizeHitTest(vec2 mousePos) const;
+        bool ShouldRenderArrayAgent() const;
+        bool ArrayAgentPositionModified() const;
+        void ResetArrayAgentPosition();
+        // Returns true when the click was consumed by the agent panel.
+        bool HandleAgentClick(vec2 mousePos);
+        // Routes keyboard/text events to the chat input while it is edited.
+        bool HandleAgentTextInput(const IInput::CEvent &Event);
 
         // Panel geometry — scaled up again 1.2x in v1.56.39 for readability.
         static constexpr float PANEL_WIDTH = 300.0f;

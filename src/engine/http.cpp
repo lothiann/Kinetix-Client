@@ -155,6 +155,19 @@ void IHttpRequest::Result(unsigned char **ppResult, size_t *pResultLength) const
 	*pResultLength = m_ResponseLength;
 }
 
+size_t IHttpRequest::StreamTake(unsigned char *pOut, size_t MaxBytes)
+{
+	std::unique_lock StreamLock(m_StreamMutex);
+	const uint64_t Available64 = m_ResponseLength - (uint64_t)m_StreamOffset;
+	const size_t Take = (size_t)std::min<uint64_t>(Available64, MaxBytes);
+	if(Take > 0 && pOut)
+	{
+		mem_copy(pOut, m_pBuffer + m_StreamOffset, Take);
+	}
+	m_StreamOffset += Take;
+	return Take;
+}
+
 json_value *IHttpRequest::ResultJson() const
 {
 	unsigned char *pResult;
@@ -295,6 +308,9 @@ size_t IHttpRequest::OnData(const char *pData, size_t DataSize)
 
 	if(m_WriteToMemory)
 	{
+		// v6.13: StreamTake consumes the same buffer from the game thread —
+		// append under the stream mutex.
+		std::unique_lock StreamLock(m_StreamMutex);
 		size_t NewBufferSize = std::max((size_t)1024, m_BufferSize);
 		while(m_ResponseLength + DataSize > NewBufferSize)
 		{

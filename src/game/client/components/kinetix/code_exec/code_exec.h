@@ -76,6 +76,17 @@ public:
         // Get last error message
         const char *GetLastError() const;
 
+	// --- v6.13: ArrayAgent tool capture ---
+	// While active, print() output and Lua errors are ALSO appended to an
+	// internal list (in addition to the usual chat line) so the agent can
+	// return them as the tool result.
+	void ToolCaptureStart();
+	// Ends capture and returns the collected output lines.
+	std::vector<std::string> ToolCaptureFinish();
+	// True while a tool capture is active (the agent loop must not run two
+	// scripts at once).
+	bool ToolCaptureActive() const { return m_ToolCapture; }
+
 	// The Lua source code buffer (edited in UI)
 	char m_aCodeBuffer[65536];
 
@@ -214,6 +225,10 @@ private:
         lua_State *m_pCoroutine;
         bool m_InResume;
         char m_aLastError[1024];
+
+        // v6.13: ArrayAgent tool capture (see ToolCaptureStart/Finish).
+        bool m_ToolCapture = false;
+        std::vector<std::string> m_vToolOutput;
 
         // LuaCT state
         int m_LuaCTState = LUACT_IDLE;

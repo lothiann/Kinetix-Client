@@ -74,7 +74,8 @@ bool CHttpRequestCurl::ConfigureHandle(CURL *pHandle)
 		curl_easy_setopt(pHandle, CURLOPT_DEBUGFUNCTION, CurlDebug);
 	}
 	long Protocols = CURLPROTO_HTTPS;
-	if(g_Config.m_HttpAllowInsecure)
+	// v6.13: per-request plain HTTP allowance (ArrayAgent local endpoints).
+	if(m_AllowHttp || g_Config.m_HttpAllowInsecure)
 	{
 		Protocols |= CURLPROTO_HTTP;
 	}

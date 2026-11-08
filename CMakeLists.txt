@@ -2740,6 +2740,9 @@ if(CLIENT)
     components/kinetix/attack/attack_commands.cpp
     components/kinetix/bot_control.cpp
     components/kinetix/bot_control.h
+    components/kinetix/array.cpp
+    components/kinetix/array.h
+    components/kinetix/array_shared.h
     components/kinetix/clickgui.cpp
     components/kinetix/clickgui.h
     components/kinetix/code_exec/code_exec.cpp

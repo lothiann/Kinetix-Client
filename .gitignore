@@ -14,6 +14,7 @@ bundle/
 .DS_Store
 .ninja_deps
 .ninja_log
+.zcode/
 CACHEDIR.TAG
 CMakeCache.txt
 CMakeFiles

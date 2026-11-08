@@ -8,6 +8,7 @@
 // row via IGraphics (rounded rects, gradient fills) and ITextRender (text).
 
 #include <game/client/components/kinetix/clickgui.h>
+#include <game/client/components/kinetix/array_shared.h>
 #include <game/client/components/kinetix/kinetix_internal.h>
 #include <game/client/components/kinetix/kinetix.h>
 #include <game/client/components/chat.h>
@@ -1965,6 +1966,8 @@ static const char *const g_ArrayListYAnchorOpts[] = {"Auto", "Top", "Bottom"};
 static const char *const g_ArrayListSortOpts[] = {"Name", "Name Length", "History"};
 static const char *const g_ArrayListStyleOpts[] = {"Peas", "Group", "DDNet Peas", "DDNet Group"};
 static const char *const g_ArrayListRainbowModeOpts[] = {"Group", "Peas", "Peas+Gradient"};
+// v6.13: ArrayAgent — message sides.
+static const char *const g_AgentXAnchorOpts[] = {"Auto", "Right", "Left", "Only Right", "Only Left"};
 static SRow g_ArrayListChildren[] = {
         {ERowType::DoubleButton, "Editor", "Reset", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Toggle the ArrayList editor (closes the ClickGUI).", "Reset the list position to its default."},
@@ -2053,6 +2056,60 @@ static SRow g_ArrayInfoChildren[] = {
 // ArrayList, minus Max Length / Sort Type and the Peas styles. Indentation is
 // the vertical gap between the track title and the artist.
 static const char *const g_ArrayPlayerStyleOpts[] = {"Group", "DDNet Group"};
+// v6.13: ArrayAgent — AI chat HUD (spec: user's text notation).
+static const char *const g_AgentShowModeOpts[] = {"In Game", "In ClickGUI", "In Game+ClickGUI", "Both"};
+static const char *const g_AgentReasoningOpts[] = {"Hide", "Show", "Expand"};
+static SRow g_ArrayAgentChildren[] = {
+	{ERowType::Label, "API", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+	{ERowType::Input, "API Endpoint", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "endpoint...", nullptr, 0, 0, nullptr, 0,
+		"OpenAI-compatible API endpoint (e.g. http://127.0.0.1:1234/v1)."},
+	{ERowType::Input, "API Key", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "key...", nullptr, 0, 0, nullptr, 0,
+		"API key sent as the Authorization Bearer token."},
+	{ERowType::Input, "Models", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "model1,model2...", nullptr, 0, 0, nullptr, 0,
+		"Model list, comma separated (shown in the chat panel dropdown)."},
+	{ERowType::Label, "Array", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+	{ERowType::Dropdown, "Show Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_AgentShowModeOpts, 4, 0, nullptr, 0,
+		"Where the panel is shown. In Game+ClickGUI keeps TWO positions (game / GUI); Both keeps ONE for both."},
+	{ERowType::DoubleButton, "Game Editor", "Reset", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Toggle the ArrayAgent editor for the in-game position (closes the ClickGUI).", "Reset the in-game position to its default."},
+	{ERowType::DoubleButton, "ClickGUI Editor", "Reset", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Toggle the ArrayAgent editor for the ClickGUI position.", "Reset the ClickGUI position to its default."},
+	{ERowType::DoubleButton, "Editor", "Reset", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Toggle the ArrayAgent editor (closes the ClickGUI).", "Reset the agent panel position to its default."},
+	{ERowType::Dropdown, "X Anchor", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_AgentXAnchorOpts, 5, 0, nullptr, 0,
+		"Message sides: user right / AI left, inverted, or everything on one side."},
+	{ERowType::Dropdown, "Style", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ArrayPlayerStyleOpts, 2, 0, nullptr, 0,
+		"Visual style of the chat panel."},
+	{ERowType::Slider, "Indentation", nullptr, false, false, 0.0f, 40.0f, 1.0f, 6.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Gap between the screen edges and between messages."},
+	{ERowType::Slider, "Size", nullptr, false, false, 0.1f, 2.0f, 0.1f, 1.0f, "x", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Overall scale of the panel (like ClickGUI Scale)."},
+	{ERowType::Toggle, "Dynamic Scale", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Resize the panel by dragging its bottom-right corner in the editor."},
+	{ERowType::Slider, "Height", nullptr, false, false, 200.0f, 1200.0f, 1.0f, 560.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Panel height in pixels."},
+	{ERowType::Slider, "Width", nullptr, false, false, 200.0f, 1200.0f, 1.0f, 480.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Panel width in pixels."},
+	{ERowType::Label, "ArrayAgent", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+	{ERowType::Toggle, "Show Time", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Show the message time/date in the meta line."},
+	{ERowType::Toggle, "Show Time Work", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Show the generation work time (seconds) in the meta line."},
+	{ERowType::Toggle, "Show Usage", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Show the token usage in the meta line."},
+	{ERowType::Toggle, "Show Copy Message", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Show a copy button next to every message."},
+	{ERowType::Dropdown, "Reasoning", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_AgentReasoningOpts, 3, 0, nullptr, 0,
+		"Reasoning stream display: Hide = off, Show = collapsible grey block, Expand = always open."},
+	{ERowType::Label, "Colors", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+	{ERowType::Input, "Main Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ff9d4edd", "ARGB...", nullptr, 0, 0, nullptr, 0,
+		"Accent color of the panel (hex ARGB)."},
+	{ERowType::Input, "Panel Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ff161622", "ARGB...", nullptr, 0, 0, nullptr, 0,
+		"Panel background color (hex ARGB)."},
+	{ERowType::Input, "Text Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ffffffff", "ARGB...", nullptr, 0, 0, nullptr, 0,
+		"Text color of the chat (hex ARGB)."},
+};
+static const int KX_ARRAYAGENT_CHILD_COUNT = (int)(sizeof(g_ArrayAgentChildren) / sizeof(g_ArrayAgentChildren[0]));
 static SRow g_ArrayPlayerChildren[] = {
         {ERowType::DoubleButton, "Editor", "Reset", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Toggle the ArrayPlayer editor (closes the ClickGUI).", "Reset the player position to its default."},
@@ -2066,14 +2123,14 @@ static SRow g_ArrayPlayerChildren[] = {
                 "Overall scale of the player (like ClickGUI Scale)."},
         {ERowType::Toggle, "Show In ClickGUI", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Draw the player ABOVE the ClickGUI instead of under it (draggable while the GUI is open)."},
-        {ERowType::Input, "Text Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ffffff", "hex...", nullptr, 0, 0, nullptr, 0,
-                "Text color of the player (hex RGB)."},
         {ERowType::Toggle, "Dynamic Scale", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Resize the player by dragging its bottom-right corner in the editor."},
         {ERowType::Slider, "Height ArrayPlayer", nullptr, false, false, 40.0f, 600.0f, 1.0f, 90.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Card height in pixels."},
-        {ERowType::Slider, "Weight ArrayPlayer", nullptr, false, false, 100.0f, 1000.0f, 1.0f, 320.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Width ArrayPlayer", nullptr, false, false, 100.0f, 1000.0f, 1.0f, 320.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Card width in pixels."},
+        {ERowType::Input, "Text Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ffffff", "hex...", nullptr, 0, 0, nullptr, 0,
+                "Text color of the player (hex RGB)."},
         {ERowType::Toggle, "Rainbow Text", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Animate the title/artist color with a hue cycle."},
         {ERowType::Dropdown, "Rainbow Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ArrayListRainbowModeOpts, 3, 0, nullptr, 0,
@@ -2113,6 +2170,8 @@ static SRow g_VisualsRows[] = {
                 "On-screen info bar (drag to move)."},
         {ERowType::Expandable, "ArrayPlayer", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ArrayPlayerChildren, 17,
                 "On-screen now-playing media card (drag to move)."},
+        {ERowType::Expandable, "ArrayAgent", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ArrayAgentChildren, KX_ARRAYAGENT_CHILD_COUNT,
+                "AI agent chat panel (OpenAI-compatible endpoint; drag to move)."},
 };
 
 // v1.56.286: Search panel — real-time filtering of every other panel.
@@ -2550,6 +2609,22 @@ static bool ArrayListChildVisible(const SRow *pChildren, int childCount, int idx
                 return Rainbow;
         if(str_comp(row.pName, "Step") == 0)
                 return Rainbow && g_Config.m_KxArrayListRainbowMode != 0;
+        return true;
+}
+
+// v6.13: ArrayAgent children — same rainbow gating as the ArrayList.
+static bool ArrayAgentChildVisible(const SRow *pChildren, int childCount, int idx)
+{
+        if(idx < 0 || idx >= childCount)
+                return false;
+        const SRow &row = pChildren[idx];
+        const int Mode = g_Config.m_KxArrayAgentShowMode;
+        if(str_comp(row.pName, "Game Editor") == 0)
+                return Mode == 0 || Mode == 2; // In Game / In Game+ClickGUI
+        if(str_comp(row.pName, "ClickGUI Editor") == 0)
+                return Mode == 1 || Mode == 2; // In ClickGUI / In Game+ClickGUI
+        if(str_comp(row.pName, "Editor") == 0 && row.pName2 && str_comp(row.pName2, "Reset") == 0)
+                return Mode == 3; // Both
         return true;
 }
 
@@ -3713,14 +3788,6 @@ static constexpr float SUB_LIST_INDENT = 22.0f;
 // TPS row: the slider track spans the whole row except the Pause toggle
 // pinned to the right edge (checkbox + label + double gap to the track).
 static constexpr float KX_TPS_TOGGLE_W = 88.0f;
-// Color with a stored ARGB alpha multiplied by the UI fade alpha — so an
-// AA channel below ff actually renders translucent (WithAlpha alone would
-// overwrite the stored alpha).
-static ColorRGBA KxColorWithAlpha(unsigned RGBA, float Alpha)
-{
-        const float StoredA = ((RGBA >> 24) & 0xff) / 255.0f;
-        return ColorRGBA(RGBA, true).WithAlpha(Alpha * StoredA);
-}
 static float KxTpsTrackW(const void *pRow, float RowW)
 {
         if(pRow && str_comp(((const SRow *)pRow)->pName, "TPS") == 0)
@@ -4087,21 +4154,6 @@ void CClickGui::DrawRoundedRect(float x, float y, float w, float h, float radius
         Graphics()->DrawRect(x, y, w, h, color, corners, radius);
 }
 
-// Draws a string with per-character colours through the text renderer's colour
-// splits. Unlike drawing every character separately, this keeps the glyph
-// bearings and kerning intact: per-character calls treat each glyph as the
-// first one, so the "no first character x-bearing" flag shifts letters that
-// have a non-zero left bearing and makes the text look uneven.
-static void KxDrawTextColorSplits(ITextRender *pTextRender, float x, float y, float size, const char *pText, ColorRGBA BaseColor, const std::vector<STextColorSplit> &vSplits)
-{
-        CTextCursor Cursor;
-        Cursor.SetPosition(vec2(x, y));
-        Cursor.m_FontSize = size;
-        Cursor.m_vColorSplits = vSplits;
-        pTextRender->TextColor(BaseColor);
-        pTextRender->TextEx(&Cursor, pText, -1);
-}
-
 void CClickGui::DrawText(float x, float y, float size, const char *pText, ColorRGBA color, int align)
 {
         // CTextCursor has no m_Align field; center/right alignment is done by
@@ -4140,8 +4192,19 @@ void CClickGui::DrawText(float x, float y, float size, const char *pText, ColorR
 	// crawling in an exponential tail, and a mid-flight target flip stays
 	// value-continuous (reverse-close fix). Snaps to the target when close
 	// enough so the "val == 0" layout-cache boundary still fires.
+void CClickGui::UpdateAgentPanelAnim(float dt)
+{
+	// Panel-style collapse: the BOTTOM EDGE moves (bg height animates), the
+	// body content is clipped — no fade, like RenderPanel's bodyHeight.
+	const float CollapseTarget = m_AgentCollapsed ? 0.0f : 1.0f;
+	m_AgentCollapseAnim += (CollapseTarget - m_AgentCollapseAnim) * (1.0f - std::exp(-14.0f * dt));
+	if(std::fabs(CollapseTarget - m_AgentCollapseAnim) < 0.002f)
+		m_AgentCollapseAnim = CollapseTarget;
+}
+
 void CClickGui::UpdateAnimations(float dt)
 {
+	UpdateAgentPanelAnim(dt);
 	const float expandSpeed = (EXPAND_ANIM_DURATION > 0.0f) ? (1.0f / EXPAND_ANIM_DURATION) : 1.0f;
 
 	auto lerpToward = [dt](float &val, float target, float speed) {
@@ -5676,6 +5739,7 @@ void CClickGui::OnRender()
 	const bool ArrayListVisible = ShouldRenderArrayList();
 	const bool ArrayInfoVisible = ShouldRenderArrayInfo();
 	const bool ArrayPlayerVisible = ShouldRenderArrayPlayer();
+	const bool ArrayAgentVisible = ShouldRenderArrayAgent();
 
 	// Perf: when fully closed (including the close animation), there is nothing
 	// to update or draw besides the ArrayList HUD. The heavy panel/UI sync
@@ -5683,12 +5747,16 @@ void CClickGui::OnRender()
 	// function, burning ~0.4ms/frame even with the ClickGUI closed.
 	if(!isOpen && m_AnimProgress <= 0.0f)
 	{
-		if(!ArrayListVisible && !ArrayInfoVisible && !ArrayPlayerVisible)
+		UpdateAgentPanelAnim(Client()->RenderFrameTime());
+		if(!ArrayListVisible && !ArrayInfoVisible && !ArrayPlayerVisible && !ArrayAgentVisible)
 		{
 			m_ArrayListDragging = false;
 			m_ArrayInfoDragging = false;
 			m_ArrayPlayerDragging = false;
 			m_ArrayPlayerResizing = false;
+			m_AgentDragging = false;
+			m_AgentResizing = false;
+			m_AgentScrollbarDrag = false;
 			return;
 		}
 		// Minimal per-frame setup for the HUD-only path (scale + cursor).
@@ -5699,7 +5767,7 @@ void CClickGui::OnRender()
 			m_MousePos = Input()->NativeMousePos() / (m_UiScale > 0.0f ? m_UiScale : 1.0f);
 		// The editor is a positioning mode: keep the OS cursor visible so the
 		// HUD can be dragged. The console manages its own mouse mode.
-		if((m_ArrayListEditor || m_ArrayInfoEditor || m_ArrayPlayerEditor) && !GameClient()->m_GameConsole.IsActive())
+		if((m_ArrayListEditor || m_ArrayInfoEditor || m_ArrayPlayerEditor || m_AgentEditor) && !GameClient()->m_GameConsole.IsActive())
 			Input()->MouseModeAbsolute();
 		// v6.3: poll the left button directly so dragging works even if the
 		// press event never reaches CClickGui::OnInput while the GUI is closed.
@@ -5709,6 +5777,9 @@ void CClickGui::OnRender()
 			m_ArrayInfoDragging = false;
 			m_ArrayPlayerDragging = false;
 			m_ArrayPlayerResizing = false;
+			m_AgentDragging = false;
+			m_AgentResizing = false;
+			m_AgentScrollbarDrag = false;
 			m_ArrayPlayerBtnWasDown = false;
 		}
 		else
@@ -5754,6 +5825,22 @@ void CClickGui::OnRender()
 					m_ArrayPlayerDragStartPos = vec2(m_ArrayPlayerRectX, m_ArrayPlayerRectY);
 				}
 			}
+			if(m_AgentEditor && !m_AgentEditorGuiPass && !m_AgentDragging && !m_AgentResizing)
+			{
+				if(ArrayAgentResizeHitTest(m_MousePos))
+				{
+					m_AgentResizing = true;
+					m_AgentResizeStartMouse = m_MousePos;
+					m_AgentResizeStartW = g_Config.m_KxArrayAgentWidth;
+					m_AgentResizeStartH = g_Config.m_KxArrayAgentHeight;
+				}
+				else if(ArrayAgentHeaderHitTest(m_MousePos))
+				{
+					m_AgentDragging = true;
+					m_AgentDragStartMouse = m_MousePos;
+					m_AgentDragStartPos = vec2(m_AgentRectX, m_AgentRectY);
+				}
+			}
 		}
 		Graphics()->MapScreenToSize(VScreenWidth(), VScreenHeight());
 		Graphics()->TextureClear();
@@ -5772,9 +5859,18 @@ void CClickGui::OnRender()
 			UpdateArrayPlayer(Client()->RenderFrameTime());
 			RenderArrayPlayer(1.0f);
 		}
+		// Render while the show/hide animation plays out (a disabled agent must
+		// FADE OUT, not vanish instantly).
+		if(ArrayAgentVisible && (g_Config.m_KxArrayAgentShowMode == 0 || g_Config.m_KxArrayAgentShowMode == 2 || g_Config.m_KxArrayAgentShowMode == 3))
+		{
+			UpdateArrayAgent(Client()->RenderFrameTime());
+			RenderArrayAgent(1.0f, false);
+		}
 		const bool HoverPlayerResize = ArrayPlayerResizeHitTest(m_MousePos);
 		const bool HoverPlayer = ArrayPlayerHitTest(m_MousePos);
-		KxSetCursorShape(HoverPlayerResize ? 5 : (((m_ArrayListDragging || ArrayListHitTest(m_MousePos)) || (m_ArrayInfoDragging || ArrayInfoHitTest(m_MousePos)) || (m_ArrayPlayerDragging || HoverPlayer)) ? 9 : 0));
+		const bool HoverAgentResize = ArrayAgentResizeHitTest(m_MousePos);
+		const bool HoverAgent = ArrayAgentHeaderHitTest(m_MousePos);
+		KxSetCursorShape((HoverPlayerResize || HoverAgentResize) ? 5 : (((m_ArrayListDragging || ArrayListHitTest(m_MousePos)) || (m_ArrayInfoDragging || ArrayInfoHitTest(m_MousePos)) || (m_ArrayPlayerDragging || HoverPlayer) || (m_AgentDragging || HoverAgent)) ? 9 : 0));
 		return;
 	}
 
@@ -5932,6 +6028,9 @@ void CClickGui::OnRender()
 
                 const float sw = VScreenWidth();
                 const float sh = VScreenHeight();
+                // A fresh fly-in anchor for the Agent panel on every open, same
+                // as the panels below.
+                m_AgentOffscreenValid = false;
                 for(int i = 0; i < NUM_PANELS; ++i)
                 {
                         m_aOffscreenPos[i] = PickRandomOffscreenPos(i, sw, sh);
@@ -6115,7 +6214,7 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)))
+if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "ArrayAgent") == 0 && !ArrayAgentChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                         // v6.7: Smart Copy Moves children (index-keyed: Sort Type,
                                         // Apply Mode, Apply Dummies slider, filters + inputs).
@@ -7442,7 +7541,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                 if(!Dragging)
                                                         child.value = (float)g_Config.m_KxArrayPlayerHeight;
                                         }
-                                        else if(str_comp(child.pName, "Weight ArrayPlayer") == 0)
+                                        else if(str_comp(child.pName, "Width ArrayPlayer") == 0)
                                         {
                                                 if(!Dragging)
                                                         child.value = (float)g_Config.m_KxArrayPlayerWidth;
@@ -7475,6 +7574,102 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                         {
                                                 if(!Dragging)
                                                         child.value = (float)g_Config.m_KxArrayPlayerPanelOpacity;
+                                        }
+                                }
+                        }
+                        // v6.13: ArrayAgent settings.
+                        else if(str_comp(row.pName, "ArrayAgent") == 0 && row.type == ERowType::Expandable)
+                        {
+                                row.on = g_Config.m_KxArrayAgentEnabled != 0;
+                                for(int c = 0; c < row.childCount; ++c)
+                                {
+                                        SRow &child = row.pChildren[c];
+                                        const bool Dragging = (m_DragSliderPanel == p && m_DragSliderRow == r && m_DragSliderChild == c);
+                                        if(str_comp(child.pName, "API Endpoint") == 0)
+                                        {
+                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                {
+                                                        str_copy(child.m_aInputBuf, g_Config.m_KxArrayAgentEndpoint, sizeof(child.m_aInputBuf));
+                                                        child.m_InputInitialized = true;
+                                                }
+                                        }
+                                        else if(str_comp(child.pName, "API Key") == 0)
+                                        {
+                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                {
+                                                        str_copy(child.m_aInputBuf, g_Config.m_KxArrayAgentApiKey, sizeof(child.m_aInputBuf));
+                                                        child.m_InputInitialized = true;
+                                                }
+                                        }
+                                        else if(str_comp(child.pName, "Models") == 0)
+                                        {
+                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                {
+                                                        str_copy(child.m_aInputBuf, g_Config.m_KxArrayAgentModels, sizeof(child.m_aInputBuf));
+                                                        child.m_InputInitialized = true;
+                                                }
+                                        }
+                                        else if(str_comp(child.pName, "X Anchor") == 0)
+                                                child.valueIdx = g_Config.m_KxArrayAgentXAnchor;
+                                        else if(str_comp(child.pName, "Style") == 0)
+                                                child.valueIdx = g_Config.m_KxArrayAgentStyle;
+                                        else if(str_comp(child.pName, "Show Mode") == 0)
+                                                child.valueIdx = g_Config.m_KxArrayAgentShowMode;
+                                        else if(str_comp(child.pName, "Reasoning") == 0)
+                                                child.valueIdx = g_Config.m_KxArrayAgentReasoning;
+                                        else if(str_comp(child.pName, "Show Time") == 0)
+                                                child.on = g_Config.m_KxArrayAgentShowTime != 0;
+                                        else if(str_comp(child.pName, "Show Time Work") == 0)
+                                                child.on = g_Config.m_KxArrayAgentShowTimeWork != 0;
+                                        else if(str_comp(child.pName, "Show Usage") == 0)
+                                                child.on = g_Config.m_KxArrayAgentShowUsage != 0;
+                                        else if(str_comp(child.pName, "Show Copy Message") == 0)
+                                                child.on = g_Config.m_KxArrayAgentShowCopy != 0;
+                                        else if(str_comp(child.pName, "Indentation") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = (float)g_Config.m_KxArrayAgentIndent;
+                                        }
+                                        else if(str_comp(child.pName, "Size") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = g_Config.m_KxArrayAgentSize / 10.0f;
+                                        }
+                                        else if(str_comp(child.pName, "Dynamic Scale") == 0)
+                                                child.on = g_Config.m_KxArrayAgentDynamicScale != 0;
+                                        else if(str_comp(child.pName, "Height") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = (float)g_Config.m_KxArrayAgentHeight;
+                                        }
+                                        else if(str_comp(child.pName, "Width") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = (float)g_Config.m_KxArrayAgentWidth;
+                                        }
+                                        else if(str_comp(child.pName, "Main Color") == 0)
+                                        {
+                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                {
+                                                        str_copy(child.m_aInputBuf, g_Config.m_KxArrayAgentMainColor, sizeof(child.m_aInputBuf));
+                                                        child.m_InputInitialized = true;
+                                                }
+                                        }
+                                        else if(str_comp(child.pName, "Panel Color") == 0)
+                                        {
+                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                {
+                                                        str_copy(child.m_aInputBuf, g_Config.m_KxArrayAgentPanelColor, sizeof(child.m_aInputBuf));
+                                                        child.m_InputInitialized = true;
+                                                }
+                                        }
+                                        else if(str_comp(child.pName, "Text Color") == 0)
+                                        {
+                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                {
+                                                        str_copy(child.m_aInputBuf, g_Config.m_KxArrayAgentTextColor, sizeof(child.m_aInputBuf));
+                                                        child.m_InputInitialized = true;
+                                                }
                                         }
                                 }
                         }
@@ -8205,7 +8400,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                         g_Config.m_KxArrayPlayerSize = (int)(pTarget->value * 10.0f + 0.5f);
                                 else if(str_comp(pTarget->pName, "Height ArrayPlayer") == 0)
                                         g_Config.m_KxArrayPlayerHeight = (int)(pTarget->value + 0.5f);
-                                else if(str_comp(pTarget->pName, "Weight ArrayPlayer") == 0)
+                                else if(str_comp(pTarget->pName, "Width ArrayPlayer") == 0)
                                         g_Config.m_KxArrayPlayerWidth = (int)(pTarget->value + 0.5f);
                                 else if(str_comp(pTarget->pName, "Speed") == 0)
                                         g_Config.m_KxArrayPlayerRainbowSpeed = (int)(pTarget->value * 10.0f + 0.5f);
@@ -8217,6 +8412,18 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                         g_Config.m_KxArrayPlayerMainOpacity = (int)(pTarget->value + 0.5f);
                                 else if(str_comp(pTarget->pName, "Panel Opacity") == 0)
                                         g_Config.m_KxArrayPlayerPanelOpacity = (int)(pTarget->value + 0.5f);
+                        }
+                        // v6.13: ArrayAgent sliders.
+                        else if(str_comp(row.pName, "ArrayAgent") == 0 && m_DragSliderPanel >= 0)
+                        {
+                                if(str_comp(pTarget->pName, "Indentation") == 0)
+                                        g_Config.m_KxArrayAgentIndent = (int)(pTarget->value + 0.5f);
+                                else if(str_comp(pTarget->pName, "Size") == 0)
+                                        g_Config.m_KxArrayAgentSize = (int)(pTarget->value * 10.0f + 0.5f);
+                                else if(str_comp(pTarget->pName, "Height") == 0)
+                                        g_Config.m_KxArrayAgentHeight = (int)(pTarget->value + 0.5f);
+                                else if(str_comp(pTarget->pName, "Width") == 0)
+                                        g_Config.m_KxArrayAgentWidth = (int)(pTarget->value + 0.5f);
                         }
                         else if(str_comp(row.pName, "ClickGUI Settings") == 0 && str_comp(pTarget->pName, "ToolTips Text Opacity") == 0)
                                 g_Config.m_KxUiTooltipTextOpacity = (int)(pTarget->value + 0.5f);
@@ -8595,6 +8802,20 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                 UpdateArrayPlayer(Client()->RenderFrameTime());
                 RenderArrayPlayer(1.0f);
         }
+        if(ArrayAgentVisible && (g_Config.m_KxArrayAgentShowMode == 0 || g_Config.m_KxArrayAgentShowMode == 2 || g_Config.m_KxArrayAgentShowMode == 3))
+        {
+                UpdateArrayAgent(Client()->RenderFrameTime());
+                // "In Game+ClickGUI" (two positions): the above-GUI copy flies in
+                // at the GUI position, so fade this game-position copy out with
+                // the open animation instead of leaving it static behind the dim.
+                // Modes 0 and 3 keep the preview copy at full strength (0 = the
+                // only copy, 3 = the panel is always visible at one position).
+                const float AgentUnderAlpha = g_Config.m_KxArrayAgentShowMode == 2 ? (1.0f - eased) : 1.0f;
+                // Fully faded (GUI open in mode 2): the above-GUI copy is the
+                // visible one, so skip drawing an invisible full chat.
+                if(AgentUnderAlpha > 0.01f)
+                        RenderArrayAgent(AgentUnderAlpha, false);
+        }
 
         // v1.56.287: BG Blur — capture the rendered game behind the GUI, blur it
         // and draw it fullscreen under the dim overlay.
@@ -8820,7 +9041,8 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
         if((ArrayListVisible && g_Config.m_KxArrayListShowInGui != 0 && ArrayListHitTest(m_MousePos)) ||
                 (ArrayInfoVisible && g_Config.m_KxArrayInfoShowInGui != 0 && ArrayInfoHitTest(m_MousePos)) ||
                 (ArrayPlayerVisible && g_Config.m_KxArrayPlayerShowInGui != 0 && ArrayPlayerHitTest(m_MousePos)) ||
-                m_ArrayListDragging || m_ArrayInfoDragging || m_ArrayPlayerDragging)
+                (ArrayAgentVisible && (g_Config.m_KxArrayAgentShowMode == 1 || g_Config.m_KxArrayAgentShowMode == 2 || g_Config.m_KxArrayAgentShowMode == 3) && ArrayAgentHeaderHitTest(m_MousePos)) ||
+                m_ArrayListDragging || m_ArrayInfoDragging || m_ArrayPlayerDragging || m_AgentDragging)
                 CursorShape = 9;
         if(ArrayInfoVisible && g_Config.m_KxArrayInfoShowInGui != 0)
         {
@@ -8831,6 +9053,14 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
         {
                 UpdateArrayPlayer(Client()->RenderFrameTime());
                 RenderArrayPlayer(1.0f);
+        }
+        if(ArrayAgentVisible && (g_Config.m_KxArrayAgentShowMode == 1 || g_Config.m_KxArrayAgentShowMode == 2 || g_Config.m_KxArrayAgentShowMode == 3))
+        {
+                UpdateArrayAgent(Client()->RenderFrameTime());
+                // Same open/close treatment as the panels: fly in from an
+                // offscreen anchor and fade with the eased progress. "Both"
+                // (one shared position) is always visible, so it stays static.
+                RenderArrayAgent(g_Config.m_KxArrayAgentShowMode == 3 ? 1.0f : eased, true);
         }
 
         KxSetCursorShape(CursorShape);
@@ -8902,10 +9132,56 @@ bool CClickGui::OnInput(const IInput::CEvent &Event)
                 }
         }
 
+        // v6.13: ArrayAgent chat — interactive in the modes where it renders:
+        // GUI closed → Show Mode In Game/Both/In Game+ClickGUI; GUI open → the
+        // GUI-capable modes (the panel floats above the GUI there).
+        {
+                const int Mode = g_Config.m_KxArrayAgentShowMode;
+                const bool ModeGame = Mode == 0 || Mode == 2 || Mode == 3;
+                const bool ModeGui = Mode == 1 || Mode == 2 || Mode == 3;
+                const bool AgentInteractive = (g_Config.m_ClClickGui == 0 ? ModeGame : ModeGui) &&
+                        ShouldRenderArrayAgent() && !GameClient()->m_Menus.IsActive() && !GameClient()->m_GameConsole.IsActive();
+                if(AgentInteractive)
+                {
+                const vec2 MP0 = Input()->NativeMousePos() / (m_UiScale > 0.0f ? m_UiScale : 1.0f);
+                // Mouse clicks go through the click handler FIRST — it owns the
+                // input field focus (click outside the field = blur), so it must
+                // run even while the field is editing (the text handler would
+                // otherwise swallow the click and the field kept focus forever).
+                if((Event.m_Flags & IInput::FLAG_PRESS) && Event.m_Key == KEY_MOUSE_1 && !m_AgentEditor)
+                {
+                        if(HandleAgentClick(MP0))
+                                return true;
+                        // Not consumed (outside the panel / header): fall through —
+                        // the GUI (HandleMouseDown) or the game handles the click.
+                }
+                if(m_AgentInputEditing && (Event.m_Flags & (IInput::FLAG_PRESS | IInput::FLAG_TEXT)))
+                        return HandleAgentTextInput(Event);
+                if(Event.m_Flags & IInput::FLAG_PRESS)
+                {
+                        if(Event.m_Key == KEY_MOUSE_WHEEL_UP || Event.m_Key == KEY_MOUSE_WHEEL_DOWN)
+                        {
+                                if(ArrayAgentHitTest(MP0))
+                                {
+                                        m_AgentScroll += (Event.m_Key == KEY_MOUSE_WHEEL_DOWN) ? 40.0f : -40.0f;
+                                        m_AgentStickBottom = false;
+                                        return true;
+                                }
+                        }
+                        else if(Event.m_Key == KEY_MOUSE_1 && !m_AgentEditor && ArrayAgentHitTest(MP0))
+                        {
+                                if(HandleAgentClick(MP0))
+                                        return true;
+                                // Header click without editor: nothing to do, let the game have it.
+                        }
+                }
+                }
+        }
+
         // v6.3: the ArrayList editor captures ALL mouse input, exactly like the
         // open ClickGUI (1:1) — nothing leaks into the game. The HUD is dragged
         // by holding it.
-        const bool ArrayEditorActive = (m_ArrayListEditor && ShouldRenderArrayList()) || (m_ArrayInfoEditor && ShouldRenderArrayInfo()) || (m_ArrayPlayerEditor && ShouldRenderArrayPlayer());
+        const bool ArrayEditorActive = (m_ArrayListEditor && ShouldRenderArrayList()) || (m_ArrayInfoEditor && ShouldRenderArrayInfo()) || (m_ArrayPlayerEditor && ShouldRenderArrayPlayer()) || (m_AgentEditor && ShouldRenderArrayAgent());
         if(g_Config.m_ClClickGui == 0 && ArrayEditorActive && !GameClient()->m_GameConsole.IsActive())
         {
                 const vec2 MP = Input()->NativeMousePos() / (m_UiScale > 0.0f ? m_UiScale : 1.0f);
@@ -8939,6 +9215,22 @@ bool CClickGui::OnInput(const IInput::CEvent &Event)
                                         m_ArrayPlayerDragStartPos = vec2(m_ArrayPlayerRectX, m_ArrayPlayerRectY);
                                 }
                         }
+                        if(m_AgentEditor && !m_AgentDragging && !m_AgentResizing)
+                        {
+                                if(ArrayAgentResizeHitTest(MP))
+                                {
+                                        m_AgentResizing = true;
+                                        m_AgentResizeStartMouse = MP;
+                                        m_AgentResizeStartW = g_Config.m_KxArrayAgentWidth;
+                                        m_AgentResizeStartH = g_Config.m_KxArrayAgentHeight;
+                                }
+                                else if(ArrayAgentHeaderHitTest(MP))
+                                {
+                                        m_AgentDragging = true;
+                                        m_AgentDragStartMouse = MP;
+                                        m_AgentDragStartPos = vec2(m_AgentRectX, m_AgentRectY);
+                                }
+                        }
                         return true;
                 }
                 if((Event.m_Flags & IInput::FLAG_RELEASE) && Event.m_Key == KEY_MOUSE_1)
@@ -8947,6 +9239,9 @@ bool CClickGui::OnInput(const IInput::CEvent &Event)
                         m_ArrayInfoDragging = false;
                         m_ArrayPlayerDragging = false;
                         m_ArrayPlayerResizing = false;
+                        m_AgentDragging = false;
+                        m_AgentResizing = false;
+                        m_AgentScrollbarDrag = false;
                         return true;
                 }
                 if(Event.m_Key >= KEY_MOUSE_1 && Event.m_Key <= KEY_MOUSE_8)
@@ -8991,6 +9286,12 @@ bool CClickGui::OnInput(const IInput::CEvent &Event)
         if(Event.m_Flags & IInput::FLAG_PRESS &&
                 (Event.m_Key == KEY_MOUSE_WHEEL_UP || Event.m_Key == KEY_MOUSE_WHEEL_DOWN))
         {
+                // v6.13: the agent chat panel (Show In ClickGUI) scrolls first.
+                if(ShouldRenderArrayAgent() && (g_Config.m_KxArrayAgentShowMode == 1 || g_Config.m_KxArrayAgentShowMode == 2 || g_Config.m_KxArrayAgentShowMode == 3) && ArrayAgentHitTest(m_MousePos))
+                {
+                        m_AgentScroll += (Event.m_Key == KEY_MOUSE_WHEEL_UP) ? 40.0f : -40.0f;
+                        return true;
+                }
                 const float dir = (Event.m_Key == KEY_MOUSE_WHEEL_UP) ? -SCROLL_STEP : SCROLL_STEP;
                 return ScrollPanelAt(m_MousePos, dir);
         }
@@ -9017,7 +9318,7 @@ bool CClickGui::OnCursorMove(float x, float y, IInput::ECursorType CursorType)
                 return true;
         }
         // v6.3: the HUD editors own the cursor exactly like the open GUI.
-        if((m_ArrayListEditor && ShouldRenderArrayList()) || (m_ArrayInfoEditor && ShouldRenderArrayInfo()) || (m_ArrayPlayerEditor && ShouldRenderArrayPlayer()))
+        if((m_ArrayListEditor && ShouldRenderArrayList()) || (m_ArrayInfoEditor && ShouldRenderArrayInfo()) || (m_ArrayPlayerEditor && ShouldRenderArrayPlayer()) || (m_AgentEditor && ShouldRenderArrayAgent()))
                 return true;
         return false;
 }
@@ -9085,6 +9386,9 @@ bool CClickGui::OnTouchState(std::vector<IInput::CTouchFingerState> &vTouchFinge
                                 m_ArrayInfoDragging = false;
                                 m_ArrayPlayerDragging = false;
                                 m_ArrayPlayerResizing = false;
+                                m_AgentDragging = false;
+                                m_AgentResizing = false;
+                                m_AgentScrollbarDrag = false;
                         }
                         m_TouchActive = false;
                 }
@@ -9331,6 +9635,26 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                 m_ArrayPlayerDragStartPos = vec2(m_ArrayPlayerRectX, m_ArrayPlayerRectY);
                 return;
         }
+        // v6.13: ArrayAgent — interactive (chat) first, unconsumed area drags.
+        // HandleAgentClick runs for EVERY click (not only inside the panel):
+        // a click outside the input field must blur it even when it lands on
+        // the rest of the GUI.
+        if(ShouldRenderArrayAgent() && (g_Config.m_KxArrayAgentShowMode == 1 || g_Config.m_KxArrayAgentShowMode == 2 || g_Config.m_KxArrayAgentShowMode == 3))
+        {
+                if(HandleAgentClick(mousePos))
+                        return;
+                if(ArrayAgentHitTest(mousePos))
+                {
+                        // Only the header is the drag handle.
+                        if(ArrayAgentHeaderHitTest(mousePos))
+                        {
+                                m_AgentDragging = true;
+                                m_AgentDragStartMouse = mousePos;
+                                m_AgentDragStartPos = vec2(m_AgentRectX, m_AgentRectY);
+                        }
+                        return;
+                }
+        }
 
         // Iterate panels top-to-bottom (high z first) to find the topmost hit.
         int clickOrder[NUM_PANELS];
@@ -9503,6 +9827,19 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 g_Config.m_KxArrayInfoEnabled = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "ArrayPlayer") == 0)
                                                 g_Config.m_KxArrayPlayerEnabled = pTarget->on ? 1 : 0;
+                                        // v6.13: ArrayAgent master + chat toggles.
+                                        else if(str_comp(pTarget->pName, "ArrayAgent") == 0)
+                                                g_Config.m_KxArrayAgentEnabled = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Show Time") == 0 && str_comp(row.pName, "ArrayAgent") == 0)
+                                                g_Config.m_KxArrayAgentShowTime = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Show Time Work") == 0 && str_comp(row.pName, "ArrayAgent") == 0)
+                                                g_Config.m_KxArrayAgentShowTimeWork = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Show Usage") == 0 && str_comp(row.pName, "ArrayAgent") == 0)
+                                                g_Config.m_KxArrayAgentShowUsage = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Show Copy Message") == 0 && str_comp(row.pName, "ArrayAgent") == 0)
+                                                g_Config.m_KxArrayAgentShowCopy = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Dynamic Scale") == 0 && str_comp(row.pName, "ArrayAgent") == 0)
+                                                g_Config.m_KxArrayAgentDynamicScale = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Kinetix Logo") == 0 && str_comp(row.pName, "ArrayInfo") == 0)
                                                 g_Config.m_KxArrayInfoLogo = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Show FPS") == 0 && str_comp(row.pName, "ArrayInfo") == 0)
@@ -9630,10 +9967,17 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                         {
                                 // v6.3: ArrayList Editor / Reset. The right half (Reset)
                                 // only exists once the list position was moved.
-                                if(str_comp(pTarget->pName, "Editor") == 0 && pTarget->type == ERowType::DoubleButton)
+                                const bool AgentEditorBtn = pTarget->type == ERowType::DoubleButton && str_comp(row.pName, "ArrayAgent") == 0 &&
+                                        (str_comp(pTarget->pName, "Editor") == 0 || str_comp(pTarget->pName, "Game Editor") == 0 || str_comp(pTarget->pName, "ClickGUI Editor") == 0);
+                                if((str_comp(pTarget->pName, "Editor") == 0 || AgentEditorBtn) && pTarget->type == ERowType::DoubleButton)
                                 {
-                                        const int Kind = (str_comp(row.pName, "ArrayInfo") == 0) ? 1 : (str_comp(row.pName, "ArrayPlayer") == 0) ? 2 : 0;
-                                        const bool Modified = Kind == 1 ? ArrayInfoPositionModified() : Kind == 2 ? ArrayPlayerPositionModified() : ArrayListPositionModified();
+                                        // v6.13: Kind 3 = ArrayAgent.
+                                        const int Kind = (str_comp(row.pName, "ArrayInfo") == 0) ? 1 : (str_comp(row.pName, "ArrayPlayer") == 0) ? 2 : (str_comp(row.pName, "ArrayAgent") == 0) ? 3 : 0;
+                                        // The ClickGUI Editor button edits the GUI-pass position
+                                        // (Show Mode = In Game+ClickGUI keeps two positions).
+                                        const bool EditorGuiPass = Kind == 3 && str_comp(pTarget->pName, "ClickGUI Editor") == 0;
+                                        m_AgentEditorGuiPass = EditorGuiPass;
+                                        const bool Modified = Kind == 1 ? ArrayInfoPositionModified() : Kind == 2 ? ArrayPlayerPositionModified() : Kind == 3 ? ArrayAgentPositionModified() : ArrayListPositionModified();
                                         const float btnW = (rw - 6.0f) * 0.5f;
                                         if(Modified && mousePos.x >= rx + 2.0f + btnW)
                                         {
@@ -9641,12 +9985,14 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                         ResetArrayInfoPosition();
                                                 else if(Kind == 2)
                                                         ResetArrayPlayerPosition();
+                                                else if(Kind == 3)
+                                                        ResetArrayAgentPosition();
                                                 else
                                                         ResetArrayListPosition();
                                         }
                                         else
                                         {
-                                                bool &EditorRef = Kind == 1 ? m_ArrayInfoEditor : Kind == 2 ? m_ArrayPlayerEditor : m_ArrayListEditor;
+                                                bool &EditorRef = Kind == 1 ? m_ArrayInfoEditor : Kind == 2 ? m_ArrayPlayerEditor : Kind == 3 ? m_AgentEditor : m_ArrayListEditor;
                                                 EditorRef = !EditorRef;
                                                 if(EditorRef)
                                                 {
@@ -9656,7 +10002,12 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                                 m_ArrayInfoEditor = false;
                                                         if(Kind != 2)
                                                                 m_ArrayPlayerEditor = false;
-                                                        g_Config.m_ClClickGui = 0;
+                                                        if(Kind != 3)
+                                                                m_AgentEditor = false;
+                                                        // The ClickGUI Editor edits the panel right in the
+                                                        // GUI — keep the GUI open; the others close it.
+                                                        if(!EditorGuiPass)
+                                                                g_Config.m_ClClickGui = 0;
                                                 }
                                         }
                                         return;
@@ -10197,7 +10548,7 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 g_Config.m_KxArrayPlayerSize = (int)(pTarget->value * 10.0f + 0.5f);
                                         else if(str_comp(pTarget->pName, "Height ArrayPlayer") == 0)
                                                 g_Config.m_KxArrayPlayerHeight = (int)(pTarget->value + 0.5f);
-                                        else if(str_comp(pTarget->pName, "Weight ArrayPlayer") == 0)
+                                        else if(str_comp(pTarget->pName, "Width ArrayPlayer") == 0)
                                                 g_Config.m_KxArrayPlayerWidth = (int)(pTarget->value + 0.5f);
                                         else if(str_comp(pTarget->pName, "Speed") == 0)
                                                 g_Config.m_KxArrayPlayerRainbowSpeed = (int)(pTarget->value * 10.0f + 0.5f);
@@ -10209,6 +10560,18 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 g_Config.m_KxArrayPlayerMainOpacity = (int)(pTarget->value + 0.5f);
                                         else if(str_comp(pTarget->pName, "Panel Opacity") == 0)
                                                 g_Config.m_KxArrayPlayerPanelOpacity = (int)(pTarget->value + 0.5f);
+                                }
+                                // v6.13: ArrayAgent sliders (touch path).
+                                else if(str_comp(row.pName, "ArrayAgent") == 0)
+                                {
+                                        if(str_comp(pTarget->pName, "Indentation") == 0)
+                                                g_Config.m_KxArrayAgentIndent = (int)(pTarget->value + 0.5f);
+                                        else if(str_comp(pTarget->pName, "Size") == 0)
+                                                g_Config.m_KxArrayAgentSize = (int)(pTarget->value * 10.0f + 0.5f);
+                                        else if(str_comp(pTarget->pName, "Height") == 0)
+                                                g_Config.m_KxArrayAgentHeight = (int)(pTarget->value + 0.5f);
+                                        else if(str_comp(pTarget->pName, "Width") == 0)
+                                                g_Config.m_KxArrayAgentWidth = (int)(pTarget->value + 0.5f);
                                 }
                                 else if(str_comp(row.pName, "ClickGUI Settings") == 0 && str_comp(pTarget->pName, "ToolTips Text Opacity") == 0)
                                         g_Config.m_KxUiTooltipTextOpacity = (int)(pTarget->value + 0.5f);
@@ -10889,6 +11252,9 @@ void CClickGui::HandleMouseUp(vec2 mousePos)
         m_ArrayInfoDragging = false;
         m_ArrayPlayerDragging = false;
         m_ArrayPlayerResizing = false;
+        m_AgentDragging = false;
+        m_AgentResizing = false;
+        m_AgentScrollbarDrag = false;
         m_DragSliderPanel = -1;
         m_DragSliderRow = -1;
         m_DragSliderChild = -1;
@@ -11130,7 +11496,7 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)))
+if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "ArrayAgent") == 0 && !ArrayAgentChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                 const float crh = RowHeightForRow(child);
                                 if(r == m_DropdownRow && c == m_DropdownChild)
@@ -11436,6 +11802,18 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                                 else if(str_comp(target.pName, "Rainbow Mode") == 0)
                                                                         g_Config.m_KxArrayPlayerRainbowMode = o;
                                                         }
+                                                        // v6.13: ArrayAgent dropdowns.
+                                                        else if(str_comp(row.pName, "ArrayAgent") == 0)
+                                                        {
+                                                                if(str_comp(target.pName, "X Anchor") == 0)
+                                                                        g_Config.m_KxArrayAgentXAnchor = o;
+                                                                else if(str_comp(target.pName, "Style") == 0)
+                                                                        g_Config.m_KxArrayAgentStyle = o;
+                                                                else if(str_comp(target.pName, "Show Mode") == 0)
+                                                                        g_Config.m_KxArrayAgentShowMode = o;
+                                                                else if(str_comp(target.pName, "Reasoning") == 0)
+                                                                        g_Config.m_KxArrayAgentReasoning = o;
+                                                        }
                                                         m_DropdownOpen = false;
                                                         return true;
                                                 }
@@ -11551,7 +11929,7 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)))
+if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "ArrayAgent") == 0 && !ArrayAgentChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                 const float crh = RowHeightForRow(child);
                                 if(r == m_DropdownRow && c == m_DropdownChild)
@@ -11836,7 +12214,7 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)))
+if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "ArrayAgent") == 0 && !ArrayAgentChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                 if(!SearchKeepsChild(child))
                                         continue;
@@ -11941,6 +12319,28 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
         else if(str_comp(pRow->pName, "Watermark") == 0 && m_InputPanel >= 0 && m_InputPanel < NUM_PANELS && m_InputRow >= 0 && m_InputRow < g_Panels[m_InputPanel].rowCount && str_comp(g_Panels[m_InputPanel].pRows[m_InputRow].pName, "ArrayInfo") == 0)
         {
                 str_copy(g_Config.m_KxArrayInfoWatermark, pRow->m_aInputBuf, sizeof(g_Config.m_KxArrayInfoWatermark));
+        }
+        // v6.13: ArrayAgent inputs (endpoint / key / models / ARGB colors).
+        else if(m_InputPanel >= 0 && m_InputPanel < NUM_PANELS && m_InputRow >= 0 && m_InputRow < g_Panels[m_InputPanel].rowCount && str_comp(g_Panels[m_InputPanel].pRows[m_InputRow].pName, "ArrayAgent") == 0)
+        {
+                if(str_comp(pRow->pName, "API Endpoint") == 0)
+                        str_copy(g_Config.m_KxArrayAgentEndpoint, pRow->m_aInputBuf, sizeof(g_Config.m_KxArrayAgentEndpoint));
+                else if(str_comp(pRow->pName, "API Key") == 0)
+                        str_copy(g_Config.m_KxArrayAgentApiKey, pRow->m_aInputBuf, sizeof(g_Config.m_KxArrayAgentApiKey));
+                else if(str_comp(pRow->pName, "Models") == 0)
+                        str_copy(g_Config.m_KxArrayAgentModels, pRow->m_aInputBuf, sizeof(g_Config.m_KxArrayAgentModels));
+                else if(str_comp(pRow->pName, "Main Color") == 0 || str_comp(pRow->pName, "Panel Color") == 0 || str_comp(pRow->pName, "Text Color") == 0)
+                {
+                        // ARGB hex (8 digits); alpha byte kept.
+                        unsigned hex = 0;
+                        if(sscanf(pRow->m_aInputBuf, "%8x", &hex) == 1)
+                        {
+                                char *pDst = str_comp(pRow->pName, "Main Color") == 0 ? g_Config.m_KxArrayAgentMainColor
+                                        : (str_comp(pRow->pName, "Panel Color") == 0 ? g_Config.m_KxArrayAgentPanelColor
+                                                                                     : g_Config.m_KxArrayAgentTextColor);
+                                str_format(pDst, 9, "%08x", hex & 0xffffffff);
+                        }
+                }
         }
         // Line color (per-component via m_KxLineComponent).
         else if(str_comp(pRow->pName, "Line color") == 0)
@@ -12218,1616 +12618,8 @@ void CClickGui::RenderToolTip(float alpha)
 }
 
 // ============================================================================
-// v6.3: ArrayList HUD — on-screen list of enabled features.
-// ============================================================================
-
-// Default anchor position (basis points): top-right corner.
-static constexpr int KX_ARRAYLIST_DEF_POS_X = 9850;
-static constexpr int KX_ARRAYLIST_DEF_POS_Y = 1000;
-static constexpr int KX_ARRAYINFO_DEF_POS_X = 7000;
-static constexpr int KX_ARRAYINFO_DEF_POS_Y = 500;
-static constexpr int KX_ARRAYPLAYER_DEF_POS_X = 5000;
-static constexpr int KX_ARRAYPLAYER_DEF_POS_Y = 5000;
-
-// Full-saturation hue -> RGB.
-static void KxHueToRgb(float Hue, float &R, float &G, float &B)
-{
-        Hue = fmodf(Hue, 360.0f);
-        if(Hue < 0.0f)
-                Hue += 360.0f;
-        const float H = Hue / 60.0f;
-        const int I = (int)H;
-        const float F = H - (float)I;
-        const float Q = 1.0f - F;
-        switch(I % 6)
-        {
-        case 0: R = 1.0f; G = F; B = 0.0f; break;
-        case 1: R = Q; G = 1.0f; B = 0.0f; break;
-        case 2: R = 0.0f; G = 1.0f; B = F; break;
-        case 3: R = 0.0f; G = Q; B = 1.0f; break;
-        case 4: R = F; G = 0.0f; B = 1.0f; break;
-        default: R = 1.0f; G = 0.0f; B = Q; break;
-        }
-}
-
-// v6.3: real 1 px rounded-rect stroke, drawn as a line polyline. Unlike the
-// outer/inner filled-rect trick, a translucent border composites exactly once,
-// which is what the Main/Panel opacity sliders need. Top/bottom edges can be
-// suppressed so touching blocks do not draw a double border at the seam.
-void CClickGui::DrawRoundedOutline(float x, float y, float w, float h, float r, ColorRGBA Color, bool DrawTop, bool DrawBottom)
-{
-        if(w <= 0.0f || h <= 0.0f)
-                return;
-        constexpr float KxPi = 3.14159265358979f;
-        r = std::clamp(r, 0.0f, std::min(w, h) * 0.5f);
-
-        std::vector<IGraphics::CLineItem> vLines;
-        vLines.reserve(64);
-        auto Add = [&](float x0, float y0, float x1, float y1) {
-                if(x0 != x1 || y0 != y1)
-                        vLines.emplace_back(x0, y0, x1, y1);
-        };
-
-        const float L = x, T = y, R = x + w, B = y + h;
-        const float TopY = DrawTop ? (T + r) : T;
-        const float BotY = DrawBottom ? (B - r) : B;
-        if(BotY > TopY)
-        {
-                Add(L, TopY, L, BotY);
-                Add(R, TopY, R, BotY);
-        }
-
-        constexpr int KxArcSeg = 6;
-        auto Arc = [&](float cx, float cy, float A0, float A1) {
-                float px = cx + cosf(A0) * r, py = cy + sinf(A0) * r;
-                for(int i = 1; i <= KxArcSeg; ++i)
-                {
-                        const float A = A0 + (A1 - A0) * (float)i / (float)KxArcSeg;
-                        const float nx = cx + cosf(A) * r, ny = cy + sinf(A) * r;
-                        Add(px, py, nx, ny);
-                        px = nx;
-                        py = ny;
-                }
-        };
-
-        if(r > 0.01f)
-        {
-                if(DrawTop)
-                {
-                        Arc(L + r, T + r, KxPi, KxPi * 1.5f);
-                        Add(L + r, T, R - r, T);
-                        Arc(R - r, T + r, KxPi * 1.5f, KxPi * 2.0f);
-                }
-                if(DrawBottom)
-                {
-                        Arc(R - r, B - r, 0.0f, KxPi * 0.5f);
-                        Add(L + r, B, R - r, B);
-                        Arc(L + r, B - r, KxPi * 0.5f, KxPi);
-                }
-        }
-        else
-        {
-                if(DrawTop)
-                        Add(L, T, R, T);
-                if(DrawBottom)
-                        Add(L, B, R, B);
-        }
-
-        if(vLines.empty())
-                return;
-        Graphics()->LinesBegin();
-        Graphics()->SetColor(Color.r, Color.g, Color.b, Color.a);
-        Graphics()->LinesDraw(vLines.data(), vLines.size());
-        Graphics()->LinesEnd();
-}
-
-// Feature table: display name + the toggle that drives it. Runtime features
-// (Pathfinder / TAS Play / Playground) are appended separately.
-struct SArrayListFeature
-{
-        const char *pName;
-        int *pOn;
-};
-static SArrayListFeature g_ArrayListFeatures[] = {
-        // Functions panel — all toggles and expandable master switches.
-        {"Helpers", &g_Config.m_KxHelpers},
-        {"AimBot", &g_Config.m_KxAimBot},
-        {"TriggerBot", &g_Config.m_KxTriggerBot},
-        {"Auto Fire", &g_Config.m_KxAutoFire},
-        {"BalanceBot", &g_Config.m_KxBalanceBot},
-        {"Preserve Input", &g_Config.m_KxDummyHammerKeepInputs},
-        {"Custom Latency", &g_Config.m_KxDummyHammerCustomLatency},
-        {"Auto Fly", &g_Config.m_KxDummyHammerAuto},
-        {"Fix Dummy Hammer", &g_Config.m_KxFixDummyHammer},
-        {"Auto Triple Fly", &g_Config.m_KxTripleFly},
-        {"Smart Copy Moves", &g_Config.m_KxSmartCopyMoves},
-        {"Copy Moves Filter", &g_Config.m_KxDummyCopyMovesFilter},
-        {"Mirror Direction", &g_Config.m_KxDummyCopyMirrorDir},
-        {"Mirror Aim X", &g_Config.m_KxDummyCopyMirrorAimX},
-        {"Mirror Aim Y", &g_Config.m_KxDummyCopyMirrorAimY},
-        {"Smart Aim", &g_Config.m_KxDummyCopySmartAim},
-        {"Fly Ride", &g_Config.m_KxFlyRide},
-        {"Jet Ride", &g_Config.m_KxJetRide},
-        {"Hook Ride", &g_Config.m_KxHookRide},
-        {"Moonwalk", &g_Config.m_KxMoonwalk},
-        {"Quick Stop", &g_Config.m_KxQuickStop},
-        {"Hide Chat Bubble", &g_Config.m_KxHideChatBubble},
-        {"Fast Input", &g_Config.m_KxFastInput},
-        {"Auto Team", &g_Config.m_KxAutoTeam},
-        {"Anti Afk", &g_Config.m_KxAntiAfk},
-        {"Auto Vote", &g_Config.m_KxAutoVote},
-        {"Auto Vote Kick", &g_Config.m_KxAutoVoteKick},
-        {"Copy Moves Latency", &g_Config.m_KxCopyMovesLatencyEnabled},
-        {"Laser Unfreeze", &g_Config.m_KxLaserUnfreeze},
-        {"Fake Aim", &g_Config.m_KxFakeAim},
-        {"Avoid Freeze", &g_Config.m_KxAvoidFreeze},
-        {"AledBot", &g_Config.m_KxAledEnabled},
-        // Visuals panel.
-        {"Custom Colors", &g_Config.m_KxCustomColors},
-        {"Hide Particles", &g_Config.m_KxHideParticles},
-        {"Trajectory", &g_Config.m_KxShowTrajectory},
-        {"ESP", &g_Config.m_KxEsp},
-        {"Hitboxes", &g_Config.m_KxHitboxes},
-        {"Bypass Zoom Lock", &g_Config.m_KxZoomUnlock},
-        {"Bypass Asset Lock", &g_Config.m_KxAssetUnlock},
-        {"Admin Alarm", &g_Config.m_KxAdminAlarm},
-        // Settings panel (ClickGUI Settings excluded by design).
-        {"IRC", &g_Config.m_KxIrcEnabled},
-        {"Spoof Zoom", &g_Config.m_KxSpoofZoom},
-        {"Spoof Spectate", &g_Config.m_KxSpoofSpectate},
-        {"Auto Verify", &g_Config.m_KxAutoVerify},
-        {"Discord RPC", &g_Config.m_KxDiscordRpc},
-        // Pathfinder / Real-Time Pathfinder masters.
-        {"Freedom Path", &g_Config.m_KxPfFreedom},
-        {"Reconstruct", &g_Config.m_KxRtPfReconstruct},
-        {"Future Limit", &g_Config.m_KxRtPfFutureLimit},
-        // TAS masters. (Record/Play/Playground are runtime states, appended below.)
-        {"Auto Rewind/Forward", &g_Config.m_KxTasAutoRf},
-};
-
-// v6.3: "Name Length" sorting uses the RENDERED width (current font +
-// ArrayList Size), not the character count, so the order matches what the eye
-// sees on screen.
-struct SArrayListWidthEntry
-{
-        std::string Name;
-        float Width;
-};
-
-static void ArrayListSortItems(std::vector<std::string> &vItems, const std::vector<std::string> &vHistory,
-        const std::vector<SArrayListWidthEntry> &vWidths)
-{
-        auto WidthOf = [&](const std::string &S) {
-                for(const SArrayListWidthEntry &E : vWidths)
-                        if(E.Name == S)
-                                return E.Width;
-                return 0.0f;
-        };
-        auto Less = [&](const std::string &A, const std::string &B) -> bool {
-                const int Sort = g_Config.m_KxArrayListSort;
-                if(Sort == 1)
-                {
-                        const float WA = WidthOf(A), WB = WidthOf(B);
-                        if(std::fabs(WA - WB) > 0.01f)
-                                return WA < WB;
-                        return str_comp(A.c_str(), B.c_str()) < 0;
-                }
-                if(Sort == 2)
-                {
-                        auto Idx = [&](const std::string &S) {
-                                for(size_t i = 0; i < vHistory.size(); ++i)
-                                        if(vHistory[i] == S)
-                                                return (int)i;
-                                return 1000000;
-                        };
-                        return Idx(A) < Idx(B);
-                }
-                return str_comp(A.c_str(), B.c_str()) < 0;
-        };
-        // Insertion sort: the list is tiny and this avoids an <algorithm> dependency.
-        for(size_t i = 1; i < vItems.size(); ++i)
-        {
-                std::string Key = vItems[i];
-                size_t j = i;
-                while(j > 0 && Less(Key, vItems[j - 1]))
-                {
-                        vItems[j] = vItems[j - 1];
-                        --j;
-                }
-                vItems[j] = Key;
-        }
-}
-
-bool CClickGui::ShouldRenderArrayList() const
-{
-        if(g_Config.m_KxArrayListEnabled == 0 && !m_ArrayListEditor)
-                return false;
-        if(GameClient()->m_Menus.IsActive())
-                return false;
-        const int State = Client()->State();
-        return State == IClient::STATE_ONLINE || State == IClient::STATE_DEMOPLAYBACK;
-}
-
-bool CClickGui::ArrayListPositionModified() const
-{
-        return g_Config.m_KxArrayListPosX != KX_ARRAYLIST_DEF_POS_X ||
-                g_Config.m_KxArrayListPosY != KX_ARRAYLIST_DEF_POS_Y;
-}
-
-void CClickGui::ResetArrayListPosition()
-{
-        g_Config.m_KxArrayListPosX = KX_ARRAYLIST_DEF_POS_X;
-        g_Config.m_KxArrayListPosY = KX_ARRAYLIST_DEF_POS_Y;
-}
-
-bool CClickGui::ArrayListHitTest(vec2 mousePos) const
-{
-        if(!m_ArrayListRectValid)
-                return false;
-        return mousePos.x >= m_ArrayListRectX && mousePos.x <= m_ArrayListRectX + m_ArrayListRectW &&
-                mousePos.y >= m_ArrayListRectY && mousePos.y <= m_ArrayListRectY + m_ArrayListRectH;
-}
-
-// v6.7: the REAL enabled-feature list (no editor sample). Single source of
-// truth for both the ArrayList HUD and the ArrayInfo "X Functions" count.
-void CClickGui::ArrayListBuildEnabled(std::vector<std::string> &vOut) const
-{
-        for(const SArrayListFeature &F : g_ArrayListFeatures)
-                if(*F.pOn)
-                        vOut.emplace_back(F.pName);
-        // Runtime states (the literal exceptions from the ClickGUI toggles).
-        CBotNet &BN = GameClient()->m_BotNet;
-        if(BN.m_PfState != PF_STATE_IDLE)
-                vOut.emplace_back("Pathfinder");
-        if(GameClient()->m_Tas.IsPlaying())
-                vOut.emplace_back("TAS Play");
-        if(GameClient()->m_Tas.IsJoined())
-                vOut.emplace_back("Playground");
-        if(g_Config.m_KxTasRecord)
-                vOut.emplace_back("TAS Record");
-        // TAS Fake Aim is active only during playback, not just when enabled.
-        if(GameClient()->m_Tas.FakeAimActive())
-                vOut.emplace_back("TAS Fake Aim");
-        // Spoofer's header is an OR of two configs (version / client string).
-        if(g_Config.m_KxVersionSpoof || g_Config.m_KxSpoofClientStr)
-                vOut.emplace_back("Spoofer");
-        // Smart Dummy Switch is enabled while its trigger bind is set.
-        {
-                char aSdsKey[64];
-                GameClient()->m_Binds.GetKey("kx_dummy_switch", aSdsKey, sizeof(aSdsKey));
-                if(aSdsKey[0])
-                        vOut.emplace_back("Smart Dummy Switch");
-        }
-}
-
-void CClickGui::ArrayListBuildList(std::vector<std::string> &vOut) const
-{
-        vOut.clear();
-        if(m_ArrayListEditor)
-        {
-                static const char *s_apSample[] = {"AimBot", "TriggerBot", "Pathfinder", "TAS Play", "Playground"};
-                for(const char *pName : s_apSample)
-                        vOut.emplace_back(pName);
-                return;
-        }
-        ArrayListBuildEnabled(vOut);
-}
-
-void CClickGui::ArrayListUpdateHistory(const std::vector<std::string> &vEnabled)
-{
-        // Drop entries that are no longer enabled (they are re-appended on the
-        // next enable, at the end of the order).
-        for(size_t i = 0; i < m_vArrayListHistory.size();)
-        {
-                bool Found = false;
-                for(const std::string &S : vEnabled)
-                        if(S == m_vArrayListHistory[i])
-                        {
-                                Found = true;
-                                break;
-                        }
-                if(Found)
-                        ++i;
-                else
-                        m_vArrayListHistory.erase(m_vArrayListHistory.begin() + i);
-        }
-        // Append newly enabled features in enable order.
-        for(const std::string &S : vEnabled)
-        {
-                bool Found = false;
-                for(const std::string &H : m_vArrayListHistory)
-                        if(H == S)
-                        {
-                                Found = true;
-                                break;
-                        }
-                if(!Found)
-                        m_vArrayListHistory.push_back(S);
-        }
-}
-
-void CClickGui::UpdateArrayList(float dt)
-{
-        m_ArrayListHue += dt * (g_Config.m_KxArrayListRainbowSpeed / 10.0f) * 60.0f;
-
-        if(!m_ArrayListDragging || !m_ArrayListRectValid)
-                return;
-
-        const float ScreenW = VScreenWidth();
-        const float ScreenH = VScreenHeight();
-        // Relative drag: press position -> current position delta applied to the
-        // HUD top-left captured at press time (no offset drift). While the editor
-        // is open the drag is deliberately unclamped, so the HUD never bumps
-        // against the screen edges; the in-game render keeps it visible.
-        const float Left = m_ArrayListDragStartPos.x + (m_MousePos.x - m_ArrayListDragStartMouse.x);
-        const float Top = m_ArrayListDragStartPos.y + (m_MousePos.y - m_ArrayListDragStartMouse.y);
-
-        // The stored point is always the list's left edge; the X anchor only
-        // aligns the rows inside the list (matches RenderArrayList). The Y
-        // anchor only affects the row order.
-        g_Config.m_KxArrayListPosX = (int)((Left / ScreenW) * 10000.0f + (Left >= 0.0f ? 0.5f : -0.5f));
-        g_Config.m_KxArrayListPosY = (int)((Top / ScreenH) * 10000.0f + (Top >= 0.0f ? 0.5f : -0.5f));
-}
-
-void CClickGui::RenderArrayList(float alpha)
-{
-        m_ArrayListRectValid = false;
-
-        std::vector<std::string> vItems;
-        ArrayListBuildList(vItems);
-        ArrayListUpdateHistory(vItems);
-        if(vItems.empty())
-                return;
-
-        // The font size (and therefore the rendered width) is needed before the
-        // sort: "Name Length" compares TextWidth, not string size.
-        const bool UiOn = g_Config.m_KxUiSettingsOn != 0;
-        const float SizeScale = (UiOn ? g_Config.m_KxArrayListSize : 10) / 10.0f;
-        const float FontSz = 15.0f * SizeScale;
-
-        std::vector<SArrayListWidthEntry> vSortWidths;
-        vSortWidths.reserve(vItems.size());
-        for(const std::string &S : vItems)
-                vSortWidths.push_back({S, TextRender()->TextWidth(FontSz, S.c_str())});
-
-        ArrayListSortItems(vItems, m_vArrayListHistory, vSortWidths);
-
-        // The Y anchor only decides where new features are appended: "Top"
-        // reverses the row order so new entries appear at the top, "Bottom"
-        // keeps the sorted order (new entries at the bottom). The list itself
-        // is always positioned by its top edge, so switching the anchor never
-        // moves it.
-        const float YRatio = g_Config.m_KxArrayListPosY / 10000.0f;
-        int YA = g_Config.m_KxArrayListYAnchor; // 0 Auto, 1 Top, 2 Bottom
-        if(YA == 0)
-                YA = (YRatio < 0.5f) ? 1 : 2;
-        if(YA == 1)
-        {
-                for(size_t a = 0, b = vItems.size(); a + 1 < b; ++a, --b)
-                {
-                        std::string Tmp = vItems[a];
-                        vItems[a] = vItems[b - 1];
-                        vItems[b - 1] = Tmp;
-                }
-        }
-
-        const float ScreenW = VScreenWidth();
-        const float ScreenH = VScreenHeight();
-        if(ScreenW <= 0.0f || ScreenH <= 0.0f)
-                return;
-
-        // UiOn/SizeScale/FontSz are computed before the sort (Name Length uses
-        // the rendered width); only the paddings are needed here.
-        const float PadX = 7.0f * SizeScale;
-        const float PadY = 4.0f * SizeScale;
-        const float Indent = (float)g_Config.m_KxArrayListIndent * SizeScale;
-        const int Style = g_Config.m_KxArrayListStyle;
-        const bool GroupStyle = (Style == 1 || Style == 3);
-        const bool DDNetStyle = (Style >= 2);
-        const bool Rainbow = g_Config.m_KxArrayListRainbow != 0;
-        const int RainbowMode = g_Config.m_KxArrayListRainbowMode;
-        const float RainbowStep = (float)g_Config.m_KxArrayListRainbowStep;
-        const float TextOp = (UiOn ? g_Config.m_KxArrayListTextOpacity : 100) / 100.0f;
-        const float MainOp = (UiOn ? g_Config.m_KxArrayListMainOpacity : 100) / 100.0f;
-        const float PanelOp = (UiOn ? g_Config.m_KxArrayListPanelOpacity : 100) / 100.0f;
-
-        unsigned TextHex = 0xffffff;
-        sscanf(g_Config.m_KxArrayListTextColor, "%6x", &TextHex);
-
-        const size_t Count = vItems.size();
-        const float MaxLenPx = (UiOn ? (float)g_Config.m_KxArrayListMaxLength : 0.0f);
-        std::vector<std::vector<std::string>> vItemLines(Count);
-        std::vector<float> vTextW(Count);
-        std::vector<float> vItemH(Count);
-        float MaxTextW = 0.0f;
-        for(size_t i = 0; i < Count; ++i)
-        {
-                std::vector<std::string> &vLines = vItemLines[i];
-                const char *pText = vItems[i].c_str();
-                if(MaxLenPx <= 0.0f)
-                        vLines.emplace_back(pText);
-                else
-                {
-                        // Greedy word wrap at the physical Max Length (px).
-                        std::string Cur;
-                        const char *p = pText;
-                        while(*p)
-                        {
-                                while(*p == ' ')
-                                        ++p;
-                                if(!*p)
-                                        break;
-                                const char *pStart = p;
-                                while(*p && *p != ' ')
-                                        ++p;
-                                std::string Word(pStart, p);
-                                std::string Try = Cur.empty() ? Word : Cur + " " + Word;
-                                if(!Cur.empty() && TextRender()->TextWidth(FontSz, Try.c_str()) > MaxLenPx)
-                                {
-                                        vLines.push_back(Cur);
-                                        Cur = Word;
-                                }
-                                else
-                                        Cur = Try;
-                        }
-                        if(!Cur.empty())
-                                vLines.push_back(Cur);
-                        if(vLines.empty())
-                                vLines.emplace_back("");
-                }
-                float LineMaxW = 0.0f;
-                for(const std::string &L : vLines)
-                        LineMaxW = std::max(LineMaxW, TextRender()->TextWidth(FontSz, L.c_str()));
-                vTextW[i] = LineMaxW;
-                vItemH[i] = (float)vLines.size() * FontSz + PadY * 2.0f;
-                MaxTextW = std::max(MaxTextW, LineMaxW);
-        }
-
-        float BoxW, BoxH;
-        if(GroupStyle)
-        {
-                BoxW = MaxTextW + PadX * 2.0f;
-                float LinesH = 0.0f;
-                for(size_t i = 0; i < Count; ++i)
-                        LinesH += (float)vItemLines[i].size() * FontSz;
-                BoxH = LinesH + (float)(Count - 1) * Indent + PadY * 2.0f;
-        }
-        else
-        {
-                BoxW = MaxTextW + PadX * 2.0f;
-                float RowsH = 0.0f;
-                for(size_t i = 0; i < Count; ++i)
-                        RowsH += vItemH[i];
-                BoxH = RowsH + (float)(Count - 1) * Indent;
-        }
-
-        const float XRatio = g_Config.m_KxArrayListPosX / 10000.0f;
-        int XA = g_Config.m_KxArrayListXAnchor;
-        if(XA == 0)
-                XA = (XRatio < 1.0f / 3.0f) ? 3 : ((XRatio > 2.0f / 3.0f) ? 1 : 2);
-        const float AnchorY = YRatio * ScreenH;
-        // The stored point is always the list's left edge. The X anchor only
-        // aligns the rows inside the list; it never moves the list on screen.
-        float Left = XRatio * ScreenW;
-        // The Y anchor only affects the row order (see above); the list is always
-        // positioned by its top edge so switching the anchor never moves it.
-        float Top = AnchorY;
-        if(!m_ArrayListEditor)
-        {
-                // In game the HUD is kept on screen. The editor preview is
-                // dragged freely and must not bump against the screen edges.
-                Left = std::clamp(Left, 0.0f, std::max(0.0f, ScreenW - BoxW));
-                Top = std::clamp(Top, 0.0f, std::max(0.0f, ScreenH - BoxH));
-        }
-
-        m_ArrayListRectX = Left;
-        m_ArrayListRectY = Top;
-        m_ArrayListRectW = BoxW;
-        m_ArrayListRectH = BoxH;
-        m_ArrayListRectValid = true;
-
-        // ClickGUI tooltip look: one rounded border rect + one rounded background
-        // rect (no per-edge seams, so opacity never shows stray pixels).
-        // DDNet styles use the DDNet tooltip palette: dark gray, no accent.
-        const ColorRGBA BorderCol = DDNetStyle
-                ? ColorRGBA(0.0f, 0.0f, 0.0f, 0.35f * alpha * MainOp)
-                : KxColorWithAlpha(m_AccentColorRGBA, alpha * MainOp);
-        const ColorRGBA BgCol = DDNetStyle
-                ? ColorRGBA(0.2f, 0.2f, 0.2f, 0.8f * alpha * PanelOp)
-                : KxColorWithAlpha(m_PanelBgRGBA, alpha * 0.97f * PanelOp);
-
-        auto DrawBlock = [&](float x, float y, float w, float h, int Corners, bool DrawTop, bool DrawBottom) {
-                DrawRoundedRect(x, y, w, h, 4.0f, Corners, BgCol);
-                DrawRoundedOutline(x + 0.5f, y + 0.5f, w - 1.0f, h - 1.0f, 3.5f, BorderCol, DrawTop, DrawBottom);
-        };
-
-        auto DrawRowText = [&](float x, float y, const char *pText, size_t RowIdx) {
-                if(!Rainbow)
-                {
-                        DrawText(x, y, FontSz, pText, ColorRGBA(TextHex, true).WithAlpha(alpha * TextOp));
-                        return;
-                }
-                if(RainbowMode == 2)
-                {
-                        // One gradient across the WHOLE HUD (all blocks), left to right.
-                        // The hue decreases with x, so as the base hue advances with
-                        // time the gradient visibly flows from the left to the right.
-                        // The colour splits let the whole string be drawn in one
-                        // TextEx call, so glyph bearings/kerning stay intact.
-                        std::vector<STextColorSplit> vSplits;
-                        vSplits.reserve((size_t)str_length(pText));
-                        const char *pCur = pText;
-                        int BytePos = 0;
-                        while(*pCur)
-                        {
-                                const char *pNext = pCur;
-                                str_utf8_decode(&pNext);
-                                const int CharLen = (int)(pNext - pCur);
-                                const float CharX = x + TextRender()->TextWidth(FontSz, pText, BytePos);
-                                const float t = (BoxW > 0.0f) ? std::clamp((CharX - Left) / BoxW, 0.0f, 1.0f) : 0.0f;
-                                float R, G, B;
-                                KxHueToRgb(m_ArrayListHue - RainbowStep * t, R, G, B);
-                                vSplits.emplace_back(BytePos, CharLen, ColorRGBA(R, G, B, alpha * TextOp));
-                                BytePos += CharLen;
-                                pCur = pNext;
-                        }
-                        KxDrawTextColorSplits(TextRender(), x, y, FontSz, pText, ColorRGBA(1.0f, 1.0f, 1.0f, alpha * TextOp), vSplits);
-                        return;
-                }
-                float R, G, B;
-                KxHueToRgb(m_ArrayListHue + (float)RowIdx * (RainbowMode == 1 ? RainbowStep : 0.0f), R, G, B);
-                DrawText(x, y, FontSz, pText, ColorRGBA(R, G, B, alpha * TextOp));
-        };
-
-        if(GroupStyle)
-        {
-                DrawBlock(Left, Top, BoxW, BoxH, IGraphics::CORNER_ALL, true, true);
-                float ty = Top + PadY;
-                for(size_t i = 0; i < Count; ++i)
-                {
-                        // The shared panel never moves with the X anchor; the
-                        // anchor only aligns the rows inside it.
-                        for(const std::string &Line : vItemLines[i])
-                        {
-                                const float lw = TextRender()->TextWidth(FontSz, Line.c_str());
-                                float tx = Left + PadX;
-                                if(XA == 2)
-                                        tx = Left + (BoxW - lw) * 0.5f;
-                                else if(XA == 1)
-                                        tx = Left + BoxW - PadX - lw;
-                                DrawRowText(tx, ty, Line.c_str(), i);
-                                ty += FontSz;
-                        }
-                        ty += Indent;
-                }
-        }
-        else
-        {
-                struct SKxRect { float x, y, w, h; };
-                std::vector<SKxRect> vRects(Count);
-                float CurY = Top;
-                for(size_t i = 0; i < Count; ++i)
-                {
-                        const float bw = vTextW[i] + PadX * 2.0f;
-                        // The X anchor aligns the row blocks inside the list's
-                        // bounding box; it never moves the list on screen.
-                        float bx;
-                        if(XA == 3)
-                                bx = Left;
-                        else if(XA == 2)
-                                bx = Left + (BoxW - bw) * 0.5f;
-                        else
-                                bx = Left + BoxW - bw;
-                        SKxRect R;
-                        R.x = bx;
-                        R.y = CurY;
-                        R.w = bw;
-                        R.h = vItemH[i];
-                        vRects[i] = R;
-                        CurY += vItemH[i] + Indent;
-                }
-
-                const bool Touching = (Indent < 0.5f);
-                if(!Touching)
-                {
-                        for(size_t i = 0; i < Count; ++i)
-                        {
-                                const SKxRect &R = vRects[i];
-                                DrawBlock(R.x, R.y, R.w, R.h, IGraphics::CORNER_ALL, true, true);
-                                float ly = R.y + PadY;
-                                for(const std::string &Line : vItemLines[i])
-                                {
-                                        DrawRowText(R.x + PadX, ly, Line.c_str(), i);
-                                        ly += FontSz;
-                                }
-                        }
-                }
-                else
-                {
-                        // Blocks literally connect: the fill gets square corners on
-                        // every side covered by the neighbour above/below, and the
-                        // accent outline is drawn only on the exposed part of the
-                        // union. Widths differ per row, so the seam is handled
-                        // span-by-span instead of suppressing whole edges.
-                        constexpr float KxR = 4.0f;
-                        constexpr float KxPi = 3.14159265358979f;
-                        std::vector<IGraphics::CLineItem> vLines;
-                        auto AddSeg = [&](float x0, float y0, float x1, float y1) {
-                                if(x0 != x1 || y0 != y1)
-                                        vLines.emplace_back(x0, y0, x1, y1);
-                        };
-                        auto AddArc = [&](float cx, float cy, float a0, float a1) {
-                                constexpr int KxSeg = 6;
-                                float px = cx + cosf(a0) * KxR, py = cy + sinf(a0) * KxR;
-                                for(int s = 1; s <= KxSeg; ++s)
-                                {
-                                        const float a = a0 + (a1 - a0) * (float)s / (float)KxSeg;
-                                        const float nx = cx + cosf(a) * KxR, ny = cy + sinf(a) * KxR;
-                                        AddSeg(px, py, nx, ny);
-                                        px = nx;
-                                        py = ny;
-                                }
-                        };
-
-                        for(size_t i = 0; i < Count; ++i)
-                        {
-                                const SKxRect &R = vRects[i];
-                                const SKxRect *pA = (i > 0) ? &vRects[i - 1] : nullptr;
-                                const SKxRect *pB = (i + 1 < Count) ? &vRects[i + 1] : nullptr;
-                                const bool OverA = pA && std::min(R.x + R.w, pA->x + pA->w) > std::max(R.x, pA->x) + 0.5f;
-                                const bool OverB = pB && std::min(R.x + R.w, pB->x + pB->w) > std::max(R.x, pB->x) + 0.5f;
-
-                                const float AC0 = OverA ? std::max(R.x, pA->x) : 0.0f;
-                                const float AC1 = OverA ? std::min(R.x + R.w, pA->x + pA->w) : 0.0f;
-                                const float BC0 = OverB ? std::max(R.x, pB->x) : 0.0f;
-                                const float BC1 = OverB ? std::min(R.x + R.w, pB->x + pB->w) : 0.0f;
-                                // Round a seam corner only when the exposed sliver is at
-                                // least as wide as the corner radius. A row that is only a
-                                // fraction of a pixel wider would otherwise get an arc
-                                // curving back into the block right at the seam.
-                                const bool TLr = !OverA || (AC0 - R.x) > KxR;
-                                const bool TRr = !OverA || (R.x + R.w - AC1) > KxR;
-                                const bool BLr = !OverB || (BC0 - R.x) > KxR;
-                                const bool BRr = !OverB || (R.x + R.w - BC1) > KxR;
-
-                                int Corners = IGraphics::CORNER_NONE;
-                                if(TLr) Corners |= IGraphics::CORNER_TL;
-                                if(TRr) Corners |= IGraphics::CORNER_TR;
-                                if(BLr) Corners |= IGraphics::CORNER_BL;
-                                if(BRr) Corners |= IGraphics::CORNER_BR;
-                                DrawRoundedRect(R.x, R.y, R.w, R.h, KxR, Corners, BgCol);
-
-                                AddSeg(R.x, R.y + (TLr ? KxR : 0.0f), R.x, R.y + R.h - (BLr ? KxR : 0.0f));
-                                AddSeg(R.x + R.w, R.y + (TRr ? KxR : 0.0f), R.x + R.w, R.y + R.h - (BRr ? KxR : 0.0f));
-                                if(TLr) AddArc(R.x + KxR, R.y + KxR, KxPi, KxPi * 1.5f);
-                                if(TRr) AddArc(R.x + R.w - KxR, R.y + KxR, KxPi * 1.5f, KxPi * 2.0f);
-                                if(BRr) AddArc(R.x + R.w - KxR, R.y + R.h - KxR, 0.0f, KxPi * 0.5f);
-                                if(BLr) AddArc(R.x + KxR, R.y + R.h - KxR, KxPi * 0.5f, KxPi);
-
-                                // Draw only the exposed part of each seam edge. The inset
-                                // is the corner radius when that corner is actually rounded;
-                                // for a square seam corner the segment runs all the way to
-                                // the row's edge, closing the step instead of leaving a gap.
-                                if(OverA)
-                                {
-                                        const float TopL = R.x + (TLr ? KxR : 0.0f);
-                                        if(AC0 > TopL)
-                                                AddSeg(TopL, R.y, AC0, R.y);
-                                        const float TopR = R.x + R.w - (TRr ? KxR : 0.0f);
-                                        if(TopR > AC1)
-                                                AddSeg(AC1, R.y, TopR, R.y);
-                                }
-                                else
-                                        AddSeg(R.x + (TLr ? KxR : 0.0f), R.y, R.x + R.w - (TRr ? KxR : 0.0f), R.y);
-
-                                if(OverB)
-                                {
-                                        const float BotL = R.x + (BLr ? KxR : 0.0f);
-                                        if(BC0 > BotL)
-                                                AddSeg(BotL, R.y + R.h, BC0, R.y + R.h);
-                                        const float BotR = R.x + R.w - (BRr ? KxR : 0.0f);
-                                        if(BotR > BC1)
-                                                AddSeg(BC1, R.y + R.h, BotR, R.y + R.h);
-                                }
-                                else
-                                        AddSeg(R.x + (BLr ? KxR : 0.0f), R.y + R.h, R.x + R.w - (BRr ? KxR : 0.0f), R.y + R.h);
-                        }
-
-                        if(!vLines.empty())
-                        {
-                                Graphics()->LinesBegin();
-                                Graphics()->SetColor(BorderCol.r, BorderCol.g, BorderCol.b, BorderCol.a);
-                                Graphics()->LinesDraw(vLines.data(), vLines.size());
-                                Graphics()->LinesEnd();
-                        }
-                        for(size_t i = 0; i < Count; ++i)
-                        {
-                                const SKxRect &R = vRects[i];
-                                float ly = R.y + PadY;
-                                for(const std::string &Line : vItemLines[i])
-                                {
-                                        DrawRowText(R.x + PadX, ly, Line.c_str(), i);
-                                        ly += FontSz;
-                                }
-                        }
-                }
-        }
-
-        TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
-}
-
-// ============================================================================
-// v6.4: ArrayInfo HUD — info line rendered in game.
-// ============================================================================
-
-bool CClickGui::ShouldRenderArrayInfo() const
-{
-        if(g_Config.m_KxArrayInfoEnabled == 0 && !m_ArrayInfoEditor)
-                return false;
-        if(GameClient()->m_Menus.IsActive())
-                return false;
-        const int State = Client()->State();
-        return State == IClient::STATE_ONLINE || State == IClient::STATE_DEMOPLAYBACK;
-}
-
-bool CClickGui::ArrayInfoPositionModified() const
-{
-        return g_Config.m_KxArrayInfoPosX != KX_ARRAYINFO_DEF_POS_X ||
-                g_Config.m_KxArrayInfoPosY != KX_ARRAYINFO_DEF_POS_Y;
-}
-
-void CClickGui::ResetArrayInfoPosition()
-{
-        g_Config.m_KxArrayInfoPosX = KX_ARRAYINFO_DEF_POS_X;
-        g_Config.m_KxArrayInfoPosY = KX_ARRAYINFO_DEF_POS_Y;
-}
-
-bool CClickGui::ArrayInfoHitTest(vec2 mousePos) const
-{
-        if(!m_ArrayInfoRectValid)
-                return false;
-        return mousePos.x >= m_ArrayInfoRectX && mousePos.x <= m_ArrayInfoRectX + m_ArrayInfoRectW &&
-                mousePos.y >= m_ArrayInfoRectY && mousePos.y <= m_ArrayInfoRectY + m_ArrayInfoRectH;
-}
-
-void CClickGui::UpdateArrayInfo(float dt)
-{
-        m_ArrayInfoHue += dt * (g_Config.m_KxArrayInfoRainbowSpeed / 10.0f) * 60.0f;
-
-        if(!m_ArrayInfoDragging || !m_ArrayInfoRectValid)
-                return;
-
-        const float ScreenW = VScreenWidth();
-        const float ScreenH = VScreenHeight();
-        // Relative drag: press position -> current position delta. While the
-        // editor is open the drag is deliberately unclamped, so the bar never
-        // bumps against the screen edges; the in-game render keeps it visible.
-        const float Left = m_ArrayInfoDragStartPos.x + (m_MousePos.x - m_ArrayInfoDragStartMouse.x);
-        const float Top = m_ArrayInfoDragStartPos.y + (m_MousePos.y - m_ArrayInfoDragStartMouse.y);
-
-        // The stored point is always the info box's left edge; the X anchor
-        // only aligns the lines inside the box, it never repositions the box.
-        g_Config.m_KxArrayInfoPosX = (int)((Left / ScreenW) * 10000.0f + (Left >= 0.0f ? 0.5f : -0.5f));
-        g_Config.m_KxArrayInfoPosY = (int)((Top / ScreenH) * 10000.0f + (Top >= 0.0f ? 0.5f : -0.5f));
-}
-
-void CClickGui::RenderArrayInfo(float alpha)
-{
-        m_ArrayInfoRectValid = false;
-
-        const bool UiOn = g_Config.m_KxUiSettingsOn != 0;
-        const float SizeScale = (UiOn ? g_Config.m_KxArrayInfoSize : 10) / 10.0f;
-        const float FontSz = 15.0f * SizeScale;
-        const float PadX = 7.0f * SizeScale;
-        const float PadY = 4.0f * SizeScale;
-        const float LineGap = (UiOn ? (float)g_Config.m_KxArrayInfoIndent : 2.0f) * SizeScale;
-
-        const int Style = g_Config.m_KxArrayInfoStyle;
-        const bool GroupStyle = (Style == 1 || Style == 3);
-        const bool DDNetStyle = (Style >= 2);
-        const bool Rainbow = g_Config.m_KxArrayInfoRainbow != 0;
-        const int RainbowMode = g_Config.m_KxArrayInfoRainbowMode;
-        const float RainbowStep = (float)g_Config.m_KxArrayInfoRainbowStep;
-        const float TextOp = (UiOn ? g_Config.m_KxArrayInfoTextOpacity : 100) / 100.0f;
-        const float MainOp = (UiOn ? g_Config.m_KxArrayInfoMainOpacity : 100) / 100.0f;
-        const float PanelOp = (UiOn ? g_Config.m_KxArrayInfoPanelOpacity : 100) / 100.0f;
-        const float MaxLen = (UiOn ? (float)g_Config.m_KxArrayInfoMaxLength : 0.0f);
-        const bool Editor = m_ArrayInfoEditor;
-
-        unsigned TextHex = 0xffffff;
-        sscanf(g_Config.m_KxArrayInfoTextColor, "%6x", &TextHex);
-
-        // ---- info pieces (order: logo | watermark | FPS | session | tee | nick | functions) ----
-        struct SPiece { int Kind; std::string Text; float Width; }; // 0=text, 1=logo, 2=tee
-        std::vector<SPiece> vPieces;
-
-        const float LogoH = FontSz;
-        const float LogoW = LogoH;
-        const float TeeSz = FontSz;
-
-        auto AddTextPiece = [&](const char *pText) {
-                if(!pText || !pText[0])
-                        return;
-                SPiece P;
-                P.Kind = 0;
-                P.Text = pText;
-                P.Width = TextRender()->TextWidth(FontSz, pText);
-                vPieces.push_back(P);
-        };
-        auto AddIconPiece = [&](int Kind, float W) {
-                SPiece P;
-                P.Kind = Kind;
-                P.Width = W;
-                vPieces.push_back(P);
-        };
-
-        if(g_Config.m_KxArrayInfoLogo || Editor)
-                AddIconPiece(1, LogoW);
-        if(g_Config.m_KxArrayInfoWatermark[0] || Editor)
-                AddTextPiece(g_Config.m_KxArrayInfoWatermark);
-        if(g_Config.m_KxArrayInfoShowFps || Editor)
-        {
-                char aBuf[64];
-                const float Avg = Client()->FrameTimeAverage();
-                const int Fps = (int)(1.0f / std::max(0.0001f, Avg) + 0.5f);
-                str_format(aBuf, sizeof(aBuf), "%d FPS", Fps);
-                AddTextPiece(aBuf);
-        }
-        if(g_Config.m_KxArrayInfoSessionTime || Editor)
-        {
-                char aBuf[64];
-                const int Minutes = (int)(Client()->GlobalTime() / 60.0f);
-                str_format(aBuf, sizeof(aBuf), "%d Minute(s)", Minutes);
-                AddTextPiece(aBuf);
-        }
-        if(g_Config.m_KxArrayInfoTee || Editor)
-                AddIconPiece(2, TeeSz);
-        if(g_Config.m_KxArrayInfoNickname || Editor)
-        {
-                const char *pNick = g_Config.m_PlayerName[0] ? g_Config.m_PlayerName : "tee";
-                AddTextPiece(pNick);
-        }
-        if(g_Config.m_KxArrayInfoFunctions || Editor)
-        {
-                // v6.7: count the REAL enabled list (ArrayListBuildEnabled) — the
-                // same source the ArrayList renders — so the "X Functions" count
-                // always matches the list. Editor mode shows the sample list but
-                // still counts the real one.
-                std::vector<std::string> vFuncs;
-                ArrayListBuildEnabled(vFuncs);
-                char aBuf[64];
-                str_format(aBuf, sizeof(aBuf), "%d Functions", (int)vFuncs.size());
-                AddTextPiece(aBuf);
-        }
-
-        if(vPieces.empty())
-                return;
-
-        const float SepW = TextRender()->TextWidth(FontSz, " | ");
-        // Ink width of the bar itself (first-character bearing is suppressed in
-        // both TextWidth and DrawText, so this is exactly the drawn width).
-        const float BarW = TextRender()->TextWidth(FontSz, "|");
-
-        // ---- wrap pieces into lines at the physical Max Length ----
-        std::vector<std::vector<int>> vLines;
-        std::vector<float> vLineW;
-        {
-                std::vector<int> vCur;
-                float CurW = 0.0f;
-                for(int i = 0; i < (int)vPieces.size(); ++i)
-                {
-                        const float AddW = vPieces[i].Width + (vCur.empty() ? 0.0f : SepW);
-                        if(MaxLen > 0.0f && !vCur.empty() && CurW + AddW > MaxLen)
-                        {
-                                vLines.push_back(vCur);
-                                vLineW.push_back(CurW);
-                                vCur.clear();
-                                vCur.push_back(i);
-                                CurW = vPieces[i].Width;
-                        }
-                        else
-                        {
-                                vCur.push_back(i);
-                                CurW += AddW;
-                        }
-                }
-                if(!vCur.empty())
-                {
-                        vLines.push_back(vCur);
-                        vLineW.push_back(CurW);
-                }
-        }
-
-        const float ScreenW = VScreenWidth();
-        const float ScreenH = VScreenHeight();
-        if(ScreenW <= 0.0f || ScreenH <= 0.0f)
-                return;
-
-        float BoxW = 0.0f;
-        for(float W : vLineW)
-                BoxW = std::max(BoxW, W + PadX * 2.0f);
-        const float RowH = FontSz + PadY * 2.0f;
-        float BoxH;
-        if(GroupStyle)
-                BoxH = (float)vLines.size() * FontSz + (float)(vLines.size() - 1) * LineGap + PadY * 2.0f;
-        else
-                BoxH = (float)vLines.size() * RowH + (float)(vLines.size() - 1) * LineGap;
-
-        const float XRatio = g_Config.m_KxArrayInfoPosX / 10000.0f;
-        int XA = g_Config.m_KxArrayInfoXAnchor;
-        if(XA == 0)
-                XA = (XRatio < 1.0f / 3.0f) ? 3 : ((XRatio > 2.0f / 3.0f) ? 1 : 2);
-        const float AnchorX = XRatio * ScreenW;
-        const float AnchorY = (g_Config.m_KxArrayInfoPosY / 10000.0f) * ScreenH;
-        // The info bar itself never moves with the X anchor: the stored point
-        // is always the box's left edge and the anchor only aligns the lines
-        // inside the box (same rule as the Group ArrayList).
-        float Left = AnchorX;
-        float Top = AnchorY;
-        if(!m_ArrayInfoEditor)
-        {
-                // In game the bar is kept on screen. The editor preview is
-                // dragged freely and must not bump against the screen edges.
-                Left = std::clamp(Left, 0.0f, std::max(0.0f, ScreenW - BoxW));
-                Top = std::clamp(Top, 0.0f, std::max(0.0f, ScreenH - BoxH));
-        }
-
-        m_ArrayInfoRectX = Left;
-        m_ArrayInfoRectY = Top;
-        m_ArrayInfoRectW = BoxW;
-        m_ArrayInfoRectH = BoxH;
-        m_ArrayInfoRectValid = true;
-
-        // Start the editor drag here as well: this runs in both the HUD-only
-        // path and the ClickGUI path, and the rect above is guaranteed current
-        // (the early-path poll can see the previous frame's rect on the first
-        // frame after entering the editor).
-        if(m_ArrayInfoEditor && !m_ArrayInfoDragging && Input()->KeyIsPressed(KEY_MOUSE_1) && ArrayInfoHitTest(m_MousePos))
-        {
-                m_ArrayInfoDragging = true;
-                m_ArrayInfoDragStartMouse = m_MousePos;
-                m_ArrayInfoDragStartPos = vec2(m_ArrayInfoRectX, m_ArrayInfoRectY);
-        }
-
-        const ColorRGBA BorderCol = DDNetStyle
-                ? ColorRGBA(0.0f, 0.0f, 0.0f, 0.35f * alpha * MainOp)
-                : KxColorWithAlpha(m_AccentColorRGBA, alpha * MainOp);
-        const ColorRGBA BgCol = DDNetStyle
-                ? ColorRGBA(0.2f, 0.2f, 0.2f, 0.8f * alpha * PanelOp)
-                : KxColorWithAlpha(m_PanelBgRGBA, alpha * 0.97f * PanelOp);
-
-        auto DrawBlock = [&](float x, float y, float w, float h) {
-                DrawRoundedRect(x, y, w, h, 4.0f, IGraphics::CORNER_ALL, BgCol);
-                DrawRoundedOutline(x + 0.5f, y + 0.5f, w - 1.0f, h - 1.0f, 3.5f, BorderCol, true, true);
-        };
-
-        auto DrawTextColored = [&](float x, float y, const char *pText, int LineIdx) {
-                if(!Rainbow)
-                {
-                        DrawText(x, y, FontSz, pText, ColorRGBA(TextHex, true).WithAlpha(alpha * TextOp));
-                        return;
-                }
-                if(RainbowMode == 2)
-                {
-                        // Draw the whole piece in one TextEx call with per-character
-                        // colour splits, so glyph bearings and kerning stay intact.
-                        std::vector<STextColorSplit> vSplits;
-                        vSplits.reserve((size_t)str_length(pText));
-                        const char *pCur = pText;
-                        int BytePos = 0;
-                        while(*pCur)
-                        {
-                                const char *pNext = pCur;
-                                str_utf8_decode(&pNext);
-                                const int CharLen = (int)(pNext - pCur);
-                                const float CharX = x + TextRender()->TextWidth(FontSz, pText, BytePos);
-                                const float t = (BoxW > 0.0f) ? std::clamp((CharX - Left) / BoxW, 0.0f, 1.0f) : 0.0f;
-                                float R, G, B;
-                                KxHueToRgb(m_ArrayInfoHue - RainbowStep * t, R, G, B);
-                                vSplits.emplace_back(BytePos, CharLen, ColorRGBA(R, G, B, alpha * TextOp));
-                                BytePos += CharLen;
-                                pCur = pNext;
-                        }
-                        KxDrawTextColorSplits(TextRender(), x, y, FontSz, pText, ColorRGBA(1.0f, 1.0f, 1.0f, alpha * TextOp), vSplits);
-                        return;
-                }
-                float R, G, B;
-                KxHueToRgb(m_ArrayInfoHue + (float)LineIdx * (RainbowMode == 1 ? RainbowStep : 0.0f), R, G, B);
-                DrawText(x, y, FontSz, pText, ColorRGBA(R, G, B, alpha * TextOp));
-        };
-
-        auto DrawPiece = [&](float &x, float y, int PieceIdx, int LineIdx) {
-                const SPiece &P = vPieces[PieceIdx];
-                if(P.Kind == 0)
-                        DrawTextColored(x, y, P.Text.c_str(), LineIdx);
-                else if(P.Kind == 1)
-                {
-                        if(m_ArrayInfoLogo.IsValid())
-                        {
-                                Graphics()->BlendNormal();
-                                Graphics()->TextureSet(m_ArrayInfoLogo);
-                                Graphics()->QuadsBegin();
-                                Graphics()->SetColor(ColorRGBA(1.0f, 1.0f, 1.0f, alpha * TextOp));
-                                IGraphics::CQuadItem Quad(x, y, LogoW, LogoH);
-                                Graphics()->QuadsDrawTL(&Quad, 1);
-                                Graphics()->QuadsEnd();
-                                Graphics()->TextureClear();
-                        }
-                }
-                else if(P.Kind == 2)
-                {
-                        const auto *pSkin = GameClient()->m_Skins.Find(g_Config.m_ClPlayerSkin);
-                        if(pSkin)
-                        {
-                                CTeeRenderInfo Info;
-                                Info.Apply(pSkin);
-                                Info.m_Size = TeeSz;
-                                vec2 OffsetToMid;
-                                CRenderTools::GetRenderTeeOffsetToRenderedTee(CAnimState::GetIdle(), &Info, OffsetToMid);
-                                RenderTools()->RenderTee(CAnimState::GetIdle(), &Info, EMOTE_NORMAL, vec2(1.0f, 0.0f),
-                                        vec2(x + TeeSz * 0.5f, y + FontSz * 0.5f + OffsetToMid.y), alpha * TextOp);
-                        }
-                }
-                x += P.Width;
-        };
-
-        if(GroupStyle)
-        {
-                DrawBlock(Left, Top, BoxW, BoxH);
-                float ty = Top + PadY;
-                for(size_t i = 0; i < vLines.size(); ++i)
-                {
-                        float tx = Left + PadX;
-                        if(XA == 2)
-                                tx = Left + (BoxW - vLineW[i]) * 0.5f;
-                        else if(XA == 1)
-                                tx = Left + BoxW - PadX - vLineW[i];
-                        const std::vector<int> &Line = vLines[i];
-                        for(size_t k = 0; k < Line.size(); ++k)
-                        {
-                                if(k > 0)
-                                {
-                                        // Center the bar in the fixed separator slot. Drawing
-                                        // " | " offsets it by the bar's left bearing, which
-                                        // made the gap before it look wider than after it.
-                                        DrawTextColored(tx + (SepW - BarW) * 0.5f, ty, "|", (int)i);
-                                        tx += SepW;
-                                }
-                                DrawPiece(tx, ty, Line[k], (int)i);
-                        }
-                        ty += FontSz + LineGap;
-                }
-        }
-        else
-        {
-                float ry = Top;
-                for(size_t i = 0; i < vLines.size(); ++i)
-                {
-                        const float bw = vLineW[i] + PadX * 2.0f;
-                        // The anchor aligns each line inside the fixed info box.
-                        float bx;
-                        if(XA == 3)
-                                bx = Left;
-                        else if(XA == 2)
-                                bx = Left + (BoxW - bw) * 0.5f;
-                        else
-                                bx = Left + BoxW - bw;
-                        DrawBlock(bx, ry, bw, RowH);
-                        float tx = bx + PadX;
-                        const std::vector<int> &Line = vLines[i];
-                        for(size_t k = 0; k < Line.size(); ++k)
-                        {
-                                if(k > 0)
-                                {
-                                        // Center the bar in the fixed separator slot (see above).
-                                        DrawTextColored(tx + (SepW - BarW) * 0.5f, ry + PadY, "|", (int)i);
-                                        tx += SepW;
-                                }
-                                DrawPiece(tx, ry + PadY, Line[k], (int)i);
-                        }
-                        ry += RowH + LineGap;
-                }
-        }
-
-        TextRender()->TextColor(1.0f, 1.0f, 1.0f, 1.0f);
-}
-
-// ============================================================================
-// v6.7: ArrayPlayer HUD — now-playing media card.
-// ============================================================================
-
-bool CClickGui::ShouldRenderArrayPlayer() const
-{
-        if(g_Config.m_KxArrayPlayerEnabled == 0 && !m_ArrayPlayerEditor)
-                return false;
-        if(GameClient()->m_Menus.IsActive())
-                return false;
-        const int State = Client()->State();
-        return State == IClient::STATE_ONLINE || State == IClient::STATE_DEMOPLAYBACK;
-}
-
-bool CClickGui::ArrayPlayerPositionModified() const
-{
-        return g_Config.m_KxArrayPlayerPosX != KX_ARRAYPLAYER_DEF_POS_X ||
-                g_Config.m_KxArrayPlayerPosY != KX_ARRAYPLAYER_DEF_POS_Y;
-}
-
-void CClickGui::ResetArrayPlayerPosition()
-{
-        g_Config.m_KxArrayPlayerPosX = KX_ARRAYPLAYER_DEF_POS_X;
-        g_Config.m_KxArrayPlayerPosY = KX_ARRAYPLAYER_DEF_POS_Y;
-}
-
-bool CClickGui::ArrayPlayerHitTest(vec2 mousePos) const
-{
-        if(!m_ArrayPlayerRectValid)
-                return false;
-        return mousePos.x >= m_ArrayPlayerRectX && mousePos.x <= m_ArrayPlayerRectX + m_ArrayPlayerRectW &&
-                mousePos.y >= m_ArrayPlayerRectY && mousePos.y <= m_ArrayPlayerRectY + m_ArrayPlayerRectH;
-}
-
-bool CClickGui::ArrayPlayerResizeHitTest(vec2 mousePos) const
-{
-        if(!m_ArrayPlayerRectValid || !m_ArrayPlayerEditor || g_Config.m_KxArrayPlayerDynamicScale == 0)
-                return false;
-        const float Zone = 16.0f;
-        return mousePos.x >= m_ArrayPlayerRectX + m_ArrayPlayerRectW - Zone &&
-                mousePos.x <= m_ArrayPlayerRectX + m_ArrayPlayerRectW &&
-                mousePos.y >= m_ArrayPlayerRectY + m_ArrayPlayerRectH - Zone &&
-                mousePos.y <= m_ArrayPlayerRectY + m_ArrayPlayerRectH;
-}
-
-void CClickGui::UpdateArrayPlayer(float dt)
-{
-        m_ArrayPlayerHue += dt * (g_Config.m_KxArrayPlayerRainbowSpeed / 10.0f) * 60.0f;
-
-        if(!m_ArrayPlayerRectValid)
-                return;
-
-        const float ScreenW = VScreenWidth();
-        const float ScreenH = VScreenHeight();
-        if(ScreenW <= 0.0f || ScreenH <= 0.0f)
-                return;
-
-        const float SizeScale = (g_Config.m_KxUiSettingsOn != 0) ? (g_Config.m_KxArrayPlayerSize / 10.0f) : 1.0f;
-        const float S = std::max(0.01f, SizeScale);
-
-        if(m_ArrayPlayerResizing)
-        {
-                const int W = (int)(m_ArrayPlayerResizeStartW + (m_MousePos.x - m_ArrayPlayerResizeStartMouse.x) / S + 0.5f);
-                const int H = (int)(m_ArrayPlayerResizeStartH + (m_MousePos.y - m_ArrayPlayerResizeStartMouse.y) / S + 0.5f);
-                g_Config.m_KxArrayPlayerWidth = std::clamp(W, 100, 1000);
-                g_Config.m_KxArrayPlayerHeight = std::clamp(H, 40, 600);
-                return;
-        }
-        if(!m_ArrayPlayerDragging)
-                return;
-
-        const float Left = m_ArrayPlayerDragStartPos.x + (m_MousePos.x - m_ArrayPlayerDragStartMouse.x);
-        const float Top = m_ArrayPlayerDragStartPos.y + (m_MousePos.y - m_ArrayPlayerDragStartMouse.y);
-        g_Config.m_KxArrayPlayerPosX = (int)((Left / ScreenW) * 10000.0f + (Left >= 0.0f ? 0.5f : -0.5f));
-        g_Config.m_KxArrayPlayerPosY = (int)((Top / ScreenH) * 10000.0f + (Top >= 0.0f ? 0.5f : -0.5f));
-}
-
-static void KxEllipsize(char *pDst, int DstSize, const char *pSrc, float MaxW, float FontSz, ITextRender *pTextRender)
-{
-        if(DstSize <= 0)
-                return;
-        str_copy(pDst, pSrc, DstSize);
-        if(MaxW <= 0.0f || pTextRender->TextWidth(FontSz, pDst) <= MaxW)
-                return;
-
-        int Len = str_length(pDst);
-        while(Len > 0)
-        {
-                --Len;
-                while(Len > 0 && (pDst[Len] & 0xC0) == 0x80)
-                        --Len;
-                pDst[Len] = '\0';
-                char aTry[256];
-                str_format(aTry, sizeof(aTry), "%s...", pDst);
-                if(pTextRender->TextWidth(FontSz, aTry) <= MaxW)
-                {
-                        str_copy(pDst, aTry, DstSize);
-                        return;
-                }
-        }
-        str_copy(pDst, "...", DstSize);
-}
-
-// v6.7: rounds the corners of a decoded RGBA image in place (alpha fades to 0
-// outside the rounded rect). The ArrayPlayer cover uses it because there is
-// no rounded texture clipping in IGraphics.
-static void KxRoundImageCorners(CImageInfo &Img, float Radius)
-{
-	if(Img.m_Format != CImageInfo::FORMAT_RGBA || !Img.m_pData ||
-		Img.m_Width == 0 || Img.m_Height == 0)
-		return;
-	const int Wp = (int)Img.m_Width;
-	const int Hp = (int)Img.m_Height;
-	const float Rad = std::clamp(Radius, 1.0f, std::min(Wp, Hp) * 0.5f);
-	uint8_t *pData = Img.m_pData;
-	for(int y = 0; y < Hp; ++y)
-	{
-		for(int x = 0; x < Wp; ++x)
-		{
-			const float Cx = std::min((float)x, (float)(Wp - 1 - x));
-			const float Cy = std::min((float)y, (float)(Hp - 1 - y));
-			if(Cx >= Rad || Cy >= Rad)
-				continue; // not in a corner zone
-			const float Dx = Rad - Cx;
-			const float Dy = Rad - Cy;
-			const float Dist = std::sqrt(Dx * Dx + Dy * Dy);
-			const float A = std::clamp(Rad - Dist + 1.0f, 0.0f, 1.0f); // ~1px feather
-			if(A < 1.0f)
-				pData[(y * Wp + x) * 4 + 3] = (uint8_t)(pData[(y * Wp + x) * 4 + 3] * A);
-		}
-	}
-}
-
-void CClickGui::RenderArrayPlayer(float alpha)
-{
-        m_ArrayPlayerRectValid = false;
-
-        KxMedia::Update();
-        const SKxMediaInfo Info = KxMedia::Get();
-
-        // No track and not editing -> nothing to draw (the user asked for the
-        // player to disappear entirely when nothing is playing).
-        if(!Info.m_Valid && !m_ArrayPlayerEditor)
-                return;
-
-        const bool UiOn = g_Config.m_KxUiSettingsOn != 0;
-        const float S = (UiOn ? g_Config.m_KxArrayPlayerSize : 10) / 10.0f;
-        const float W = (float)(UiOn ? g_Config.m_KxArrayPlayerWidth : 320) * S;
-        const float H = (float)(UiOn ? g_Config.m_KxArrayPlayerHeight : 90) * S;
-        if(W <= 0.0f || H <= 0.0f)
-                return;
-
-        const float Pad = 12.0f * S; // v6.7: 1.5x the old 8px inset
-        const float FontSz = 15.0f * S;
-        const float TitleSz = FontSz * 1.3f; // v6.7: bigger track title
-        const float ArtistSz = FontSz * 0.75f; // v6.7: smaller artist line
-        const float TimeSz = 13.0f * S; // v6.7: bigger time label
-        const float Indent = (UiOn ? (float)g_Config.m_KxArrayPlayerIndent : 4.0f) * S;
-        const float TextOp = (UiOn ? g_Config.m_KxArrayPlayerTextOpacity : 100) / 100.0f;
-        const float MainOp = (UiOn ? g_Config.m_KxArrayPlayerMainOpacity : 100) / 100.0f;
-        const float PanelOp = (UiOn ? g_Config.m_KxArrayPlayerPanelOpacity : 100) / 100.0f;
-        const bool DDNetStyle = UiOn && g_Config.m_KxArrayPlayerStyle == 1;
-        const bool Rainbow = UiOn && g_Config.m_KxArrayPlayerRainbow != 0;
-        const int RainbowMode = g_Config.m_KxArrayPlayerRainbowMode;
-        const float RainbowStep = (float)g_Config.m_KxArrayPlayerRainbowStep;
-
-        const float ScreenW = VScreenWidth();
-        const float ScreenH = VScreenHeight();
-        if(ScreenW <= 0.0f || ScreenH <= 0.0f)
-                return;
-
-        float Left = (g_Config.m_KxArrayPlayerPosX / 10000.0f) * ScreenW;
-        float Top = (g_Config.m_KxArrayPlayerPosY / 10000.0f) * ScreenH;
-        if(!m_ArrayPlayerEditor)
-        {
-                Left = std::clamp(Left, 0.0f, std::max(0.0f, ScreenW - W));
-                Top = std::clamp(Top, 0.0f, std::max(0.0f, ScreenH - H));
-        }
-
-        m_ArrayPlayerRectX = Left;
-        m_ArrayPlayerRectY = Top;
-        m_ArrayPlayerRectW = W;
-        m_ArrayPlayerRectH = H;
-        m_ArrayPlayerRectValid = true;
-
-        // ---- layout ----
-        const float BarsH = 14.0f * S;
-        // Bottom row (mockup): thick progress line at the very bottom, the
-        // time label sits above the slider (right) and the visualizer bars
-        // stand on the slider; the media buttons live ON the cover row (no
-        // dedicated row), centered below the title/artist text block.
-        const float LineY = Top + H - Pad;
-        const float TrackH = std::max(2.0f, 2.5f * S); // progress line thickness
-        const float BtnH = 20.0f * S; // media buttons
-        const float BtnW = 26.0f * S;
-        const float BarsBase = LineY - TrackH * 0.5f - 4.0f * S; // bars right above the slider
-        const float TimeY = BarsBase - TimeSz;
-        const float TextAreaTop = Top + Pad;
-        const float TextAreaBottom = BarsBase - std::max(BarsH, TimeSz) - 4.0f * S;
-        // Buttons sit at the BOTTOM edge of the cover (aligned with TextAreaBottom).
-        const float ButtonsTop = TextAreaBottom - BtnH;
-
-        // ---- album art (decode once per track; the media thread already
-        // decoded the cover to RGBA via WIC) ----
-        if(Info.m_ArtSerial != m_ArrayPlayerArtSerial || (Info.m_vArt.empty() && m_ArrayPlayerArt.IsValid()))
-        {
-                m_ArrayPlayerArtSerial = Info.m_ArtSerial;
-                if(m_ArrayPlayerArt.IsValid())
-                        Graphics()->UnloadTexture(&m_ArrayPlayerArt);
-                if(!Info.m_vArt.empty() && Info.m_ArtW > 0 && Info.m_ArtH > 0)
-                {
-                        CImageInfo Img;
-                        Img.m_Width = Info.m_ArtW;
-                        Img.m_Height = Info.m_ArtH;
-                        Img.m_Format = CImageInfo::FORMAT_RGBA;
-                        Img.Allocate();
-                        mem_copy(Img.m_pData, Info.m_vArt.data(), std::min(Img.DataSize(), Info.m_vArt.size()));
-                        KxRoundImageCorners(Img, std::min(Img.m_Width, Img.m_Height) * 0.12f);
-                        m_ArrayPlayerArt = Graphics()->LoadTextureRawMove(Img, 0);
-                }
-        }
-
-        unsigned TextHex = 0xffffff;
-        sscanf(g_Config.m_KxArrayPlayerTextColor, "%6x", &TextHex);
-
-        const ColorRGBA BorderCol = DDNetStyle
-                ? ColorRGBA(0.0f, 0.0f, 0.0f, 0.35f * alpha * MainOp)
-                : KxColorWithAlpha(m_AccentColorRGBA, alpha * MainOp);
-        const ColorRGBA BgCol = DDNetStyle
-                ? ColorRGBA(0.2f, 0.2f, 0.2f, 0.8f * alpha * PanelOp)
-                : KxColorWithAlpha(m_PanelBgRGBA, alpha * 0.97f * PanelOp);
-
-        DrawRoundedRect(Left, Top, W, H, 5.0f * S, IGraphics::CORNER_ALL, BgCol);
-        DrawRoundedOutline(Left + 0.5f, Top + 0.5f, W - 1.0f, H - 1.0f, 4.5f * S, BorderCol, true, true);
-
-        const bool HasArt = m_ArrayPlayerArt.IsValid() || (m_ArrayPlayerEditor && !Info.m_Valid);
-        // Mockup: the cover spans the TEXT ZONE height (title+artist area),
-        // leaving the bottom row clear — not the full card height.
-        const float ArtSize = std::max(0.0f, std::min(H - Pad * 2.0f, TextAreaBottom - TextAreaTop));
-        float TextX = Left + Pad;
-        if(HasArt)
-                TextX += ArtSize + Pad;
-        const float TextW = std::max(10.0f, Left + W - Pad - TextX);
-
-        // Title top-aligned with the cover (mockup), artist right below.
-        const float TextY = TextAreaTop;
-
-        int XA = UiOn ? g_Config.m_KxArrayPlayerXAnchor : 0;
-        if(XA == 0)
-                XA = 3; // default: left-aligned inside the card
-
-        auto DrawPlayerText = [&](float x, float y, const char *pText, int LineIdx, float Sz, float AlphaMul, bool Bold) {
-                // Fake bold: the text renderer has no font weight, so titles are
-                // drawn twice with a small x offset.
-                const float BoldDx = Bold ? std::max(0.5f, Sz * 0.05f) : 0.0f;
-                for(int Pass = 0; Pass < (Bold ? 2 : 1); ++Pass)
-                {
-                        const float Px = x + Pass * BoldDx;
-                        if(!Rainbow)
-                        {
-                                DrawText(Px, y, Sz, pText, ColorRGBA(TextHex, true).WithAlpha(alpha * TextOp * AlphaMul));
-                                continue;
-                        }
-                        if(RainbowMode == 2)
-                        {
-                                std::vector<STextColorSplit> vSplits;
-                                vSplits.reserve((size_t)str_length(pText));
-                                const char *pCur = pText;
-                                int BytePos = 0;
-                                while(*pCur)
-                                {
-                                        const char *pNext = pCur;
-                                        str_utf8_decode(&pNext);
-                                        const int CharLen = (int)(pNext - pCur);
-                                        const float CharX = Px + TextRender()->TextWidth(Sz, pText, BytePos);
-                                        const float t = (W > 0.0f) ? std::clamp((CharX - Left) / W, 0.0f, 1.0f) : 0.0f;
-                                        float R, G, B;
-                                        KxHueToRgb(m_ArrayPlayerHue - RainbowStep * t, R, G, B);
-                                        vSplits.emplace_back(BytePos, CharLen, ColorRGBA(R, G, B, alpha * TextOp * AlphaMul));
-                                        BytePos += CharLen;
-                                        pCur = pNext;
-                                }
-                                KxDrawTextColorSplits(TextRender(), Px, y, Sz, pText, ColorRGBA(1.0f, 1.0f, 1.0f, alpha * TextOp * AlphaMul), vSplits);
-                                continue;
-                        }
-                        float R, G, B;
-                        KxHueToRgb(m_ArrayPlayerHue + (float)LineIdx * (RainbowMode == 1 ? RainbowStep : 0.0f), R, G, B);
-                        DrawText(Px, y, Sz, pText, ColorRGBA(R, G, B, alpha * TextOp * AlphaMul));
-                }
-        };
-
-        // ---- art ----
-        if(HasArt)
-        {
-                if(m_ArrayPlayerArt.IsValid())
-                {
-                        Graphics()->BlendNormal();
-                        Graphics()->TextureSet(m_ArrayPlayerArt);
-                        Graphics()->QuadsBegin();
-                        Graphics()->SetColor(ColorRGBA(1.0f, 1.0f, 1.0f, alpha * TextOp));
-                        IGraphics::CQuadItem Quad(Left + Pad, Top + Pad, ArtSize, ArtSize);
-                        Graphics()->QuadsDrawTL(&Quad, 1);
-                        Graphics()->QuadsEnd();
-                        Graphics()->TextureClear();
-                }
-                else
-                {
-                        DrawRoundedRect(Left + Pad, Top + Pad, ArtSize, ArtSize, 4.0f * S,
-                                IGraphics::CORNER_ALL, ColorRGBA(0.0f, 0.0f, 0.0f, alpha * 0.65f));
-                }
-        }
-
-        // ---- title / artist ----
-        const char *pTitleSrc = (Info.m_Valid && Info.m_aTitle[0]) ? Info.m_aTitle : (m_ArrayPlayerEditor ? "Track Title" : "Unknown");
-        const char *pArtistSrc = (Info.m_Valid && Info.m_aArtist[0]) ? Info.m_aArtist : (m_ArrayPlayerEditor ? "Artist" : "Unknown");
-        char aTitle[256];
-        char aArtist[256];
-        KxEllipsize(aTitle, sizeof(aTitle), pTitleSrc, TextW, TitleSz, TextRender());
-        KxEllipsize(aArtist, sizeof(aArtist), pArtistSrc, TextW, ArtistSz, TextRender());
-
-        auto AlignTextX = [&](const char *pText, float Sz) {
-                const float tw = TextRender()->TextWidth(Sz, pText);
-                if(XA == 2)
-                        return TextX + (TextW - tw) * 0.5f;
-                if(XA == 1)
-                        return TextX + TextW - tw;
-                return TextX;
-        };
-        DrawPlayerText(AlignTextX(aTitle, TitleSz), TextY, aTitle, 0, TitleSz, 1.0f, true);
-        DrawPlayerText(AlignTextX(aArtist, ArtistSz), TextY + TitleSz + Indent, aArtist, 1, ArtistSz, 0.6f, false);
-
-        // ---- time / progress ----
-        const double Duration = Info.m_Valid ? Info.m_Duration : 180.0;
-        const double Position = Info.m_Valid ? KxMedia::GetPosition() : (m_ArrayPlayerEditor ? 72.0 : 0.0);
-        const int PosSec = (int)Position;
-        const int DurSec = (int)Duration;
-        char aTime[64];
-        str_format(aTime, sizeof(aTime), "%d:%02d / %d:%02d", PosSec / 60, PosSec % 60, DurSec / 60, DurSec % 60);
-        const float TimeW = TextRender()->TextWidth(TimeSz, aTime);
-        const float LineX0 = Left + Pad;
-        const float LineX1 = Left + W - Pad;
-        const float Ratio = Duration > 0.0 ? (float)std::clamp(Position / Duration, 0.0, 1.0) : 0.0f;
-
-        // v6.7: thick line + bigger thumb, both follow the rainbow settings.
-        const float ThumbD = 10.0f * S;
-        ColorRGBA TrackBgCol;
-        if(DDNetStyle)
-                TrackBgCol = ColorRGBA(0.0f, 0.0f, 0.0f, alpha * 0.35f * MainOp);
-        else
-        {
-                const ColorRGBA Tint = KxColorWithAlpha(m_PanelBgRGBA, 1.0f);
-                TrackBgCol = ColorRGBA(std::min(1.0f, Tint.r * 2.5f), std::min(1.0f, Tint.g * 2.5f), std::min(1.0f, Tint.b * 2.5f), alpha * 0.8f * MainOp);
-        }
-        DrawRoundedRect(LineX0, LineY - TrackH * 0.5f, LineX1 - LineX0, TrackH, TrackH * 0.5f, IGraphics::CORNER_ALL, TrackBgCol);
-
-        ColorRGBA ProgressCol;
-        if(Rainbow)
-        {
-                float R, G, B;
-                KxHueToRgb(m_ArrayPlayerHue + (RainbowMode == 0 ? 0.0f : RainbowStep * Ratio), R, G, B);
-                ProgressCol = ColorRGBA(R, G, B, alpha * MainOp);
-        }
-        else
-                ProgressCol = DDNetStyle ? ColorRGBA(0.9f, 0.9f, 0.9f, alpha * MainOp) : KxColorWithAlpha(m_AccentColorRGBA, alpha * MainOp);
-
-        if(Ratio > 0.0f)
-        {
-                DrawRoundedRect(LineX0, LineY - TrackH * 0.5f, (LineX1 - LineX0) * Ratio, TrackH, TrackH * 0.5f,
-                        IGraphics::CORNER_ALL, ProgressCol);
-                DrawRoundedRect(LineX0 + (LineX1 - LineX0) * Ratio - ThumbD * 0.5f, LineY - ThumbD * 0.5f, ThumbD, ThumbD, ThumbD * 0.5f,
-                        IGraphics::CORNER_ALL, ProgressCol);
-        }
-
-        DrawText(LineX1, TimeY, TimeSz, aTime,
-                ColorRGBA(TextHex, true).WithAlpha(alpha * 0.8f * TextOp), TEXTALIGN_RIGHT);
-
-        // ---- media transport buttons: previous / play-pause / next ----
-        // Centered in the span between the cover and the right card edge,
-        // directly above the slider. Icons are drawn from primitives (bars and
-        // freeform quads) — the game font has no media glyphs.
-        const float BtnGap = 8.0f * S;
-        const float BtnGroupW = BtnW * 3.0f + BtnGap * 2.0f;
-        // Centered on the FULL card width (left..right edges), not the text span.
-        const float BtnX0 = Left + (W - BtnGroupW) * 0.5f;
-        for(int b = 0; b < 3; ++b)
-        {
-                const float bx = BtnX0 + b * (BtnW + BtnGap);
-                m_aArrayPlayerBtnRect[b][0] = bx;
-                m_aArrayPlayerBtnRect[b][1] = ButtonsTop;
-                m_aArrayPlayerBtnRect[b][2] = BtnW;
-                m_aArrayPlayerBtnRect[b][3] = BtnH;
-                const bool Hover = !m_ArrayPlayerEditor && PointInRect(m_MousePos, bx, ButtonsTop, BtnW, BtnH);
-                if(Hover)
-                        DrawRoundedRect(bx, ButtonsTop, BtnW, BtnH, 3.0f * S, IGraphics::CORNER_ALL,
-                                ColorRGBA(1.0f, 1.0f, 1.0f, alpha * 0.08f));
-
-                ColorRGBA IconCol;
-                if(Rainbow)
-                {
-                        float R, G, B;
-                        KxHueToRgb(m_ArrayPlayerHue - RainbowStep * (RainbowMode == 0 ? 0.0f : (float)b / 2.0f), R, G, B);
-                        IconCol = ColorRGBA(R, G, B, alpha * TextOp);
-                }
-                else
-                        IconCol = ColorRGBA(TextHex, true).WithAlpha(alpha * TextOp * (Hover ? 1.0f : 0.8f));
-
-                const float cy = ButtonsTop + BtnH * 0.5f;
-                const float ih = BtnH * 0.5f; // icon height
-                const float BarW2 = std::max(1.5f, 2.0f * S); // icon bar thickness
-                Graphics()->BlendNormal();
-
-                if(b == 0)
-                {
-                        // previous: |◀
-                        DrawRoundedRect(bx + BtnW * 0.22f, cy - ih * 0.5f, BarW2, ih, BarW2 * 0.5f, IGraphics::CORNER_ALL, IconCol);
-                        const float tx0 = bx + BtnW * 0.22f + BarW2 + 1.0f * S;
-                        const float tx1 = bx + BtnW * 0.78f;
-                        Graphics()->QuadsBegin();
-                        Graphics()->SetColor(IconCol);
-                        IGraphics::CFreeformItem Tri(tx1, cy - ih * 0.5f, tx1, cy + ih * 0.5f, tx0, cy, tx0, cy);
-                        Graphics()->QuadsDrawFreeform(&Tri, 1);
-                        Graphics()->QuadsEnd();
-                }
-                else if(b == 1)
-                {
-                        if(Info.m_Playing)
-                        {
-                                // pause: two bars
-                                const float pw = (BtnW * 0.42f - BarW2) * 0.5f;
-                                DrawRoundedRect(bx + BtnW * 0.29f, cy - ih * 0.5f, BarW2, ih, BarW2 * 0.5f, IGraphics::CORNER_ALL, IconCol);
-                                DrawRoundedRect(bx + BtnW * 0.29f + BarW2 + pw, cy - ih * 0.5f, BarW2, ih, BarW2 * 0.5f, IGraphics::CORNER_ALL, IconCol);
-                        }
-                        else
-                        {
-                                // play: ▶
-                                const float tx0 = bx + BtnW * 0.30f;
-                                const float tx1 = bx + BtnW * 0.70f;
-                                Graphics()->QuadsBegin();
-                                Graphics()->SetColor(IconCol);
-                                IGraphics::CFreeformItem Tri(tx0, cy - ih * 0.5f, tx0, cy + ih * 0.5f, tx1, cy, tx1, cy);
-                                Graphics()->QuadsDrawFreeform(&Tri, 1);
-                                Graphics()->QuadsEnd();
-                        }
-                }
-                else
-                {
-                        // next: ▶|
-                        const float tx0 = bx + BtnW * 0.22f;
-                        const float tx1 = bx + BtnW * 0.78f - BarW2 - 1.0f * S;
-                        Graphics()->QuadsBegin();
-                        Graphics()->SetColor(IconCol);
-                        IGraphics::CFreeformItem Tri(tx0, cy - ih * 0.5f, tx0, cy + ih * 0.5f, tx1, cy, tx1, cy);
-                        Graphics()->QuadsDrawFreeform(&Tri, 1);
-                        Graphics()->QuadsEnd();
-                        DrawRoundedRect(bx + BtnW * 0.78f - BarW2, cy - ih * 0.5f, BarW2, ih, BarW2 * 0.5f, IGraphics::CORNER_ALL, IconCol);
-                }
-        }
-        m_ArrayPlayerBtnRectValid = true;
-
-        // ---- level-driven visualizer bars floating above the progress line ----
-        const int Bands = SKxMediaInfo::NUM_BANDS;
-        const float BarAreaW = std::max(20.0f * S, LineX1 - TimeW - 10.0f * S - LineX0);
-        const float BarGap = std::max(1.0f, 1.5f * S);
-        const float BarW = std::max(1.0f, (BarAreaW - BarGap * (Bands - 1)) / (float)Bands);
-        for(int i = 0; i < Bands; ++i)
-        {
-                float Level;
-                if(Info.m_Valid)
-                        Level = Info.m_aBands[i];
-                else if(m_ArrayPlayerEditor)
-                        Level = 0.22f + 0.55f * std::fabs(std::sin((float)i * 0.7f + m_ArrayPlayerHue * 0.02f));
-                else
-                        Level = 0.0f;
-                const float Bh = Level * BarsH;
-                if(Bh < 1.0f)
-                        continue; // silence — no stub dashes along the line
-                ColorRGBA BarCol;
-                if(Rainbow)
-                {
-                        // Group = one hue, Peas/Peas+Gradient = gradient across bars.
-                        float R, G, B;
-                        const float t = RainbowMode == 0 ? 0.0f : (float)i / (float)(Bands - 1);
-                        KxHueToRgb(m_ArrayPlayerHue - RainbowStep * t, R, G, B);
-                        BarCol = ColorRGBA(R, G, B, alpha * MainOp);
-                }
-                else
-                        BarCol = DDNetStyle ? ColorRGBA(0.75f, 0.75f, 0.75f, alpha * MainOp) : KxColorWithAlpha(m_AccentColorRGBA, alpha * MainOp);
-                const float bx = LineX0 + (float)i * (BarW + BarGap);
-                DrawRoundedRect(bx, BarsBase - Bh, BarW, Bh, 1.0f * S, IGraphics::CORNER_ALL, BarCol);
-        }
-}
-
-// ============================================================================
 // CClickGui — RenderPanel (Yoga layout + IGraphics draw)
 // ============================================================================
-
 void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
 {
         const SPanel &panel = g_Panels[panelIdx];
@@ -13899,7 +12691,7 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)))
+if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "ArrayAgent") == 0 && !ArrayAgentChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                 if(!SearchKeepsChild(row.pChildren[c]))
                                         continue;
@@ -13994,7 +12786,7 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)))
+if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "ArrayAgent") == 0 && !ArrayAgentChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                                 if(!SearchKeepsChild(row.pChildren[c]))
                                                         continue;
@@ -14090,7 +12882,7 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)))
+if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "ArrayAgent") == 0 && !ArrayAgentChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                 if(!SearchKeepsChild(row.pChildren[c]))
                                         continue;
@@ -15111,7 +13903,7 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)))
+if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "ArrayAgent") == 0 && !ArrayAgentChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                         if(!SearchKeepsChild(row.pChildren[c]))
                                                 continue;
@@ -15152,7 +13944,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c)) continue;
                                 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
                                         continue;
-                                if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c))) continue;
+                                if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "ArrayAgent") == 0 && !ArrayAgentChildVisible(row.pChildren, row.childCount, c))) continue;
                                 if(!SearchKeepsChild(row.pChildren[c]))
                                         continue;
                                 const YGNodeRef pn = rowNodes[preIdx];
@@ -15202,7 +13994,7 @@ if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildr
         continue;
 if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)))
+if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "ArrayAgent") == 0 && !ArrayAgentChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                 if(!SearchKeepsChild(child))
                                         continue;
@@ -15554,11 +14346,22 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                         // v6.3: ArrayList Editor / Reset (child of the ArrayList
                                         // expandable). The right half appears only after the HUD
                                         // position was moved.
-                                        if(child.pName && str_comp(child.pName, "Editor") == 0)
+                                        if(child.pName && (str_comp(child.pName, "Editor") == 0 || str_comp(child.pName, "Game Editor") == 0 || str_comp(child.pName, "ClickGUI Editor") == 0))
                                         {
-                                                const int Kind = (str_comp(row.pName, "ArrayInfo") == 0) ? 1 : (str_comp(row.pName, "ArrayPlayer") == 0) ? 2 : 0;
-                                                const bool EditorActive = Kind == 1 ? m_ArrayInfoEditor : Kind == 2 ? m_ArrayPlayerEditor : m_ArrayListEditor;
-                                                const bool Modified = Kind == 1 ? ArrayInfoPositionModified() : Kind == 2 ? ArrayPlayerPositionModified() : ArrayListPositionModified();
+                                                // v6.13: Kind 3 = ArrayAgent.
+                                                const int Kind = (str_comp(row.pName, "ArrayInfo") == 0) ? 1 : (str_comp(row.pName, "ArrayPlayer") == 0) ? 2 : (str_comp(row.pName, "ArrayAgent") == 0) ? 3 : 0;
+                                                const bool EditorActive = Kind == 1 ? m_ArrayInfoEditor : Kind == 2 ? m_ArrayPlayerEditor : Kind == 3 ? m_AgentEditor : m_ArrayListEditor;
+                                                // Reset half reflects the position the button edits.
+                                                bool Modified;
+                                                if(Kind == 3)
+                                                {
+                                                        const bool WasGuiPass = m_AgentEditorGuiPass;
+                                                        m_AgentEditorGuiPass = str_comp(child.pName, "ClickGUI Editor") == 0;
+                                                        Modified = ArrayAgentPositionModified();
+                                                        m_AgentEditorGuiPass = WasGuiPass;
+                                                }
+                                                else
+                                                        Modified = Kind == 1 ? ArrayInfoPositionModified() : Kind == 2 ? ArrayPlayerPositionModified() : ArrayListPositionModified();
                                                 // Editor green, Exit Editor red; Reset the Clear-yellow half.
                                                 const ColorRGBA leftCol = (EditorActive ? ColorRGBA(0xffc43d3d, true) : ColorRGBA(0xff3da35a, true)).WithAlpha(alpha);
                                                 const char *pLeftLabel = EditorActive ? "Exit Editor" : "Editor";

@@ -45,6 +45,7 @@
 #include "components/censor.h"
 #include "components/chat.h"
 #include "components/kinetix/code_exec/code_exec.h"
+#include "components/kinetix/array.h"
 #include "components/console.h"
 #include "components/controls.h"
 #include "components/countryflags.h"
@@ -166,6 +167,7 @@ public:
 	CChat m_Chat;
 	CCensor m_Censor;
 	CCodeExec m_CodeExec;
+	CAgent m_Agent; // v6.13: ArrayAgent AI chat
 	CClickGui m_ClickGui;
 	CMotd m_Motd;
 	CBroadcast m_Broadcast;
