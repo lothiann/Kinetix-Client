@@ -329,6 +329,9 @@ private:
         // Show Mode = In Game+ClickGUI: the editor edits either the game or the
         // ClickGUI position (the ClickGUI Editor button sets this).
         bool m_AgentEditorGuiPass = false;
+        bool m_ArrayListEditorGuiPass = false;
+        bool m_ArrayInfoEditorGuiPass = false;
+        bool m_ArrayPlayerEditorGuiPass = false;
         // Scrollbar drag state (screen-space thumb rect cached by RenderArrayAgent).
         bool m_AgentScrollbarDrag = false;
         float m_AgentScrollbarGrabOffset = 0.0f;
@@ -348,6 +351,7 @@ private:
         bool m_AgentRectValid = false;
         // Chat UI state (screen-space geometry cached by RenderArrayAgent).
         float m_AgentScroll = 0.0f;
+        float m_AgentScrollTarget = 0.0f; // wheel target; the offset eases toward it
         bool m_AgentInputEditing = false;
         int m_AgentInputCursor = 0; // byte offset in the agent input buffer
         int m_AgentDropdown = 0;    // 0 none, 1 model, 2 effort
@@ -365,6 +369,10 @@ private:
         std::vector<float> m_AgentToggleRects;
         std::vector<int> m_AgentToggleMsgIdx;
         std::vector<int> m_AgentToggleKind;
+        // v6.14: session list (main page) click targets, rebuilt each frame.
+        float m_aAgentNewSessionRect[4] = {};
+        std::vector<float> m_AgentSessionRects;
+        std::vector<std::string> m_AgentSessionIds;
         bool m_AgentWasDown = false;
 
         // v1.56.60: advance all per-row / per-panel animations toward their targets.

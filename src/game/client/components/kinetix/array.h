@@ -11,10 +11,13 @@
 #include <game/client/component.h>
 #include <engine/http.h>
 
+#include <atomic>
 #include <chrono>
 #include <ctime>
 #include <memory>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 class CAgent : public CComponent
@@ -78,6 +81,29 @@ public:
 	// Model list parsed from kx_arrayagent_models (comma separated).
 	const std::vector<std::string> &Models() { return m_vModels; }
 	void RefreshModels();
+	// v6.14: read-only path helpers for the HUD renderer. The tool widgets
+	// show resolved paths and read files to build the edit diff view.
+	std::string ToolFilesRoot() const { return AgentFilesRoot(); }
+	std::string ToolResolvePath(const std::string &Path) const { return AgentResolvePath(Path); }
+
+	// v6.14: sessions. One JSON file per session in Kinetix/Sessions.
+	struct SSessionInfo
+	{
+		std::string m_Id;
+		std::string m_Title;
+		time_t m_Time = 0;
+		bool m_Temp = false;
+	};
+	bool SessionListVisible() const { return m_SessionListVisible; }
+	const std::vector<SSessionInfo> &Sessions() const { return m_vSessions; }
+	void RefreshSessions();
+	void NewSession();
+	void OpenSession(const std::string &Id);
+	void ExitToSessionList();
+	std::string CurrentSessionTitle() const { return m_CurrentSessionTitle; }
+	bool CurrentSessionIsTemp() const { return m_CurrentSessionTemp; }
+	time_t CurrentSessionTime() const { return m_CurrentSessionTime; }
+	bool HasMessages() const { return !m_vMessages.empty(); }
 	int m_ModelIdx;
 	int m_EffortIdx; // 0=Default, 1=Low, 2=High, 3=Max
 
@@ -113,11 +139,77 @@ private:
 		std::string m_Name;
 		std::string m_Args;
 	};
-	std::vector<SToolCall> m_vToolCalls;
-	std::vector<SToolCall> m_vPendingToolCalls;
-	SToolCall m_ActiveTool;
-	bool m_WaitToolExec = false;
-	// Raw API transcript (one JSON object string per completed turn).
+		std::vector<SToolCall> m_vToolCalls;
+		std::vector<SToolCall> m_vPendingToolCalls;
+		SToolCall m_ActiveTool;
+
+		// --- v6.14: external tools (shell / files / console / jobs) ---
+		// What the current tool call waits for. Foreground Lua runs over frames
+		// inside CCodeExec; the shell runs on a worker thread.
+		enum
+		{
+			TOOLRUN_NONE = 0,
+			TOOLRUN_LUA,
+			TOOLRUN_SHELL,
+		};
+		int m_ToolRun = TOOLRUN_NONE;
+
+		// One shell command running on a worker thread (Win32 CreateProcess /
+		// popen elsewhere). The thread owns the process and collects output.
+		struct SShellJob
+		{
+			std::thread m_Thread;
+			std::thread m_OutThread;
+			std::thread m_ErrThread;
+			std::mutex m_Mutex;
+			std::string m_Out;
+			std::string m_Err;
+			int m_ExitCode = -1;
+			bool m_TimedOut = false;
+			std::atomic<bool> m_Done{false};
+			std::atomic<bool> m_Kill{false};
+			void *m_pProcess = nullptr; // Win32 HANDLE
+		};
+		std::shared_ptr<SShellJob> m_pShellJob;
+
+		// Background Lua jobs (code_execution { background: true }).
+		struct SBgJob
+		{
+			int m_Id = 0;
+			bool m_Finished = false;
+			bool m_Killed = false;
+			std::string m_Output;
+		};
+		std::vector<SBgJob> m_vBgJobs;
+		int m_ActiveBgJob = -1; // job id currently running in CodeExec, -1 = none
+		int m_NextBgJobId = 1;
+
+		// --- v6.14: session persistence ---
+		std::string SessionsDir() const;
+		void SaveCurrentSession();
+		bool LoadSessionFile(const std::string &Id);
+		std::string BuildSessionJson() const;
+		std::string SessionTitle() const;
+		bool m_SessionListVisible = true;
+		std::string m_CurrentSessionId;
+		std::string m_CurrentSessionTitle;
+		bool m_CurrentSessionTemp = true;
+		time_t m_CurrentSessionTime = 0;
+		std::vector<SSessionInfo> m_vSessions;
+
+		void RunShellTool(const SToolCall &Call);
+		void RunFilesTool(const SToolCall &Call);
+		void RunConsoleTool(const SToolCall &Call);
+		void RunJobOutputTool(const SToolCall &Call);
+		void RunJobKillTool(const SToolCall &Call);
+		void PollShellJob();
+		void PollBgJob();
+		std::string BgJobResult(int Id, bool Kill);
+		std::string AgentFilesRoot() const;
+		std::string AgentResolvePath(const std::string &Path) const;
+		static void ShellThreadProc(std::shared_ptr<SShellJob> pJob, std::string Shell, std::string Command, std::string Cwd, int TimeoutSec);
+
+		// Raw API transcript (one JSON object string per completed turn).
 	std::vector<std::string> m_vApiMessages;
 	std::vector<std::string> m_vModels;
 	char m_aError[512];

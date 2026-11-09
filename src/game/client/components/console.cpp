@@ -1806,6 +1806,29 @@ void CGameConsole::PrintLine(int Type, const char *pLine)
 		m_RemoteConsole.PrintLine(pLine, str_length(pLine), TextRender()->DefaultTextColor());
 }
 
+// v6.14: ArrayAgent console tool — remember how many lines the backlog holds
+// before a command runs, then return everything printed after that mark.
+void CGameConsole::BeginOutputCapture()
+{
+	m_LocalConsole.PumpBacklogPending();
+	m_OutputCaptureStart = 0;
+	for(CInstance::CBacklogEntry *pEntry = m_LocalConsole.m_Backlog.First(); pEntry; pEntry = m_LocalConsole.m_Backlog.Next(pEntry))
+		m_OutputCaptureStart++;
+}
+
+void CGameConsole::EndOutputCapture(std::vector<std::string> &vOut)
+{
+	vOut.clear();
+	m_LocalConsole.PumpBacklogPending();
+	int Index = 0;
+	for(CInstance::CBacklogEntry *pEntry = m_LocalConsole.m_Backlog.First(); pEntry; pEntry = m_LocalConsole.m_Backlog.Next(pEntry), ++Index)
+	{
+		if(Index < m_OutputCaptureStart)
+			continue;
+		vOut.emplace_back(pEntry->m_aText);
+	}
+}
+
 void CGameConsole::OnConsoleInit()
 {
 	// init console instances

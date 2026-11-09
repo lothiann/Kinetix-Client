@@ -83,6 +83,9 @@ public:
 	void ToolCaptureStart();
 	// Ends capture and returns the collected output lines.
 	std::vector<std::string> ToolCaptureFinish();
+	// Returns a copy of the output collected so far; the capture keeps running
+	// (used by the agent's background-job polling).
+	std::vector<std::string> ToolCapturePeek() const;
 	// True while a tool capture is active (the agent loop must not run two
 	// scripts at once).
 	bool ToolCaptureActive() const { return m_ToolCapture; }

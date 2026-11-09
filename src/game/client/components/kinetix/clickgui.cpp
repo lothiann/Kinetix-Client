@@ -1968,49 +1968,72 @@ static const char *const g_ArrayListStyleOpts[] = {"Peas", "Group", "DDNet Peas"
 static const char *const g_ArrayListRainbowModeOpts[] = {"Group", "Peas", "Peas+Gradient"};
 // v6.13: ArrayAgent — message sides.
 static const char *const g_AgentXAnchorOpts[] = {"Auto", "Right", "Left", "Only Right", "Only Left"};
+static const char *const g_ShowModeOpts[] = {"In Game", "In ClickGUI", "In Game+ClickGUI", "Both"};
+static const char *const g_ColorModeOpts[] = {"Static", "Rainbow"};
+// v6.14: one Color block = mode dropdown + ARGB field + rainbow controls.
+#define KX_ARRAY_COLOR_ROWS(Prefix) \
+        {ERowType::Dropdown, Prefix " Color Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ColorModeOpts, 2, 0, nullptr, 0, \
+                Prefix " color: Static = fixed color, Rainbow = animated hue."}, \
+        {ERowType::Input, Prefix " Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ffffffff", "AARRGGBB...", nullptr, 0, 0, nullptr, 0, \
+                Prefix " color (hex ARGB)."}, \
+        {ERowType::Dropdown, Prefix " Rainbow Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ArrayListRainbowModeOpts, 3, 0, nullptr, 0, \
+                Prefix " rainbow mode (shown when the color mode is Rainbow)."}, \
+        {ERowType::Slider, Prefix " Rainbow Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, \
+                Prefix " rainbow hue rotation speed."}, \
+        {ERowType::Slider, Prefix " Rainbow Step", nullptr, false, false, 1.0f, 180.0f, 1.0f, 25.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, \
+                Prefix " rainbow hue offset (shown when the mode is not Group)."}
 static SRow g_ArrayListChildren[] = {
+        {ERowType::Label, "Array", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "Show Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ShowModeOpts, 4, 0, nullptr, 0,
+                "Where the HUD is shown. In Game+ClickGUI keeps TWO positions (game / GUI); Both keeps ONE for both."},
+        {ERowType::DoubleButton, "Game Editor", "Reset", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Toggle the ArrayList editor for the in-game position (closes the ClickGUI).", "Reset the in-game position to its default."},
+        {ERowType::DoubleButton, "ClickGUI Editor", "Reset", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Toggle the ArrayList editor for the ClickGUI position.", "Reset the ClickGUI position to its default."},
         {ERowType::DoubleButton, "Editor", "Reset", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Toggle the ArrayList editor (closes the ClickGUI).", "Reset the list position to its default."},
         {ERowType::Dropdown, "X Anchor", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ArrayListXAnchorOpts, 4, 0, nullptr, 0,
                 "Horizontal anchor of the list (Auto detects the screen side)."},
         {ERowType::Dropdown, "Y Anchor", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ArrayListYAnchorOpts, 3, 0, nullptr, 0,
                 "Vertical anchor of the list."},
-        {ERowType::Slider, "Max Length", nullptr, false, false, 0.0f, 2000.0f, 10.0f, 0.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Wrap feature names wider than this (px, 0 = off)."},
-        {ERowType::Dropdown, "Sort Type", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ArrayListSortOpts, 3, 0, nullptr, 0,
-                "Order of the enabled features."},
         {ERowType::Dropdown, "Style", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ArrayListStyleOpts, 4, 0, nullptr, 0,
                 "Visual style of the list blocks."},
         {ERowType::Slider, "Indentation", nullptr, false, false, 0.0f, 40.0f, 1.0f, 2.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Vertical gap between features (the blocks move with it)."},
         {ERowType::Slider, "ArrayList Size", nullptr, false, false, 0.1f, 2.0f, 0.1f, 1.0f, "x", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Overall scale of the HUD (like ClickGUI Scale)."},
-        {ERowType::Toggle, "Show In ClickGUI", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Draw the HUD ABOVE the ClickGUI instead of under it (draggable while the GUI is open)."},
-        {ERowType::Input, "Text Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ffffff", "hex...", nullptr, 0, 0, nullptr, 0,
-                "Text color of the list (hex RGB)."},
-        {ERowType::Toggle, "Rainbow Text", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Animate the text color with a hue cycle."},
-        {ERowType::Dropdown, "Rainbow Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ArrayListRainbowModeOpts, 3, 0, nullptr, 0,
-                "Group = one color, Peas = per feature, Peas+Gradient = per character."},
-        {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Rainbow hue rotation speed."},
-        {ERowType::Slider, "Step", nullptr, false, false, 1.0f, 180.0f, 1.0f, 25.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Hue offset between features / across a row."},
-        {ERowType::Slider, "Text Opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Opacity of the feature text."},
-        {ERowType::Slider, "Main Opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Opacity of the block borders."},
-        {ERowType::Slider, "Panel Opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Opacity of the block background."},
+        {ERowType::Label, "ArrayList", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "Sort Type", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ArrayListSortOpts, 3, 0, nullptr, 0,
+                "Order of the enabled features."},
+        {ERowType::Slider, "Max Length", nullptr, false, false, 0.0f, 2000.0f, 10.0f, 0.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Wrap feature names wider than this (px, 0 = off)."},
+        {ERowType::Label, "Colors", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        KX_ARRAY_COLOR_ROWS("Text"),
+        KX_ARRAY_COLOR_ROWS("Main"),
+        KX_ARRAY_COLOR_ROWS("Panel"),
 };
+static const int KX_ARRAYLIST_CHILD_COUNT = (int)(sizeof(g_ArrayListChildren) / sizeof(g_ArrayListChildren[0]));
 // v6.4: ArrayInfo — same settings model as the ArrayList, but the content is
 // an info line (logo | watermark | FPS | session | tee | nick | functions).
 static SRow g_ArrayInfoChildren[] = {
+        {ERowType::Label, "Array", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "Show Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ShowModeOpts, 4, 0, nullptr, 0,
+                "Where the HUD is shown. In Game+ClickGUI keeps TWO positions; Both keeps ONE for both."},
+        {ERowType::DoubleButton, "Game Editor", "Reset", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Toggle the ArrayInfo editor for the in-game position (closes the ClickGUI).", "Reset the in-game position to its default."},
+        {ERowType::DoubleButton, "ClickGUI Editor", "Reset", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Toggle the ArrayInfo editor for the ClickGUI position.", "Reset the ClickGUI position to its default."},
         {ERowType::DoubleButton, "Editor", "Reset", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Toggle the ArrayInfo editor (closes the ClickGUI).", "Reset the info bar position to its default."},
         {ERowType::Dropdown, "X Anchor", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ArrayListXAnchorOpts, 4, 0, nullptr, 0,
                 "Horizontal anchor of the info bar (Auto detects the screen side)."},
+        {ERowType::Dropdown, "Style", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ArrayListStyleOpts, 4, 0, nullptr, 0,
+                "Visual style of the info blocks."},
+        {ERowType::Slider, "Indentation", nullptr, false, false, 0.0f, 40.0f, 1.0f, 2.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Vertical gap between info lines (the blocks move with it)."},
+        {ERowType::Slider, "ArrayInfo Size", nullptr, false, false, 0.1f, 2.0f, 0.1f, 1.0f, "x", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Overall scale of the info bar (like ClickGUI Scale)."},
+        {ERowType::Label, "ArrayInfo", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Toggle, "Kinetix Logo", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Show the Kinetix logo icon."},
         {ERowType::Input, "Watermark", nullptr, false, false, 0, 0, 0, 0, nullptr, "t.me/KinetixClient", "watermark...", nullptr, 0, 0, nullptr, 0,
@@ -2027,31 +2050,12 @@ static SRow g_ArrayInfoChildren[] = {
                 "Show the number of enabled functions as \"X Functions\"."},
         {ERowType::Slider, "Max Length", nullptr, false, false, 0.0f, 2000.0f, 10.0f, 600.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Wrap the info line wider than this (px, 0 = off)."},
-        {ERowType::Dropdown, "Style", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ArrayListStyleOpts, 4, 0, nullptr, 0,
-                "Visual style of the info blocks."},
-        {ERowType::Slider, "Indentation", nullptr, false, false, 0.0f, 40.0f, 1.0f, 2.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Vertical gap between info lines (the blocks move with it)."},
-        {ERowType::Slider, "ArrayInfo Size", nullptr, false, false, 0.1f, 2.0f, 0.1f, 1.0f, "x", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Overall scale of the info bar (like ClickGUI Scale)."},
-        {ERowType::Toggle, "Show In ClickGUI", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Draw the info bar ABOVE the ClickGUI instead of under it (draggable while the GUI is open)."},
-        {ERowType::Input, "Text Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ffffff", "hex...", nullptr, 0, 0, nullptr, 0,
-                "Text color of the info line (hex RGB)."},
-        {ERowType::Toggle, "Rainbow Text", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Animate the text color with a hue cycle."},
-        {ERowType::Dropdown, "Rainbow Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ArrayListRainbowModeOpts, 3, 0, nullptr, 0,
-                "Group = one color, Peas = per line, Peas+Gradient = per character."},
-        {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Rainbow hue rotation speed."},
-        {ERowType::Slider, "Step", nullptr, false, false, 1.0f, 180.0f, 1.0f, 25.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Hue offset between lines / across a line."},
-        {ERowType::Slider, "Text Opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Opacity of the info text."},
-        {ERowType::Slider, "Main Opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Opacity of the block borders."},
-        {ERowType::Slider, "Panel Opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Opacity of the block background."},
+        {ERowType::Label, "Colors", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        KX_ARRAY_COLOR_ROWS("Text"),
+        KX_ARRAY_COLOR_ROWS("Main"),
+        KX_ARRAY_COLOR_ROWS("Panel"),
 };
+static const int KX_ARRAYINFO_CHILD_COUNT = (int)(sizeof(g_ArrayInfoChildren) / sizeof(g_ArrayInfoChildren[0]));
 // v6.7: ArrayPlayer — now-playing media card. Same settings model as
 // ArrayList, minus Max Length / Sort Type and the Peas styles. Indentation is
 // the vertical gap between the track title and the artist.
@@ -2060,13 +2064,6 @@ static const char *const g_ArrayPlayerStyleOpts[] = {"Group", "DDNet Group"};
 static const char *const g_AgentShowModeOpts[] = {"In Game", "In ClickGUI", "In Game+ClickGUI", "Both"};
 static const char *const g_AgentReasoningOpts[] = {"Hide", "Show", "Expand"};
 static SRow g_ArrayAgentChildren[] = {
-	{ERowType::Label, "API", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-	{ERowType::Input, "API Endpoint", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "endpoint...", nullptr, 0, 0, nullptr, 0,
-		"OpenAI-compatible API endpoint (e.g. http://127.0.0.1:1234/v1)."},
-	{ERowType::Input, "API Key", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "key...", nullptr, 0, 0, nullptr, 0,
-		"API key sent as the Authorization Bearer token."},
-	{ERowType::Input, "Models", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "model1,model2...", nullptr, 0, 0, nullptr, 0,
-		"Model list, comma separated (shown in the chat panel dropdown)."},
 	{ERowType::Label, "Array", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 	{ERowType::Dropdown, "Show Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_AgentShowModeOpts, 4, 0, nullptr, 0,
 		"Where the panel is shown. In Game+ClickGUI keeps TWO positions (game / GUI); Both keeps ONE for both."},
@@ -2091,6 +2088,12 @@ static SRow g_ArrayAgentChildren[] = {
 	{ERowType::Slider, "Width", nullptr, false, false, 200.0f, 1200.0f, 1.0f, 480.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Panel width in pixels."},
 	{ERowType::Label, "ArrayAgent", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+	{ERowType::Input, "API Endpoint", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "endpoint...", nullptr, 0, 0, nullptr, 0,
+		"OpenAI-compatible API endpoint (e.g. http://127.0.0.1:1234/v1)."},
+	{ERowType::Input, "API Key", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "key...", nullptr, 0, 0, nullptr, 0,
+		"API key sent as the Authorization Bearer token."},
+	{ERowType::Input, "Models", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "model1,model2...", nullptr, 0, 0, nullptr, 0,
+		"Model list, comma separated (shown in the chat panel dropdown)."},
 	{ERowType::Toggle, "Show Time", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Show the message time/date in the meta line."},
 	{ERowType::Toggle, "Show Time Work", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
@@ -2099,53 +2102,54 @@ static SRow g_ArrayAgentChildren[] = {
 		"Show the token usage in the meta line."},
 	{ERowType::Toggle, "Show Copy Message", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Show a copy button next to every message."},
+	{ERowType::Input, "Workdir", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "path...", nullptr, 0, 0, nullptr, 0,
+		"Agent working directory (empty = the Kinetix folder)."},
+	{ERowType::Toggle, "Save Sessions", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Persist chats as JSON files in Kinetix/Sessions."},
+	{ERowType::Toggle, "Show Main Page", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+		"Show the session list when no chat is open."},
 	{ERowType::Dropdown, "Reasoning", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_AgentReasoningOpts, 3, 0, nullptr, 0,
 		"Reasoning stream display: Hide = off, Show = collapsible grey block, Expand = always open."},
 	{ERowType::Label, "Colors", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-	{ERowType::Input, "Main Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ff9d4edd", "ARGB...", nullptr, 0, 0, nullptr, 0,
-		"Accent color of the panel (hex ARGB)."},
-	{ERowType::Input, "Panel Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ff161622", "ARGB...", nullptr, 0, 0, nullptr, 0,
-		"Panel background color (hex ARGB)."},
-	{ERowType::Input, "Text Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ffffffff", "ARGB...", nullptr, 0, 0, nullptr, 0,
-		"Text color of the chat (hex ARGB)."},
+	KX_ARRAY_COLOR_ROWS("Text"),
+	KX_ARRAY_COLOR_ROWS("Main"),
+	KX_ARRAY_COLOR_ROWS("Panel"),
 };
 static const int KX_ARRAYAGENT_CHILD_COUNT = (int)(sizeof(g_ArrayAgentChildren) / sizeof(g_ArrayAgentChildren[0]));
 static SRow g_ArrayPlayerChildren[] = {
+        {ERowType::Label, "Array", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "Show Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ShowModeOpts, 4, 0, nullptr, 0,
+                "Where the HUD is shown. In Game+ClickGUI keeps TWO positions; Both keeps ONE for both."},
+        {ERowType::DoubleButton, "Game Editor", "Reset", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Toggle the ArrayPlayer editor for the in-game position (closes the ClickGUI).", "Reset the in-game position to its default."},
+        {ERowType::DoubleButton, "ClickGUI Editor", "Reset", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Toggle the ArrayPlayer editor for the ClickGUI position.", "Reset the ClickGUI position to its default."},
         {ERowType::DoubleButton, "Editor", "Reset", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Toggle the ArrayPlayer editor (closes the ClickGUI).", "Reset the player position to its default."},
         {ERowType::Dropdown, "X Anchor", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ArrayListXAnchorOpts, 4, 0, nullptr, 0,
-                "Horizontal alignment of the title/artist text inside the card."},
+                "Horizontal anchor of the title/artist text inside the card."},
         {ERowType::Dropdown, "Style", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ArrayPlayerStyleOpts, 2, 0, nullptr, 0,
                 "Visual style of the player card."},
         {ERowType::Slider, "Indentation", nullptr, false, false, 0.0f, 40.0f, 1.0f, 4.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Vertical gap between the track title and the artist."},
         {ERowType::Slider, "ArrayPlayer Size", nullptr, false, false, 0.1f, 2.0f, 0.1f, 1.0f, "x", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Overall scale of the player (like ClickGUI Scale)."},
-        {ERowType::Toggle, "Show In ClickGUI", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Draw the player ABOVE the ClickGUI instead of under it (draggable while the GUI is open)."},
         {ERowType::Toggle, "Dynamic Scale", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Resize the player by dragging its bottom-right corner in the editor."},
         {ERowType::Slider, "Height ArrayPlayer", nullptr, false, false, 40.0f, 600.0f, 1.0f, 90.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Card height in pixels."},
         {ERowType::Slider, "Width ArrayPlayer", nullptr, false, false, 100.0f, 1000.0f, 1.0f, 320.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Card width in pixels."},
-        {ERowType::Input, "Text Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ffffff", "hex...", nullptr, 0, 0, nullptr, 0,
-                "Text color of the player (hex RGB)."},
-        {ERowType::Toggle, "Rainbow Text", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Animate the title/artist color with a hue cycle."},
-        {ERowType::Dropdown, "Rainbow Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ArrayListRainbowModeOpts, 3, 0, nullptr, 0,
-                "Group = one color, Peas = per line, Peas+Gradient = per character."},
-        {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Rainbow hue rotation speed."},
-        {ERowType::Slider, "Step", nullptr, false, false, 1.0f, 180.0f, 1.0f, 25.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Hue offset between the title and artist."},
-        {ERowType::Slider, "Text Opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Opacity of the title/artist text."},
-        {ERowType::Slider, "Main Opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Opacity of the card border."},
-        {ERowType::Slider, "Panel Opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Opacity of the card background."},
+        // TODO(v6.14): ArrayPlayer content settings (Array* section). The media
+        // card has no configurable content yet — extend it here (track/artist
+        // toggles, time, progress, etc.) when the wider functionality lands.
+        {ERowType::Label, "ArrayPlayer", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, "Colors", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        KX_ARRAY_COLOR_ROWS("Text"),
+        KX_ARRAY_COLOR_ROWS("Main"),
+        KX_ARRAY_COLOR_ROWS("Panel"),
 };
+static const int KX_ARRAYPLAYER_CHILD_COUNT = (int)(sizeof(g_ArrayPlayerChildren) / sizeof(g_ArrayPlayerChildren[0]));
 static SRow g_VisualsRows[] = {
         {ERowType::Expandable, "Custom colors", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CustomColorsChildren, 7, "Master switch: off = original game look."},
         {ERowType::Toggle, "Hide particles", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
@@ -2164,11 +2168,11 @@ static SRow g_VisualsRows[] = {
                 "Bypass the asset (map) lock."},
         {ERowType::Expandable, "Admin Alarm", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AdminAlarmChildren, 5,
                 "Local alarm when an admin/helper/moderator is present."},
-        {ERowType::Expandable, "ArrayList", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ArrayListChildren, 17,
+        {ERowType::Expandable, "ArrayList", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ArrayListChildren, KX_ARRAYLIST_CHILD_COUNT,
                 "On-screen list of enabled features (drag to move)."},
-        {ERowType::Expandable, "ArrayInfo", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ArrayInfoChildren, 22,
+        {ERowType::Expandable, "ArrayInfo", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ArrayInfoChildren, KX_ARRAYINFO_CHILD_COUNT,
                 "On-screen info bar (drag to move)."},
-        {ERowType::Expandable, "ArrayPlayer", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ArrayPlayerChildren, 17,
+        {ERowType::Expandable, "ArrayPlayer", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ArrayPlayerChildren, KX_ARRAYPLAYER_CHILD_COUNT,
                 "On-screen now-playing media card (drag to move)."},
         {ERowType::Expandable, "ArrayAgent", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ArrayAgentChildren, KX_ARRAYAGENT_CHILD_COUNT,
                 "AI agent chat panel (OpenAI-compatible endpoint; drag to move)."},
@@ -2595,21 +2599,61 @@ static bool TasSpawnerChildVisible(const SRow *pChildren, int childCount, int id
 	}
 }
 
-// v6.3: ArrayList children — Text Color is replaced by the rainbow controls
-// while rainbow is on; Step only exists for the non-Group rainbow modes.
+// v6.14: editor rows follow Show Mode exactly like ArrayAgent.
+static bool ArrayEditorRowVisible(const char *pName, int ShowMode)
+{
+        if(str_comp(pName, "Game Editor") == 0)
+                return ShowMode == 0 || ShowMode == 2;
+        if(str_comp(pName, "ClickGUI Editor") == 0)
+                return ShowMode == 1 || ShowMode == 2;
+        if(str_comp(pName, "Editor") == 0)
+                return ShowMode == 3;
+        return true;
+}
+
+// v6.14: Colors block rows from KX_ARRAY_COLOR_ROWS. Rainbow Mode/Speed show
+// only in Rainbow mode; Step only when the rainbow mode is not Group.
+static bool ArrayColorRowVisible(const char *pName, int TextMode, int TextRb, int MainMode, int MainRb, int PanelMode, int PanelRb)
+{
+        int Mode;
+        int Rb;
+        if(str_startswith(pName, "Text "))
+        {
+                Mode = TextMode;
+                Rb = TextRb;
+        }
+        else if(str_startswith(pName, "Main "))
+        {
+                Mode = MainMode;
+                Rb = MainRb;
+        }
+        else if(str_startswith(pName, "Panel "))
+        {
+                Mode = PanelMode;
+                Rb = PanelRb;
+        }
+        else
+                return true;
+        if(str_endswith(pName, "Rainbow Step"))
+                return Mode != 0 && Rb != 0;
+        if(str_endswith(pName, "Rainbow Mode") || str_endswith(pName, "Rainbow Speed"))
+                return Mode != 0;
+        return true;
+}
+
+// v6.3: ArrayList children — Show Mode gates the editors, the Colors block
+// shows its rainbow controls only in Rainbow mode.
 static bool ArrayListChildVisible(const SRow *pChildren, int childCount, int idx)
 {
         if(idx < 0 || idx >= childCount)
                 return false;
         const SRow &row = pChildren[idx];
-        const bool Rainbow = g_Config.m_KxArrayListRainbow != 0;
-        if(str_comp(row.pName, "Text Color") == 0)
-                return !Rainbow;
-        if(str_comp(row.pName, "Rainbow Mode") == 0 || str_comp(row.pName, "Speed") == 0)
-                return Rainbow;
-        if(str_comp(row.pName, "Step") == 0)
-                return Rainbow && g_Config.m_KxArrayListRainbowMode != 0;
-        return true;
+        if(!ArrayEditorRowVisible(row.pName, g_Config.m_KxArrayListShowMode))
+                return false;
+        return ArrayColorRowVisible(row.pName,
+                g_Config.m_KxArrayListRainbow, g_Config.m_KxArrayListRainbowMode,
+                g_Config.m_KxArrayListMainMode, g_Config.m_KxArrayListMainRainbowMode,
+                g_Config.m_KxArrayListPanelMode, g_Config.m_KxArrayListPanelRainbowMode);
 }
 
 // v6.13: ArrayAgent children — same rainbow gating as the ArrayList.
@@ -2625,7 +2669,10 @@ static bool ArrayAgentChildVisible(const SRow *pChildren, int childCount, int id
                 return Mode == 1 || Mode == 2; // In ClickGUI / In Game+ClickGUI
         if(str_comp(row.pName, "Editor") == 0 && row.pName2 && str_comp(row.pName2, "Reset") == 0)
                 return Mode == 3; // Both
-        return true;
+        return ArrayColorRowVisible(row.pName,
+                g_Config.m_KxArrayAgentTextMode, g_Config.m_KxArrayAgentTextRainbowMode,
+                g_Config.m_KxArrayAgentMainMode, g_Config.m_KxArrayAgentMainRainbowMode,
+                g_Config.m_KxArrayAgentPanelMode, g_Config.m_KxArrayAgentPanelRainbowMode);
 }
 
 // v6.4: ArrayInfo children — same rainbow gating as the ArrayList.
@@ -2634,14 +2681,12 @@ static bool ArrayInfoChildVisible(const SRow *pChildren, int childCount, int idx
         if(idx < 0 || idx >= childCount)
                 return false;
         const SRow &row = pChildren[idx];
-        const bool Rainbow = g_Config.m_KxArrayInfoRainbow != 0;
-        if(str_comp(row.pName, "Text Color") == 0)
-                return !Rainbow;
-        if(str_comp(row.pName, "Rainbow Mode") == 0 || str_comp(row.pName, "Speed") == 0)
-                return Rainbow;
-        if(str_comp(row.pName, "Step") == 0)
-                return Rainbow && g_Config.m_KxArrayInfoRainbowMode != 0;
-        return true;
+        if(!ArrayEditorRowVisible(row.pName, g_Config.m_KxArrayInfoShowMode))
+                return false;
+        return ArrayColorRowVisible(row.pName,
+                g_Config.m_KxArrayInfoRainbow, g_Config.m_KxArrayInfoRainbowMode,
+                g_Config.m_KxArrayInfoMainMode, g_Config.m_KxArrayInfoMainRainbowMode,
+                g_Config.m_KxArrayInfoPanelMode, g_Config.m_KxArrayInfoPanelRainbowMode);
 }
 
 // v6.7: ArrayPlayer children — same rainbow gating as the ArrayList/ArrayInfo.
@@ -2650,14 +2695,12 @@ static bool ArrayPlayerChildVisible(const SRow *pChildren, int childCount, int i
         if(idx < 0 || idx >= childCount)
                 return false;
         const SRow &row = pChildren[idx];
-        const bool Rainbow = g_Config.m_KxArrayPlayerRainbow != 0;
-        if(str_comp(row.pName, "Text Color") == 0)
-                return !Rainbow;
-        if(str_comp(row.pName, "Rainbow Mode") == 0 || str_comp(row.pName, "Speed") == 0)
-                return Rainbow;
-        if(str_comp(row.pName, "Step") == 0)
-                return Rainbow && g_Config.m_KxArrayPlayerRainbowMode != 0;
-        return true;
+        if(!ArrayEditorRowVisible(row.pName, g_Config.m_KxArrayPlayerShowMode))
+                return false;
+        return ArrayColorRowVisible(row.pName,
+                g_Config.m_KxArrayPlayerRainbow, g_Config.m_KxArrayPlayerRainbowMode,
+                g_Config.m_KxArrayPlayerMainMode, g_Config.m_KxArrayPlayerMainRainbowMode,
+                g_Config.m_KxArrayPlayerPanelMode, g_Config.m_KxArrayPlayerPanelRainbowMode);
 }
 
 // v6.3: tooltip opacity rows live under the Show ToolTips toggle.
@@ -5844,24 +5887,31 @@ void CClickGui::OnRender()
 		}
 		Graphics()->MapScreenToSize(VScreenWidth(), VScreenHeight());
 		Graphics()->TextureClear();
-		if(ArrayListVisible)
-		{
-			UpdateArrayList(Client()->RenderFrameTime());
-			RenderArrayList(1.0f);
-		}
-		if(ArrayInfoVisible)
-		{
-			UpdateArrayInfo(Client()->RenderFrameTime());
-			RenderArrayInfo(1.0f);
-		}
-		if(ArrayPlayerVisible)
-		{
-			UpdateArrayPlayer(Client()->RenderFrameTime());
-			RenderArrayPlayer(1.0f);
-		}
+			// v6.14: Show Mode decides where each HUD is drawn (game / ClickGUI /
+			// both). In the game pass render only the modes that include "In Game".
+			const int ArrayListMode = g_Config.m_KxArrayListShowMode;
+			if(ArrayListVisible && (ArrayListMode == 0 || ArrayListMode == 2 || ArrayListMode == 3))
+			{
+				UpdateArrayList(Client()->RenderFrameTime());
+				RenderArrayList(1.0f);
+			}
+			const int ArrayInfoMode = g_Config.m_KxArrayInfoShowMode;
+			if(ArrayInfoVisible && (ArrayInfoMode == 0 || ArrayInfoMode == 2 || ArrayInfoMode == 3))
+			{
+				UpdateArrayInfo(Client()->RenderFrameTime());
+				RenderArrayInfo(1.0f);
+			}
+			const int ArrayPlayerMode = g_Config.m_KxArrayPlayerShowMode;
+			if(ArrayPlayerVisible && (ArrayPlayerMode == 0 || ArrayPlayerMode == 2 || ArrayPlayerMode == 3))
+			{
+				UpdateArrayPlayer(Client()->RenderFrameTime());
+				RenderArrayPlayer(1.0f);
+			}
 		// Render while the show/hide animation plays out (a disabled agent must
 		// FADE OUT, not vanish instantly).
-		if(ArrayAgentVisible && (g_Config.m_KxArrayAgentShowMode == 0 || g_Config.m_KxArrayAgentShowMode == 2 || g_Config.m_KxArrayAgentShowMode == 3))
+		// m_AgentEditor: with "In ClickGUI" the editor closes the GUI — keep the
+		// panel visible in-game so it can be dragged.
+		if(ArrayAgentVisible && (g_Config.m_KxArrayAgentShowMode == 0 || g_Config.m_KxArrayAgentShowMode == 2 || g_Config.m_KxArrayAgentShowMode == 3 || m_AgentEditor))
 		{
 			UpdateArrayAgent(Client()->RenderFrameTime());
 			RenderArrayAgent(1.0f, false);
@@ -7368,8 +7418,10 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                 if(!Dragging)
                                                         child.value = g_Config.m_KxArrayListSize / 10.0f;
                                         }
-                                        else if(str_comp(child.pName, "Show In ClickGUI") == 0)
-                                                child.on = g_Config.m_KxArrayListShowInGui != 0;
+                                        else if(str_comp(child.pName, "Show Mode") == 0)
+                                                child.valueIdx = g_Config.m_KxArrayListShowMode;
+                                        else if(str_comp(child.pName, "Text Color Mode") == 0)
+                                                child.valueIdx = g_Config.m_KxArrayListRainbow;
                                         else if(str_comp(child.pName, "Text Color") == 0)
                                         {
                                                 if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
@@ -7378,19 +7430,61 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                         child.m_InputInitialized = true;
                                                 }
                                         }
-                                        else if(str_comp(child.pName, "Rainbow Text") == 0)
-                                                child.on = g_Config.m_KxArrayListRainbow != 0;
-                                        else if(str_comp(child.pName, "Rainbow Mode") == 0)
+                                        else if(str_comp(child.pName, "Text Rainbow Mode") == 0)
                                                 child.valueIdx = g_Config.m_KxArrayListRainbowMode;
-                                        else if(str_comp(child.pName, "Speed") == 0)
+                                        else if(str_comp(child.pName, "Text Rainbow Speed") == 0)
                                         {
                                                 if(!Dragging)
                                                         child.value = g_Config.m_KxArrayListRainbowSpeed / 10.0f;
                                         }
-                                        else if(str_comp(child.pName, "Step") == 0)
+                                        else if(str_comp(child.pName, "Text Rainbow Step") == 0)
                                         {
                                                 if(!Dragging)
                                                         child.value = (float)g_Config.m_KxArrayListRainbowStep;
+                                        }
+                                        else if(str_comp(child.pName, "Main Color Mode") == 0)
+                                                child.valueIdx = g_Config.m_KxArrayListMainMode;
+                                        else if(str_comp(child.pName, "Main Color") == 0)
+                                        {
+                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                {
+                                                        str_copy(child.m_aInputBuf, g_Config.m_KxArrayListMainColor, sizeof(child.m_aInputBuf));
+                                                        child.m_InputInitialized = true;
+                                                }
+                                        }
+                                        else if(str_comp(child.pName, "Main Rainbow Mode") == 0)
+                                                child.valueIdx = g_Config.m_KxArrayListMainRainbowMode;
+                                        else if(str_comp(child.pName, "Main Rainbow Speed") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = g_Config.m_KxArrayListMainRainbowSpeed / 10.0f;
+                                        }
+                                        else if(str_comp(child.pName, "Main Rainbow Step") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = (float)g_Config.m_KxArrayListMainRainbowStep;
+                                        }
+                                        else if(str_comp(child.pName, "Panel Color Mode") == 0)
+                                                child.valueIdx = g_Config.m_KxArrayListPanelMode;
+                                        else if(str_comp(child.pName, "Panel Color") == 0)
+                                        {
+                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                {
+                                                        str_copy(child.m_aInputBuf, g_Config.m_KxArrayListPanelColor, sizeof(child.m_aInputBuf));
+                                                        child.m_InputInitialized = true;
+                                                }
+                                        }
+                                        else if(str_comp(child.pName, "Panel Rainbow Mode") == 0)
+                                                child.valueIdx = g_Config.m_KxArrayListPanelRainbowMode;
+                                        else if(str_comp(child.pName, "Panel Rainbow Speed") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = g_Config.m_KxArrayListPanelRainbowSpeed / 10.0f;
+                                        }
+                                        else if(str_comp(child.pName, "Panel Rainbow Step") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = (float)g_Config.m_KxArrayListPanelRainbowStep;
                                         }
                                         else if(str_comp(child.pName, "Text Opacity") == 0)
                                         {
@@ -7461,8 +7555,10 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                 if(!Dragging)
                                                         child.value = g_Config.m_KxArrayInfoSize / 10.0f;
                                         }
-                                        else if(str_comp(child.pName, "Show In ClickGUI") == 0)
-                                                child.on = g_Config.m_KxArrayInfoShowInGui != 0;
+                                        else if(str_comp(child.pName, "Show Mode") == 0)
+                                                child.valueIdx = g_Config.m_KxArrayInfoShowMode;
+                                        else if(str_comp(child.pName, "Text Color Mode") == 0)
+                                                child.valueIdx = g_Config.m_KxArrayInfoRainbow;
                                         else if(str_comp(child.pName, "Text Color") == 0)
                                         {
                                                 if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
@@ -7471,19 +7567,61 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                         child.m_InputInitialized = true;
                                                 }
                                         }
-                                        else if(str_comp(child.pName, "Rainbow Text") == 0)
-                                                child.on = g_Config.m_KxArrayInfoRainbow != 0;
-                                        else if(str_comp(child.pName, "Rainbow Mode") == 0)
+                                        else if(str_comp(child.pName, "Text Rainbow Mode") == 0)
                                                 child.valueIdx = g_Config.m_KxArrayInfoRainbowMode;
-                                        else if(str_comp(child.pName, "Speed") == 0)
+                                        else if(str_comp(child.pName, "Text Rainbow Speed") == 0)
                                         {
                                                 if(!Dragging)
                                                         child.value = g_Config.m_KxArrayInfoRainbowSpeed / 10.0f;
                                         }
-                                        else if(str_comp(child.pName, "Step") == 0)
+                                        else if(str_comp(child.pName, "Text Rainbow Step") == 0)
                                         {
                                                 if(!Dragging)
                                                         child.value = (float)g_Config.m_KxArrayInfoRainbowStep;
+                                        }
+                                        else if(str_comp(child.pName, "Main Color Mode") == 0)
+                                                child.valueIdx = g_Config.m_KxArrayInfoMainMode;
+                                        else if(str_comp(child.pName, "Main Color") == 0)
+                                        {
+                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                {
+                                                        str_copy(child.m_aInputBuf, g_Config.m_KxArrayInfoMainColor, sizeof(child.m_aInputBuf));
+                                                        child.m_InputInitialized = true;
+                                                }
+                                        }
+                                        else if(str_comp(child.pName, "Main Rainbow Mode") == 0)
+                                                child.valueIdx = g_Config.m_KxArrayInfoMainRainbowMode;
+                                        else if(str_comp(child.pName, "Main Rainbow Speed") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = g_Config.m_KxArrayInfoMainRainbowSpeed / 10.0f;
+                                        }
+                                        else if(str_comp(child.pName, "Main Rainbow Step") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = (float)g_Config.m_KxArrayInfoMainRainbowStep;
+                                        }
+                                        else if(str_comp(child.pName, "Panel Color Mode") == 0)
+                                                child.valueIdx = g_Config.m_KxArrayInfoPanelMode;
+                                        else if(str_comp(child.pName, "Panel Color") == 0)
+                                        {
+                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                {
+                                                        str_copy(child.m_aInputBuf, g_Config.m_KxArrayInfoPanelColor, sizeof(child.m_aInputBuf));
+                                                        child.m_InputInitialized = true;
+                                                }
+                                        }
+                                        else if(str_comp(child.pName, "Panel Rainbow Mode") == 0)
+                                                child.valueIdx = g_Config.m_KxArrayInfoPanelRainbowMode;
+                                        else if(str_comp(child.pName, "Panel Rainbow Speed") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = g_Config.m_KxArrayInfoPanelRainbowSpeed / 10.0f;
+                                        }
+                                        else if(str_comp(child.pName, "Panel Rainbow Step") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = (float)g_Config.m_KxArrayInfoPanelRainbowStep;
                                         }
                                         else if(str_comp(child.pName, "Text Opacity") == 0)
                                         {
@@ -7524,8 +7662,10 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                 if(!Dragging)
                                                         child.value = g_Config.m_KxArrayPlayerSize / 10.0f;
                                         }
-                                        else if(str_comp(child.pName, "Show In ClickGUI") == 0)
-                                                child.on = g_Config.m_KxArrayPlayerShowInGui != 0;
+                                        else if(str_comp(child.pName, "Show Mode") == 0)
+                                                child.valueIdx = g_Config.m_KxArrayPlayerShowMode;
+                                        else if(str_comp(child.pName, "Text Color Mode") == 0)
+                                                child.valueIdx = g_Config.m_KxArrayPlayerRainbow;
                                         else if(str_comp(child.pName, "Text Color") == 0)
                                         {
                                                 if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
@@ -7533,6 +7673,62 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                         str_copy(child.m_aInputBuf, g_Config.m_KxArrayPlayerTextColor, sizeof(child.m_aInputBuf));
                                                         child.m_InputInitialized = true;
                                                 }
+                                        }
+                                        else if(str_comp(child.pName, "Text Rainbow Mode") == 0)
+                                                child.valueIdx = g_Config.m_KxArrayPlayerRainbowMode;
+                                        else if(str_comp(child.pName, "Text Rainbow Speed") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = g_Config.m_KxArrayPlayerRainbowSpeed / 10.0f;
+                                        }
+                                        else if(str_comp(child.pName, "Text Rainbow Step") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = (float)g_Config.m_KxArrayPlayerRainbowStep;
+                                        }
+                                        else if(str_comp(child.pName, "Main Color Mode") == 0)
+                                                child.valueIdx = g_Config.m_KxArrayPlayerMainMode;
+                                        else if(str_comp(child.pName, "Main Color") == 0)
+                                        {
+                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                {
+                                                        str_copy(child.m_aInputBuf, g_Config.m_KxArrayPlayerMainColor, sizeof(child.m_aInputBuf));
+                                                        child.m_InputInitialized = true;
+                                                }
+                                        }
+                                        else if(str_comp(child.pName, "Main Rainbow Mode") == 0)
+                                                child.valueIdx = g_Config.m_KxArrayPlayerMainRainbowMode;
+                                        else if(str_comp(child.pName, "Main Rainbow Speed") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = g_Config.m_KxArrayPlayerMainRainbowSpeed / 10.0f;
+                                        }
+                                        else if(str_comp(child.pName, "Main Rainbow Step") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = (float)g_Config.m_KxArrayPlayerMainRainbowStep;
+                                        }
+                                        else if(str_comp(child.pName, "Panel Color Mode") == 0)
+                                                child.valueIdx = g_Config.m_KxArrayPlayerPanelMode;
+                                        else if(str_comp(child.pName, "Panel Color") == 0)
+                                        {
+                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                {
+                                                        str_copy(child.m_aInputBuf, g_Config.m_KxArrayPlayerPanelColor, sizeof(child.m_aInputBuf));
+                                                        child.m_InputInitialized = true;
+                                                }
+                                        }
+                                        else if(str_comp(child.pName, "Panel Rainbow Mode") == 0)
+                                                child.valueIdx = g_Config.m_KxArrayPlayerPanelRainbowMode;
+                                        else if(str_comp(child.pName, "Panel Rainbow Speed") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = g_Config.m_KxArrayPlayerPanelRainbowSpeed / 10.0f;
+                                        }
+                                        else if(str_comp(child.pName, "Panel Rainbow Step") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = (float)g_Config.m_KxArrayPlayerPanelRainbowStep;
                                         }
                                         else if(str_comp(child.pName, "Dynamic Scale") == 0)
                                                 child.on = g_Config.m_KxArrayPlayerDynamicScale != 0;
@@ -7545,20 +7741,6 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                         {
                                                 if(!Dragging)
                                                         child.value = (float)g_Config.m_KxArrayPlayerWidth;
-                                        }
-                                        else if(str_comp(child.pName, "Rainbow Text") == 0)
-                                                child.on = g_Config.m_KxArrayPlayerRainbow != 0;
-                                        else if(str_comp(child.pName, "Rainbow Mode") == 0)
-                                                child.valueIdx = g_Config.m_KxArrayPlayerRainbowMode;
-                                        else if(str_comp(child.pName, "Speed") == 0)
-                                        {
-                                                if(!Dragging)
-                                                        child.value = g_Config.m_KxArrayPlayerRainbowSpeed / 10.0f;
-                                        }
-                                        else if(str_comp(child.pName, "Step") == 0)
-                                        {
-                                                if(!Dragging)
-                                                        child.value = (float)g_Config.m_KxArrayPlayerRainbowStep;
                                         }
                                         else if(str_comp(child.pName, "Text Opacity") == 0)
                                         {
@@ -7625,6 +7807,18 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                 child.on = g_Config.m_KxArrayAgentShowUsage != 0;
                                         else if(str_comp(child.pName, "Show Copy Message") == 0)
                                                 child.on = g_Config.m_KxArrayAgentShowCopy != 0;
+                                        else if(str_comp(child.pName, "Workdir") == 0)
+                                        {
+                                                if(!m_InputEditing || m_InputPanel != p || m_InputRow != r || m_InputChild != c)
+                                                {
+                                                        str_copy(child.m_aInputBuf, g_Config.m_KxArrayAgentWorkdir, sizeof(child.m_aInputBuf));
+                                                        child.m_InputInitialized = true;
+                                                }
+                                        }
+                                        else if(str_comp(child.pName, "Save Sessions") == 0)
+                                                child.on = g_Config.m_KxArrayAgentSaveSessions != 0;
+                                        else if(str_comp(child.pName, "Show Main Page") == 0)
+                                                child.on = g_Config.m_KxArrayAgentShowMainPage != 0;
                                         else if(str_comp(child.pName, "Indentation") == 0)
                                         {
                                                 if(!Dragging)
@@ -7670,6 +7864,48 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                         str_copy(child.m_aInputBuf, g_Config.m_KxArrayAgentTextColor, sizeof(child.m_aInputBuf));
                                                         child.m_InputInitialized = true;
                                                 }
+                                        }
+                                        else if(str_comp(child.pName, "Text Color Mode") == 0)
+                                                child.valueIdx = g_Config.m_KxArrayAgentTextMode;
+                                        else if(str_comp(child.pName, "Text Rainbow Mode") == 0)
+                                                child.valueIdx = g_Config.m_KxArrayAgentTextRainbowMode;
+                                        else if(str_comp(child.pName, "Text Rainbow Speed") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = g_Config.m_KxArrayAgentTextRainbowSpeed / 10.0f;
+                                        }
+                                        else if(str_comp(child.pName, "Text Rainbow Step") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = (float)g_Config.m_KxArrayAgentTextRainbowStep;
+                                        }
+                                        else if(str_comp(child.pName, "Main Color Mode") == 0)
+                                                child.valueIdx = g_Config.m_KxArrayAgentMainMode;
+                                        else if(str_comp(child.pName, "Main Rainbow Mode") == 0)
+                                                child.valueIdx = g_Config.m_KxArrayAgentMainRainbowMode;
+                                        else if(str_comp(child.pName, "Main Rainbow Speed") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = g_Config.m_KxArrayAgentMainRainbowSpeed / 10.0f;
+                                        }
+                                        else if(str_comp(child.pName, "Main Rainbow Step") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = (float)g_Config.m_KxArrayAgentMainRainbowStep;
+                                        }
+                                        else if(str_comp(child.pName, "Panel Color Mode") == 0)
+                                                child.valueIdx = g_Config.m_KxArrayAgentPanelMode;
+                                        else if(str_comp(child.pName, "Panel Rainbow Mode") == 0)
+                                                child.valueIdx = g_Config.m_KxArrayAgentPanelRainbowMode;
+                                        else if(str_comp(child.pName, "Panel Rainbow Speed") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = g_Config.m_KxArrayAgentPanelRainbowSpeed / 10.0f;
+                                        }
+                                        else if(str_comp(child.pName, "Panel Rainbow Step") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = (float)g_Config.m_KxArrayAgentPanelRainbowStep;
                                         }
                                 }
                         }
@@ -8362,16 +8598,18 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                         g_Config.m_KxArrayListSize = (int)(pTarget->value * 10.0f + 0.5f);
                                 else if(str_comp(pTarget->pName, "Max Length") == 0)
                                         g_Config.m_KxArrayListMaxLength = (int)(pTarget->value + 0.5f);
-                                else if(str_comp(pTarget->pName, "Speed") == 0)
+                                else if(str_comp(pTarget->pName, "Text Rainbow Speed") == 0)
                                         g_Config.m_KxArrayListRainbowSpeed = (int)(pTarget->value * 10.0f + 0.5f);
-                                else if(str_comp(pTarget->pName, "Step") == 0)
+                                else if(str_comp(pTarget->pName, "Text Rainbow Step") == 0)
                                         g_Config.m_KxArrayListRainbowStep = (int)(pTarget->value + 0.5f);
-                                else if(str_comp(pTarget->pName, "Text Opacity") == 0)
-                                        g_Config.m_KxArrayListTextOpacity = (int)(pTarget->value + 0.5f);
-                                else if(str_comp(pTarget->pName, "Main Opacity") == 0)
-                                        g_Config.m_KxArrayListMainOpacity = (int)(pTarget->value + 0.5f);
-                                else if(str_comp(pTarget->pName, "Panel Opacity") == 0)
-                                        g_Config.m_KxArrayListPanelOpacity = (int)(pTarget->value + 0.5f);
+                                else if(str_comp(pTarget->pName, "Main Rainbow Speed") == 0)
+                                        g_Config.m_KxArrayListMainRainbowSpeed = (int)(pTarget->value * 10.0f + 0.5f);
+                                else if(str_comp(pTarget->pName, "Main Rainbow Step") == 0)
+                                        g_Config.m_KxArrayListMainRainbowStep = (int)(pTarget->value + 0.5f);
+                                else if(str_comp(pTarget->pName, "Panel Rainbow Speed") == 0)
+                                        g_Config.m_KxArrayListPanelRainbowSpeed = (int)(pTarget->value * 10.0f + 0.5f);
+                                else if(str_comp(pTarget->pName, "Panel Rainbow Step") == 0)
+                                        g_Config.m_KxArrayListPanelRainbowStep = (int)(pTarget->value + 0.5f);
                         }
                         else if(str_comp(row.pName, "ArrayInfo") == 0)
                         {
@@ -8381,16 +8619,18 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                         g_Config.m_KxArrayInfoSize = (int)(pTarget->value * 10.0f + 0.5f);
                                 else if(str_comp(pTarget->pName, "Indentation") == 0)
                                         g_Config.m_KxArrayInfoIndent = (int)(pTarget->value + 0.5f);
-                                else if(str_comp(pTarget->pName, "Speed") == 0)
+                                else if(str_comp(pTarget->pName, "Text Rainbow Speed") == 0)
                                         g_Config.m_KxArrayInfoRainbowSpeed = (int)(pTarget->value * 10.0f + 0.5f);
-                                else if(str_comp(pTarget->pName, "Step") == 0)
+                                else if(str_comp(pTarget->pName, "Text Rainbow Step") == 0)
                                         g_Config.m_KxArrayInfoRainbowStep = (int)(pTarget->value + 0.5f);
-                                else if(str_comp(pTarget->pName, "Text Opacity") == 0)
-                                        g_Config.m_KxArrayInfoTextOpacity = (int)(pTarget->value + 0.5f);
-                                else if(str_comp(pTarget->pName, "Main Opacity") == 0)
-                                        g_Config.m_KxArrayInfoMainOpacity = (int)(pTarget->value + 0.5f);
-                                else if(str_comp(pTarget->pName, "Panel Opacity") == 0)
-                                        g_Config.m_KxArrayInfoPanelOpacity = (int)(pTarget->value + 0.5f);
+                                else if(str_comp(pTarget->pName, "Main Rainbow Speed") == 0)
+                                        g_Config.m_KxArrayInfoMainRainbowSpeed = (int)(pTarget->value * 10.0f + 0.5f);
+                                else if(str_comp(pTarget->pName, "Main Rainbow Step") == 0)
+                                        g_Config.m_KxArrayInfoMainRainbowStep = (int)(pTarget->value + 0.5f);
+                                else if(str_comp(pTarget->pName, "Panel Rainbow Speed") == 0)
+                                        g_Config.m_KxArrayInfoPanelRainbowSpeed = (int)(pTarget->value * 10.0f + 0.5f);
+                                else if(str_comp(pTarget->pName, "Panel Rainbow Step") == 0)
+                                        g_Config.m_KxArrayInfoPanelRainbowStep = (int)(pTarget->value + 0.5f);
                         }
                         else if(str_comp(row.pName, "ArrayPlayer") == 0)
                         {
@@ -8402,16 +8642,18 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                         g_Config.m_KxArrayPlayerHeight = (int)(pTarget->value + 0.5f);
                                 else if(str_comp(pTarget->pName, "Width ArrayPlayer") == 0)
                                         g_Config.m_KxArrayPlayerWidth = (int)(pTarget->value + 0.5f);
-                                else if(str_comp(pTarget->pName, "Speed") == 0)
+                                else if(str_comp(pTarget->pName, "Text Rainbow Speed") == 0)
                                         g_Config.m_KxArrayPlayerRainbowSpeed = (int)(pTarget->value * 10.0f + 0.5f);
-                                else if(str_comp(pTarget->pName, "Step") == 0)
+                                else if(str_comp(pTarget->pName, "Text Rainbow Step") == 0)
                                         g_Config.m_KxArrayPlayerRainbowStep = (int)(pTarget->value + 0.5f);
-                                else if(str_comp(pTarget->pName, "Text Opacity") == 0)
-                                        g_Config.m_KxArrayPlayerTextOpacity = (int)(pTarget->value + 0.5f);
-                                else if(str_comp(pTarget->pName, "Main Opacity") == 0)
-                                        g_Config.m_KxArrayPlayerMainOpacity = (int)(pTarget->value + 0.5f);
-                                else if(str_comp(pTarget->pName, "Panel Opacity") == 0)
-                                        g_Config.m_KxArrayPlayerPanelOpacity = (int)(pTarget->value + 0.5f);
+                                else if(str_comp(pTarget->pName, "Main Rainbow Speed") == 0)
+                                        g_Config.m_KxArrayPlayerMainRainbowSpeed = (int)(pTarget->value * 10.0f + 0.5f);
+                                else if(str_comp(pTarget->pName, "Main Rainbow Step") == 0)
+                                        g_Config.m_KxArrayPlayerMainRainbowStep = (int)(pTarget->value + 0.5f);
+                                else if(str_comp(pTarget->pName, "Panel Rainbow Speed") == 0)
+                                        g_Config.m_KxArrayPlayerPanelRainbowSpeed = (int)(pTarget->value * 10.0f + 0.5f);
+                                else if(str_comp(pTarget->pName, "Panel Rainbow Step") == 0)
+                                        g_Config.m_KxArrayPlayerPanelRainbowStep = (int)(pTarget->value + 0.5f);
                         }
                         // v6.13: ArrayAgent sliders.
                         else if(str_comp(row.pName, "ArrayAgent") == 0 && m_DragSliderPanel >= 0)
@@ -8424,6 +8666,18 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                         g_Config.m_KxArrayAgentHeight = (int)(pTarget->value + 0.5f);
                                 else if(str_comp(pTarget->pName, "Width") == 0)
                                         g_Config.m_KxArrayAgentWidth = (int)(pTarget->value + 0.5f);
+                                else if(str_comp(pTarget->pName, "Text Rainbow Speed") == 0)
+                                        g_Config.m_KxArrayAgentTextRainbowSpeed = (int)(pTarget->value * 10.0f + 0.5f);
+                                else if(str_comp(pTarget->pName, "Text Rainbow Step") == 0)
+                                        g_Config.m_KxArrayAgentTextRainbowStep = (int)(pTarget->value + 0.5f);
+                                else if(str_comp(pTarget->pName, "Main Rainbow Speed") == 0)
+                                        g_Config.m_KxArrayAgentMainRainbowSpeed = (int)(pTarget->value * 10.0f + 0.5f);
+                                else if(str_comp(pTarget->pName, "Main Rainbow Step") == 0)
+                                        g_Config.m_KxArrayAgentMainRainbowStep = (int)(pTarget->value + 0.5f);
+                                else if(str_comp(pTarget->pName, "Panel Rainbow Speed") == 0)
+                                        g_Config.m_KxArrayAgentPanelRainbowSpeed = (int)(pTarget->value * 10.0f + 0.5f);
+                                else if(str_comp(pTarget->pName, "Panel Rainbow Step") == 0)
+                                        g_Config.m_KxArrayAgentPanelRainbowStep = (int)(pTarget->value + 0.5f);
                         }
                         else if(str_comp(row.pName, "ClickGUI Settings") == 0 && str_comp(pTarget->pName, "ToolTips Text Opacity") == 0)
                                 g_Config.m_KxUiTooltipTextOpacity = (int)(pTarget->value + 0.5f);
@@ -8787,17 +9041,17 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
         // game (behind the dim/blur) instead of floating above the panels.
         // v6.11: "Show In ClickGUI" opt-outs — those arrays are drawn ABOVE the
         // panels instead (second pass after the panel render loop below).
-        if(ArrayListVisible && g_Config.m_KxArrayListShowInGui == 0)
+        if(ArrayListVisible && g_Config.m_KxArrayListShowMode == 0)
         {
                 UpdateArrayList(Client()->RenderFrameTime());
                 RenderArrayList(1.0f);
         }
-        if(ArrayInfoVisible && g_Config.m_KxArrayInfoShowInGui == 0)
+        if(ArrayInfoVisible && g_Config.m_KxArrayInfoShowMode == 0)
         {
                 UpdateArrayInfo(Client()->RenderFrameTime());
                 RenderArrayInfo(1.0f);
         }
-        if(ArrayPlayerVisible && g_Config.m_KxArrayPlayerShowInGui == 0)
+        if(ArrayPlayerVisible && g_Config.m_KxArrayPlayerShowMode == 0)
         {
                 UpdateArrayPlayer(Client()->RenderFrameTime());
                 RenderArrayPlayer(1.0f);
@@ -9032,24 +9286,24 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
         // (still under the dropdown popup / file browser / tooltips below).
         // Update + Render run exactly once per frame: the under-pass above
         // skipped them.
-        if(ArrayListVisible && g_Config.m_KxArrayListShowInGui != 0)
+        if(ArrayListVisible && (g_Config.m_KxArrayListShowMode == 1 || g_Config.m_KxArrayListShowMode == 2 || g_Config.m_KxArrayListShowMode == 3))
         {
                 UpdateArrayList(Client()->RenderFrameTime());
                 RenderArrayList(1.0f);
         }
         // Hover feedback: the grab cursor over a draggable "Show In ClickGUI" HUD.
-        if((ArrayListVisible && g_Config.m_KxArrayListShowInGui != 0 && ArrayListHitTest(m_MousePos)) ||
-                (ArrayInfoVisible && g_Config.m_KxArrayInfoShowInGui != 0 && ArrayInfoHitTest(m_MousePos)) ||
-                (ArrayPlayerVisible && g_Config.m_KxArrayPlayerShowInGui != 0 && ArrayPlayerHitTest(m_MousePos)) ||
+        if((ArrayListVisible && (g_Config.m_KxArrayListShowMode == 1 || g_Config.m_KxArrayListShowMode == 2 || g_Config.m_KxArrayListShowMode == 3) && ArrayListHitTest(m_MousePos)) ||
+                (ArrayInfoVisible && (g_Config.m_KxArrayInfoShowMode == 1 || g_Config.m_KxArrayInfoShowMode == 2 || g_Config.m_KxArrayInfoShowMode == 3) && ArrayInfoHitTest(m_MousePos)) ||
+                (ArrayPlayerVisible && (g_Config.m_KxArrayPlayerShowMode == 1 || g_Config.m_KxArrayPlayerShowMode == 2 || g_Config.m_KxArrayPlayerShowMode == 3) && ArrayPlayerHitTest(m_MousePos)) ||
                 (ArrayAgentVisible && (g_Config.m_KxArrayAgentShowMode == 1 || g_Config.m_KxArrayAgentShowMode == 2 || g_Config.m_KxArrayAgentShowMode == 3) && ArrayAgentHeaderHitTest(m_MousePos)) ||
                 m_ArrayListDragging || m_ArrayInfoDragging || m_ArrayPlayerDragging || m_AgentDragging)
                 CursorShape = 9;
-        if(ArrayInfoVisible && g_Config.m_KxArrayInfoShowInGui != 0)
+        if(ArrayInfoVisible && (g_Config.m_KxArrayInfoShowMode == 1 || g_Config.m_KxArrayInfoShowMode == 2 || g_Config.m_KxArrayInfoShowMode == 3))
         {
                 UpdateArrayInfo(Client()->RenderFrameTime());
                 RenderArrayInfo(1.0f);
         }
-        if(ArrayPlayerVisible && g_Config.m_KxArrayPlayerShowInGui != 0)
+        if(ArrayPlayerVisible && (g_Config.m_KxArrayPlayerShowMode == 1 || g_Config.m_KxArrayPlayerShowMode == 2 || g_Config.m_KxArrayPlayerShowMode == 3))
         {
                 UpdateArrayPlayer(Client()->RenderFrameTime());
                 RenderArrayPlayer(1.0f);
@@ -9163,7 +9417,7 @@ bool CClickGui::OnInput(const IInput::CEvent &Event)
                         {
                                 if(ArrayAgentHitTest(MP0))
                                 {
-                                        m_AgentScroll += (Event.m_Key == KEY_MOUSE_WHEEL_DOWN) ? 40.0f : -40.0f;
+                                        m_AgentScrollTarget += (Event.m_Key == KEY_MOUSE_WHEEL_DOWN) ? 40.0f : -40.0f;
                                         m_AgentStickBottom = false;
                                         return true;
                                 }
@@ -9289,7 +9543,8 @@ bool CClickGui::OnInput(const IInput::CEvent &Event)
                 // v6.13: the agent chat panel (Show In ClickGUI) scrolls first.
                 if(ShouldRenderArrayAgent() && (g_Config.m_KxArrayAgentShowMode == 1 || g_Config.m_KxArrayAgentShowMode == 2 || g_Config.m_KxArrayAgentShowMode == 3) && ArrayAgentHitTest(m_MousePos))
                 {
-                        m_AgentScroll += (Event.m_Key == KEY_MOUSE_WHEEL_UP) ? 40.0f : -40.0f;
+                        m_AgentScrollTarget += (Event.m_Key == KEY_MOUSE_WHEEL_UP) ? 40.0f : -40.0f;
+                        m_AgentStickBottom = false;
                         return true;
                 }
                 const float dir = (Event.m_Key == KEY_MOUSE_WHEEL_UP) ? -SCROLL_STEP : SCROLL_STEP;
@@ -9614,21 +9869,21 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
         // v6.11: "Show In ClickGUI" drag start (after the transport buttons so
         // a click on a button never starts a drag). The drag delta itself is
         // applied in UpdateArrayList/UpdateArrayInfo/UpdateArrayPlayer.
-        if(ShouldRenderArrayList() && g_Config.m_KxArrayListShowInGui != 0 && ArrayListHitTest(mousePos))
+        if(ShouldRenderArrayList() && (g_Config.m_KxArrayListShowMode == 1 || g_Config.m_KxArrayListShowMode == 2 || g_Config.m_KxArrayListShowMode == 3) && ArrayListHitTest(mousePos))
         {
                 m_ArrayListDragging = true;
                 m_ArrayListDragStartMouse = mousePos;
                 m_ArrayListDragStartPos = vec2(m_ArrayListRectX, m_ArrayListRectY);
                 return;
         }
-        if(ShouldRenderArrayInfo() && g_Config.m_KxArrayInfoShowInGui != 0 && ArrayInfoHitTest(mousePos))
+        if(ShouldRenderArrayInfo() && (g_Config.m_KxArrayInfoShowMode == 1 || g_Config.m_KxArrayInfoShowMode == 2 || g_Config.m_KxArrayInfoShowMode == 3) && ArrayInfoHitTest(mousePos))
         {
                 m_ArrayInfoDragging = true;
                 m_ArrayInfoDragStartMouse = mousePos;
                 m_ArrayInfoDragStartPos = vec2(m_ArrayInfoRectX, m_ArrayInfoRectY);
                 return;
         }
-        if(ShouldRenderArrayPlayer() && g_Config.m_KxArrayPlayerShowInGui != 0 && ArrayPlayerHitTest(mousePos))
+        if(ShouldRenderArrayPlayer() && (g_Config.m_KxArrayPlayerShowMode == 1 || g_Config.m_KxArrayPlayerShowMode == 2 || g_Config.m_KxArrayPlayerShowMode == 3) && ArrayPlayerHitTest(mousePos))
         {
                 m_ArrayPlayerDragging = true;
                 m_ArrayPlayerDragStartMouse = mousePos;
@@ -9838,6 +10093,10 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 g_Config.m_KxArrayAgentShowUsage = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Show Copy Message") == 0 && str_comp(row.pName, "ArrayAgent") == 0)
                                                 g_Config.m_KxArrayAgentShowCopy = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Save Sessions") == 0 && str_comp(row.pName, "ArrayAgent") == 0)
+                                                g_Config.m_KxArrayAgentSaveSessions = pTarget->on ? 1 : 0;
+                                        else if(str_comp(pTarget->pName, "Show Main Page") == 0 && str_comp(row.pName, "ArrayAgent") == 0)
+                                                g_Config.m_KxArrayAgentShowMainPage = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Dynamic Scale") == 0 && str_comp(row.pName, "ArrayAgent") == 0)
                                                 g_Config.m_KxArrayAgentDynamicScale = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Kinetix Logo") == 0 && str_comp(row.pName, "ArrayInfo") == 0)
@@ -9967,16 +10226,30 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                         {
                                 // v6.3: ArrayList Editor / Reset. The right half (Reset)
                                 // only exists once the list position was moved.
-                                const bool AgentEditorBtn = pTarget->type == ERowType::DoubleButton && str_comp(row.pName, "ArrayAgent") == 0 &&
+                                const bool ArrayEditorBtn = pTarget->type == ERowType::DoubleButton &&
+                                        (str_comp(row.pName, "ArrayList") == 0 || str_comp(row.pName, "ArrayInfo") == 0 || str_comp(row.pName, "ArrayPlayer") == 0 || str_comp(row.pName, "ArrayAgent") == 0) &&
                                         (str_comp(pTarget->pName, "Editor") == 0 || str_comp(pTarget->pName, "Game Editor") == 0 || str_comp(pTarget->pName, "ClickGUI Editor") == 0);
-                                if((str_comp(pTarget->pName, "Editor") == 0 || AgentEditorBtn) && pTarget->type == ERowType::DoubleButton)
+                                if((str_comp(pTarget->pName, "Editor") == 0 || ArrayEditorBtn) && pTarget->type == ERowType::DoubleButton)
                                 {
                                         // v6.13: Kind 3 = ArrayAgent.
                                         const int Kind = (str_comp(row.pName, "ArrayInfo") == 0) ? 1 : (str_comp(row.pName, "ArrayPlayer") == 0) ? 2 : (str_comp(row.pName, "ArrayAgent") == 0) ? 3 : 0;
                                         // The ClickGUI Editor button edits the GUI-pass position
-                                        // (Show Mode = In Game+ClickGUI keeps two positions).
-                                        const bool EditorGuiPass = Kind == 3 && str_comp(pTarget->pName, "ClickGUI Editor") == 0;
-                                        m_AgentEditorGuiPass = EditorGuiPass;
+                                        // (only Show Mode = In Game+ClickGUI keeps two
+                                        // positions). Everywhere else the editor closes the
+                                        // GUI and edits the panel in-game, like the other HUDs.
+                                        const int SectionMode = Kind == 1 ? g_Config.m_KxArrayInfoShowMode
+                                                : Kind == 2 ? g_Config.m_KxArrayPlayerShowMode
+                                                : Kind == 3 ? g_Config.m_KxArrayAgentShowMode
+                                                           : g_Config.m_KxArrayListShowMode;
+                                        const bool EditorGuiPass = str_comp(pTarget->pName, "ClickGUI Editor") == 0 && SectionMode == 2;
+                                        if(Kind == 1)
+                                                m_ArrayInfoEditorGuiPass = EditorGuiPass;
+                                        else if(Kind == 2)
+                                                m_ArrayPlayerEditorGuiPass = EditorGuiPass;
+                                        else if(Kind == 3)
+                                                m_AgentEditorGuiPass = EditorGuiPass;
+                                        else
+                                                m_ArrayListEditorGuiPass = EditorGuiPass;
                                         const bool Modified = Kind == 1 ? ArrayInfoPositionModified() : Kind == 2 ? ArrayPlayerPositionModified() : Kind == 3 ? ArrayAgentPositionModified() : ArrayListPositionModified();
                                         const float btnW = (rw - 6.0f) * 0.5f;
                                         if(Modified && mousePos.x >= rx + 2.0f + btnW)
@@ -10510,16 +10783,18 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 g_Config.m_KxArrayListSize = (int)(pTarget->value * 10.0f + 0.5f);
                                         else if(str_comp(pTarget->pName, "Max Length") == 0)
                                                 g_Config.m_KxArrayListMaxLength = (int)(pTarget->value + 0.5f);
-                                        else if(str_comp(pTarget->pName, "Speed") == 0)
+                                        else if(str_comp(pTarget->pName, "Text Rainbow Speed") == 0)
                                                 g_Config.m_KxArrayListRainbowSpeed = (int)(pTarget->value * 10.0f + 0.5f);
-                                        else if(str_comp(pTarget->pName, "Step") == 0)
+                                        else if(str_comp(pTarget->pName, "Text Rainbow Step") == 0)
                                                 g_Config.m_KxArrayListRainbowStep = (int)(pTarget->value + 0.5f);
-                                        else if(str_comp(pTarget->pName, "Text Opacity") == 0)
-                                                g_Config.m_KxArrayListTextOpacity = (int)(pTarget->value + 0.5f);
-                                        else if(str_comp(pTarget->pName, "Main Opacity") == 0)
-                                                g_Config.m_KxArrayListMainOpacity = (int)(pTarget->value + 0.5f);
-                                        else if(str_comp(pTarget->pName, "Panel Opacity") == 0)
-                                                g_Config.m_KxArrayListPanelOpacity = (int)(pTarget->value + 0.5f);
+                                        else if(str_comp(pTarget->pName, "Main Rainbow Speed") == 0)
+                                                g_Config.m_KxArrayListMainRainbowSpeed = (int)(pTarget->value * 10.0f + 0.5f);
+                                        else if(str_comp(pTarget->pName, "Main Rainbow Step") == 0)
+                                                g_Config.m_KxArrayListMainRainbowStep = (int)(pTarget->value + 0.5f);
+                                        else if(str_comp(pTarget->pName, "Panel Rainbow Speed") == 0)
+                                                g_Config.m_KxArrayListPanelRainbowSpeed = (int)(pTarget->value * 10.0f + 0.5f);
+                                        else if(str_comp(pTarget->pName, "Panel Rainbow Step") == 0)
+                                                g_Config.m_KxArrayListPanelRainbowStep = (int)(pTarget->value + 0.5f);
                                 }
                                 else if(str_comp(row.pName, "ArrayInfo") == 0)
                                 {
@@ -10529,16 +10804,18 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 g_Config.m_KxArrayInfoSize = (int)(pTarget->value * 10.0f + 0.5f);
                                         else if(str_comp(pTarget->pName, "Indentation") == 0)
                                                 g_Config.m_KxArrayInfoIndent = (int)(pTarget->value + 0.5f);
-                                        else if(str_comp(pTarget->pName, "Speed") == 0)
+                                        else if(str_comp(pTarget->pName, "Text Rainbow Speed") == 0)
                                                 g_Config.m_KxArrayInfoRainbowSpeed = (int)(pTarget->value * 10.0f + 0.5f);
-                                        else if(str_comp(pTarget->pName, "Step") == 0)
+                                        else if(str_comp(pTarget->pName, "Text Rainbow Step") == 0)
                                                 g_Config.m_KxArrayInfoRainbowStep = (int)(pTarget->value + 0.5f);
-                                        else if(str_comp(pTarget->pName, "Text Opacity") == 0)
-                                                g_Config.m_KxArrayInfoTextOpacity = (int)(pTarget->value + 0.5f);
-                                        else if(str_comp(pTarget->pName, "Main Opacity") == 0)
-                                                g_Config.m_KxArrayInfoMainOpacity = (int)(pTarget->value + 0.5f);
-                                        else if(str_comp(pTarget->pName, "Panel Opacity") == 0)
-                                                g_Config.m_KxArrayInfoPanelOpacity = (int)(pTarget->value + 0.5f);
+                                        else if(str_comp(pTarget->pName, "Main Rainbow Speed") == 0)
+                                                g_Config.m_KxArrayInfoMainRainbowSpeed = (int)(pTarget->value * 10.0f + 0.5f);
+                                        else if(str_comp(pTarget->pName, "Main Rainbow Step") == 0)
+                                                g_Config.m_KxArrayInfoMainRainbowStep = (int)(pTarget->value + 0.5f);
+                                        else if(str_comp(pTarget->pName, "Panel Rainbow Speed") == 0)
+                                                g_Config.m_KxArrayInfoPanelRainbowSpeed = (int)(pTarget->value * 10.0f + 0.5f);
+                                        else if(str_comp(pTarget->pName, "Panel Rainbow Step") == 0)
+                                                g_Config.m_KxArrayInfoPanelRainbowStep = (int)(pTarget->value + 0.5f);
                                 }
                                 else if(str_comp(row.pName, "ArrayPlayer") == 0)
                                 {
@@ -10550,16 +10827,18 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 g_Config.m_KxArrayPlayerHeight = (int)(pTarget->value + 0.5f);
                                         else if(str_comp(pTarget->pName, "Width ArrayPlayer") == 0)
                                                 g_Config.m_KxArrayPlayerWidth = (int)(pTarget->value + 0.5f);
-                                        else if(str_comp(pTarget->pName, "Speed") == 0)
+                                        else if(str_comp(pTarget->pName, "Text Rainbow Speed") == 0)
                                                 g_Config.m_KxArrayPlayerRainbowSpeed = (int)(pTarget->value * 10.0f + 0.5f);
-                                        else if(str_comp(pTarget->pName, "Step") == 0)
+                                        else if(str_comp(pTarget->pName, "Text Rainbow Step") == 0)
                                                 g_Config.m_KxArrayPlayerRainbowStep = (int)(pTarget->value + 0.5f);
-                                        else if(str_comp(pTarget->pName, "Text Opacity") == 0)
-                                                g_Config.m_KxArrayPlayerTextOpacity = (int)(pTarget->value + 0.5f);
-                                        else if(str_comp(pTarget->pName, "Main Opacity") == 0)
-                                                g_Config.m_KxArrayPlayerMainOpacity = (int)(pTarget->value + 0.5f);
-                                        else if(str_comp(pTarget->pName, "Panel Opacity") == 0)
-                                                g_Config.m_KxArrayPlayerPanelOpacity = (int)(pTarget->value + 0.5f);
+                                        else if(str_comp(pTarget->pName, "Main Rainbow Speed") == 0)
+                                                g_Config.m_KxArrayPlayerMainRainbowSpeed = (int)(pTarget->value * 10.0f + 0.5f);
+                                        else if(str_comp(pTarget->pName, "Main Rainbow Step") == 0)
+                                                g_Config.m_KxArrayPlayerMainRainbowStep = (int)(pTarget->value + 0.5f);
+                                        else if(str_comp(pTarget->pName, "Panel Rainbow Speed") == 0)
+                                                g_Config.m_KxArrayPlayerPanelRainbowSpeed = (int)(pTarget->value * 10.0f + 0.5f);
+                                        else if(str_comp(pTarget->pName, "Panel Rainbow Step") == 0)
+                                                g_Config.m_KxArrayPlayerPanelRainbowStep = (int)(pTarget->value + 0.5f);
                                 }
                                 // v6.13: ArrayAgent sliders (touch path).
                                 else if(str_comp(row.pName, "ArrayAgent") == 0)
@@ -10572,6 +10851,18 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 g_Config.m_KxArrayAgentHeight = (int)(pTarget->value + 0.5f);
                                         else if(str_comp(pTarget->pName, "Width") == 0)
                                                 g_Config.m_KxArrayAgentWidth = (int)(pTarget->value + 0.5f);
+                                        else if(str_comp(pTarget->pName, "Text Rainbow Speed") == 0)
+                                                g_Config.m_KxArrayAgentTextRainbowSpeed = (int)(pTarget->value * 10.0f + 0.5f);
+                                        else if(str_comp(pTarget->pName, "Text Rainbow Step") == 0)
+                                                g_Config.m_KxArrayAgentTextRainbowStep = (int)(pTarget->value + 0.5f);
+                                        else if(str_comp(pTarget->pName, "Main Rainbow Speed") == 0)
+                                                g_Config.m_KxArrayAgentMainRainbowSpeed = (int)(pTarget->value * 10.0f + 0.5f);
+                                        else if(str_comp(pTarget->pName, "Main Rainbow Step") == 0)
+                                                g_Config.m_KxArrayAgentMainRainbowStep = (int)(pTarget->value + 0.5f);
+                                        else if(str_comp(pTarget->pName, "Panel Rainbow Speed") == 0)
+                                                g_Config.m_KxArrayAgentPanelRainbowSpeed = (int)(pTarget->value * 10.0f + 0.5f);
+                                        else if(str_comp(pTarget->pName, "Panel Rainbow Step") == 0)
+                                                g_Config.m_KxArrayAgentPanelRainbowStep = (int)(pTarget->value + 0.5f);
                                 }
                                 else if(str_comp(row.pName, "ClickGUI Settings") == 0 && str_comp(pTarget->pName, "ToolTips Text Opacity") == 0)
                                         g_Config.m_KxUiTooltipTextOpacity = (int)(pTarget->value + 0.5f);
@@ -11775,8 +12066,20 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                                         g_Config.m_KxArrayListSort = o;
                                                                 else if(str_comp(target.pName, "Style") == 0)
                                                                         g_Config.m_KxArrayListStyle = o;
-                                                                else if(str_comp(target.pName, "Rainbow Mode") == 0)
+                                                                else if(str_comp(target.pName, "Show Mode") == 0)
+                                                                        g_Config.m_KxArrayListShowMode = o;
+                                                                else if(str_comp(target.pName, "Text Color Mode") == 0)
+                                                                        g_Config.m_KxArrayListRainbow = o;
+                                                                else if(str_comp(target.pName, "Text Rainbow Mode") == 0)
                                                                         g_Config.m_KxArrayListRainbowMode = o;
+                                                                else if(str_comp(target.pName, "Main Color Mode") == 0)
+                                                                        g_Config.m_KxArrayListMainMode = o;
+                                                                else if(str_comp(target.pName, "Main Rainbow Mode") == 0)
+                                                                        g_Config.m_KxArrayListMainRainbowMode = o;
+                                                                else if(str_comp(target.pName, "Panel Color Mode") == 0)
+                                                                        g_Config.m_KxArrayListPanelMode = o;
+                                                                else if(str_comp(target.pName, "Panel Rainbow Mode") == 0)
+                                                                        g_Config.m_KxArrayListPanelRainbowMode = o;
                                                         }
                                                         // v6.4: ArrayInfo dropdowns.
                                                         else if(str_comp(row.pName, "ArrayInfo") == 0)
@@ -11789,8 +12092,20 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                                 }
                                                                 else if(str_comp(target.pName, "Style") == 0)
                                                                         g_Config.m_KxArrayInfoStyle = o;
-                                                                else if(str_comp(target.pName, "Rainbow Mode") == 0)
+                                                                else if(str_comp(target.pName, "Show Mode") == 0)
+                                                                        g_Config.m_KxArrayInfoShowMode = o;
+                                                                else if(str_comp(target.pName, "Text Color Mode") == 0)
+                                                                        g_Config.m_KxArrayInfoRainbow = o;
+                                                                else if(str_comp(target.pName, "Text Rainbow Mode") == 0)
                                                                         g_Config.m_KxArrayInfoRainbowMode = o;
+                                                                else if(str_comp(target.pName, "Main Color Mode") == 0)
+                                                                        g_Config.m_KxArrayInfoMainMode = o;
+                                                                else if(str_comp(target.pName, "Main Rainbow Mode") == 0)
+                                                                        g_Config.m_KxArrayInfoMainRainbowMode = o;
+                                                                else if(str_comp(target.pName, "Panel Color Mode") == 0)
+                                                                        g_Config.m_KxArrayInfoPanelMode = o;
+                                                                else if(str_comp(target.pName, "Panel Rainbow Mode") == 0)
+                                                                        g_Config.m_KxArrayInfoPanelRainbowMode = o;
                                                         }
                                                         // v6.7: ArrayPlayer dropdowns.
                                                         else if(str_comp(row.pName, "ArrayPlayer") == 0)
@@ -11799,8 +12114,20 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                                         g_Config.m_KxArrayPlayerXAnchor = o;
                                                                 else if(str_comp(target.pName, "Style") == 0)
                                                                         g_Config.m_KxArrayPlayerStyle = o;
-                                                                else if(str_comp(target.pName, "Rainbow Mode") == 0)
+                                                                else if(str_comp(target.pName, "Show Mode") == 0)
+                                                                        g_Config.m_KxArrayPlayerShowMode = o;
+                                                                else if(str_comp(target.pName, "Text Color Mode") == 0)
+                                                                        g_Config.m_KxArrayPlayerRainbow = o;
+                                                                else if(str_comp(target.pName, "Text Rainbow Mode") == 0)
                                                                         g_Config.m_KxArrayPlayerRainbowMode = o;
+                                                                else if(str_comp(target.pName, "Main Color Mode") == 0)
+                                                                        g_Config.m_KxArrayPlayerMainMode = o;
+                                                                else if(str_comp(target.pName, "Main Rainbow Mode") == 0)
+                                                                        g_Config.m_KxArrayPlayerMainRainbowMode = o;
+                                                                else if(str_comp(target.pName, "Panel Color Mode") == 0)
+                                                                        g_Config.m_KxArrayPlayerPanelMode = o;
+                                                                else if(str_comp(target.pName, "Panel Rainbow Mode") == 0)
+                                                                        g_Config.m_KxArrayPlayerPanelRainbowMode = o;
                                                         }
                                                         // v6.13: ArrayAgent dropdowns.
                                                         else if(str_comp(row.pName, "ArrayAgent") == 0)
@@ -11813,6 +12140,18 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                                         g_Config.m_KxArrayAgentShowMode = o;
                                                                 else if(str_comp(target.pName, "Reasoning") == 0)
                                                                         g_Config.m_KxArrayAgentReasoning = o;
+                                                                else if(str_comp(target.pName, "Text Color Mode") == 0)
+                                                                        g_Config.m_KxArrayAgentTextMode = o;
+                                                                else if(str_comp(target.pName, "Text Rainbow Mode") == 0)
+                                                                        g_Config.m_KxArrayAgentTextRainbowMode = o;
+                                                                else if(str_comp(target.pName, "Main Color Mode") == 0)
+                                                                        g_Config.m_KxArrayAgentMainMode = o;
+                                                                else if(str_comp(target.pName, "Main Rainbow Mode") == 0)
+                                                                        g_Config.m_KxArrayAgentMainRainbowMode = o;
+                                                                else if(str_comp(target.pName, "Panel Color Mode") == 0)
+                                                                        g_Config.m_KxArrayAgentPanelMode = o;
+                                                                else if(str_comp(target.pName, "Panel Rainbow Mode") == 0)
+                                                                        g_Config.m_KxArrayAgentPanelRainbowMode = o;
                                                         }
                                                         m_DropdownOpen = false;
                                                         return true;
@@ -12039,11 +12378,14 @@ void CClickGui::HandleTextInput(const IInput::CEvent &Event)
                                 ;
                         else if(m_InputCursor > 0)
                         {
-                                for(int i = m_InputCursor - 1; i < m_InputLen; ++i)
-                                        m_InputBuf[i] = m_InputBuf[i + 1];
-                                m_InputLen--;
-                                m_InputBuf[m_InputLen] = 0;
-                                m_InputCursor--;
+                                // UTF-8: delete the whole character, not one byte
+                                // (Russian text used to need two Backspaces).
+                                int Start = m_InputCursor - 1;
+                                while(Start > 0 && ((unsigned char)m_InputBuf[Start] & 0xC0) == 0x80)
+                                        --Start;
+                                memmove(m_InputBuf + Start, m_InputBuf + m_InputCursor, m_InputLen - m_InputCursor + 1);
+                                m_InputLen -= (m_InputCursor - Start);
+                                m_InputCursor = Start;
                         }
                         return;
                 }
@@ -12053,10 +12395,12 @@ void CClickGui::HandleTextInput(const IInput::CEvent &Event)
                                 ;
                         else if(m_InputCursor < m_InputLen)
                         {
-                                for(int i = m_InputCursor; i < m_InputLen; ++i)
-                                        m_InputBuf[i] = m_InputBuf[i + 1];
-                                m_InputLen--;
-                                m_InputBuf[m_InputLen] = 0;
+                                // UTF-8: delete one full character forward.
+                                int End = m_InputCursor + 1;
+                                while(End < m_InputLen && ((unsigned char)m_InputBuf[End] & 0xC0) == 0x80)
+                                        ++End;
+                                memmove(m_InputBuf + m_InputCursor, m_InputBuf + End, m_InputLen - End + 1);
+                                m_InputLen -= (End - m_InputCursor);
                         }
                         return;
                 }
@@ -12064,7 +12408,11 @@ void CClickGui::HandleTextInput(const IInput::CEvent &Event)
                 {
                         if(m_InputCursor > 0)
                         {
-                                m_InputCursor--;
+                                const int Old = m_InputCursor;
+                                int New = m_InputCursor - 1;
+                                while(New > 0 && ((unsigned char)m_InputBuf[New] & 0xC0) == 0x80)
+                                        --New;
+                                m_InputCursor = New;
                                 if(!shiftPressed)
                                 {
                                         m_InputSelStart = -1;
@@ -12075,8 +12423,8 @@ void CClickGui::HandleTextInput(const IInput::CEvent &Event)
                                         // Extend selection.
                                         if(m_InputSelStart < 0)
                                         {
-                                                m_InputSelStart = m_InputCursor + 1;
-                                                m_InputSelEnd = m_InputCursor + 1;
+                                                m_InputSelStart = Old;
+                                                m_InputSelEnd = Old;
                                         }
                                         m_InputSelStart = m_InputCursor;
                                 }
@@ -12087,7 +12435,11 @@ void CClickGui::HandleTextInput(const IInput::CEvent &Event)
                 {
                         if(m_InputCursor < m_InputLen)
                         {
-                                m_InputCursor++;
+                                const int Old = m_InputCursor;
+                                int New = m_InputCursor + 1;
+                                while(New < m_InputLen && ((unsigned char)m_InputBuf[New] & 0xC0) == 0x80)
+                                        ++New;
+                                m_InputCursor = New;
                                 if(!shiftPressed)
                                 {
                                         m_InputSelStart = -1;
@@ -12097,8 +12449,8 @@ void CClickGui::HandleTextInput(const IInput::CEvent &Event)
                                 {
                                         if(m_InputSelEnd < 0)
                                         {
-                                                m_InputSelStart = m_InputCursor - 1;
-                                                m_InputSelEnd = m_InputCursor - 1;
+                                                m_InputSelStart = Old;
+                                                m_InputSelEnd = Old;
                                         }
                                         m_InputSelEnd = m_InputCursor;
                                 }
@@ -12285,7 +12637,10 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
         }
 
         // Main Color (hex, e.g. "9d4edd"). Was "ClickGUI Color" before v1.56.199.
-        if(str_comp(pRow->pName, "Main Color") == 0)
+        // The name is not unique: ArrayAgent/ArrayList/... have their own "Main
+        // Color" rows, so the ClickGUI accent branch must check its owner first
+        // (dispatch is name-only and first-match-wins).
+        if(str_comp(pRow->pName, "Main Color") == 0 && m_InputPanel >= 0 && m_InputPanel < NUM_PANELS && m_InputRow >= 0 && m_InputRow < g_Panels[m_InputPanel].rowCount && str_comp(g_Panels[m_InputPanel].pRows[m_InputRow].pName, "ClickGUI Settings") == 0)
         {
                 unsigned hex = 0;
                 if(sscanf(pRow->m_aInputBuf, "%6x", &hex) == 1)
@@ -12295,26 +12650,73 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
                         m_SavedAccentColorRGBA = m_AccentColorRGBA;
                 }
         }
-        // Panel Color (hex, e.g. "161622").
-        else if(str_comp(pRow->pName, "Panel Color") == 0)
+        // Panel Color (hex, e.g. "161622"). Same owner check as Main Color.
+        else if(str_comp(pRow->pName, "Panel Color") == 0 && m_InputPanel >= 0 && m_InputPanel < NUM_PANELS && m_InputRow >= 0 && m_InputRow < g_Panels[m_InputPanel].rowCount && str_comp(g_Panels[m_InputPanel].pRows[m_InputRow].pName, "ClickGUI Settings") == 0)
         {
                 unsigned hex = 0;
                 if(sscanf(pRow->m_aInputBuf, "%6x", &hex) == 1)
                         m_PanelBgRGBA = 0xff000000u | (hex & 0xffffff);
         }
-        // v6.3: ArrayList text color (hex).
+        // v6.3: ArrayList text color (hex ARGB since v6.14).
         else if(str_comp(pRow->pName, "Text Color") == 0 && m_InputPanel >= 0 && m_InputPanel < NUM_PANELS && m_InputRow >= 0 && m_InputRow < g_Panels[m_InputPanel].rowCount && str_comp(g_Panels[m_InputPanel].pRows[m_InputRow].pName, "ArrayList") == 0)
         {
                 unsigned hex = 0;
-                if(sscanf(pRow->m_aInputBuf, "%6x", &hex) == 1)
-                        str_format(g_Config.m_KxArrayListTextColor, sizeof(g_Config.m_KxArrayListTextColor), "%06x", hex & 0xffffff);
+                if(sscanf(pRow->m_aInputBuf, "%8x", &hex) == 1)
+                        str_format(g_Config.m_KxArrayListTextColor, sizeof(g_Config.m_KxArrayListTextColor), "%08x", hex & 0xffffffff);
         }
         // v6.4: ArrayInfo text color + watermark.
         else if(str_comp(pRow->pName, "Text Color") == 0 && m_InputPanel >= 0 && m_InputPanel < NUM_PANELS && m_InputRow >= 0 && m_InputRow < g_Panels[m_InputPanel].rowCount && str_comp(g_Panels[m_InputPanel].pRows[m_InputRow].pName, "ArrayInfo") == 0)
         {
                 unsigned hex = 0;
-                if(sscanf(pRow->m_aInputBuf, "%6x", &hex) == 1)
-                        str_format(g_Config.m_KxArrayInfoTextColor, sizeof(g_Config.m_KxArrayInfoTextColor), "%06x", hex & 0xffffff);
+                if(sscanf(pRow->m_aInputBuf, "%8x", &hex) == 1)
+                        str_format(g_Config.m_KxArrayInfoTextColor, sizeof(g_Config.m_KxArrayInfoTextColor), "%08x", hex & 0xffffffff);
+        }
+        // v6.14: ArrayPlayer text color (ARGB). The other two widgets keep their
+        // existing branches above; this one had no commit handler before.
+        else if(str_comp(pRow->pName, "Text Color") == 0 && m_InputPanel >= 0 && m_InputPanel < NUM_PANELS && m_InputRow >= 0 && m_InputRow < g_Panels[m_InputPanel].rowCount && str_comp(g_Panels[m_InputPanel].pRows[m_InputRow].pName, "ArrayPlayer") == 0)
+        {
+                unsigned hex = 0;
+                if(sscanf(pRow->m_aInputBuf, "%8x", &hex) == 1)
+                        str_format(g_Config.m_KxArrayPlayerTextColor, sizeof(g_Config.m_KxArrayPlayerTextColor), "%08x", hex & 0xffffffff);
+        }
+        // v6.14: ArrayList / ArrayInfo / ArrayPlayer main + panel colors (ARGB).
+        // Owner-guarded: the unguarded "Main Color"/"Panel Color" branches above
+        // belong to ClickGUI Settings only.
+        else if(str_comp(pRow->pName, "Main Color") == 0 && m_InputPanel >= 0 && m_InputPanel < NUM_PANELS && m_InputRow >= 0 && m_InputRow < g_Panels[m_InputPanel].rowCount && str_comp(g_Panels[m_InputPanel].pRows[m_InputRow].pName, "ArrayList") == 0)
+        {
+                unsigned hex = 0;
+                if(sscanf(pRow->m_aInputBuf, "%8x", &hex) == 1)
+                        str_format(g_Config.m_KxArrayListMainColor, sizeof(g_Config.m_KxArrayListMainColor), "%08x", hex & 0xffffffff);
+        }
+        else if(str_comp(pRow->pName, "Panel Color") == 0 && m_InputPanel >= 0 && m_InputPanel < NUM_PANELS && m_InputRow >= 0 && m_InputRow < g_Panels[m_InputPanel].rowCount && str_comp(g_Panels[m_InputPanel].pRows[m_InputRow].pName, "ArrayList") == 0)
+        {
+                unsigned hex = 0;
+                if(sscanf(pRow->m_aInputBuf, "%8x", &hex) == 1)
+                        str_format(g_Config.m_KxArrayListPanelColor, sizeof(g_Config.m_KxArrayListPanelColor), "%08x", hex & 0xffffffff);
+        }
+        else if(str_comp(pRow->pName, "Main Color") == 0 && m_InputPanel >= 0 && m_InputPanel < NUM_PANELS && m_InputRow >= 0 && m_InputRow < g_Panels[m_InputPanel].rowCount && str_comp(g_Panels[m_InputPanel].pRows[m_InputRow].pName, "ArrayInfo") == 0)
+        {
+                unsigned hex = 0;
+                if(sscanf(pRow->m_aInputBuf, "%8x", &hex) == 1)
+                        str_format(g_Config.m_KxArrayInfoMainColor, sizeof(g_Config.m_KxArrayInfoMainColor), "%08x", hex & 0xffffffff);
+        }
+        else if(str_comp(pRow->pName, "Panel Color") == 0 && m_InputPanel >= 0 && m_InputPanel < NUM_PANELS && m_InputRow >= 0 && m_InputRow < g_Panels[m_InputPanel].rowCount && str_comp(g_Panels[m_InputPanel].pRows[m_InputRow].pName, "ArrayInfo") == 0)
+        {
+                unsigned hex = 0;
+                if(sscanf(pRow->m_aInputBuf, "%8x", &hex) == 1)
+                        str_format(g_Config.m_KxArrayInfoPanelColor, sizeof(g_Config.m_KxArrayInfoPanelColor), "%08x", hex & 0xffffffff);
+        }
+        else if(str_comp(pRow->pName, "Main Color") == 0 && m_InputPanel >= 0 && m_InputPanel < NUM_PANELS && m_InputRow >= 0 && m_InputRow < g_Panels[m_InputPanel].rowCount && str_comp(g_Panels[m_InputPanel].pRows[m_InputRow].pName, "ArrayPlayer") == 0)
+        {
+                unsigned hex = 0;
+                if(sscanf(pRow->m_aInputBuf, "%8x", &hex) == 1)
+                        str_format(g_Config.m_KxArrayPlayerMainColor, sizeof(g_Config.m_KxArrayPlayerMainColor), "%08x", hex & 0xffffffff);
+        }
+        else if(str_comp(pRow->pName, "Panel Color") == 0 && m_InputPanel >= 0 && m_InputPanel < NUM_PANELS && m_InputRow >= 0 && m_InputRow < g_Panels[m_InputPanel].rowCount && str_comp(g_Panels[m_InputPanel].pRows[m_InputRow].pName, "ArrayPlayer") == 0)
+        {
+                unsigned hex = 0;
+                if(sscanf(pRow->m_aInputBuf, "%8x", &hex) == 1)
+                        str_format(g_Config.m_KxArrayPlayerPanelColor, sizeof(g_Config.m_KxArrayPlayerPanelColor), "%08x", hex & 0xffffffff);
         }
         else if(str_comp(pRow->pName, "Watermark") == 0 && m_InputPanel >= 0 && m_InputPanel < NUM_PANELS && m_InputRow >= 0 && m_InputRow < g_Panels[m_InputPanel].rowCount && str_comp(g_Panels[m_InputPanel].pRows[m_InputRow].pName, "ArrayInfo") == 0)
         {
@@ -12329,6 +12731,8 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
                         str_copy(g_Config.m_KxArrayAgentApiKey, pRow->m_aInputBuf, sizeof(g_Config.m_KxArrayAgentApiKey));
                 else if(str_comp(pRow->pName, "Models") == 0)
                         str_copy(g_Config.m_KxArrayAgentModels, pRow->m_aInputBuf, sizeof(g_Config.m_KxArrayAgentModels));
+                else if(str_comp(pRow->pName, "Workdir") == 0)
+                        str_copy(g_Config.m_KxArrayAgentWorkdir, pRow->m_aInputBuf, sizeof(g_Config.m_KxArrayAgentWorkdir));
                 else if(str_comp(pRow->pName, "Main Color") == 0 || str_comp(pRow->pName, "Panel Color") == 0 || str_comp(pRow->pName, "Text Color") == 0)
                 {
                         // ARGB hex (8 digits); alpha byte kept.
@@ -13060,6 +13464,11 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                 const float ry = bodyY + ryLocal + rowYOffset;
                 ++rowIdx;
 
+                // Hover highlight: the same subtle rounded tint as the Agent rows.
+                if(PointInRect(m_MousePos, rx, ry, rw, rh))
+                        DrawRoundedRect(rx - 2.0f, ry - 1.0f, rw + 4.0f, rh + 2.0f, 3.0f,
+                                IGraphics::CORNER_ALL, ColorRGBA(1.0f, 1.0f, 1.0f, alpha * 0.06f));
+
                 // v1.56.289: record the hovered top-level row for the ToolTip
                 // (previously only child rows were recorded, so headers and
                 // top-level toggles never showed a tooltip). Children are
@@ -13075,7 +13484,10 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 str_comp(row.pName, "TPS") == 0 &&
                                 m_MousePos.x >= rx + rw - KX_TPS_TOGGLE_W)
                                 pTT = row.pToolTip2;
-                        if(pTT && PointInRect(m_MousePos, rx, ry, rw, rh))
+                        // A row clipped away by the body clip must not show a
+                        // tooltip (it is not visible to the user).
+                        const bool RowVisible = m_MousePos.y >= bodyY && m_MousePos.y <= bodyY + visibleBodyHeight;
+                        if(pTT && RowVisible && PointInRect(m_MousePos, rx, ry, rw, rh))
                         {
                                 str_copy(m_aToolTipText, pTT, sizeof(m_aToolTipText));
                                 m_pToolTipRow = pTT;
@@ -13226,7 +13638,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 ColorRGBA(COL_INPUT_BG, true).WithAlpha(alpha));
                         DrawRoundedRect(inX - 1.0f, inY - 1.0f, inW + 2.0f, inH + 2.0f, 2.0f,
                                 IGraphics::CORNER_ALL,
-                                editingThis ? KxColorWithAlpha(m_AccentColorRGBA, alpha * m_MainOpacity) : ColorRGBA(COL_INPUT_BORDER, true).WithAlpha(alpha * 0.5f));
+                                ColorRGBA(COL_INPUT_BORDER, true).WithAlpha(alpha * 0.5f));
                         // Lazy-init the row's mutable buffer.
                         if(!row.m_InputInitialized)
                         {
@@ -13249,6 +13661,28 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                         ? textCol
                                         : ColorRGBA(0xff8a8aa8, true).WithAlpha(alpha);
                         }
+                        // Horizontal scroll: keep the caret inside the field.
+                        float ScrollOff = 0.0f;
+                        if(editingThis)
+                        {
+                                char tmp[256];
+                                int n = std::min(m_InputCursor, (int)sizeof(tmp) - 1);
+                                mem_copy(tmp, m_InputBuf, n); tmp[n] = 0;
+                                const float CaretPx = 4.0f + TextRender()->TextWidth(17.0f, tmp);
+                                const float ViewW = inW - 8.0f;
+                                if(CaretPx > ViewW)
+                                        ScrollOff = CaretPx - ViewW;
+                        }
+                        // ClipEnable is a single global state, not a stack: intersect the field
+                        // rect with the panel body, otherwise a field row below the visible body
+                        // replaces the body clip and its text is drawn outside the panel.
+                        {
+                                const float fx0 = std::max(inX + 2.0f, bodyX);
+                                const float fy0 = std::max(inY + 1.0f, bodyY);
+                                const float fx1 = std::min(inX + inW - 2.0f, bodyX + bodyW);
+                                const float fy1 = std::min(inY + inH - 1.0f, bodyY + visibleBodyHeight);
+                                ClipEnableVirtual(fx0, fy0, std::max(0.0f, fx1 - fx0), std::max(0.0f, fy1 - fy0));
+                        }
                         // Draw selection highlight (if editing and selection active).
                         if(editingThis && m_InputSelStart >= 0 && m_InputSelEnd > m_InputSelStart)
                         {
@@ -13256,27 +13690,33 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 char tmp[256];
                                 int n = std::min(m_InputSelStart, (int)sizeof(tmp) - 1);
                                 mem_copy(tmp, m_InputBuf, n); tmp[n] = 0;
-                                float selStartX = inX + 4.0f + TextRender()->TextWidth(17.0f, tmp);
+                                float selStartX = inX + 4.0f + TextRender()->TextWidth(17.0f, tmp) - ScrollOff;
                                 n = std::min(m_InputSelEnd, (int)sizeof(tmp) - 1);
                                 mem_copy(tmp, m_InputBuf, n); tmp[n] = 0;
-                                float selEndX = inX + 4.0f + TextRender()->TextWidth(17.0f, tmp);
+                                float selEndX = inX + 4.0f + TextRender()->TextWidth(17.0f, tmp) - ScrollOff;
                                 DrawRoundedRect(selStartX, inY + 3.0f, selEndX - selStartX, inH - 6.0f, 1.0f,
                                         IGraphics::CORNER_NONE,
                                         ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha * 0.5f * m_MainOpacity));
                         }
                         if(pText)
-                                DrawText(inX + 4.0f, inY + 4.0f, 17.0f, pText, inCol);
-                        // Cursor at m_InputCursor position while editing.
+                                DrawText(inX + 4.0f - ScrollOff, inY + 4.0f, 17.0f, pText, inCol);
+                        // Hard-blinking caret at m_InputCursor.
                         if(editingThis)
                         {
                                 char tmp[256];
                                 int n = std::min(m_InputCursor, (int)sizeof(tmp) - 1);
                                 mem_copy(tmp, m_InputBuf, n); tmp[n] = 0;
-                                const float cursorX = inX + 4.0f + TextRender()->TextWidth(17.0f, tmp);
+                                const float cursorX = inX + 4.0f + TextRender()->TextWidth(17.0f, tmp) - ScrollOff;
                                 DrawRoundedRect(cursorX, inY + 4.0f, 1.5f, inH - 8.0f, 0.0f,
                                         IGraphics::CORNER_NONE,
-                                        ColorRGBA(0xffffffff, true).WithAlpha(alpha * (0.5f + 0.5f * std::sin(LocalTime() * 5.0f))));
+                                        ColorRGBA(0xffffffff, true).WithAlpha(alpha * (std::fmod(LocalTime(), 1.0f) < 0.5f ? 1.0f : 0.0f)));
                         }
+                        Graphics()->ClipDisable();
+                        ClipEnableVirtual(bodyX, bodyY, bodyW, visibleBodyHeight);
+                        // Focus = bottom accent line (the field itself keeps its look).
+                        if(editingThis)
+                                DrawRoundedRect(inX + 1.0f, inY + inH - 2.5f, inW - 2.0f, 1.5f, 0.0f,
+                                        IGraphics::CORNER_NONE, KxColorWithAlpha(m_AccentColorRGBA, alpha * m_MainOpacity));
                         break;
                 }
                 case ERowType::ToggleInput: // v1.56.282: [✕] [name] [input box]
@@ -13299,7 +13739,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 ColorRGBA(COL_INPUT_BG, true).WithAlpha(alpha));
                         DrawRoundedRect(inX - 1.0f, inY - 1.0f, inW + 2.0f, inH + 2.0f, 2.0f,
                                 IGraphics::CORNER_ALL,
-                                editingThis ? KxColorWithAlpha(m_AccentColorRGBA, alpha * m_MainOpacity) : ColorRGBA(COL_INPUT_BORDER, true).WithAlpha(alpha * 0.5f));
+                                ColorRGBA(COL_INPUT_BORDER, true).WithAlpha(alpha * 0.5f));
                         if(!row.m_InputInitialized)
                         {
                                 if(row.pInputValue)
@@ -13318,18 +13758,44 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 pText = (row.m_aInputBuf[0]) ? row.m_aInputBuf : row.pPlaceholder;
                                 inCol = (row.m_aInputBuf[0]) ? textCol : ColorRGBA(0xff8a8aa8, true).WithAlpha(alpha);
                         }
-                        if(pText)
-                                DrawText(inX + 4.0f, inY + 4.0f, 17.0f, pText, inCol);
+                        float ScrollOff = 0.0f;
                         if(editingThis)
                         {
                                 char tmp[256];
                                 int n = std::min(m_InputCursor, (int)sizeof(tmp) - 1);
                                 mem_copy(tmp, m_InputBuf, n); tmp[n] = 0;
-                                const float cursorX = inX + 4.0f + TextRender()->TextWidth(17.0f, tmp);
+                                const float CaretPx = 4.0f + TextRender()->TextWidth(17.0f, tmp);
+                                const float ViewW = inW - 8.0f;
+                                if(CaretPx > ViewW)
+                                        ScrollOff = CaretPx - ViewW;
+                        }
+                        // ClipEnable is a single global state, not a stack: intersect the field
+                        // rect with the panel body, otherwise a field row below the visible body
+                        // replaces the body clip and its text is drawn outside the panel.
+                        {
+                                const float fx0 = std::max(inX + 2.0f, bodyX);
+                                const float fy0 = std::max(inY + 1.0f, bodyY);
+                                const float fx1 = std::min(inX + inW - 2.0f, bodyX + bodyW);
+                                const float fy1 = std::min(inY + inH - 1.0f, bodyY + visibleBodyHeight);
+                                ClipEnableVirtual(fx0, fy0, std::max(0.0f, fx1 - fx0), std::max(0.0f, fy1 - fy0));
+                        }
+                        if(pText)
+                                DrawText(inX + 4.0f - ScrollOff, inY + 4.0f, 17.0f, pText, inCol);
+                        if(editingThis)
+                        {
+                                char tmp[256];
+                                int n = std::min(m_InputCursor, (int)sizeof(tmp) - 1);
+                                mem_copy(tmp, m_InputBuf, n); tmp[n] = 0;
+                                const float cursorX = inX + 4.0f + TextRender()->TextWidth(17.0f, tmp) - ScrollOff;
                                 DrawRoundedRect(cursorX, inY + 4.0f, 1.5f, inH - 8.0f, 0.0f,
                                         IGraphics::CORNER_NONE,
-                                        ColorRGBA(0xffffffff, true).WithAlpha(alpha * (0.5f + 0.5f * std::sin(LocalTime() * 5.0f))));
+                                        ColorRGBA(0xffffffff, true).WithAlpha(alpha * (std::fmod(LocalTime(), 1.0f) < 0.5f ? 1.0f : 0.0f)));
                         }
+                        Graphics()->ClipDisable();
+                        ClipEnableVirtual(bodyX, bodyY, bodyW, visibleBodyHeight);
+                        if(editingThis)
+                                DrawRoundedRect(inX + 1.0f, inY + inH - 2.5f, inW - 2.0f, 1.5f, 0.0f,
+                                        IGraphics::CORNER_NONE, KxColorWithAlpha(m_AccentColorRGBA, alpha * m_MainOpacity));
                         break;
                 }
                 case ERowType::Dropdown:
@@ -14005,6 +14471,11 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 const float crh = YGNodeLayoutGetHeight(cnode);
                                 ++rowIdx;
 
+                                // Hover highlight for children (same tint as Agent rows).
+                                if(PointInRect(m_MousePos, crx, cry, crw, crh))
+                                        DrawRoundedRect(crx - 2.0f, cry - 1.0f, crw + 4.0f, crh + 2.0f, 3.0f,
+                                                IGraphics::CORNER_ALL, ColorRGBA(1.0f, 1.0f, 1.0f, alpha * 0.05f));
+
                                 // v1.56.284: record hovered child row for the ToolTip.
                                 // v1.56.288: DoubleButton — left half uses pToolTip,
                                 // right half uses pToolTip2 (falls back to pToolTip).
@@ -14014,7 +14485,11 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 if(child.type == ERowType::DoubleButton && child.pToolTip2 &&
                                         m_MousePos.x >= crx + crw * 0.5f)
                                         pTT = child.pToolTip2;
-                                if(pTT && PointInRect(m_MousePos, crx, cry, crw, crh))
+                                // Clipped-away children must not show a tooltip.
+                                const float ChildVisTop = useChildClip ? childClipY : bodyY;
+                                const float ChildVisBottom = useChildClip ? (childClipY + childClipH) : (bodyY + visibleBodyHeight);
+                                const bool ChildVisible = m_MousePos.y >= ChildVisTop && m_MousePos.y <= ChildVisBottom;
+                                if(pTT && ChildVisible && PointInRect(m_MousePos, crx, cry, crw, crh))
                                 {
                                         str_copy(m_aToolTipText, pTT, sizeof(m_aToolTipText));
                                         m_pToolTipRow = pTT;
@@ -14104,7 +14579,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                 ColorRGBA(COL_INPUT_BG, true).WithAlpha(alpha));
                                         DrawRoundedRect(ix - 1.0f, iy - 1.0f, iw + 2.0f, ih + 2.0f, 2.0f,
                                                 IGraphics::CORNER_ALL,
-                                                editingChild ? KxColorWithAlpha(m_AccentColorRGBA, alpha * m_MainOpacity) : ColorRGBA(COL_INPUT_BORDER, true).WithAlpha(alpha * 0.5f));
+                                                ColorRGBA(COL_INPUT_BORDER, true).WithAlpha(alpha * 0.5f));
                                         const char *pT;
                                         ColorRGBA ic;
                                         if(editingChild)
@@ -14132,18 +14607,49 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                         IGraphics::CORNER_NONE,
                                                         ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha * 0.5f * m_MainOpacity));
                                         }
-                                        if(pT)
-                                                DrawText(ix + 4.0f, iy + 3.0f, 17.0f, pT, ic);
+                                        float ScrollOff = 0.0f;
                                         if(editingChild)
                                         {
                                                 char tmp[256];
                                                 int n = std::min(m_InputCursor, (int)sizeof(tmp) - 1);
                                                 mem_copy(tmp, m_InputBuf, n); tmp[n] = 0;
-                                                const float cursorX = ix + 4.0f + TextRender()->TextWidth(17.0f, tmp);
+                                                const float CaretPx = 4.0f + TextRender()->TextWidth(17.0f, tmp);
+                                                const float ViewW = iw - 8.0f;
+                                                if(CaretPx > ViewW)
+                                                        ScrollOff = CaretPx - ViewW;
+                                        }
+                                        // Intersect with the enclosing (child or body) clip: ClipEnable
+                                        // is a single global state, so a field row below the visible
+                                        // block must not replace that clip and draw outside it.
+                                        {
+                                                const float EnclY = (useChildClip && childClipH > 0.5f) ? childClipY : bodyY;
+                                                const float EnclH = (useChildClip && childClipH > 0.5f) ? childClipH : visibleBodyHeight;
+                                                const float fx0 = std::max(ix + 2.0f, bodyX);
+                                                const float fy0 = std::max(iy + 1.0f, EnclY);
+                                                const float fx1 = std::min(ix + iw - 2.0f, bodyX + bodyW);
+                                                const float fy1 = std::min(iy + ih - 1.0f, EnclY + EnclH);
+                                                ClipEnableVirtual(fx0, fy0, std::max(0.0f, fx1 - fx0), std::max(0.0f, fy1 - fy0));
+                                        }
+                                        if(pT)
+                                                DrawText(ix + 4.0f - ScrollOff, iy + 3.0f, 17.0f, pT, ic);
+                                        if(editingChild)
+                                        {
+                                                char tmp[256];
+                                                int n = std::min(m_InputCursor, (int)sizeof(tmp) - 1);
+                                                mem_copy(tmp, m_InputBuf, n); tmp[n] = 0;
+                                                const float cursorX = ix + 4.0f + TextRender()->TextWidth(17.0f, tmp) - ScrollOff;
                                                 DrawRoundedRect(cursorX, iy + 3.0f, 1.5f, ih - 6.0f, 0.0f,
                                                         IGraphics::CORNER_NONE,
-                                                        ColorRGBA(0xffffffff, true).WithAlpha(alpha * (0.5f + 0.5f * std::sin(LocalTime() * 5.0f))));
+                                                        ColorRGBA(0xffffffff, true).WithAlpha(alpha * (std::fmod(LocalTime(), 1.0f) < 0.5f ? 1.0f : 0.0f)));
                                         }
+                                        Graphics()->ClipDisable();
+                                        if(useChildClip && childClipH > 0.5f)
+                                                ClipEnableVirtual(bodyX, childClipY, bodyW, childClipH);
+                                        else
+                                                ClipEnableVirtual(bodyX, bodyY, bodyW, visibleBodyHeight);
+                                        if(editingChild)
+                                                DrawRoundedRect(ix + 1.0f, iy + ih - 2.5f, iw - 2.0f, 1.5f, 0.0f,
+                                                        IGraphics::CORNER_NONE, KxColorWithAlpha(m_AccentColorRGBA, alpha * m_MainOpacity));
                                         break;
                                 }
                                 case ERowType::ToggleInput: // v1.56.282: [✕] [name] [input box]
@@ -14172,7 +14678,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                 ColorRGBA(COL_INPUT_BG, true).WithAlpha(alpha));
                                         DrawRoundedRect(ix - 1.0f, iy - 1.0f, iw + 2.0f, ih + 2.0f, 2.0f,
                                                 IGraphics::CORNER_ALL,
-                                                editingChild ? KxColorWithAlpha(m_AccentColorRGBA, alpha * m_MainOpacity) : ColorRGBA(COL_INPUT_BORDER, true).WithAlpha(alpha * 0.5f));
+                                                ColorRGBA(COL_INPUT_BORDER, true).WithAlpha(alpha * 0.5f));
                                         const char *pT;
                                         ColorRGBA ic;
                                         if(editingChild)
@@ -14198,18 +14704,49 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                         IGraphics::CORNER_NONE,
                                                         ColorRGBA(m_AccentColorRGBA, true).WithAlpha(alpha * 0.5f * m_MainOpacity));
                                         }
-                                        if(pT)
-                                                DrawText(ix + 4.0f, iy + 3.0f, 17.0f, pT, ic);
+                                        float ScrollOff = 0.0f;
                                         if(editingChild)
                                         {
                                                 char tmp[256];
                                                 int n = std::min(m_InputCursor, (int)sizeof(tmp) - 1);
                                                 mem_copy(tmp, m_InputBuf, n); tmp[n] = 0;
-                                                const float cursorX = ix + 4.0f + TextRender()->TextWidth(17.0f, tmp);
+                                                const float CaretPx = 4.0f + TextRender()->TextWidth(17.0f, tmp);
+                                                const float ViewW = iw - 8.0f;
+                                                if(CaretPx > ViewW)
+                                                        ScrollOff = CaretPx - ViewW;
+                                        }
+                                        // Intersect with the enclosing (child or body) clip: ClipEnable
+                                        // is a single global state, so a field row below the visible
+                                        // block must not replace that clip and draw outside it.
+                                        {
+                                                const float EnclY = (useChildClip && childClipH > 0.5f) ? childClipY : bodyY;
+                                                const float EnclH = (useChildClip && childClipH > 0.5f) ? childClipH : visibleBodyHeight;
+                                                const float fx0 = std::max(ix + 2.0f, bodyX);
+                                                const float fy0 = std::max(iy + 1.0f, EnclY);
+                                                const float fx1 = std::min(ix + iw - 2.0f, bodyX + bodyW);
+                                                const float fy1 = std::min(iy + ih - 1.0f, EnclY + EnclH);
+                                                ClipEnableVirtual(fx0, fy0, std::max(0.0f, fx1 - fx0), std::max(0.0f, fy1 - fy0));
+                                        }
+                                        if(pT)
+                                                DrawText(ix + 4.0f - ScrollOff, iy + 3.0f, 17.0f, pT, ic);
+                                        if(editingChild)
+                                        {
+                                                char tmp[256];
+                                                int n = std::min(m_InputCursor, (int)sizeof(tmp) - 1);
+                                                mem_copy(tmp, m_InputBuf, n); tmp[n] = 0;
+                                                const float cursorX = ix + 4.0f + TextRender()->TextWidth(17.0f, tmp) - ScrollOff;
                                                 DrawRoundedRect(cursorX, iy + 3.0f, 1.5f, ih - 6.0f, 0.0f,
                                                         IGraphics::CORNER_NONE,
-                                                        ColorRGBA(0xffffffff, true).WithAlpha(alpha * (0.5f + 0.5f * std::sin(LocalTime() * 5.0f))));
+                                                        ColorRGBA(0xffffffff, true).WithAlpha(alpha * (std::fmod(LocalTime(), 1.0f) < 0.5f ? 1.0f : 0.0f)));
                                         }
+                                        Graphics()->ClipDisable();
+                                        if(useChildClip && childClipH > 0.5f)
+                                                ClipEnableVirtual(bodyX, childClipY, bodyW, childClipH);
+                                        else
+                                                ClipEnableVirtual(bodyX, bodyY, bodyW, visibleBodyHeight);
+                                        if(editingChild)
+                                                DrawRoundedRect(ix + 1.0f, iy + ih - 2.5f, iw - 2.0f, 1.5f, 0.0f,
+                                                        IGraphics::CORNER_NONE, KxColorWithAlpha(m_AccentColorRGBA, alpha * m_MainOpacity));
                                         break;
                                 }
                                 case ERowType::Dropdown:

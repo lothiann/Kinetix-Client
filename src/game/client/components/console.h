@@ -168,6 +168,10 @@ class CGameConsole : public CComponent
 	vec2 m_ButtonPressPosition = vec2(0.0f, 0.0f);
 	bool m_ButtonPressed = false;
 
+	// v6.14: ArrayAgent console tool — backlog position captured by
+	// BeginOutputCapture, used by EndOutputCapture to return only the new lines.
+	int m_OutputCaptureStart = 0;
+
 	bool DoButton(const CUIRect &Rect, const char *pIcon, vec2 MousePosition, bool Released);
 
 	static constexpr ColorRGBA ms_SearchHighlightColor = ColorRGBA(1.0f, 0.0f, 0.0f, 1.0f);
@@ -205,6 +209,12 @@ public:
 	CTas &Tas();
 	void ClearRemoteBacklog() { m_RemoteConsole.ClearBacklog(); }
 	void RequireUsername(bool UsernameReq);
+
+	// v6.14: ArrayAgent console tool — capture the lines printed between
+	// BeginOutputCapture() and EndOutputCapture(). End returns every line that
+	// appeared in the local backlog after the begin mark.
+	void BeginOutputCapture();
+	void EndOutputCapture(std::vector<std::string> &vOut);
 
 	void OnStateChange(int NewState, int OldState) override;
 	void OnConsoleInit() override;

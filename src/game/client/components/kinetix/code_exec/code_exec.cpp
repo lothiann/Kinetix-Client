@@ -297,6 +297,11 @@ std::vector<std::string> CCodeExec::ToolCaptureFinish()
 	return vOut;
 }
 
+std::vector<std::string> CCodeExec::ToolCapturePeek() const
+{
+	return m_vToolOutput;
+}
+
 const char *CCodeExec::GetLastError() const { return m_aLastError; }
 
 bool CCodeExec::Execute(const char *pCode, const char *pChunkName)
