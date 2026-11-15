@@ -1706,6 +1706,7 @@ set(EXPECTED_DATA
   gui_icons.png
   gui_logo.png
   hud.png
+  kinetix_icon.png
   languages/README.txt
   languages/arabic.txt
   languages/azerbaijani.txt

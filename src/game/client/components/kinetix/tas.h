@@ -343,6 +343,9 @@ public:
 	const char *PickedDescription() const { return m_aPickedDescription; }
 	const char *PickedAuthor() const { return m_aPickedAuthor; }
 	const char *PickedCreated() const { return m_aPickedCreated; }
+	// v6.17: .tas binary format version read from the loaded file header
+	// (0 = no file). The GUI shows it in the File section.
+	int PickedVersion() const { return m_PickedVersion; }
 	void PickFile(const char *pPath);
 	void UnpickFile();
 	// v6.12: parses a .tas image from memory (GitHub Load) without touching
@@ -685,6 +688,7 @@ private:
 	char m_aPickedDescription[128] = {};
 	char m_aPickedAuthor[128] = {};
 	char m_aPickedCreated[64] = {};
+	int m_PickedVersion = 0; // v6.17: .tas binary format version of the loaded file (0 = none)
 
 	// GitHub TAS repository state
 	int m_GitHubState = GITHUB_IDLE;

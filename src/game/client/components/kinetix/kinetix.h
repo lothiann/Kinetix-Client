@@ -953,6 +953,13 @@ public:
         // v6.7: clear the Without Repeat visited list (round restart).
         void SdsResetVisited();
 
+        // v6.17: kx_send as a callable — execute pCmd on the dummies listed in
+        // pIds ("-1" = all, otherwise a comma list). Placeholders are replaced
+        // per dummy; m_ClDummy is switched for the duration. Public: the
+        // ClickGUI "Send Command (Beta)" button passes the ids of the dummies
+        // whose Send toggle is enabled.
+        void SendToDummies(const char *pIds, const char *pCmd);
+
 private:
         // =========================================================
         // Internal helpers (v1.56.32 refactor — extracted from ProcessDummy

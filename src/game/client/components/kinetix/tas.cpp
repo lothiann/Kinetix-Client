@@ -4128,6 +4128,7 @@ void CTas::UnpickFile()
 	m_aPickedDescription[0] = '\0';
 	m_aPickedAuthor[0] = '\0';
 	m_aPickedCreated[0] = '\0';
+	m_PickedVersion = 0;
 }
 
 bool CTas::WriteTakeFile(const char *pPath, const char *pMap, const char *pDescription, const char *pAuthor, const char *pCreated)
@@ -4373,6 +4374,7 @@ bool CTas::LoadTakeMem(const void *pRawData, unsigned RawSize)
 		str_copy(m_aPickedDescription, aName, sizeof(m_aPickedDescription));
 		str_copy(m_aPickedAuthor, aAuthor, sizeof(m_aPickedAuthor));
 		str_copy(m_aPickedCreated, aCreated, sizeof(m_aPickedCreated));
+		m_PickedVersion = Version; // v6.17: .tas binary header version for the File section
 		m_FilePicked = true;
 		m_Playing = false;
 		m_RealPlaying = false;

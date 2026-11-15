@@ -138,6 +138,11 @@ enum class ERowType
         Label, // v1.56.176: non-interactive text row (Info panel: version strings, FPS)
         Graph, // v6.15: sparkline graph row (line + area + grid + Y labels, name centered below)
         Color, // v6.16: label + color swatch on the right; click opens the picker popup
+        // v6.17: group header — non-interactive label that visually wraps the
+        // next ContainerRows top-level rows in a white rounded outline (the
+        // wrapped rows indent like expandable children). The rows STAY
+        // top-level: every name-based dispatch/sync path works unchanged.
+        Container,
 };
 
 // v6.15: sparkline data series (shared, mutable — the owner pushes values,
@@ -215,12 +220,26 @@ struct SRow
         char *pColorStr = nullptr;
         bool ColorAlpha = true; // allow editing the alpha channel (picker + hex)
         int ColorMode = 0; // picker component mode: 0 = HSV, 1 = RGB, 2 = HSL
+        // v6.17: Container rows only — how many immediately-following
+        // top-level rows the white outline wraps. Kept after the Color fields
+        // because the Color row tables set everything up to ColorAlpha
+        // positionally (a new field before them would shift their initializers).
+        int ContainerRows = 0;
         // v1.56.286: search state (recomputed by SearchUpdateMatches() when the
         // query or a filter toggle changes). m_SearchChildMatch is only set on
         // top-level expandables (any direct child matched).
         bool m_SearchMatch = false;
         bool m_SearchChildMatch = false;
 };
+
+// v6.17: Container header row initializer — the long positional tail reaches
+// ContainerRows (everything between pToolTip and ContainerRows is positional:
+// pToolTip, pToolTip2, pValueLabel, ZoneWidth, m_aInputBuf, m_InputInitialized,
+// m_AnimExpand, m_LabelLines, pGraph, GraphPoints, pColorValue, pColorStr,
+// ColorAlpha, ColorMode, ContainerRows).
+#define KX_CONTAINER_ROW(Name, Rows, Tip) \
+        {ERowType::Container, Name, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, \
+                Tip, nullptr, nullptr, 0.0f, {}, false, 0.0f, 1, nullptr, 60, nullptr, nullptr, true, 0, Rows}
 
 // v1.56.284: snaps a slider value to its step (drag + display share this).
 // step <= 0 = free value. Result clamped to [min, max].
@@ -606,12 +625,13 @@ static const char *const g_DummyEditModeOpts[] = {"Per-Dummy", "All", "Targets"}
 // g_DummyMgrRows indices.
 enum
 {
-        DUMMYMGR_ROW_LIMIT = 0, // "Dummies" slider (runtime dummy limit)
-        DUMMYMGR_ROW_CONNECT = 1, // "Dummies" expandable
-        DUMMYMGR_ROW_PROXY = 2, // "Proxy manager" expandable
-        DUMMYMGR_ROW_PROFILES = 3, // "Dummy Profiles" expandable
-        DUMMYMGR_ROW_TEE = 4, // "Dummy Tee" expandable
-        DUMMYMGR_ROW_APPLY = 5, // "Reconnect (Apply)" button
+        DUMMYMGR_ROW_LIMIT = 1, // "Dummies" slider (runtime dummy limit) — after the "Dummies" container header
+        DUMMYMGR_ROW_CONNECT = 2, // "Dummies" expandable
+        DUMMYMGR_ROW_PROXY = 3, // "Proxy manager" expandable
+        DUMMYMGR_ROW_SEND = 4, // v6.17: "Send Command (Beta)" expandable
+        DUMMYMGR_ROW_PROFILES = 6, // "Dummy Profiles" expandable — after the "ID" container header
+        DUMMYMGR_ROW_TEE = 7, // "Dummy Tee" expandable
+        DUMMYMGR_ROW_APPLY = 8, // "Reconnect (Apply)" button
 };
 
 static bool g_DummyRowsInitialized = false;
@@ -639,7 +659,7 @@ static void InitDummyManagerRows()
                 g_DummyConnectZoneChildren[D][1] = {ERowType::Button, "Switch", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                         "Switch control to this dummy."};
                 g_DummyConnectZoneChildren[D][2] = {ERowType::Toggle, "Send", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                        "Toggle input sending for this dummy."};
+                        "Include this dummy as a target of Send Command (Beta)."};
                 g_DummyConnectChildren[n++] = {ERowType::Custom, g_aDblConnectNames[D], g_aDblSwitchNames[D], false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
                         g_DummyConnectZoneChildren[D], 3};
         }
@@ -705,16 +725,33 @@ static void InitDummyManagerRows()
         mem_copy(g_DummyTeeChildren, g_DummyTeeMaster, sizeof(g_DummyTeeChildren));
 }
 
+// v6.17: "Send Command (Beta)" expandable children — a console command as a
+// UI row. The target set is the dummies whose "Send" toggle is enabled in the
+// Dummies list (placeholders are replaced per dummy). Send is dispatched in
+// HandleMouseDown.
+static SRow g_DummySendChildren[] = {
+        {ERowType::Input, "Command", nullptr, false, false, true, 0, 0, 0, 0, nullptr, "", "say hi", nullptr, 0, 0, nullptr, 0,
+                "Console command executed on every dummy with the Send toggle enabled."},
+        {ERowType::Button, "Send", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Execute the command on every dummy with the Send toggle enabled."},
+};
+
 // v1.56.282: Dummy Manager top-level rows. Slider "Dummies" = runtime dummy
 // limit incl. Main (enforced engine-side via IClient::SetDummyLimit);
 // "Reconnect (Apply)" is visible only while proxy changes are staged.
 static SRow g_DummyMgrRows[] = {
+        // ---- Dummies ----
+        KX_CONTAINER_ROW("Dummies", 4, "Dummy connections, proxies and commands."),
         {ERowType::Slider, "Dummies", nullptr, false, false, true, 1.0f, (float)MAX_DUMMIES, 1.0f, 8.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Number of dummies (including Main) to keep connected."},
         {ERowType::Expandable, "Dummies", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_DummyConnectChildren, 2 + MAX_DUMMIES - 1,
                 "Connect / disconnect and switch control of individual dummies."},
         {ERowType::Expandable, "Proxy manager", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_DummyProxyChildren, MAX_DUMMIES,
                 "Per-dummy SOCKS5 proxies (staged changes apply on Reconnect)."},
+        {ERowType::Expandable, "Send Command (Beta)", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_DummySendChildren, 2,
+                "Run a command on every dummy whose Send toggle is enabled."},
+        // ---- ID ----
+        KX_CONTAINER_ROW("ID", 2, "Saved dummy identities."),
         {ERowType::Expandable, "Dummy Profiles", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_DummyProfilesChildren, 4 + MAX_DUMMIES + (MAX_DUMMIES - 1),
                 "Open a dummy's saved config profile."},
         {ERowType::Expandable, "Dummy Tee", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_DummyTeeChildren, 4 + MAX_DUMMIES + (MAX_DUMMIES - 1),
@@ -1086,47 +1123,58 @@ static SRow g_FastInputChildren[] = {
 // v1.56.260: Functions panel merged with the former Advanced rows (Laser unfreeze,
 // Fake Aim, Basic Avoid Freeze). Trajectory/ESP/Hitboxes moved to the Visuals
 // panel; Random Aim rows removed (feature deleted).
+// v6.17: rows are grouped into Container sections — one section, one container.
+// A Container row wraps the NEXT ContainerRows top-level rows (the rows stay
+// top-level: all name-based dispatch/sync works unchanged), so each section's
+// rows must be contiguous.
 static SRow g_FunctionsRows[] = {
-        // v1.56.282: "Dummies" expandable moved to the Dummy Manager panel.
-        {ERowType::Expandable, "Helpers", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_HelpersChildren, 16,
-                "Auto bot: aim, fire, hook, hammer and rescue targets."},
+        // ---- Bot ----
+        KX_CONTAINER_ROW("Bot", 6, "Combat and rescue bots."),
         // v1.56.83: AimBot + TriggerBot expandables (AimBot: 23 children since v1.56.262)
         {ERowType::Expandable, "AimBot", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AimBotChildren, 27,
                 "Aim assist, configured per weapon."},
         {ERowType::Expandable, "TriggerBot", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TriggerBotChildren, 23,
                 "Auto-fire when a target enters the weapon's zone."},
-        // v1.56.262: Auto Fire + BalanceBot expandables.
-        {ERowType::Expandable, "Auto Fire", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AutoFireChildren, 1,
-                "Automatically fire at a fixed tick rate."},
         {ERowType::Expandable, "BalanceBot", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BalanceBotChildren, 14,
                 "Balance against a target by standing above/below it."},
-        {ERowType::Toggle, "Moonwalk", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Hold both directions to walk backwards."},
+        // v6.9: AledBot — hammer a frozen dummy so it unfreezes outside the freeze tile.
+        {ERowType::Expandable, "AledBot", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AledBotChildren, 14,
+                "Bot for aleds: unfreeze a frozen dummy in the first non-freeze tile."},
+        {ERowType::Expandable, "Avoid Freeze", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AvoidFreezeChildren, 27,
+                "Auto-escape a freeze by overriding the input."},
+        // v1.56.260: former Advanced row (Trajectory/ESP/Hitboxes now live in Visuals).
+        {ERowType::Expandable, "Laser unfreeze", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LaserUnfreezeChildren, 8,
+                "Predictive laser self-unfreeze."},
+        // ---- Ride ----
+        KX_CONTAINER_ROW("Ride", 3, "Ride-the-dummy prototypes."),
+        // v1.56.151: Fly Ride — pilot hooks/hammers nearest dummy, WASD moves anchor.
+        {ERowType::Toggle, "Fly Ride", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "PROTOTYPE / in development — ride the nearest dummy (WASD moves the anchor)."},
+        {ERowType::Toggle, "Jet Ride (Beta)", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Fly with the gun jetpack; WASD moves the target point."},
+        {ERowType::Toggle, "Hook Ride (Beta)", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Stay hooked above a target point; WASD moves it."},
+        // ---- Move ----
+        KX_CONTAINER_ROW("Move", 2, "Movement helpers."),
         {ERowType::Expandable, "Quick Stop", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_QuickStopChildren, 1,
                 "Brake with the opposite direction when you release the keys."},
-        {ERowType::Toggle, "Hide Chat Bubble", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Keep playing (and the helpers active) while chat or the menu is open."},
-        {ERowType::Expandable, "Fast Input", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_FastInputChildren, 1,
-                "Predict your input one tick earlier (lower visual delay)."},
-        // Fly sub-section
-        {ERowType::Toggle, "Preserve input", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Keep your own input while a fly/hammer feature is active."},
-        {ERowType::Expandable, "Custom latency", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CustomLatencyChildren, 1,
-                "Add artificial input latency."},
-        // v6.7: Auto fly is a plain toggle — it only checks whether the next tick
-        // can really hit and fires exactly then (no distance/predict settings).
-        {ERowType::Toggle, "Auto fly", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Hammer only when the next tick can really hit; aim is set on the hit."},
-        {ERowType::Toggle, "Fix Dummy Hammer", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Keep the dummy on the hammer while hammering (fixes Copy Moves switching it to the copied weapon)."},
-        {ERowType::Expandable, "Auto Triple Fly", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TripleFlyChildren, 6,
-                "Triple-fly anchored to a dummy."},
-        // Copy Moves sub-section
+        {ERowType::Toggle, "Moonwalk", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Hold both directions to walk backwards."},
+        // ---- Dummy ----
+        KX_CONTAINER_ROW("Dummy", 14, "Dummy control, copy and fly features."),
+        // v1.56.282: "Dummies" expandable moved to the Dummy Manager panel.
+        {ERowType::Expandable, "Helpers", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_HelpersChildren, 16,
+                "Auto bot: aim, fire, hook, hammer and rescue targets."},
         // v6.7: Smart Copy Moves — restrict copy moves to the top-N dummies.
         {ERowType::Expandable, "Smart Copy Moves", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_SmartCopyMovesChildren, 11,
                 "Apply copy moves only to the top-N dummies (header = master toggle)."},
         {ERowType::Expandable, "Copy Moves Filter", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CopyMovesFilterChildren, 6,
                 "Choose which inputs are excluded from copied moves."},
+        // v1.56.186: Copy Moves Latency — staggered input replay delay for inactive dummies.
+        {ERowType::Expandable, "Copy Moves Latency", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CopyMovesLatencyChildren, 1,
+                "Staggered input-replay delay for inactive dummies."},
+        {ERowType::Expandable, "Auto Triple Fly", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TripleFlyChildren, 6,
+                "Triple-fly anchored to a dummy."},
         {ERowType::Toggle, "Mirror direction", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Mirror the followed player's movement direction."},
         {ERowType::Dropdown, "Aim mode", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_AimModeOpts, 2, 0, nullptr, 0,
@@ -1138,16 +1186,21 @@ static SRow g_FunctionsRows[] = {
                 "Mirror the aim Y axis of the followed player."},
         {ERowType::Toggle, "Smart aim", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Smart-remap the copied aim to match your position."},
-        // v1.56.151: Fly Ride — pilot hooks/hammers nearest dummy, WASD moves anchor.
-        {ERowType::Toggle, "Fly Ride", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "PROTOTYPE / in development — ride the nearest dummy (WASD moves the anchor)."},
-        {ERowType::Toggle, "Jet Ride (Beta)", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Fly with the gun jetpack; WASD moves the target point."},
-        {ERowType::Toggle, "Hook Ride (Beta)", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Stay hooked above a target point; WASD moves it."},
-        // v1.56.186: Copy Moves Latency — staggered input replay delay for inactive dummies.
-        {ERowType::Expandable, "Copy Moves Latency", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CopyMovesLatencyChildren, 1,
-                "Staggered input-replay delay for inactive dummies."},
+        {ERowType::Expandable, "Custom latency", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CustomLatencyChildren, 1,
+                "Add artificial input latency."},
+        // v6.7: Auto fly is a plain toggle — it only checks whether the next tick
+        // can really hit and fires exactly then (no distance/predict settings).
+        {ERowType::Toggle, "Auto fly", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Hammer only when the next tick can really hit; aim is set on the hit."},
+        {ERowType::Toggle, "Fix Dummy Hammer", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Keep the dummy on the hammer while hammering (fixes Copy Moves switching it to the copied weapon)."},
+        {ERowType::Toggle, "Preserve input", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Keep your own input while a fly/hammer feature is active."},
+        // ---- Auto ----
+        KX_CONTAINER_ROW("Auto", 5, "Automation features."),
+        // v1.56.262: Auto Fire expandable.
+        {ERowType::Expandable, "Auto Fire", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AutoFireChildren, 1,
+                "Automatically fire at a fixed tick rate."},
         {ERowType::Expandable, "Auto Team", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AutoTeamChildren, 1,
                 "Join and lock a free team on spawn."},
         {ERowType::Expandable, "Anti Afk", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AntiAfkChildren, 1,
@@ -1156,19 +1209,17 @@ static SRow g_FunctionsRows[] = {
                 "Answer every vote automatically."},
         {ERowType::Expandable, "Auto Vote Kick", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AutoVoteKickChildren, 3,
                 "Start kick votes while no other vote is running."},
-        // v1.56.260: former Advanced rows (Trajectory/ESP/Hitboxes now live in Visuals).
-        {ERowType::Expandable, "Laser unfreeze", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LaserUnfreezeChildren, 8,
-                "Predictive laser self-unfreeze."},
+        // ---- Misc ----
+        KX_CONTAINER_ROW("Misc", 4, "Other features."),
         {ERowType::Expandable, "Fake Aim", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_FakeAimChildren, 7,
                 "Spoof the aim the server sees (fake aim)."},
-        {ERowType::Expandable, "Avoid Freeze", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AvoidFreezeChildren, 27,
-                "Auto-escape a freeze by overriding the input."},
-        // v6.9: AledBot — hammer a frozen dummy so it unfreezes outside the freeze tile.
-        {ERowType::Expandable, "AledBot", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AledBotChildren, 14,
-                "Bot for aleds: unfreeze a frozen dummy in the first non-freeze tile."},
         // v6.15: optimized Pathfinder simulation hot path (Fast Sim).
         {ERowType::Toggle, "Fast Sim", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Optimized Pathfinder simulation: skips recording of discarded trajectories, stack-buffer tile queries, reused candidate buffers. Turn OFF if paths look wrong (OFF = exact original simulation)."},
+        {ERowType::Toggle, "Hide Chat Bubble", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Keep playing (and the helpers active) while chat or the menu is open."},
+        {ERowType::Expandable, "Fast Input", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_FastInputChildren, 1,
+                "Predict your input one tick earlier (lower visual delay)."},
 };
 
 // ---------- Settings panel (6) ----------
@@ -1217,7 +1268,7 @@ static SRow g_SpoofSpectateChildren[] = {
 };
 // v1.56.283: g_RainbowChildren removed - "Rainbow Main Color" + "Speed" are now
 // children of the "ClickGUI Settings" expandable.
-// v1.56.89: "Line rendering" visual expandable (cannot toggle, only expand).
+// v1.56.89: "Line Rendering" visual expandable (cannot toggle, only expand).
 // Shared line render settings used by trajectory, aimbot FOV/radius, pathfinder path, laser unfreeze.
 // v1.56.108: Line rendering per-component. Component dropdown selects which
 // component's Size/Color/Opacity is being edited. Layer stays global.
@@ -1245,6 +1296,57 @@ static SRow g_LineRenderingChildren[] = {
 };
 // v1.56.283: "ClickGUI Settings" expandable - all UI settings in one place.
 // Header = master toggle (KxUiSettingsOn): off = built-in defaults.
+// v6.16: X/Y and Width/Height slider pairs of the ClickGUI Settings — each
+// pair is one Custom row: a [label] with the common name, then two slider
+// zones ([X] | [Y] / [Width] | [Height]). Containers share the label name — they never render themselves,
+// and Label rows are non-interactive, so the name collision is safe.
+static SRow g_PanelsStartXYChildren[] = {
+        {ERowType::Slider, "X", nullptr, false, false, true, 0.0f, 1920.0f, 1.0f, 60.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Default X position of the panel grid."},
+        {ERowType::Slider, "Y", nullptr, false, false, true, 0.0f, 1080.0f, 1.0f, 90.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Default Y position of the panel grid."},
+};
+static SRow g_PanelsIndentXYChildren[] = {
+        {ERowType::Slider, "X", nullptr, false, false, true, 0.0f, 200.0f, 1.0f, 30.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Horizontal spacing between the panels in the grid."},
+        {ERowType::Slider, "Y", nullptr, false, false, true, 0.0f, 200.0f, 1.0f, 12.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Vertical spacing between the panels in the grid."},
+};
+static SRow g_PanelsSizeWHChildren[] = {
+        {ERowType::Slider, "Width", nullptr, false, false, true, 150.0f, 800.0f, 1.0f, 300.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Fixed panel width in pixels (visible when Dynamic scale is off)."},
+        {ERowType::Slider, "Height", nullptr, false, false, true, 200.0f, 2000.0f, 1.0f, 600.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Maximum visible body height of a panel (when Dynamic scale is off)."},
+};
+// The config member a Panels-XY zone slider drives (nullptr = not one).
+static int *KxPanelXYSliderCvar(const SRow *pContainer, const char *pZoneName)
+{
+        if(!pContainer || !pZoneName)
+                return nullptr;
+        if(str_comp(pContainer->pName, "Panels Start") == 0)
+        {
+                if(str_comp(pZoneName, "X") == 0)
+                        return &g_Config.m_KxPanelsStartX;
+                if(str_comp(pZoneName, "Y") == 0)
+                        return &g_Config.m_KxPanelsStartY;
+        }
+        else if(str_comp(pContainer->pName, "Panels Indentation") == 0)
+        {
+                if(str_comp(pZoneName, "X") == 0)
+                        return &g_Config.m_KxPanelsIndentX;
+                if(str_comp(pZoneName, "Y") == 0)
+                        return &g_Config.m_KxPanelsIndentY;
+        }
+        else if(str_comp(pContainer->pName, "Panels Size") == 0)
+        {
+                if(str_comp(pZoneName, "Width") == 0)
+                        return &g_Config.m_KxPanelsWidth;
+                if(str_comp(pZoneName, "Height") == 0)
+                        return &g_Config.m_KxPanelsHeight;
+        }
+        return nullptr;
+}
+
 static SRow g_ClickGuiSettingsChildren[] = {
         // v6.16: Main/Panel Color are Color rows now (picker swatch); the alpha
         // channel of the color IS the opacity (the separate Opacity rows are gone).
@@ -1261,13 +1363,17 @@ static SRow g_ClickGuiSettingsChildren[] = {
         {ERowType::Toggle, "BG Blur", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Blurs the game behind the ClickGUI panels."},
         {ERowType::Slider, "Blur Radius", nullptr, false, false, true, 0.0f, 100.0f, 5.0f, 40.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Blur strength of the game behind the panels (visible when BG Blur is on)."},
         {ERowType::Slider, "ClickGUI Scale", nullptr, false, false, true, 0.1f, 2.0f, 0.1f, 1.0f, "x", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Overall scale of the whole ClickGUI."},
-        {ERowType::Slider, "Panels Start X", nullptr, false, false, true, 0.0f, 1920.0f, 1.0f, 60.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Default X position of the panel grid."},
-        {ERowType::Slider, "Panels Start Y", nullptr, false, false, true, 0.0f, 1080.0f, 1.0f, 90.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Default Y position of the panel grid."},
-        {ERowType::Slider, "Panels X-indentation", nullptr, false, false, true, 0.0f, 200.0f, 1.0f, 30.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Horizontal spacing between the panels in the grid."},
-        {ERowType::Slider, "Panels Y-indentation", nullptr, false, false, true, 0.0f, 200.0f, 1.0f, 12.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Vertical spacing between the panels in the grid."},
+        // v6.16: X/Y + Width/Height pairs as [label] + two slider zones.
+        {ERowType::Label, "Panels Start", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Custom, "Panels Start", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+                g_PanelsStartXYChildren, (int)(sizeof(g_PanelsStartXYChildren) / sizeof(g_PanelsStartXYChildren[0]))},
+        {ERowType::Label, "Panels Indentation", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Custom, "Panels Indentation", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+                g_PanelsIndentXYChildren, (int)(sizeof(g_PanelsIndentXYChildren) / sizeof(g_PanelsIndentXYChildren[0]))},
         {ERowType::Toggle, "Dynamic scale (Beta)", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Dynamic panel sizing: drag the panel edges to resize. Hides the fixed width/height sliders."},
-        {ERowType::Slider, "Panels width", nullptr, false, false, true, 150.0f, 800.0f, 1.0f, 300.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Fixed panel width in pixels (visible when Dynamic scale is off)."},
-        {ERowType::Slider, "Panels height", nullptr, false, false, true, 200.0f, 2000.0f, 1.0f, 600.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Maximum visible body height of a panel (when Dynamic scale is off)."},
+        {ERowType::Label, "Panels Size", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Custom, "Panels Size", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+                g_PanelsSizeWHChildren, (int)(sizeof(g_PanelsSizeWHChildren) / sizeof(g_PanelsSizeWHChildren[0]))},
         {ERowType::Toggle, "Drag-To-Sort", nullptr, true, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Drag a panel header onto another slot to swap their positions."},
         // v6.3: ToolTips master switch (per-part opacity sliders removed in v6.16).
         {ERowType::Toggle, "Show ToolTips", nullptr, true, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Show the ClickGUI tooltips."},
@@ -1280,11 +1386,13 @@ static SRow g_DiscordRpcChildren[] = {
                 "Custom Discord application id (App ID = Custom)."},
 };
 static SRow g_SettingsRows[] = {
+        // ---- Visual Settings ----
+        KX_CONTAINER_ROW("Visual Settings", 2, "GUI and line visuals."),
         {ERowType::Expandable, "ClickGUI Settings", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ClickGuiSettingsChildren, 17, "Master switch: off = built-in default look."},
-        {ERowType::Expandable, "Line rendering", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LineRenderingChildren, 8,
+        {ERowType::Expandable, "Line Rendering", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LineRenderingChildren, 8,
                 "Global line-render settings shared by all features."},
-        {ERowType::Expandable, "IRC", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_IrcChildren, 2,
-                "IRC friend join / nameplate options."},
+        // ---- Spoof ----
+        KX_CONTAINER_ROW("Spoof", 3, "Client-identity spoof features."),
         {ERowType::Expandable, "Spoofer", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_SpooferChildren, 7,
                 "Spoof the client identity sent to the server."},
         // v1.56.273: Spoof Zoom / Spoof Spectate (headers are master toggles).
@@ -1292,6 +1400,10 @@ static SRow g_SettingsRows[] = {
                 "Spoof the zoom level reported to the server."},
         {ERowType::Expandable, "Spoof Spectate", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_SpoofSpectateChildren, 4,
                 "Spoof spectate coordinates / follow target."},
+        // ---- Misc ----
+        KX_CONTAINER_ROW("Misc", 3, "Other settings."),
+        {ERowType::Expandable, "IRC", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_IrcChildren, 2,
+                "IRC friend join / nameplate options."},
         {ERowType::Toggle, "Auto Verify", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Visit the verification site so DDOS protected servers accept you."},
         {ERowType::Expandable, "Discord RPC", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_DiscordRpcChildren, 2,
@@ -1471,25 +1583,38 @@ static constexpr int ARR_SECTION_INFO = 1;
 static constexpr int ARR_SECTION_AGENT = 2;
 static constexpr int ARR_SECTION_PLAYER = 3;
 
+// v6.17: Tunnel is a visual expandable again (pre-v6.16 view state) wrapping
+// the tunnel size slider + the generate button. The child names are kept —
+// all sync/dispatch matches them by name regardless of depth.
+static SRow g_PfTunnelChildren[] = {
+        {ERowType::Slider, "Tunnel size", nullptr, false, false, true, 0.0f, 10.0f, 1.0f, 2.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Size of the generated tunnel."},
+        {ERowType::Button, "Generate tunnel", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Generate a tunnel using the tunnel size."},
+};
 static SRow g_PathfinderRows[] = {
+        // ---- Main Settings ----
+        KX_CONTAINER_ROW("Main Settings", 2, "Search core settings."),
         {ERowType::Dropdown, "Effort", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_PfEffortOpts, 7, 0, nullptr, 0,
                 "Search effort preset (Very Low … Max / Custom)."},
         {ERowType::Dropdown, "Algorithm", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_PfAlgorithmOpts, 4, 0, nullptr, 0,
                 "Search algorithm (BFS / Beam / RHEA / BMCTS)."},
+        // ---- Map Settings ----
+        KX_CONTAINER_ROW("Map Settings", 2, "Map edit tools."),
         {ERowType::Expandable, "Freedom Path", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_PfFreedomPathChildren, 1,
                 "Allow freer paths through the search space."},
+        {ERowType::Expandable, "Tunnel", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_PfTunnelChildren, 2,
+                "Generate a tunnel through the map."},
         {ERowType::Expandable, "Settings", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_PfSettingsChildren, 7, "Effort-based pathfinder knobs: visible rows depend on Effort/Algorithm."},
         {ERowType::Expandable, "Visuals", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_VisualsChildren, 4,
                 "Pathfinder visualization toggles."},
+        // ---- Actions ----
+        KX_CONTAINER_ROW("Actions", 3, "Pathfinder actions and map editors."),
         // v1.56.150: Custom — Pathfinding (left) + Play (right, visible only when FINISHED).
         {ERowType::Custom, "Pathfinding", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
                 g_PfActionChildren, (int)(sizeof(g_PfActionChildren) / sizeof(g_PfActionChildren[0]))},
         {ERowType::Custom, "Editor Forbidden Tiles", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
                 g_PfForbiddenChildren, (int)(sizeof(g_PfForbiddenChildren) / sizeof(g_PfForbiddenChildren[0]))},
-        {ERowType::Slider, "Tunnel size", nullptr, false, false, true, 0.0f, 10.0f, 1.0f, 2.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Size of the generated tunnel."},
-        {ERowType::Button, "Generate tunnel", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Generate a tunnel using the tunnel size."},
         {ERowType::Custom, "Editor Finish Tiles", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
                 g_PfFinishChildren, (int)(sizeof(g_PfFinishChildren) / sizeof(g_PfFinishChildren[0]))},
         {ERowType::Label, g_PfDyn_Progress, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
@@ -1564,17 +1689,20 @@ static SRow g_BindsSdsChildren[] = {
 };
 
 static SRow g_BindsRows[] = {
+        // ---- Binds ----
+        KX_CONTAINER_ROW("Binds", 2, "Key binds for features."),
         {ERowType::Dropdown, "Bind Mode", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_BindsModeOpts, 2, 0, nullptr, 0,
                 "Merge with existing binds or override them."},
         {ERowType::Expandable, "Binds", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BindsMainChildren, 18, "Bind keys to toggle features. Commits on Enter or on focus loss."},
-        {ERowType::Expandable, "Edge bind", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BindsEdgeChildren, 2,
+        // Standalone visual expandables (no container).
+        {ERowType::Expandable, "Edge Bind", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BindsEdgeChildren, 2,
                 "Bind mouse buttons to a toggle with an edge window."},
-        {ERowType::Expandable, "Smart dummy switch", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BindsSdsChildren, 11,
+        {ERowType::Expandable, "Smart Dummy Switch", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BindsSdsChildren, 11,
                 "Cycle dummies with a bound button."},
 };
 
 // v6.15: Info panel — reworked layout. Kinetix / DDNet version labels (with
-// the client icon spanning both rows), "Client Info" expandable (spoof toggle
+// the client icon spanning both rows), "Client" expandable (spoof toggle
 // + identity), "Kinetix" expandable (binary date/hash, scripts/TASes counts,
 // folder button), Telegram|TikTok|GitHub row, RAM|CPU spark pair, FPS spark.
 // We keep static SRow arrays with pName pointing into dynamic buffers,
@@ -1589,15 +1717,16 @@ static char g_InfoDyn_Sha[64];      // "SHA-256: <20 chars> ..."
 static char g_InfoDyn_Scripts[48];  // "Scripts: N"
 static char g_InfoDyn_Tases[48];    // "TASes: N"
 
-// Indexes of the top-level rows in g_InfoRows.
+// Indexes of the top-level rows in g_InfoRows (v6.17: container headers
+// occupy indices 2 / 5 / 7 — see the array below).
 static constexpr int INFO_ROW_KX = 0;
 static constexpr int INFO_ROW_DDNET = 1;
-static constexpr int INFO_ROW_CLIENTINFO = 2;
-static constexpr int INFO_ROW_KINETIX = 3;
-static constexpr int INFO_ROW_LINKS = 4;
-static constexpr int INFO_ROW_RAMCPU = 5;
-static constexpr int INFO_ROW_FPS = 6;
-// Child index of the "Spoofed" toggle inside the "Client Info" expandable.
+static constexpr int INFO_ROW_CLIENTINFO = 3;
+static constexpr int INFO_ROW_KINETIX = 4;
+static constexpr int INFO_ROW_LINKS = 6;
+static constexpr int INFO_ROW_RAMCPU = 8;
+static constexpr int INFO_ROW_FPS = 9;
+// Child index of the "Spoofed" toggle inside the "Client" expandable.
 static constexpr int INFO_CHILD_SPOOFED = 0;
 
 // v6.15: sparkline data series (pushed in UpdateInfoRows; the Graph rows
@@ -1606,7 +1735,7 @@ static KxGraphSeries g_InfoFpsGraph;
 static KxGraphSeries g_InfoRamGraph;
 static KxGraphSeries g_InfoCpuGraph;
 
-// "Client Info" expandable children: Spoofed toggle + identity labels.
+// "Client" expandable children: Spoofed toggle + identity labels.
 static SRow g_InfoClientChildren[] = {
         {ERowType::Toggle, "Spoofed", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Show the spoofed client identity instead of the real one."},
@@ -1647,14 +1776,20 @@ static SRow g_InfoGraphChildren[] = {
 static SRow g_InfoRows[] = {
         {ERowType::Label, g_InfoDyn_Kx, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Label, g_InfoDyn_Ddnet, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Expandable, "Client Info", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+        // ---- Info ----
+        KX_CONTAINER_ROW("Info", 2, "Client identity and binary info."),
+        {ERowType::Expandable, "Client", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
                 g_InfoClientChildren, (int)(sizeof(g_InfoClientChildren) / sizeof(g_InfoClientChildren[0])),
                 "Client identity: name, version and git hash (real or spoofed)."},
         {ERowType::Expandable, "Kinetix", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
                 g_InfoKinetixChildren, (int)(sizeof(g_InfoKinetixChildren) / sizeof(g_InfoKinetixChildren[0])),
                 "Binary info, scripts/TASes counts and the Kinetix folder."},
+        // ---- Social ----
+        KX_CONTAINER_ROW("Social", 1, "Kinetix pages."),
         {ERowType::Custom, "Links", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
                 g_InfoLinkChildren, (int)(sizeof(g_InfoLinkChildren) / sizeof(g_InfoLinkChildren[0]))},
+        // ---- Usage ----
+        KX_CONTAINER_ROW("Usage", 2, "Resource usage sparklines."),
         {ERowType::Custom, "RAMCPU", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
                 g_InfoGraphChildren, (int)(sizeof(g_InfoGraphChildren) / sizeof(g_InfoGraphChildren[0]))},
         {ERowType::Graph, "FPS", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
@@ -1824,11 +1959,14 @@ static SRow g_LuaCTChildren[] = {
 };
 
 static SRow g_CodeExecRows[] = {
+        // ---- Load ----
+        KX_CONTAINER_ROW("Load", 2, "Script sources."),
         {ERowType::Expandable, "GitHub Scripts", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
                 nullptr, 0, // children are rebuilt from scripts.json in UpdateCodeExecRows
                 "Script repository (storage/scripts in the client repo). Update List downloads only the metadata; Load loads the script into Code Execution from memory (nothing is saved to disk); Download saves it to Kinetix/Scripts."},
         {ERowType::Custom, "Pick File", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
                 g_ExecPickFileChildren, (int)(sizeof(g_ExecPickFileChildren) / sizeof(g_ExecPickFileChildren[0]))},
+        // Loaded script metadata (visible only when a script is loaded).
         {ERowType::Label, g_ExecDyn_Path, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Label, g_ExecDyn_Name, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Label, g_ExecDyn_Version, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
@@ -1836,14 +1974,17 @@ static SRow g_CodeExecRows[] = {
                 "Code Execution API version the script."},
         {ERowType::Label, g_ExecDyn_Author, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         {ERowType::Label, g_ExecDyn_Desc, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        // ---- Execute ----
+        KX_CONTAINER_ROW("Execute", 2, "Permissions and execution."),
         {ERowType::Expandable, "Execution Settings", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
                 g_ExecSettingsChildren, (int)(sizeof(g_ExecSettingsChildren) / sizeof(g_ExecSettingsChildren[0])),
                 "Master toggle: off = all execution permissions disabled. On: internet access, OS commands, sandbox and debug logging for scripts."},
+        {ERowType::Button, g_ExecDyn_Btn, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Execute the loaded Lua script."},
+        // LuaCT — outside the containers.
         {ERowType::Expandable, "LuaCT", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
                 g_LuaCTChildren, (int)(sizeof(g_LuaCTChildren) / sizeof(g_LuaCTChildren[0])),
                 "Lua Compatibility Test — checks every binding for existence and access, shows the Code Execution API version (CE Version) and SoFE — Speed Of Function Execution (min/avg/max binding call time)."},
-        {ERowType::Button, g_ExecDyn_Btn, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Execute the loaded Lua script."},
         // Script Warnings — red labels, each visible only when its warning is
         // active (see CodeExecRowVisible + the Label render color rule).
         {ERowType::Label, g_ExecWarn_Header, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
@@ -1857,7 +1998,11 @@ static SRow g_CodeExecRows[] = {
 // Dynamic labels are rewritten every frame by UpdateTasRows().
 static char g_TasDyn_Action[32] = "Play";
 static char g_TasDyn_Join[40] = "Join Playground";
-static char g_TasDyn_Status[192] = "";
+// v6.17: Info section labels (the old combined status label is gone).
+static char g_TasDyn_PlayTicks[48] = "";  // "Playground Ticks: N"
+static char g_TasDyn_RecTicks[48] = "";   // "Record Ticks: N"
+static char g_TasDyn_CurVersion[32] = ""; // "TAS Version: vN.0" — the client's format
+static char g_TasDyn_FileVersion[32] = ""; // "TAS Version: vN.0" — the loaded file's format
 static char g_TasDyn_SaveCreated[64] = "";
 static bool g_TasFileHasBuffer = false;
 static bool g_TasFilePicked = false;
@@ -2082,46 +2227,63 @@ static SRow g_TasPgChildren[TAS_PG_ROW_COUNT] = {
 };
 
 static SRow g_TasRows[] = {
-	{ERowType::Expandable, "GitHub TASes", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
-		nullptr, 0, // children are rebuilt from tas.json in UpdateTasRows
-		"TAS repository (storage/tas in the client repo). Update List downloads only the metadata; Load loads the .tas file into the TAS panel from memory (nothing is saved to disk); Download saves it to Kinetix/TAS."},
-	{ERowType::Dropdown, "Mode", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TasModeOpts, 2, 0, nullptr, 0,
-		"Play a recorded TAS or record a new one."},
-	{ERowType::Custom, "Pick File", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
-		g_TasPickFileChildren, (int)(sizeof(g_TasPickFileChildren) / sizeof(g_TasPickFileChildren[0]))},
-	{ERowType::Custom, g_TasDyn_Action, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
-		g_TasActionChildren, (int)(sizeof(g_TasActionChildren) / sizeof(g_TasActionChildren[0]))},
-	{ERowType::Input, "Map", nullptr, false, false, true, 0, 0, 0, 0, nullptr, "", "map...", nullptr, 0, 0, nullptr, 0,
-		"Map name saved with the TAS."},
-	{ERowType::Input, "Description", nullptr, false, false, true, 0, 0, 0, 0, nullptr, "", "description...", nullptr, 0, 0, nullptr, 0,
-		"TAS description."},
-	{ERowType::Input, "Author", nullptr, false, false, true, 0, 0, 0, 0, nullptr, "", "author...", nullptr, 0, 0, nullptr, 0,
-		"TAS author."},
-	{ERowType::Label, g_TasDyn_SaveCreated, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-	{ERowType::Label, "TAS Version: v2.0", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-		"Version of the .tas file format used by this client."},
-	{ERowType::Button, "Save", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-		"Save the recorded TAS to a file."},
-	{ERowType::Custom, g_TasDyn_Join, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
-		g_TasJoinChildren, (int)(sizeof(g_TasJoinChildren) / sizeof(g_TasJoinChildren[0]))},
+        // ---- Load ----
+        KX_CONTAINER_ROW("Load", 2, "TAS sources."),
+        {ERowType::Expandable, "GitHub TASes", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+                nullptr, 0, // children are rebuilt from tas.json in UpdateTasRows
+                "TAS repository (storage/tas in the client repo). Update List downloads only the metadata; Load loads the .tas file into the TAS panel from memory (nothing is saved to disk); Download saves it to Kinetix/TAS."},
+        {ERowType::Custom, "Pick File", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+                g_TasPickFileChildren, (int)(sizeof(g_TasPickFileChildren) / sizeof(g_TasPickFileChildren[0]))},
+        // ---- Main ----
+        KX_CONTAINER_ROW("Main", 2, "Playback / recording controls."),
+        {ERowType::Dropdown, "Mode", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TasModeOpts, 2, 0, nullptr, 0,
+                "Play a recorded TAS or record a new one."},
+        {ERowType::Custom, g_TasDyn_Action, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+                g_TasActionChildren, (int)(sizeof(g_TasActionChildren) / sizeof(g_TasActionChildren[0]))},
+        // ---- File ----
+        KX_CONTAINER_ROW("File", 6, "Loaded file metadata and saving."),
+        {ERowType::Input, "Map", nullptr, false, false, true, 0, 0, 0, 0, nullptr, "", "map...", nullptr, 0, 0, nullptr, 0,
+                "Map name saved with the TAS."},
+        {ERowType::Input, "Description", nullptr, false, false, true, 0, 0, 0, 0, nullptr, "", "description...", nullptr, 0, 0, nullptr, 0,
+                "TAS description."},
+        {ERowType::Input, "Author", nullptr, false, false, true, 0, 0, 0, 0, nullptr, "", "author...", nullptr, 0, 0, nullptr, 0,
+                "TAS author."},
+        {ERowType::Label, g_TasDyn_SaveCreated, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_TasDyn_FileVersion, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                ".tas binary format version of the loaded file."},
+        {ERowType::Button, "Save", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Save the recorded TAS to a file."},
+        // ---- Playground ----
+        KX_CONTAINER_ROW("Playground", 5, "Playground controls."),
+        {ERowType::Custom, g_TasDyn_Join, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+                g_TasJoinChildren, (int)(sizeof(g_TasJoinChildren) / sizeof(g_TasJoinChildren[0]))},
         // v6.17: TPS | Pause — a child-bearing Custom row: the slider zone
         // shares the row, the Pause toggle takes a fixed 88 px zone on the
         // right (replacing the old bespoke right-edge toggle).
         {ERowType::Custom, "TPS", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
                 g_TasTpsChildren, (int)(sizeof(g_TasTpsChildren) / sizeof(g_TasTpsChildren[0]))},
-        {ERowType::Expandable, "Auto Rewind/Forward", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TasAutoRfChildren, 3,
-                "Auto rewind/forward on freeze/teleport/death tiles."},
-        {ERowType::Expandable, "Fake Aim", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TasFakeAimChildren, 1,
-                "Spoof the rendered aim during playback."},
-        {ERowType::Expandable, "Visuals", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TasVisualsChildren, 5,
-                "TAS visualization toggles."},
         {ERowType::Expandable, "Playground Settings", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TasPgChildren, TAS_PG_ROW_COUNT,
                 "Virtual RCON, virtual chat and practice inside the playground."},
         {ERowType::Expandable, "Spawner", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TasSpawnerChildren, TAS_SPAWN_ROW_COUNT,
                 "Spawn entities and tiles in the TAS playground."},
         {ERowType::Custom, "Rewind", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
                 g_TasRewindChildren, (int)(sizeof(g_TasRewindChildren) / sizeof(g_TasRewindChildren[0]))},
-	{ERowType::Label, g_TasDyn_Status, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        // ---- Play ----
+        KX_CONTAINER_ROW("Play", 1, "Playback-only settings."),
+        {ERowType::Expandable, "Fake Aim", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TasFakeAimChildren, 1,
+                "Spoof the rendered aim during playback."},
+        // ---- Record ----
+        KX_CONTAINER_ROW("Record", 1, "Recording-only settings."),
+        {ERowType::Expandable, "Auto Rewind/Forward", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TasAutoRfChildren, 3,
+                "Auto rewind/forward on freeze/teleport/death tiles."},
+        {ERowType::Expandable, "Visuals", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TasVisualsChildren, 5,
+                "TAS visualization toggles."},
+        // ---- Info ----
+        KX_CONTAINER_ROW("Info", 3, "Live TAS counters and format version."),
+        {ERowType::Label, g_TasDyn_PlayTicks, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_TasDyn_RecTicks, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_TasDyn_CurVersion, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Version of the .tas file format used by this client."},
 };
 
 // ---------- Real-Time Pathfinder panel (9, v1.56.280) ----------
@@ -2484,23 +2646,8 @@ static SRow g_ArrayPlayerChildren[] = {
 };
 static const int KX_ARRAYPLAYER_CHILD_COUNT = (int)(sizeof(g_ArrayPlayerChildren) / sizeof(g_ArrayPlayerChildren[0]));
 static SRow g_VisualsRows[] = {
-        {ERowType::Expandable, "Custom colors", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CustomColorsChildren, 7, "Master switch: off = original game look."},
-        {ERowType::Toggle, "Hide particles", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Hide in-game particles."},
-        // v1.56.260: moved from the Advanced panel.
-        {ERowType::Expandable, "Trajectory", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TrajectoryChildren, 7,
-                "Predict projectile trajectories."},
-        {ERowType::Expandable, "ESP", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_EspChildren, 21,
-                "Draw pointers / boxes to targets."},
-        {ERowType::Expandable, "Hitboxes", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_HitboxesChildren, 17,
-                "Draw tee collision / trigger hitboxes."},
-        // v1.56.262: bypass locks + admin alarm.
-        {ERowType::Toggle, "Bypass Zoom Lock", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Bypass the server zoom lock."},
-        {ERowType::Toggle, "Bypass Asset Lock", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Bypass the asset (map) lock."},
-        {ERowType::Expandable, "Admin Alarm", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AdminAlarmChildren, 5,
-                "Local alarm when an admin/helper/moderator is present."},
+        // ---- Array ----
+        KX_CONTAINER_ROW("Array", 4, "On-screen HUD overlays."),
         {ERowType::Expandable, "ArrayList", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ArrayListChildren, KX_ARRAYLIST_CHILD_COUNT,
                 "On-screen list of enabled features (drag to move)."},
         {ERowType::Expandable, "ArrayInfo", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ArrayInfoChildren, KX_ARRAYINFO_CHILD_COUNT,
@@ -2509,6 +2656,27 @@ static SRow g_VisualsRows[] = {
                 "On-screen now-playing media card (drag to move)."},
         {ERowType::Expandable, "ArrayAgent", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ArrayAgentChildren, KX_ARRAYAGENT_CHILD_COUNT,
                 "AI agent chat panel (OpenAI-compatible endpoint; drag to move)."},
+        // ---- Game ----
+        KX_CONTAINER_ROW("Game", 3, "In-game overlays."),
+        // v1.56.260: moved from the Advanced panel.
+        {ERowType::Expandable, "Trajectory", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TrajectoryChildren, 7,
+                "Predict projectile trajectories."},
+        {ERowType::Expandable, "ESP", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_EspChildren, 21,
+                "Draw pointers / boxes to targets."},
+        {ERowType::Expandable, "Hitboxes", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_HitboxesChildren, 17,
+                "Draw tee collision / trigger hitboxes."},
+        // ---- Misc ----
+        KX_CONTAINER_ROW("Misc", 5, "Other visual toggles."),
+        {ERowType::Expandable, "Custom colors", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CustomColorsChildren, 7, "Master switch: off = original game look."},
+        {ERowType::Toggle, "Hide particles", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Hide in-game particles."},
+        // v1.56.262: bypass locks + admin alarm.
+        {ERowType::Toggle, "Bypass Zoom Lock", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Bypass the server zoom lock."},
+        {ERowType::Toggle, "Bypass Asset Lock", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Bypass the asset (map) lock."},
+        {ERowType::Expandable, "Admin Alarm", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AdminAlarmChildren, 5,
+                "Local alarm when an admin/helper/moderator is present."},
 };
 
 // v1.56.286: Search panel — real-time filtering of every other panel.
@@ -2812,9 +2980,21 @@ static bool TasRowVisible(const SRow *pRows, int rowCount, int idx)
         }
         if(row.pName == g_TasDyn_SaveCreated)
                 return g_TasFileHasBuffer;
+        // v6.17: the loaded file's format version — same rule as the metadata.
+        if(row.pName == g_TasDyn_FileVersion)
+                return g_TasFileHasBuffer;
         if(str_comp(row.pName, "Map") == 0 || str_comp(row.pName, "Description") == 0 ||
                 str_comp(row.pName, "Author") == 0 || str_comp(row.pName, "Save") == 0)
                 return g_TasFileHasBuffer;
+        // v6.17: a container whose members are ALL hidden hides itself
+        // (e.g. "Play" — its only member Fake Aim is hidden in Record mode).
+        if(row.type == ERowType::Container && row.ContainerRows > 0)
+        {
+                for(int k = idx + 1; k <= idx + row.ContainerRows && k < rowCount; ++k)
+                        if(TasRowVisible(pRows, rowCount, k))
+                                return true;
+                return false;
+        }
         return true;
 }
 
@@ -3927,8 +4107,10 @@ static bool VisualRainbowChildVisible(const SRow *pChildren, int childCount, int
                         const SRow *pRainbow = FindChild("Rainbow Main Color");
                         return pRainbow && pRainbow->on;
                 }
-                if(str_comp(ch.pName, "Panels width") == 0 || str_comp(ch.pName, "Panels height") == 0)
+                if(str_comp(ch.pName, "Panels Size") == 0)
                 {
+                        // v6.16: the Width/Height pair (label + Custom row) only
+                        // when Dynamic scale (Beta) is off.
                         const SRow *pDyn = FindChild("Dynamic scale (Beta)");
                         return pDyn && !pDyn->on;
                 }
@@ -4173,6 +4355,15 @@ static constexpr float SLIDER_TRACK_H = 6.0f;
 static constexpr float SLIDER_THUMB_W = 18.0f;
 static constexpr float SLIDER_THUMB_H = 10.0f;
 static constexpr float SUB_LIST_INDENT = 22.0f;
+// v6.17: container group geometry — top/bottom padding between the white
+// outline and the group label / the last wrapped row, the LEFT offset of the
+// wrapped rows (small — NOT the 22px expandable-child indent) and the RIGHT
+// inset (right-aligned controls stop short of the outline).
+static constexpr float CONT_PAD_T = 5.0f;
+static constexpr float CONT_PAD_B = 6.0f;
+static constexpr float CONT_PAD_R = 8.0f;
+static constexpr float CONT_INNER_INDENT = 8.0f;
+static constexpr float CONT_RADIUS = 6.0f;
 
 // Offscreen margin: how far outside the visible screen panels fly when hidden.
 static constexpr float OFFSCREEN_MARGIN = 100.0f;
@@ -4182,7 +4373,7 @@ static constexpr float OFFSCREEN_MARGIN = 100.0f;
 static bool IsVisualExpandableName(const char *pName)
 {
         return str_comp(pName, "Visuals") == 0 ||
-                str_comp(pName, "Line rendering") == 0 ||
+                str_comp(pName, "Line Rendering") == 0 ||
                 str_comp(pName, "TAS") == 0 ||
                 str_comp(pName, "Settings") == 0 ||
                 str_comp(pName, "Binds") == 0 ||
@@ -4190,8 +4381,10 @@ static bool IsVisualExpandableName(const char *pName)
                 str_comp(pName, "LuaCT") == 0 ||
                 str_comp(pName, "GitHub Scripts") == 0 ||
                 str_comp(pName, "GitHub TASes") == 0 ||
-                str_comp(pName, "Client Info") == 0 || // v6.15: Info panel
-                str_comp(pName, "Kinetix") == 0; // v6.15: Info panel
+                str_comp(pName, "Client") == 0 || // v6.15: Info panel
+                str_comp(pName, "Kinetix") == 0 || // v6.15: Info panel
+                str_comp(pName, "Tunnel") == 0 || // v6.17: Pathfinder — restored visual expandable
+                str_comp(pName, "Send Command (Beta)") == 0; // v6.17: Dummy Manager — command tool
 }
 
 static float RowHeight(ERowType t)
@@ -4219,6 +4412,8 @@ static float RowHeight(ERowType t)
                 return ROW_H_GRAPH; // v6.15: two label rows (graph + centered name)
         case ERowType::Color:
                 return ROW_H_TOGGLE; // v6.16: same height as a toggle row
+        case ERowType::Container:
+                return ROW_H_TOGGLE; // v6.17: intercepted by RowHeightForRow (padded label)
         }
         return ROW_H_TOGGLE;
 }
@@ -4531,6 +4726,50 @@ static bool CustomChildStyle(IClient *pClient, CClickGui &Gui, CBotNet &BN, CTas
         return true;
 }
 
+// =========================================================
+// v6.17: Container rows (ERowType::Container) — group helpers.
+// A Container row wraps the next ContainerRows top-level rows in a white
+// rounded outline; the wrapped rows indent like expandable children and the
+// last one carries bottom padding. Groups are flat (a group must not contain
+// another Container row) and are suspended while the search filter is active
+// — with a query the container degrades to a plain label row and the members
+// keep their unindented geometry, so every search path stays untouched.
+// =========================================================
+static bool ContainerGroupsActive()
+{
+        return g_SearchQuery[0] == 0;
+}
+
+// Index of the Container row whose group covers top-level row r, or -1.
+// Walks back to the NEAREST container start; correct because groups never
+// overlap (the no-nesting rule above).
+static int ContainerStartOf(const SRow *pRows, int r)
+{
+        if(!ContainerGroupsActive())
+                return -1;
+        for(int i = r - 1; i >= 0; --i)
+        {
+                if(pRows[i].type == ERowType::Container && pRows[i].ContainerRows > 0)
+                        return (r <= i + pRows[i].ContainerRows) ? i : -1;
+        }
+        return -1;
+}
+
+static bool RowInContainerGroup(const SRow *pRows, int r)
+{
+        return ContainerStartOf(pRows, r) >= 0;
+}
+
+// Extra cursorY advance after row r (bottom padding of the last member so
+// the outline wraps it with a gap). 0 for everything else.
+static float RowContainerBottomPad(const SRow *pRows, int r)
+{
+        const int ci = ContainerStartOf(pRows, r);
+        if(ci < 0)
+                return 0.0f;
+        return (r == ci + pRows[ci].ContainerRows) ? CONT_PAD_B : 0.0f;
+}
+
 // Row height taking the wrapped Label height into account.
 static float RowHeightForRow(const SRow &row)
 {
@@ -4547,6 +4786,14 @@ static float RowHeightForRow(const SRow &row)
                         return h;
                 }
                 return ROW_H_BUTTON;
+        }
+        if(row.type == ERowType::Container)
+        {
+                // v6.17: group header = a single-line label with top padding
+                // inside the outline. No bottom padding: the inter-row gap
+                // already provides the spacing below the label (unpadded while
+                // the search filter suspends the group).
+                return ContainerGroupsActive() ? CONT_PAD_T + 23.0f : 23.0f;
         }
         if(row.type != ERowType::Label)
                 return RowHeight(row.type);
@@ -6023,27 +6270,12 @@ void CClickGui::UpdateTasRows()
                 str_copy(g_TasDyn_Action, (Tas.IsPlaying() || Tas.IsRealPlaying()) ? "Stop" : "Play", sizeof(g_TasDyn_Action));
         str_copy(g_TasDyn_Join, Tas.IsJoined() ? "Leave Playground" : "Join Playground", sizeof(g_TasDyn_Join));
 
-	const char *pState = "IDLE";
-	if(Tas.IsRecording())
-		pState = "RECORDING";
-	else if(Tas.IsRealPlaying())
-		pState = "EXECUTING";
-	else if(Tas.IsPlaying())
-		pState = "PLAYING";
-	else if(Tas.IsJoined())
-		pState = "LIVE";
-        if(Tas.IsDead())
-                pState = "DEAD";
-        else if(Tas.Paused() && Tas.IsJoined())
-                pState = "PAUSED";
-
-	char aExec[32] = "";
-	if(Tas.IsRealPlaying())
-		str_format(aExec, sizeof(aExec), " | exec %d/%d", Tas.RealPlayIdx(), Tas.SavedCount());
-	str_format(g_TasDyn_Status, sizeof(g_TasDyn_Status),
-		"%s | tick %d | hist %d | rec %d | saved %d | play %d%s%s",
-		pState, Tas.PlaygroundTick(), Tas.HistoryCount(), Tas.RecordCount(),
-		Tas.SavedCount(), Tas.PlayIdx(), aExec, Tas.Desynced() ? " | DESYNC" : "");
+	// v6.17: Info section labels — ticks + the current and loaded-file .tas
+	// format versions (the old combined status line is gone).
+	str_format(g_TasDyn_PlayTicks, sizeof(g_TasDyn_PlayTicks), "Playground Ticks: %d", Tas.PlaygroundTick());
+	str_format(g_TasDyn_RecTicks, sizeof(g_TasDyn_RecTicks), "Record Ticks: %d", Tas.RecordCount());
+	str_copy(g_TasDyn_CurVersion, "TAS Version: v2.0", sizeof(g_TasDyn_CurVersion));
+	str_format(g_TasDyn_FileVersion, sizeof(g_TasDyn_FileVersion), "TAS Version: v%d.0", Tas.PickedVersion());
 
 	g_TasFileHasBuffer = (Tas.IsRecording() ? Tas.RecordCount() > 0 : Tas.SavedCount() > 0);
 	g_TasFilePicked = Tas.FilePicked();
@@ -7048,7 +7280,7 @@ void CClickGui::OnRender()
                                 else if(str_comp(row.pName, "Copy Moves Latency") == 0)
                                         row.on = g_Config.m_KxCopyMovesLatencyEnabled != 0;
                                 // v6.7: Smart Dummy Switch expandable is master toggle.
-                                else if(str_comp(row.pName, "Smart dummy switch") == 0)
+                                else if(str_comp(row.pName, "Smart Dummy Switch") == 0)
                                         row.on = g_Config.m_KxSdsEnabled != 0;
                                 // v6.9: AledBot expandable is master toggle.
                                 else if(str_comp(row.pName, "AledBot") == 0)
@@ -7143,7 +7375,10 @@ void CClickGui::OnRender()
                                         row.on = g_Config.m_KxHitboxes != 0;
                                 // v1.56.199: Binds panel sync moved to every-frame loop (see below).
                                 // Sync children of expandable rows
-                                for(int c = 0; c < row.childCount; ++c)
+                                // v6.17: a row with childCount but no backing array used to
+                                // null-deref here — clamp the loop to rows that have children.
+                                const int SyncChildCount = row.pChildren ? row.childCount : 0;
+                                for(int c = 0; c < SyncChildCount; ++c)
                                 {
                                         SRow &child = row.pChildren[c];
                                 if(!TasRowChildrenVisible(row, c))
@@ -7166,9 +7401,9 @@ if(str_comp(row.pName, "Avoid Freeze") == 0 && !AfChildVisible(row.pChildren, ro
         continue;
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
+if(str_comp(row.pName, "Line Rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "ArrayAgent") == 0 && !ArrayAgentChildVisible(row.pChildren, row.childCount, c)))
+if((str_comp(row.pName, "Smart Dummy Switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "ArrayAgent") == 0 && !ArrayAgentChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                         // v6.7: Smart Copy Moves children (index-keyed: Sort Type,
                                         // Apply Mode, Apply Dummies slider, filters + inputs).
@@ -8125,7 +8360,9 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                         }
                                 }
                                 // Dummies: hide "Switch to Main" if already on main player.
-                                else if(str_comp(row.pName, "Dummies") == 0)
+                                // v6.17: type guard — the panel also has a Container
+                                // header named "Dummies" (no children to sync).
+                                else if(row.type == ERowType::Expandable && str_comp(row.pName, "Dummies") == 0)
                                 {
                                         // Update button labels + visibility dynamically.
                                         for(int c = 0; c < row.childCount; ++c)
@@ -8251,38 +8488,24 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                 if(!Dragging)
                                                         child.value = g_Config.m_KxClickGuiScale / 10.0f;
                                         }
-                                        else if(str_comp(child.pName, "Panels Start X") == 0)
+                                        else if(str_comp(child.pName, "Panels Start") == 0 ||
+                                                str_comp(child.pName, "Panels Indentation") == 0 ||
+                                                str_comp(child.pName, "Panels Size") == 0)
                                         {
-                                                if(!Dragging)
-                                                        child.value = (float)g_Config.m_KxPanelsStartX;
-                                        }
-                                        else if(str_comp(child.pName, "Panels Start Y") == 0)
-                                        {
-                                                if(!Dragging)
-                                                        child.value = (float)g_Config.m_KxPanelsStartY;
-                                        }
-                                        else if(str_comp(child.pName, "Panels X-indentation") == 0)
-                                        {
-                                                if(!Dragging)
-                                                        child.value = (float)g_Config.m_KxPanelsIndentX;
-                                        }
-                                        else if(str_comp(child.pName, "Panels Y-indentation") == 0)
-                                        {
-                                                if(!Dragging)
-                                                        child.value = (float)g_Config.m_KxPanelsIndentY;
+                                                // v6.16: the X/Y + Width/Height pairs — zone
+                                                // sliders mirror their cvar while not dragged.
+                                                for(int z = 0; z < child.childCount; ++z)
+                                                {
+                                                        SRow &Zone = child.pChildren[z];
+                                                        const bool ZoneDragging = Dragging && m_DragSliderSubChild == z;
+                                                        if(ZoneDragging)
+                                                                continue;
+                                                        if(int *pCvar = KxPanelXYSliderCvar(&child, Zone.pName))
+                                                                Zone.value = (float)*pCvar;
+                                                }
                                         }
                                         else if(str_comp(child.pName, "Dynamic scale (Beta)") == 0)
                                                 child.on = g_Config.m_KxPanelsDynamicScale != 0;
-                                        else if(str_comp(child.pName, "Panels width") == 0)
-                                        {
-                                                if(!Dragging)
-                                                        child.value = (float)g_Config.m_KxPanelsWidth;
-                                        }
-                                        else if(str_comp(child.pName, "Panels height") == 0)
-                                        {
-                                                if(!Dragging)
-                                                        child.value = (float)g_Config.m_KxPanelsHeight;
-                                        }
                                         else if(str_comp(child.pName, "Drag-To-Sort") == 0)
                                                 child.on = g_Config.m_KxDragToSort != 0;
                                         // v1.56.287: BG Blur — toggle + radius (config-synced).
@@ -9061,7 +9284,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                         }
                                 }
                         }
-                        else if(p == 4 && row.type == ERowType::Expandable && str_comp(row.pName, "Edge bind") == 0)
+                        else if(p == 4 && row.type == ERowType::Expandable && str_comp(row.pName, "Edge Bind") == 0)
                         {
                                 row.on = g_Config.m_KxEdgeBind != 0;
                                 for(int c = 0; c < row.childCount; ++c)
@@ -9133,7 +9356,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                         }
                                 }
                         }
-                        else if(p == 4 && row.type == ERowType::Expandable && str_comp(row.pName, "Smart dummy switch") == 0)
+                        else if(p == 4 && row.type == ERowType::Expandable && str_comp(row.pName, "Smart Dummy Switch") == 0)
                         {
                                 for(int c = 0; c < row.childCount; ++c)
                                 {
@@ -9194,7 +9417,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                         // v1.56.112: Line rendering dedicated sync (per-component).
                         // Reads g_Config.m_KxLineComponent every frame so changing
                         // the Component dropdown updates color/size/opacity immediately.
-                        else if(str_comp(row.pName, "Line rendering") == 0 && row.type == ERowType::Expandable)
+                        else if(str_comp(row.pName, "Line Rendering") == 0 && row.type == ERowType::Expandable)
                         {
                                 int compIdx = g_Config.m_KxLineComponent;
                                 if(compIdx < 0 || compIdx >= KX_LINE_COUNT)
@@ -9476,17 +9699,21 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                         ContainerIndent = SUB_LIST_INDENT;
                         pTarget = &pTarget->pChildren[m_DragSliderSubChild];
                 }
+                // v6.17: sliders inside a container group sit on narrower rows:
+                // a member row is indented + right-inset, its child rows nest one
+                // level deeper (same track formula as the render).
                 else if(m_DragSliderChild >= 0)
-                        ContainerIndent = SUB_LIST_INDENT;
+                        ContainerIndent = RowInContainerGroup(panel.pRows, m_DragSliderRow)
+                                ? CONT_INNER_INDENT + SUB_LIST_INDENT + CONT_PAD_R
+                                : SUB_LIST_INDENT;
+                else if(m_DragSliderChild < 0 && RowInContainerGroup(panel.pRows, m_DragSliderRow))
+                        ContainerIndent = CONT_INNER_INDENT + CONT_PAD_R;
                 if(pTarget->type == ERowType::Slider && pTarget->max > pTarget->min)
                 {
-                        // Track geometry MUST match RenderPanel: 2px margin each side.
-                        // Child sliders are indented by SUB_LIST_INDENT, so their track
-                        // is narrower — must account for that or the thumb position
-                        // won't match the mouse. A Custom-zone slider's track spans
-                        // its zone (recomputed from the same indices as the hit-test).
-                        const vec2 ppos = m_aPanelPos[m_DragSliderPanel];
-                        float ZoneX = 0.0f;
+                        // Track width MUST match RenderPanel: the px→value scale is
+                        // derived from it. Child sliders are indented by
+                        // SUB_LIST_INDENT; a Custom-zone slider's track spans its
+                        // zone (recomputed from the same indices as the hit-test).
                         float ZoneW = PANEL_WIDTH - BODY_PADDING * 2 - ContainerIndent;
                         if(pZoneRow)
                         {
@@ -9497,31 +9724,45 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 {
                                         if(aIdx[z] == ZoneChild)
                                         {
-                                                ZoneX = aX[z];
                                                 ZoneW = aW[z];
                                                 break;
                                         }
                                 }
                         }
-                        const float trackX = ppos.x + BODY_PADDING + ContainerIndent + ZoneX + 2.0f;
                         const float trackW = ZoneW - 4.0f;
-                        float pct = (m_MousePos.x - trackX) / trackW;
-                        pct = std::clamp(pct, 0.0f, 1.0f);
-{
-                                                // v1.56.284: snap to the step for ANY step > 0
-                                                // (fractional steps included), clamped to [min, max].
-                                                float raw = pTarget->min + pct * (pTarget->max - pTarget->min);
-                                                if(pTarget->step > 0.0f)
-                                                {
-                                                        pTarget->value = pTarget->min + roundf((raw - pTarget->min) / pTarget->step) * pTarget->step;
-                                                        if(pTarget->value > pTarget->max)
-                                                                pTarget->value = pTarget->max;
-                                                        if(pTarget->value < pTarget->min)
-                                                                pTarget->value = pTarget->min;
-                                                }
-                                                else
-                                                        pTarget->value = raw;
-                                        }
+                        // v6.16: Shift = fine drag — the value follows the mouse at
+                        // 1/3 speed. The drag is relative from the anchor (re-based
+                        // every frame in normal mode, frozen while Shift is held and
+                        // re-based again on release), so toggling Shift never makes
+                        // the thumb jump.
+                        const bool Shift = Input()->ShiftIsPressed();
+                        if(m_DragSliderShiftHeld && !Shift)
+                        {
+                                m_DragSliderAnchorX = m_MousePos.x;
+                                m_DragSliderAnchorVal = pTarget->value;
+                        }
+                        const float Scale = Shift ? (1.0f / 3.0f) : 1.0f;
+                        float raw = m_DragSliderAnchorVal + (m_MousePos.x - m_DragSliderAnchorX) * ((pTarget->max - pTarget->min) / trackW) * Scale;
+                        raw = std::clamp(raw, pTarget->min, pTarget->max);
+                        if(pTarget->step > 0.0f)
+                        {
+                                pTarget->value = pTarget->min + roundf((raw - pTarget->min) / pTarget->step) * pTarget->step;
+                                if(pTarget->value > pTarget->max)
+                                        pTarget->value = pTarget->max;
+                                if(pTarget->value < pTarget->min)
+                                        pTarget->value = pTarget->min;
+                        }
+                        else
+                                pTarget->value = raw;
+                        if(!Shift)
+                        {
+                                // Anchor the UNSNAPPED value — the snap only shapes
+                                // the applied value, so slow sub-step drags still
+                                // accumulate instead of being discarded.
+                                m_DragSliderAnchorX = m_MousePos.x;
+                                m_DragSliderAnchorVal = raw;
+                        }
+                        m_DragSliderShiftHeld = Shift;
                         // v6.3: ArrayList HUD + ToolTips sliders. Parent-gated because
                         // names like "Speed"/"Step"/"Main Opacity" are shared with other
                         // expandables (the generic branches below would steal them).
@@ -9615,19 +9856,13 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                         g_Config.m_KxArrayAgentPanelRainbowStep = (int)(pTarget->value + 0.5f);
                         }
                         // v1.56.260: Panels Start X/Y live update while dragging.
-                        else if(str_comp(pTarget->pName, "Panels Start X") == 0)
-                                g_Config.m_KxPanelsStartX = (int)pTarget->value;
-                        else if(str_comp(pTarget->pName, "Panels Start Y") == 0)
-                                g_Config.m_KxPanelsStartY = (int)pTarget->value;
-                        // v1.56.283: Panels indentation + width/height live update.
-                        else if(str_comp(pTarget->pName, "Panels X-indentation") == 0)
-                                g_Config.m_KxPanelsIndentX = (int)pTarget->value;
-                        else if(str_comp(pTarget->pName, "Panels Y-indentation") == 0)
-                                g_Config.m_KxPanelsIndentY = (int)pTarget->value;
-                        else if(str_comp(pTarget->pName, "Panels width") == 0)
-                                g_Config.m_KxPanelsWidth = (int)pTarget->value;
-                        else if(str_comp(pTarget->pName, "Panels height") == 0)
-                                g_Config.m_KxPanelsHeight = (int)pTarget->value;
+                        // v6.16: the pairs are zone sliders now — the container
+                        // (pZoneRow) selects the cvar pair.
+                        else if(pTarget->type == ERowType::Slider && pZoneRow)
+                        {
+                                if(int *pCvar = KxPanelXYSliderCvar(pZoneRow, pTarget->pName))
+                                        *pCvar = (int)pTarget->value;
+                        }
                         else if(str_comp(pTarget->pName, "Latency (ms)") == 0 && str_comp(row.pName, "Custom latency") == 0)
                                 g_Config.m_KxDummyHammerLatencyMs = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "BG Blackout") == 0)
@@ -9636,7 +9871,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                         else if(str_comp(pTarget->pName, "Blur Radius") == 0)
                                 g_Config.m_KxUiBgBlurRadius = (int)pTarget->value;
                         // v1.56.204: Line rendering per-component Speed slider (display = config/10)
-                        else if(str_comp(pTarget->pName, "Speed") == 0 && str_comp(row.pName, "Line rendering") == 0)
+                        else if(str_comp(pTarget->pName, "Speed") == 0 && str_comp(row.pName, "Line Rendering") == 0)
                         {
                                 int compIdx = g_Config.m_KxLineComponent;
                                 EKxLineComponent comp = (EKxLineComponent)compIdx;
@@ -9655,7 +9890,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 }
                         }
                         // v1.56.210: Line rendering per-component Step slider (hue increment per segment)
-                        else if(str_comp(pTarget->pName, "Step") == 0 && str_comp(row.pName, "Line rendering") == 0)
+                        else if(str_comp(pTarget->pName, "Step") == 0 && str_comp(row.pName, "Line Rendering") == 0)
                         {
                                 int compIdx = g_Config.m_KxLineComponent;
                                 EKxLineComponent comp = (EKxLineComponent)compIdx;
@@ -9697,7 +9932,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 g_Config.m_KxTripleFlyTriggerRadius = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Radius") == 0 && str_comp(row.pName, "Auto Triple Fly") == 0)
                                 g_Config.m_KxTripleFlyRadius = (int)pTarget->value;
-                        else if(str_comp(pTarget->pName, "Edge in ms") == 0 && str_comp(row.pName, "Edge bind") == 0)
+                        else if(str_comp(pTarget->pName, "Edge in ms") == 0 && str_comp(row.pName, "Edge Bind") == 0)
                                 g_Config.m_KxEdgeBindMs = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Version ID") == 0)
                                 g_Config.m_KxVersionSpoofId = (int)pTarget->value;
@@ -10939,7 +11174,8 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
 
                         // v1.56.176: Label rows are non-interactive — click passes through
                         // (no action, no toggle). BringToFront already happened above.
-                        if(pTarget->type == ERowType::Label)
+                        // v6.17: Container group headers are non-interactive too.
+                        if(pTarget->type == ERowType::Label || pTarget->type == ERowType::Container)
                                 return;
 
                         // Sub-region hits within the row.
@@ -11151,7 +11387,7 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 g_Config.m_KxFixDummyHammer = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Auto Triple Fly") == 0)
                                                 g_Config.m_KxTripleFly = pTarget->on ? 1 : 0;
-                                        else if(str_comp(pTarget->pName, "Edge bind") == 0)
+                                        else if(str_comp(pTarget->pName, "Edge Bind") == 0)
                                                 g_Config.m_KxEdgeBind = pTarget->on ? 1 : 0;
                                         else if(str_comp(pTarget->pName, "Mirror direction") == 0)
                                                 g_Config.m_KxDummyCopyMirrorDir = pTarget->on ? 1 : 0;
@@ -11355,6 +11591,33 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 else if(str_comp(pTarget->pName, "Generate tunnel") == 0 && pTarget->type == ERowType::Button)
                                 {
                                         GameClient()->m_BotNet.PfGenerateTunnel();
+                                }
+                                // v6.17: "Send Command (Beta)" — the command goes to every
+                                // dummy whose "Send" toggle is enabled in the Dummies
+                                // list (1..MAX_DUMMIES-1; Main is never targeted). The
+                                // input field holds the bare command, placeholders are
+                                // replaced per dummy.
+                                else if(str_comp(pTarget->pName, "Send") == 0 && str_comp(row.pName, "Send Command (Beta)") == 0 && pTarget->type == ERowType::Button)
+                                {
+                                        const char *pCmd = row.pChildren[0].m_aInputBuf;
+                                        while(*pCmd == ' ')
+                                                pCmd++;
+                                        if(pCmd[0])
+                                        {
+                                                char aIds[512];
+                                                int IdsLen = 0;
+                                                aIds[0] = '\0';
+                                                for(int D = 1; D < MAX_DUMMIES && IdsLen < (int)sizeof(aIds) - 8; ++D)
+                                                {
+                                                        if(!m_aDummySendEnabled[D])
+                                                                continue;
+                                                        if(IdsLen > 0)
+                                                                aIds[IdsLen++] = ',';
+                                                        IdsLen += str_format(aIds + IdsLen, (int)sizeof(aIds) - IdsLen, "%d", D);
+                                                }
+                                                if(IdsLen > 0)
+                                                        GameClient()->m_BotNet.SendToDummies(aIds, pCmd);
+                                        }
                                 }
                                 // v1.56.280: RT Pathfinding button — IDLE <-> RUNNING (no FINISHED state).
                                 else if(str_comp(pTarget->pName, "Pathfinding") == 0 && pTarget->type == ERowType::Button && str_comp(panel.pTitle, "Real-Time Pathfinder") == 0)
@@ -11730,6 +11993,12 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         else
                                                 pTarget->value = raw;
                                 }
+                                // v6.16: seed the Shift fine-drag anchor at the click
+                                // point, so holding Shift from the very start of the
+                                // drag moves the value at 1/3 speed from here.
+                                m_DragSliderAnchorX = mousePos.x;
+                                m_DragSliderAnchorVal = pTarget->value;
+                                m_DragSliderShiftHeld = false;
                                 // v6.3: ArrayList HUD + ToolTips sliders (parent-gated:
                                 // "Speed"/"Step"/"Main Opacity" are shared names).
                                 if(str_comp(row.pName, "ArrayList") == 0)
@@ -11850,7 +12119,7 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         g_Config.m_KxTripleFlyTriggerRadius = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Radius") == 0 && str_comp(row.pName, "Auto Triple Fly") == 0)
                                         g_Config.m_KxTripleFlyRadius = (int)pTarget->value;
-                                else if(str_comp(pTarget->pName, "Edge in ms") == 0 && str_comp(row.pName, "Edge bind") == 0)
+                                else if(str_comp(pTarget->pName, "Edge in ms") == 0 && str_comp(row.pName, "Edge Bind") == 0)
                                         g_Config.m_KxEdgeBindMs = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Version ID") == 0)
                                         g_Config.m_KxVersionSpoofId = (int)pTarget->value;
@@ -12262,10 +12531,10 @@ bool CClickGui::HandleToggleTail(void *pTargetV, void *pRowV, void *pPanelV)
         else if(str_comp(pTarget->pName, "Smart Copy Moves") == 0)
                 g_Config.m_KxSmartCopyMoves = pTarget->on ? 1 : 0;
         // v6.7: Smart Dummy Switch expandable is master toggle.
-        else if(str_comp(pTarget->pName, "Smart dummy switch") == 0)
+        else if(str_comp(pTarget->pName, "Smart Dummy Switch") == 0)
                 g_Config.m_KxSdsEnabled = pTarget->on ? 1 : 0;
         // v6.7: Smart Dummy Switch Without Repeat (clear the visited round).
-        else if(str_comp(pTarget->pName, "Without Repeat") == 0 && str_comp(row.pName, "Smart dummy switch") == 0)
+        else if(str_comp(pTarget->pName, "Without Repeat") == 0 && str_comp(row.pName, "Smart Dummy Switch") == 0)
         {
                 g_Config.m_KxSdsNoRepeat = pTarget->on ? 1 : 0;
                 GameClient()->m_BotNet.SdsResetVisited();
@@ -12461,7 +12730,7 @@ bool CClickGui::HandleToggleTail(void *pTargetV, void *pRowV, void *pPanelV)
                 m_RainbowEnabled = pTarget->on;
         }
         // v1.56.201: Line rendering per-component Rainbow toggle
-        else if(str_comp(pTarget->pName, "Rainbow") == 0 && str_comp(row.pName, "Line rendering") == 0)
+        else if(str_comp(pTarget->pName, "Rainbow") == 0 && str_comp(row.pName, "Line Rendering") == 0)
         {
                 int compIdx = g_Config.m_KxLineComponent;
                 EKxLineComponent comp = (EKxLineComponent)compIdx;
@@ -12479,7 +12748,7 @@ bool CClickGui::HandleToggleTail(void *pTargetV, void *pRowV, void *pPanelV)
                 }
         }
         // v1.56.210: Line rendering per-component Gradient toggle
-        else if(str_comp(pTarget->pName, "Gradient") == 0 && str_comp(row.pName, "Line rendering") == 0)
+        else if(str_comp(pTarget->pName, "Gradient") == 0 && str_comp(row.pName, "Line Rendering") == 0)
         {
                 int compIdx = g_Config.m_KxLineComponent;
                 EKxLineComponent comp = (EKxLineComponent)compIdx;
@@ -12509,23 +12778,24 @@ void CClickGui::HandleMouseUp(vec2 mousePos)
                 if(m_DragSliderRow >= 0 && m_DragSliderRow < panel.rowCount)
                 {
                         SRow &row = panel.pRows[m_DragSliderRow];
+                        // v6.16: resolve zone sliders too (Child = the Custom
+                        // container, SubChild = the zone child).
                         SRow *pTarget = (m_DragSliderChild >= 0 && row.pChildren) ? &row.pChildren[m_DragSliderChild] : &row;
+                        SRow *pZoneRow = nullptr;
+                        if(m_DragSliderSubChild >= 0 && pTarget->pChildren && m_DragSliderSubChild < pTarget->childCount)
+                        {
+                                pZoneRow = pTarget;
+                                pTarget = &pTarget->pChildren[m_DragSliderSubChild];
+                        }
                         if(str_comp(pTarget->pName, "ClickGUI Scale") == 0)
                                 g_Config.m_KxClickGuiScale = (int)(pTarget->value * 10.0f + 0.5f);
-                        // v1.56.260: Panels Start X/Y commit on slider release.
-                        else if(str_comp(pTarget->pName, "Panels Start X") == 0)
-                                g_Config.m_KxPanelsStartX = (int)pTarget->value;
-                        else if(str_comp(pTarget->pName, "Panels Start Y") == 0)
-                                g_Config.m_KxPanelsStartY = (int)pTarget->value;
-                        // v1.56.283: Panels indentation + width/height commit.
-                        else if(str_comp(pTarget->pName, "Panels X-indentation") == 0)
-                                g_Config.m_KxPanelsIndentX = (int)pTarget->value;
-                        else if(str_comp(pTarget->pName, "Panels Y-indentation") == 0)
-                                g_Config.m_KxPanelsIndentY = (int)pTarget->value;
-                        else if(str_comp(pTarget->pName, "Panels width") == 0)
-                                g_Config.m_KxPanelsWidth = (int)pTarget->value;
-                        else if(str_comp(pTarget->pName, "Panels height") == 0)
-                                g_Config.m_KxPanelsHeight = (int)pTarget->value;
+                        // v1.56.260: Panels Start/Indentation/Size X-Y pairs commit
+                        // on slider release (v6.16: zone sliders of the Custom rows).
+                        else if(pTarget->type == ERowType::Slider && pZoneRow)
+                        {
+                                if(int *pCvar = KxPanelXYSliderCvar(pZoneRow, pTarget->pName))
+                                        *pCvar = (int)pTarget->value;
+                        }
                 }
         }
         m_Dragging = false;
@@ -12760,7 +13030,7 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                         }
                         return false;
                 }
-                cursorY += rh + ROW_GAP;
+                cursorY += rh + ROW_GAP + RowContainerBottomPad(panel.pRows, r); // v6.17: group bottom pad
                 if(row.type == ERowType::Expandable && row.expanded && row.pChildren)
                 {
                         for(int c = 0; c < row.childCount; ++c)
@@ -12786,15 +13056,20 @@ if(str_comp(row.pName, "Avoid Freeze") == 0 && !AfChildVisible(row.pChildren, ro
         continue;
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
+if(str_comp(row.pName, "Line Rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "ArrayAgent") == 0 && !ArrayAgentChildVisible(row.pChildren, row.childCount, c)))
+if((str_comp(row.pName, "Smart Dummy Switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "ArrayAgent") == 0 && !ArrayAgentChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                 const float crh = RowHeightForRow(child);
                                 if(r == m_DropdownRow && c == m_DropdownChild)
                                 {
                                         const float rw = PANEL_WIDTH - BODY_PADDING * 2;
-                                        const float crw = rw - SUB_LIST_INDENT;
+                                        // v6.17: children of a member expandable nest
+                                        // one level deeper + right inset (mirrors
+                                        // HitTestRow / the Yoga margins).
+                                        const bool DDContMember = RowInContainerGroup(panel.pRows, r);
+                                        const float cInd = SUB_LIST_INDENT + (DDContMember ? CONT_INNER_INDENT : 0.0f);
+                                        const float crw = rw - cInd - (DDContMember ? CONT_PAD_R : 0.0f);
                                         // v6.17: dropdown inside a Custom row nested in
                                         // this expandable — anchor to the zone rect and
                                         // target the zone child.
@@ -12816,7 +13091,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                 }
                                                 pTargetRow = &child.pChildren[m_DropdownSubChild];
                                         }
-                                        const float ddX = bodyX + SUB_LIST_INDENT + ZoneX + ZoneW - DROPDOWN_W - 2.0f;
+                                        const float ddX = bodyX + cInd + ZoneX + ZoneW - DROPDOWN_W - 2.0f;
                                         const float ddY = cursorY + (crh - DROPDOWN_H) * 0.5f;
                                         SRow &target = *pTargetRow;
                                         const float itemH = DROPDOWN_H + 2.0f;
@@ -12836,22 +13111,22 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                         else if(str_comp(target.pName, "Component") == 0)
                                                                 g_Config.m_KxLineComponent = o;
                                                         // v6.7: Smart Dummy Switch order + filters.
-                                                        else if(str_comp(target.pName, "Order Type") == 0 && str_comp(row.pName, "Smart dummy switch") == 0)
+                                                        else if(str_comp(target.pName, "Order Type") == 0 && str_comp(row.pName, "Smart Dummy Switch") == 0)
                                                         {
                                                                 g_Config.m_KxSdsOrder = o;
                                                                 GameClient()->m_BotNet.SdsResetVisited();
                                                         }
-                                                        else if(str_comp(target.pName, "Team") == 0 && str_comp(row.pName, "Smart dummy switch") == 0)
+                                                        else if(str_comp(target.pName, "Team") == 0 && str_comp(row.pName, "Smart Dummy Switch") == 0)
                                                                 g_Config.m_KxSdsTeam = o;
-                                                        else if(str_comp(target.pName, "DDrace Team") == 0 && str_comp(row.pName, "Smart dummy switch") == 0)
+                                                        else if(str_comp(target.pName, "DDrace Team") == 0 && str_comp(row.pName, "Smart Dummy Switch") == 0)
                                                                 g_Config.m_KxSdsDdraceTeam = o;
-                                                        else if(str_comp(target.pName, "Friend") == 0 && str_comp(row.pName, "Smart dummy switch") == 0)
+                                                        else if(str_comp(target.pName, "Friend") == 0 && str_comp(row.pName, "Smart Dummy Switch") == 0)
                                                                 g_Config.m_KxSdsFriend = o;
-                                                        else if(str_comp(target.pName, "Clanmate") == 0 && str_comp(row.pName, "Smart dummy switch") == 0)
+                                                        else if(str_comp(target.pName, "Clanmate") == 0 && str_comp(row.pName, "Smart Dummy Switch") == 0)
                                                                 g_Config.m_KxSdsClanmate = o;
-                                                        else if(str_comp(target.pName, "Freeze") == 0 && str_comp(row.pName, "Smart dummy switch") == 0)
+                                                        else if(str_comp(target.pName, "Freeze") == 0 && str_comp(row.pName, "Smart Dummy Switch") == 0)
                                                                 g_Config.m_KxSdsFreeze = o;
-                                                        else if(str_comp(target.pName, "Targets") == 0 && str_comp(row.pName, "Smart dummy switch") == 0)
+                                                        else if(str_comp(target.pName, "Targets") == 0 && str_comp(row.pName, "Smart Dummy Switch") == 0)
                                                                 g_Config.m_KxSdsTargetsMode = o;
                                                         // v6.7: Smart Copy Moves dropdowns.
                                                         else if(str_comp(target.pName, "Sort Type") == 0 && str_comp(row.pName, "Smart Copy Moves") == 0)
@@ -13751,7 +14026,7 @@ if(!SearchKeepsRow(row))
                         RenderList(row.type == ERowType::Custom && m_DropdownChild >= 0 ? row.pChildren[m_DropdownChild] : row, ddX, ddY);
                         return;
                 }
-                cursorY += rh + ROW_GAP;
+                cursorY += rh + ROW_GAP + RowContainerBottomPad(panel.pRows, r); // v6.17: group bottom pad
                 if(row.type == ERowType::Expandable && row.expanded && row.pChildren)
                 {
                         for(int c = 0; c < row.childCount; ++c)
@@ -13777,15 +14052,19 @@ if(str_comp(row.pName, "Avoid Freeze") == 0 && !AfChildVisible(row.pChildren, ro
         continue;
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
+if(str_comp(row.pName, "Line Rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "ArrayAgent") == 0 && !ArrayAgentChildVisible(row.pChildren, row.childCount, c)))
+if((str_comp(row.pName, "Smart Dummy Switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "ArrayAgent") == 0 && !ArrayAgentChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                 const float crh = RowHeightForRow(child);
                                 if(r == m_DropdownRow && c == m_DropdownChild)
                                 {
                                         const float rw = PANEL_WIDTH - BODY_PADDING * 2;
-                                        const float crw = rw - SUB_LIST_INDENT;
+                                        // v6.17: member-child indent + right inset
+                                        // (mirrors HitTestRow / the Yoga margins).
+                                        const bool DDContMember = RowInContainerGroup(panel.pRows, r);
+                                        const float cInd = SUB_LIST_INDENT + (DDContMember ? CONT_INNER_INDENT : 0.0f);
+                                        const float crw = rw - cInd - (DDContMember ? CONT_PAD_R : 0.0f);
                                         // v6.17: dropdown inside a Custom row — anchor
                                         // to the zone rect (mirrors HandleDropdownClick).
                                         float ZoneX = 0.0f, ZoneW = crw;
@@ -13806,7 +14085,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                 }
                                                 pTargetRow = &child.pChildren[m_DropdownSubChild];
                                         }
-                                        const float ddX = bodyX + SUB_LIST_INDENT + ZoneX + ZoneW - DROPDOWN_W - 2.0f;
+                                        const float ddX = bodyX + cInd + ZoneX + ZoneW - DROPDOWN_W - 2.0f;
                                         const float ddY = cursorY + (crh - DROPDOWN_H) * 0.5f;
                                         RenderList(*pTargetRow, ddX, ddY);
                                         return;
@@ -14147,7 +14426,13 @@ bool CClickGui::HitTestRow(vec2 mousePos, int panelIdx, int &outRow, int &outChi
 			continue;
                 const float rh = RowHeightForRow(row);
                 const float rw = PANEL_WIDTH - BODY_PADDING * 2;
-                if(PointInRect(mousePos, bodyX, cursorY, rw, rh))
+                // v6.17: container group members sit on the indented sub-row
+                // and recede from the right outline edge (mirrors the Yoga
+                // margins in the layout build).
+                const bool ContMember = RowInContainerGroup(g_Panels[panelIdx].pRows, r);
+                const float hx = ContMember ? bodyX + CONT_INNER_INDENT : bodyX;
+                const float hw = ContMember ? rw - CONT_INNER_INDENT - CONT_PAD_R : rw;
+                if(PointInRect(mousePos, hx, cursorY, hw, rh))
                 {
                         // v6.17: child-bearing Custom rows resolve clicks to
                         // their visible zones (Label/Expandable children are
@@ -14155,13 +14440,13 @@ bool CClickGui::HitTestRow(vec2 mousePos, int panelIdx, int &outRow, int &outChi
                         outSubChild = -1;
                         int ZoneChild = -1;
                         float zx = 0.0f, zw = 0.0f;
-                        if(row.type == ERowType::Custom && CustomZoneHit(row, mousePos.x - bodyX, rw, ZoneChild, zx, zw) &&
+                        if(row.type == ERowType::Custom && CustomZoneHit(row, mousePos.x - hx, hw, ZoneChild, zx, zw) &&
                                 row.pChildren[ZoneChild].type != ERowType::Label &&
                                 row.pChildren[ZoneChild].type != ERowType::Expandable)
                         {
                                 outRow = r;
                                 outChild = ZoneChild;
-                                outRowX = bodyX + zx;
+                                outRowX = hx + zx;
                                 outRowY = cursorY;
                                 outRowW = zw;
                                 outRowH = rh;
@@ -14169,13 +14454,13 @@ bool CClickGui::HitTestRow(vec2 mousePos, int panelIdx, int &outRow, int &outChi
                         }
                         outRow = r;
                         outChild = -1;
-                        outRowX = bodyX;
+                        outRowX = hx;
                         outRowY = cursorY;
-                        outRowW = rw;
+                        outRowW = hw;
                         outRowH = rh;
                         return true;
                 }
-                cursorY += rh + ROW_GAP;
+                cursorY += rh + ROW_GAP + RowContainerBottomPad(g_Panels[panelIdx].pRows, r);
                 // v1.56.286: search auto-expand — children of a parent with
                 // matching children stay hit-testable while the search forces
                 // them visible (m_SearchChildMatch is false when inactive).
@@ -14204,15 +14489,18 @@ if(str_comp(row.pName, "Avoid Freeze") == 0 && !AfChildVisible(row.pChildren, ro
         continue;
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
+if(str_comp(row.pName, "Line Rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "ArrayAgent") == 0 && !ArrayAgentChildVisible(row.pChildren, row.childCount, c)))
+if((str_comp(row.pName, "Smart Dummy Switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "ArrayAgent") == 0 && !ArrayAgentChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                 if(!SearchKeepsChild(child))
                                         continue;
                                 const float crh = RowHeightForRow(child);
-                                const float crw = rw - SUB_LIST_INDENT;
-                                if(PointInRect(mousePos, bodyX + SUB_LIST_INDENT, cursorY, crw, crh))
+                                // v6.17: children of a member expandable nest one
+                                // level deeper and share the member's right inset.
+                                const float cInd = SUB_LIST_INDENT + (ContMember ? CONT_INNER_INDENT : 0.0f);
+                                const float crw = rw - cInd - (ContMember ? CONT_PAD_R : 0.0f);
+                                if(PointInRect(mousePos, bodyX + cInd, cursorY, crw, crh))
                                 {
                                         // v6.17: a Custom row nested in an expandable
                                         // resolves clicks one level deeper — into its
@@ -14221,14 +14509,14 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                         outSubChild = -1;
                                         int ZoneChild = -1;
                                         float zx = 0.0f, zw = 0.0f;
-                                        if(child.type == ERowType::Custom && CustomZoneHit(child, mousePos.x - bodyX - SUB_LIST_INDENT, crw, ZoneChild, zx, zw) &&
+                                        if(child.type == ERowType::Custom && CustomZoneHit(child, mousePos.x - bodyX - cInd, crw, ZoneChild, zx, zw) &&
                                                 child.pChildren[ZoneChild].type != ERowType::Label &&
                                                 child.pChildren[ZoneChild].type != ERowType::Expandable)
                                         {
                                                 outRow = r;
                                                 outChild = c;
                                                 outSubChild = ZoneChild;
-                                                outRowX = bodyX + SUB_LIST_INDENT + zx;
+                                                outRowX = bodyX + cInd + zx;
                                                 outRowY = cursorY;
                                                 outRowW = zw;
                                                 outRowH = crh;
@@ -14236,7 +14524,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                         }
                                         outRow = r;
                                         outChild = c;
-                                        outRowX = bodyX + SUB_LIST_INDENT;
+                                        outRowX = bodyX + cInd;
                                         outRowY = cursorY;
                                         outRowW = crw;
                                         outRowH = crh;
@@ -14428,7 +14716,7 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
                 // v6.7: Smart Copy Moves / Smart Dummy Switch → Targets IDs.
                 else if(str_comp(pOwner, "Smart Copy Moves") == 0)
                         str_copy(g_Config.m_KxSmartCopyTargets, pRow->m_aInputBuf, sizeof(g_Config.m_KxSmartCopyTargets));
-                else if(str_comp(pOwner, "Smart dummy switch") == 0)
+                else if(str_comp(pOwner, "Smart Dummy Switch") == 0)
                         str_copy(g_Config.m_KxSdsTargets, pRow->m_aInputBuf, sizeof(g_Config.m_KxSdsTargets));
                 // v6.9: AledBot → Targets IDs.
                 else if(str_comp(pOwner, "AledBot") == 0)
@@ -14476,7 +14764,7 @@ void CClickGui::ApplyInputCommit(void *pRowVoid)
                 // v6.7: Smart Copy Moves / Smart Dummy Switch → DDrace team Target ID.
                 else if(str_comp(pOwner, "Smart Copy Moves") == 0)
                         g_Config.m_KxSmartCopyDdraceTeamId = atoi(pRow->m_aInputBuf);
-                else if(str_comp(pOwner, "Smart dummy switch") == 0)
+                else if(str_comp(pOwner, "Smart Dummy Switch") == 0)
                         g_Config.m_KxSdsDdraceTeamId = atoi(pRow->m_aInputBuf);
                 // v6.9: AledBot → DDrace team Target ID.
                 else if(str_comp(pOwner, "AledBot") == 0)
@@ -14714,9 +15002,9 @@ if(str_comp(row.pName, "Avoid Freeze") == 0 && !AfChildVisible(row.pChildren, ro
         continue;
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
+if(str_comp(row.pName, "Line Rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "ArrayAgent") == 0 && !ArrayAgentChildVisible(row.pChildren, row.childCount, c)))
+if((str_comp(row.pName, "Smart Dummy Switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "ArrayAgent") == 0 && !ArrayAgentChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                 if(!SearchKeepsChild(row.pChildren[c]))
                                         continue;
@@ -14785,6 +15073,19 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 if(!SearchKeepsRow(row))
                                         continue;
                                 addRowNode(row, false);
+                                // v6.17: container group members indent like
+                                // expandable children AND recede from the right
+                                // outline edge (CONT_PAD_R); the last member
+                                // carries bottom padding so the outline wraps
+                                // it with a gap (RowContainerBottomPad, 0
+                                // otherwise).
+                                if(RowInContainerGroup(panel.pRows, r))
+                                {
+                                        YGNodeRef n = cache.aRowNodes[cache.rowCount - 1];
+                                        YGNodeStyleSetMargin(n, YGEdgeLeft, CONT_INNER_INDENT);
+                                        YGNodeStyleSetMargin(n, YGEdgeRight, CONT_PAD_R);
+                                        YGNodeStyleSetMargin(n, YGEdgeBottom, RowContainerBottomPad(panel.pRows, r));
+                                }
                                 if(row.type == ERowType::Expandable && row.pChildren && row.m_AnimExpand > 0.0f)
                                 {
                                         for(int c = 0; c < row.childCount; ++c)
@@ -14809,13 +15110,23 @@ if(str_comp(row.pName, "Avoid Freeze") == 0 && !AfChildVisible(row.pChildren, ro
         continue;
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
+if(str_comp(row.pName, "Line Rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "ArrayAgent") == 0 && !ArrayAgentChildVisible(row.pChildren, row.childCount, c)))
+if((str_comp(row.pName, "Smart Dummy Switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "ArrayAgent") == 0 && !ArrayAgentChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                                 if(!SearchKeepsChild(row.pChildren[c]))
                                                         continue;
                                                 addRowNode(row.pChildren[c], true);
+                                                // v6.17: children of a member
+                                                // expandable nest one level deeper
+                                                // (double indent) and share the
+                                                // member's right inset.
+                                                if(RowInContainerGroup(panel.pRows, r))
+                                                {
+                                                        YGNodeRef n = cache.aRowNodes[cache.rowCount - 1];
+                                                        YGNodeStyleSetMargin(n, YGEdgeLeft, CONT_INNER_INDENT + SUB_LIST_INDENT);
+                                                        YGNodeStyleSetMargin(n, YGEdgeRight, CONT_PAD_R);
+                                                }
                                         }
                                 }
                         }
@@ -14905,9 +15216,9 @@ if(str_comp(row.pName, "Avoid Freeze") == 0 && !AfChildVisible(row.pChildren, ro
         continue;
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
+if(str_comp(row.pName, "Line Rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "ArrayAgent") == 0 && !ArrayAgentChildVisible(row.pChildren, row.childCount, c)))
+if((str_comp(row.pName, "Smart Dummy Switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "ArrayAgent") == 0 && !ArrayAgentChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                 if(!SearchKeepsChild(row.pChildren[c]))
                                         continue;
@@ -15062,18 +15373,55 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
         // body ClipEnable above.
         float rowYOffset = -scrollOffset;
         int rowIdx = 0;
+        // v6.17: container group outline tracking. The rect is collected while
+        // the rows draw (it must wrap the animated/clipped expanded children
+        // of the members too) and stroked once the group's last member is
+        // processed — still inside the body clip. One group at a time (no
+        // nesting): ContEndIdx = row index of the last member, -1 = outside.
+        // DoClose variants: "r >= end" closes after the last member (normal);
+        // "r > end" at the loop top closes a group whose structural end row
+        // was SKIPPED by a panel visibility function (TAS File/Play) — the
+        // first row beyond the end closes it instead.
+        float ContTop = 0.0f, ContBottom = 0.0f;
+        int ContEndIdx = -1;
+        auto ContGroupClose = [&](float BX, bool DoClose) {
+                if(!DoClose || ContEndIdx == -1)
+                        return;
+                // The outline spans the ROW area: bodyX is the panel edge, the
+                // rows start at bodyX + BODY_PADDING (the Yoga root padding).
+                // DrawRoundedOutline is a fixed 1px stroke — a second pass 1px
+                // outward thickens it to ~2px. The color is READ from the Panel
+                // Color (m_PanelBgRGBA): each channel lifted a HALF-STEP toward
+                // white, fully opaque — no alpha of any kind.
+                const float OLX = BX + BODY_PADDING;
+                const float OLY = ContTop;
+                const float OLW = (PANEL_WIDTH - BODY_PADDING * 2.0f) - 1.0f;
+                const float OLH = (ContBottom + CONT_PAD_B) - ContTop - 1.0f;
+                const unsigned Bg = m_PanelBgRGBA;
+                const auto Lift = [Bg](unsigned Shift) {
+                        return std::min(0xffu, ((Bg >> Shift) & 0xff) + 0x0cu) / 255.0f;
+                };
+                const ColorRGBA OLCol = ColorRGBA(Lift(16), Lift(8), Lift(0), 1.0f);
+                DrawRoundedOutline(OLX - 0.5f, OLY - 0.5f, OLW + 1.0f, OLH + 1.0f, CONT_RADIUS + 0.5f, OLCol, true, true);
+                DrawRoundedOutline(OLX + 0.5f, OLY + 0.5f, OLW - 1.0f, OLH - 1.0f, CONT_RADIUS - 0.5f, OLCol, true, true);
+                ContEndIdx = -1;
+        };
         for(int r = 0; r < panel.rowCount; ++r)
         {
                 SRow &row = panel.pRows[r];
+                // v6.17: close a group whose structural end row was skipped
+                // (hidden by a visibility function) — the first row beyond
+                // the end closes it. MUST run before the visibility skips.
+                ContGroupClose(bodyX, r > ContEndIdx);
                 // Conditional visibility: skip hidden rows in Functions panel.
                 if(str_comp(panel.pTitle, "Functions") == 0 && !FunctionsRowVisible(panel.pRows, panel.rowCount, r))
                         continue;
-		if(str_comp(panel.pTitle, "Pathfinder") == 0 && !PfRowVisible(panel.pRows, panel.rowCount, r))
-			continue;
-		if(str_comp(panel.pTitle, "Code Execution (Lua)") == 0 && !CodeExecRowVisible(panel.pRows, panel.rowCount, r))
-			continue;
-		if(str_comp(panel.pTitle, "TAS") == 0 && !TasRowVisible(panel.pRows, panel.rowCount, r))
-			continue;
+	if(str_comp(panel.pTitle, "Pathfinder") == 0 && !PfRowVisible(panel.pRows, panel.rowCount, r))
+		continue;
+	if(str_comp(panel.pTitle, "Code Execution (Lua)") == 0 && !CodeExecRowVisible(panel.pRows, panel.rowCount, r))
+		continue;
+	if(str_comp(panel.pTitle, "TAS") == 0 && !TasRowVisible(panel.pRows, panel.rowCount, r))
+		continue;
                 if(!SearchKeepsRow(row))
                                         continue;
                                 const YGNodeRef node = rowNodes[rowIdx];
@@ -15084,6 +15432,17 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                 const float rx = bodyX + rxLocal;
                 const float ry = bodyY + ryLocal + rowYOffset;
                 ++rowIdx;
+
+                // v6.17: container group rect — every drawn row inside the
+                // group extends it; a Container row opens it.
+                if(ContEndIdx != -1)
+                        ContBottom = std::max(ContBottom, ry + rh);
+                if(row.type == ERowType::Container && row.ContainerRows > 0 && ContainerGroupsActive())
+                {
+                        ContEndIdx = r + row.ContainerRows;
+                        ContTop = ry;
+                        ContBottom = ry + rh;
+                }
 
                 // Hover highlight: the same subtle rounded tint as the Agent rows.
                 // v6.15: Info version labels highlight only the label part, not
@@ -15252,15 +15611,22 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                         ColorRGBA aCol[16];
                         const char *apLabel[16];
                         bool aAccent[16];
-                        for(int z = 0; z < Row.childCount && z < 16; ++z)
+                        // v6.17 BUGFIX: the state arrays are indexed by CHILD
+                        // index (they are filled for EVERY child, including
+                        // invisible ones), and the draw loop below must fetch
+                        // them via aIdx[z] — indexing by the ZONE position z
+                        // desynced labels/colors whenever a child before the
+                        // end was hidden (e.g. Paste hidden while Spectate was
+                        // visible drew "Paste" on the Spectate zone).
+                        for(int i = 0; i < Row.childCount && i < 16; ++i)
                         {
-                                SRow &Child = Row.pChildren[z];
-                                aCol[z] = ColorRGBA(0, 0, 0, 0);
-                                apLabel[z] = Child.pName;
-                                aAccent[z] = true;
+                                SRow &Child = Row.pChildren[i];
+                                aCol[i] = ColorRGBA(0, 0, 0, 0);
+                                apLabel[i] = Child.pName;
+                                aAccent[i] = true;
                                 if(Child.type == ERowType::Button)
                                         CustomChildStyle(Client(), *this, GameClient()->m_BotNet, GameClient()->m_Tas,
-                                                pPanelTitle, pSection, Row, Child, aCol[z], apLabel[z], aAccent[z]);
+                                                pPanelTitle, pSection, Row, Child, aCol[i], apLabel[i], aAccent[i]);
                                 else if(Child.type == ERowType::Graph)
                                         Child.visible = true;
                         }
@@ -15279,18 +15645,18 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 {
                                 case ERowType::Button:
                                 {
-                                        const ColorRGBA ZoneCol = aAccent[z] ? KxColorWithAlpha(m_AccentColorRGBA, alpha)
-                                                : aCol[z].WithAlpha(alpha);
+                                        const ColorRGBA ZoneCol = aAccent[aIdx[z]] ? KxColorWithAlpha(m_AccentColorRGBA, alpha)
+                                                : aCol[aIdx[z]].WithAlpha(alpha);
                                         DrawRoundedRect(zx, ry + 2.0f, zw, rh - 4.0f, 4.0f,
                                                 IGraphics::CORNER_ALL, ZoneCol);
                                         float FontSize = 13.0f;
-                                        float lw = TextRender()->TextWidth(FontSize, apLabel[z]);
+                                        float lw = TextRender()->TextWidth(FontSize, apLabel[aIdx[z]]);
                                         if(lw > zw - 6.0f)
                                         {
                                                 FontSize = 11.0f;
-                                                lw = TextRender()->TextWidth(FontSize, apLabel[z]);
+                                                lw = TextRender()->TextWidth(FontSize, apLabel[aIdx[z]]);
                                         }
-                                        DrawText(zx + (zw - lw) * 0.5f, ry + 8.0f, FontSize, apLabel[z],
+                                        DrawText(zx + (zw - lw) * 0.5f, ry + 8.0f, FontSize, apLabel[aIdx[z]],
                                                 ColorRGBA(0xffffffff, true).WithAlpha(alpha));
                                         break;
                                 }
@@ -15987,6 +16353,16 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                         }
                         break;
                 }
+                case ERowType::Container:
+                {
+                        // v6.17: group header label. The white rounded outline
+                        // around the group is stroked after the group's last
+                        // member (ContGroupClose). With an active search filter
+                        // the group is suspended — plain label row.
+                        DrawText(rx + 4.0f, ry + (ContainerGroupsActive() ? CONT_PAD_T : 0.0f) + 2.0f, 16.0f, row.pName,
+                                ColorRGBA(0xffb8b8c8, true).WithAlpha(alpha));
+                        break;
+                }
                 case ERowType::Graph:
                 {
                         // v6.15: sparkline — non-interactive, drawn by the shared
@@ -16071,12 +16447,12 @@ if(str_comp(row.pName, "Avoid Freeze") == 0 && !AfChildVisible(row.pChildren, ro
         continue;
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
+if(str_comp(row.pName, "Line Rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "ArrayAgent") == 0 && !ArrayAgentChildVisible(row.pChildren, row.childCount, c)))
+if((str_comp(row.pName, "Smart Dummy Switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "ArrayAgent") == 0 && !ArrayAgentChildVisible(row.pChildren, row.childCount, c)))
         continue;
-                                        if(!SearchKeepsChild(row.pChildren[c]))
-                                                continue;
+                                                if(!SearchKeepsChild(row.pChildren[c]))
+                                                        continue;
                                         ++rowIdx;
                                 }
                                 // Update rowYOffset for lower rows (children are hidden).
@@ -16085,8 +16461,16 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                         const ExpandAnimInfo &info = expandInfo[rowToExpandSlot[r]];
                                         rowYOffset -= info.hiddenH;
                                 }
+                                // v6.17: group ended on this row — stroke the outline.
+                                ContGroupClose(bodyX, r >= ContEndIdx);
                                 continue;
                         }
+
+                        // v6.17: while the children block animates it is cropped
+                        // from the bottom — the outline must wrap the CROPPED
+                        // bottom, not the full Yoga block.
+                        if(ContEndIdx != -1 && useChildClip)
+                                ContBottom = std::max(ContBottom, childClipY + childClipH);
 
                         // Apply the intersected children clip rect. When fully expanded
                         // (childrenClipH = 99999), useChildClip is false and we rely on
@@ -16112,9 +16496,9 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c) || (str_comp(row.pName, "Spoof Spectate") == 0 && !SpoofSpectateChildVisible(row.pChildren, row.childCount, c))) continue;
                                 if(str_comp(row.pName, "Avoid Freeze") == 0 && !AfChildVisible(row.pChildren, row.childCount, c)) continue;
                                 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c)) continue;
-                                if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
+                                if(str_comp(row.pName, "Line Rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
                                         continue;
-                                if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "ArrayAgent") == 0 && !ArrayAgentChildVisible(row.pChildren, row.childCount, c))) continue;
+                                if((str_comp(row.pName, "Smart Dummy Switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "ArrayAgent") == 0 && !ArrayAgentChildVisible(row.pChildren, row.childCount, c))) continue;
                                 if(!SearchKeepsChild(row.pChildren[c]))
                                         continue;
                                 const YGNodeRef pn = rowNodes[preIdx];
@@ -16126,8 +16510,14 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                         }
                         if(childBlockTop >= 0.0f && childBlockBottom > childBlockTop)
                         {
-                                const float cbX = bodyX + SUB_LIST_INDENT - 2.0f;
-                                const float cbW = bodyW - SUB_LIST_INDENT + 4.0f;
+                                // v6.17: for a member expandable the children
+                                // block sits one level deeper (double indent);
+                                // its right edge = the member's right edge
+                                // (children share the member's right inset via
+                                // their Yoga margin, so NO extra CONT_PAD_R here).
+                                const bool TintContMember = RowInContainerGroup(panel.pRows, r);
+                                const float cbX = (TintContMember ? rx : bodyX) + SUB_LIST_INDENT - 2.0f;
+                                const float cbW = (TintContMember ? rw : bodyW) - SUB_LIST_INDENT + 4.0f;
                                 const float cbH = childBlockBottom - childBlockTop;
                                 DrawRoundedRect(cbX, childBlockTop, cbW, cbH, 0.0f, IGraphics::CORNER_NONE,
                                         ColorRGBA(COL_SUB_LIST_BG, true).WithAlpha(alpha * 0.6f * m_PanelOpacity));
@@ -16162,9 +16552,9 @@ if(str_comp(row.pName, "Avoid Freeze") == 0 && !AfChildVisible(row.pChildren, ro
         continue;
 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(str_comp(row.pName, "Line rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
+if(str_comp(row.pName, "Line Rendering") == 0 && !LineRenderingChildVisible(row.pChildren, row.childCount, c) || IsRainbowVisualRow(row.pName) && !VisualRainbowChildVisible(row.pChildren, row.childCount, c))
         continue;
-if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "ArrayAgent") == 0 && !ArrayAgentChildVisible(row.pChildren, row.childCount, c)))
+if((str_comp(row.pName, "Smart Dummy Switch") == 0 && !BindsChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Smart Copy Moves") == 0 && !SmartCopyChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Admin Alarm") == 0 && !AdminAlarmChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "BalanceBot") == 0 && !BalanceBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "AledBot") == 0 && !AledBotChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "ArrayAgent") == 0 && !ArrayAgentChildVisible(row.pChildren, row.childCount, c)))
         continue;
                                 if(!SearchKeepsChild(child))
                                         continue;
@@ -16174,6 +16564,11 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 const float crw = YGNodeLayoutGetWidth(cnode);
                                 const float crh = YGNodeLayoutGetHeight(cnode);
                                 ++rowIdx;
+
+                                // v6.17: fully expanded children extend the
+                                // group rect (animating ones use the crop above).
+                                if(ContEndIdx != -1 && row.m_AnimExpand >= 1.0f)
+                                        ContBottom = std::max(ContBottom, cry + crh);
 
                                 // Hover highlight for children (same tint as Agent rows).
                                 if(PointInRect(m_MousePos, crx, cry, crw, crh))
@@ -16652,6 +17047,10 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 rowYOffset -= info.hiddenH;
                         }
                 }
+
+                // v6.17: group ended on this row — stroke the white outline
+                // (also covers members that are not expandables).
+                ContGroupClose(bodyX, r >= ContEndIdx);
         }
 
                 Graphics()->ClipDisable();

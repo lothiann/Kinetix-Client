@@ -140,6 +140,12 @@ private:
         // is recomputed from these indices exactly like the expandable-child
         // case recomputes its own rect. -1 = not a Custom zone.
         int m_DragSliderSubChild = -1;
+        // v6.16: Shift fine-drag anchor — the drag is relative from this point
+        // (re-based every frame in normal mode, frozen while Shift is held:
+        // the value then follows the mouse at 1/3 speed without thumb jumps).
+        float m_DragSliderAnchorX = 0.0f;
+        float m_DragSliderAnchorVal = 0.0f;
+        bool m_DragSliderShiftHeld = false;
 
         // v1.56.284: panel edge resize (Dynamic scale). Dragging the right /
         // bottom edge of a panel live-updates KxPanelsWidth / KxPanelsHeight.

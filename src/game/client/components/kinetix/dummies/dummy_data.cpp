@@ -63,6 +63,13 @@ struct SDummyCmdCtx
 	CDummyData *m_pSelf;
 	int m_Slot;
 	int m_Field;
+	// v6.17 BUGFIX: IConsole::Register stores the name/help POINTERS (no
+	// copy) — they used to point into RegisterDummyFields' dead stack
+	// buffers, so all dummy%d_* commands turned into garbage names/helps
+	// ("Help: 601 ..." in the console) after the function returned. The
+	// strings live here now (static storage, outlives registration).
+	char m_aCmd[32];
+	char m_aHelp[128];
 };
 
 static SDummyCmdCtx s_aDummyCmdCtx[MAX_DUMMIES * 12];
@@ -119,20 +126,18 @@ static void RegisterDummyFields(CDummyData *pSelf, IConsole *pConsole, const SDu
 {
 	for(int F = 0; F < NumDefs; F++)
 	{
-		char aCmd[64];
-		char aHelp[192];
-		str_format(aCmd, sizeof(aCmd), pDefs[F].m_pFormat, Slot);
-		str_format(aHelp, sizeof(aHelp), pDefs[F].m_pHelpFormat, Slot);
 		if(s_NumDummyCmdCtx >= (int)(MAX_DUMMIES * 12))
 			return;
 		SDummyCmdCtx &Ctx = s_aDummyCmdCtx[s_NumDummyCmdCtx++];
 		Ctx.m_pSelf = pSelf;
 		Ctx.m_Slot = Slot;
 		Ctx.m_Field = pDefs[F].m_Field;
+		str_format(Ctx.m_aCmd, sizeof(Ctx.m_aCmd), pDefs[F].m_pFormat, Slot);
+		str_format(Ctx.m_aHelp, sizeof(Ctx.m_aHelp), pDefs[F].m_pHelpFormat, Slot);
 		if(pDefs[F].m_Str)
-			pConsole->Register(aCmd, "s[value]", CFGFLAG_CLIENT, Con_DummyStr, &Ctx, aHelp);
+			pConsole->Register(Ctx.m_aCmd, "s[value]", CFGFLAG_CLIENT, Con_DummyStr, &Ctx, Ctx.m_aHelp);
 		else
-			pConsole->Register(aCmd, "i[value]", CFGFLAG_CLIENT, Con_DummyInt, &Ctx, aHelp);
+			pConsole->Register(Ctx.m_aCmd, "i[value]", CFGFLAG_CLIENT, Con_DummyInt, &Ctx, Ctx.m_aHelp);
 	}
 }
 

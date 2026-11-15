@@ -90,9 +90,13 @@ std::string CBotNet::ReplacePlaceholders(const std::string &Cmd, int DummyIndex,
 void CBotNet::ConSendDummy(IConsole::IResult *pResult, void *pUserData)
 {
         CBotNet *pSelf = (CBotNet *)pUserData;
-        const char *pIds = pResult->GetString(0);
-        const char *pCmd = pResult->GetString(1);
+        pSelf->SendToDummies(pResult->GetString(0), pResult->GetString(1));
+}
 
+// v6.17: shared kx_send implementation — the ClickGUI "Send Command (Beta)"
+// button calls it directly with the parsed "<ids> <command>" field.
+void CBotNet::SendToDummies(const char *pIds, const char *pCmd)
+{
         if(!pCmd[0])
                 return;
 
@@ -128,14 +132,14 @@ void CBotNet::ConSendDummy(IConsole::IResult *pResult, void *pUserData)
                 if(!AllDummies && !aTargets[D])
                         continue;
                 // Skip disconnected dummies (0=main, always connected if online)
-                if(D != 0 && !pSelf->Client()->DummyConnected(D))
+                if(D != 0 && !Client()->DummyConnected(D))
                         continue;
 
                 // Replace placeholders per-dummy
-                std::string Cmd = ReplacePlaceholders(pCmd, D, pSelf->GameClient());
+                std::string Cmd = ReplacePlaceholders(pCmd, D, GameClient());
 
                 g_Config.m_ClDummy = D;
-                pSelf->Console()->ExecuteLine(Cmd.c_str(), IConsole::CLIENT_ID_UNSPECIFIED);
+                Console()->ExecuteLine(Cmd.c_str(), IConsole::CLIENT_ID_UNSPECIFIED);
         }
 
         // Restore original dummy
