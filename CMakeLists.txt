@@ -998,6 +998,13 @@ add_library(json EXCLUDE_FROM_ALL OBJECT ${DEP_JSON_SRC})
 set_src(DEP_MD5_SRC GLOB src/engine/external/md5 md5.c md5.h)
 add_library(md5 EXCLUDE_FROM_ALL OBJECT ${DEP_MD5_SRC})
 
+# LZ4 (BSD) — fast compression for the Pathfinder A* node-store compaction.
+set_src(DEP_LZ4_SRC GLOB src/engine/external/lz4 lz4.c lz4.h)
+add_library(lz4 EXCLUDE_FROM_ALL OBJECT ${DEP_LZ4_SRC})
+set_source_files_properties(${DEP_LZ4_SRC} PROPERTIES LANGUAGE C)
+set_source_files_properties(${DEP_LZ4_SRC} PROPERTIES SKIP_PRECOMPILE_HEADERS TRUE)
+set(DEP_LZ4 $<TARGET_OBJECTS:lz4>)
+
 # Lua 5.4 (bundled)
 set_src(DEP_LUA_SRC GLOB src/engine/external/lua
   lapi.c lauxlib.c lbaselib.c lcode.c lcorolib.c lctype.c
@@ -3015,7 +3022,7 @@ if(CLIENT)
 
   # Kinetix: keep Lua/Yoga object deps; upstream removed the unused WAVPACK_DEP
   # (Wavpack is linked through WAVPACK_LIBRARIES further below).
-  set(DEPS_CLIENT ${DEPS} ${DEP_LUA} ${DEP_YOGA} ${GLEW_DEP})
+  set(DEPS_CLIENT ${DEPS} ${DEP_LUA} ${DEP_YOGA} ${GLEW_DEP} ${DEP_LZ4})
 
   # Libraries
   set(LIBS_CLIENT

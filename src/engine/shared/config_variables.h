@@ -603,24 +603,31 @@ MACRO_CONFIG_INT(KxPfAStarWeight, kx_pf_astar_weight, 120, 100, 2000, CFGFLAG_CL
 MACRO_CONFIG_INT(KxPfAStarNodeBudget, kx_pf_astar_node_budget, 10000000, 1000, 100000000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: A* max nodes before giving up (1000-100000000)")
 MACRO_CONFIG_INT(KxPfPerf, kx_pf_perf, 100, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: performance budget per tick in % (1-100; lower = slower but smoother, spreads chunk generation across many ticks)")
 MACRO_CONFIG_INT(KxPfRheaGenerations, kx_pf_rhea_generations, 10, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder RHEA: number of evolution generations per chunk (more = better candidates but slower)")
-MACRO_CONFIG_INT(KxPfTicks, kx_pf_ticks, 10000, 100, 10000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: max ticks the search may simulate")
-MACRO_CONFIG_INT(KxPfInputs, kx_pf_inputs, 160, 4, 5000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: candidate sequences per generation")
-MACRO_CONFIG_INT(KxPfInputTicks, kx_pf_input_ticks, 8, 1, 30, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: ticks per candidate sequence")
-MACRO_CONFIG_INT(KxPfDosage, kx_pf_dosage, 160, 1, 5000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: generations per batch")
-MACRO_CONFIG_INT(KxPfEffort, kx_pf_effort, 1, 0, 2, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder effort: 0=Low 1=Medium(default) 2=Max")
-MACRO_CONFIG_INT(KxPfFreezeRadius, kx_pf_freeze_radius, 3, 0, 20, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder freeze support: unfreeze search radius in tiles")
+MACRO_CONFIG_INT(KxPfEffort, kx_pf_effort, 2, 0, 6, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder effort: 0=Very Low 1=Low 2=Medium(default) 3=High 4=Ultra 5=Max 6=Custom. Presets override chunk size / hook angles / candidates / search budget and score/penalty toggles at READ time; Custom uses the stored values.")
 MACRO_CONFIG_INT(KxPfShowPath, kx_pf_show_path, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: draw the path")
 MACRO_CONFIG_INT(KxPfFreezeSupport, kx_pf_freeze_support, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder freeze support (beta): ON allows phase-2 route analysis through freeze tiles and shows the Freeze penalty toggle. OFF rejects ANY candidate that touches freeze for even 1 tick.")
 MACRO_CONFIG_INT(KxPfTunnelSize, kx_pf_tunnel_size, 2, 0, 10, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder tunnel size 0-10, free corridor half-width around the FMM path")
 MACRO_CONFIG_INT(KxPfFreedom, kx_pf_freedom, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Freedom Path: FMM flow field prefers tiles far from walls/freeze/teleports (master toggle, see kx_pf_freedom_ratio)")
 MACRO_CONFIG_INT(KxPfFreedomRatio, kx_pf_freedom_ratio, 10, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Freedom Path: how aggressively the FMM flow field prefers tiles far from walls/freeze/teleports (ratio x10: 10 = 1.0x default)")
+// v6.15: optimized simulation hot path (Functions panel "Fast Sim" toggle).
+MACRO_CONFIG_INT(KxPfFastSim, kx_pf_fast_sim, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: optimized simulation hot path (skip recording of discarded trajectories, stack-buffer tile queries, reused candidate buffers). OFF = exact original simulation.")
+// v6.15: event-terminated chunk rollout. Each candidate holds its input for up
+// to K ticks but the chunk is cut short at every decision point (hook grab /
+// retract, ground<->air, freeze, wall contact, death, finish). 1 = exact
+// per-tick search (old behavior). If the search fails, the worker retries with
+// half the chunk size down to 1.
+MACRO_CONFIG_INT(KxPfChunk, kx_pf_chunk, 8, 1, 32, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: chunk rollout ticks per candidate (event-terminated at every decision point). 1 = exact per-tick search. On failure the search retries with half the chunk down to 1.")
+// v6.15: windowed per-tick refinement passes over the found chunk path. Every
+// adjacent window pair is re-searched with an exact 1-tick A* and replaced
+// only when strictly fewer ticks are found; the refined package is fully
+// re-verified by replay before it replaces the chunk result. 0 = off.
+MACRO_CONFIG_INT(KxPfPolish, kx_pf_polish, 2, 0, 8, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: per-tick refinement passes over the found path (windowed, budget-capped, replay-verified). 0 = off.")
 
 // Visuals (Pathfinder tab)
 MACRO_CONFIG_INT(KxPfShowField, kx_pf_show_field, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: show flow field")
 MACRO_CONFIG_INT(KxPfShowHooks, kx_pf_show_hooks, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: show hook lines (blue)")
 MACRO_CONFIG_INT(KxPfShowBranches, kx_pf_show_branches, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: show other branches (semi-transparent)")
 MACRO_CONFIG_INT(KxPfShowSpeed, kx_pf_show_speed, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: show speed gradient (red=slow, blue=fast)")
-MACRO_CONFIG_INT(KxPfDrawStartEndPos, kx_pf_draw_start_end_pos, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: draw the start and the end position of the path")
 
 // Real-Time Pathfinder (RT Pathfinder tab): single-branch greedy planner on a
 // worker thread that is reproduced on the live player in real time.

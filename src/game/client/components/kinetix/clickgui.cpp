@@ -27,6 +27,7 @@
 #include <utility>
 
 #include <base/color.h>
+#include <base/fs.h>
 #include <base/hash.h>
 #include <base/io.h>
 #include <base/mem.h>
@@ -53,7 +54,30 @@
 #include <game/version.h> // v1.56.177: GAME_NAME, GAME_RELEASE_VERSION, DDNET_VERSION_NUMBER, GIT_SHORTREV_HASH (used by Info panel)
 
 #ifdef _WIN32
+// windows.h is deliberately NOT included in this TU (its DrawText macro would
+// poison CClickGui::DrawText). Declare the few WinAPI functions locally.
 extern "C" __declspec(dllimport) unsigned long __stdcall GetModuleFileNameW(void *hModule, wchar_t *lpFilename, unsigned long nSize);
+// v6.15: Kinetix Folder button + Info RAM/CPU samplers.
+extern "C" __declspec(dllimport) void *__stdcall ShellExecuteW(void *hwnd, const wchar_t *lpOperation, const wchar_t *lpFile, const wchar_t *lpParameters, const wchar_t *lpDirectory, int nShowCmd);
+struct KxMemoryStatusEx
+{
+        unsigned long dwLength;
+        unsigned long dwMemoryLoad; // percent of physical memory in use
+        unsigned long long ullTotalPhys;
+        unsigned long long ullAvailPhys;
+        unsigned long long ullTotalPageFile;
+        unsigned long long ullAvailPageFile;
+        unsigned long long ullTotalVirtual;
+        unsigned long long ullAvailVirtual;
+        unsigned long long ullAvailExtendedVirtual;
+};
+extern "C" __declspec(dllimport) int __stdcall GlobalMemoryStatusEx(KxMemoryStatusEx *pBuffer);
+struct KxFileTime
+{
+        unsigned long dwLowDateTime;
+        unsigned long dwHighDateTime;
+};
+extern "C" __declspec(dllimport) int __stdcall GetSystemTimes(KxFileTime *pIdleTime, KxFileTime *pKernelTime, KxFileTime *pUserTime);
 #endif
 
 // v1.56.285: ClickGUI resize cursor feedback (implemented in input.cpp — that
@@ -110,8 +134,16 @@ enum class ERowType
         Dropdown,
         Expandable,
         Button,
-        DoubleButton, // v1.56.90: two buttons in one row (Dummies Connect+Switch)
+        Custom, // v1.56.90: two buttons in one row; v6.15: also bespoke rows (render/click by pName)
         Label, // v1.56.176: non-interactive text row (Info panel: version strings, FPS)
+        Graph, // v6.15: sparkline graph row (line + area + grid + Y labels, name centered below)
+};
+
+// v6.15: sparkline data series (shared, mutable — the owner pushes values,
+// Graph rows render its last GraphPoints of them).
+struct KxGraphSeries
+{
+        std::vector<float> vVals;
 };
 
 // v1.56.176: Kinetix client version string (shown in Info panel).
@@ -122,9 +154,15 @@ struct SRow
 {
         ERowType type;
         const char *pName;
-        const char *pName2; // v1.56.90: DoubleButton second button label
+        const char *pName2; // v1.56.90: second button label (Custom rows) / second graph label
         bool on; // toggle / toggle-dropdown / expandable
         bool expanded; // expandable only
+        // v6.15: runtime visibility — false = the row is hidden everywhere
+        // (layout, render, hover, clicks, tooltips). Custom child zones skip
+        // hidden children (they occupy no zone). Set by the render state for
+        // Custom children via CustomChildStyle. Defaults to true so runtime
+        // constructions (`SRow Row = {};`) are visible.
+        bool visible = true;
         float min, max, step, value; // slider only
         const char *pSuffix; // slider only
         const char *pInputValue; // input only (default value, const)
@@ -139,7 +177,7 @@ struct SRow
         // button, label, input, dropdown...). nullptr = no tooltip. To give
         // a row a tooltip, append one more string to its initializer.
         const char *pToolTip = nullptr;
-        // v1.56.288: optional SECOND tooltip — DoubleButton only. The left half
+        // v1.56.288: optional SECOND tooltip — Custom only. The left half
         // of the row shows pToolTip, the right half shows pToolTip2 (falls back
         // to pToolTip when null). Lets the two buttons describe different things.
         const char *pToolTip2 = nullptr;
@@ -158,7 +196,11 @@ struct SRow
 	float m_AnimExpand = 0.0f;
 	// v6.2: wrapped line count for Label rows (computed in the layout pass).
 	int m_LabelLines = 1;
-	// v1.56.286: search state (recomputed by SearchUpdateMatches() when the
+        // v6.15: sparkline data source (Graph rows only). nullptr = row not wired.
+        KxGraphSeries *pGraph = nullptr;
+        // v6.15: Graph rows only — how many last points this row displays.
+        int GraphPoints = 60;
+        // v1.56.286: search state (recomputed by SearchUpdateMatches() when the
 	// query or a filter toggle changes). m_SearchChildMatch is only set on
 	// top-level expandables (any direct child matched).
 	bool m_SearchMatch = false;
@@ -198,45 +240,45 @@ static int SliderStepDecimals(const SRow &Row)
 // ---------- Functions panel (4) ----------
 // "Custom latency" expandable: 1 slider child.
 static SRow g_CustomLatencyChildren[] = {
-        {ERowType::Slider, "Latency (ms)", nullptr, false, false, 50.0f, 2000.0f, 10.0f, 500.0f, "ms", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Latency (ms)", nullptr, false, false, true,50.0f, 2000.0f, 10.0f, 500.0f, "ms", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Adds artificial latency to your own input (ms)."},
 };
 // v1.56.186: "Copy Moves Latency" expandable — staggered input replay delay.
 // When >0, inactive dummies replay active player's input from N ms ago, where
 // N = latency_ms * dummy_index (D1: 1x, D2: 2x, D3: 3x...). 0 = live copy.
 static SRow g_CopyMovesLatencyChildren[] = {
-        {ERowType::Slider, "Latency (ms)", nullptr, false, false, 50.0f, 5000.0f, 10.0f, 500.0f, "ms", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Latency (ms)", nullptr, false, false, true,50.0f, 5000.0f, 10.0f, 500.0f, "ms", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Staggered replay delay; effective delay = value × dummy index (0 = live copy)."},
 };
 static const char *const g_TripleFlyDummyModeOpts[] = {"Closest To Me", "ID"};
 static const char *const g_TripleFlyTargetModeOpts[] = {"Closest To Me", "Closest To Aim", "IDs"};
 static SRow g_TripleFlyChildren[] = {
-        {ERowType::Dropdown, "Dummy mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TripleFlyDummyModeOpts, 2, 0, nullptr, 0,
+        {ERowType::Dropdown, "Dummy mode", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_TripleFlyDummyModeOpts, 2, 0, nullptr, 0,
                 "How the anchor dummy is chosen (closest to me or by id)."},
-        {ERowType::Input, "Dummy ID", nullptr, false, false, 0, 0, 0, 0, nullptr, "1", "id...", nullptr, 0, 0, nullptr, 0,
+        {ERowType::Input, "Dummy ID", nullptr, false, false, true,0, 0, 0, 0, nullptr, "1", "id...", nullptr, 0, 0, nullptr, 0,
                 "Anchor dummy id (used when Dummy mode = ID)."},
-        {ERowType::Dropdown, "Target mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TripleFlyTargetModeOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Target mode", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_TripleFlyTargetModeOpts, 3, 0, nullptr, 0,
                 "How the fly targets are chosen."},
-        {ERowType::Input, "Target IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0,
+        {ERowType::Input, "Target IDs", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0,
                 "Target id list (used when Target mode = IDs)."},
-        {ERowType::Slider, "Trigger radius", nullptr, false, false, 32.0f, 380.0f, 1.0f, 380.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Trigger radius", nullptr, false, false, true,32.0f, 380.0f, 1.0f, 380.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Distance at which the triple-fly starts working."},
-        {ERowType::Slider, "Radius", nullptr, false, false, 32.0f, 256.0f, 1.0f, 128.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Radius", nullptr, false, false, true,32.0f, 256.0f, 1.0f, 128.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Search radius (units) for fly targets."},
 };
 // "Copy Moves Filter" expandable: 6 sub-toggles.
 static SRow g_CopyMovesFilterChildren[] = {
-        {ERowType::Toggle, "Filter: Jump", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Filter: Jump", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Do not copy jump input from the followed player."},
-        {ERowType::Toggle, "Filter: Direction", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Filter: Direction", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Do not copy movement direction from the followed player."},
-        {ERowType::Toggle, "Filter: Hook", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Filter: Hook", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Do not copy hook input from the followed player."},
-        {ERowType::Toggle, "Filter: Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Filter: Aim", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Do not copy aim from the followed player."},
-        {ERowType::Toggle, "Filter: Fire", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Filter: Fire", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Do not copy fire input from the followed player."},
-        {ERowType::Toggle, "Filter: Weapon", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Filter: Weapon", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Do not copy weapon switching from the followed player."},
 };
 // Aim mode dropdown options.
@@ -266,168 +308,168 @@ static const char *const g_ABFreezeOpts[] = {"Both", "Freeze", "No freeze"};
 static const char *const g_ABPriorityOpts[] = {"Nearest To FOV", "Nearest To Aim", "Nearest To Me"};
 // v1.56.262: "Auto Fire" expandable — auto-fire every Delay ticks while fire is held.
 static SRow g_AutoFireChildren[] = {
-        {ERowType::Slider, "Delay", nullptr, false, false, 0.0f, 50.0f, 1.0f, 0.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Delay", nullptr, false, false, true,0.0f, 50.0f, 1.0f, 0.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Auto-fire every N ticks while fire is held (0 = every tick)."},
 };
 // v1.56.262: "BalanceBot" expandable — X-axis balance against the nearest
 // matching player (drives the current dummy only). Filters reuse AimBot/ESP ones.
 static const char *const g_BbVerticalOpts[] = {"Below", "Above", "Both"};
 static SRow g_BalanceBotChildren[] = {
-        {ERowType::Dropdown, "Vertical Filter", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_BbVerticalOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Vertical Filter", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_BbVerticalOpts, 3, 0, nullptr, 0,
                 "Which side (below/above) to balance against the target."},
-        {ERowType::Slider, "Radius Filter", nullptr, false, false, 0.0f, 1000.0f, 1.0f, 500.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Radius Filter", nullptr, false, false, true,0.0f, 1000.0f, 1.0f, 500.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Search radius (units) for the balance target."},
-        {ERowType::Slider, "Stand Radius", nullptr, false, false, 1.0f, 10.0f, 1.0f, 3.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Stand Radius", nullptr, false, false, true,1.0f, 10.0f, 1.0f, 3.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Distance (units) at which the bot stops and stands."},
         // v1.56.275: "Team" -> "DDrace Team" + Target ID + new "Team" filter.
-        {ERowType::Dropdown, "DDrace Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_DDraceTeamOpts, 4, 0, nullptr, 0,
+        {ERowType::Dropdown, "DDrace Team", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_DDraceTeamOpts, 4, 0, nullptr, 0,
                 "DDrace team filter for the target."},
-        {ERowType::Input, "Target ID", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0,
+        {ERowType::Input, "Target ID", nullptr, false, false, true,0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0,
                 "Explicit target id (used when DDrace Team = Target)."},
-        {ERowType::Dropdown, "Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TeamFilterOpts, 5, 0, nullptr, 0,
+        {ERowType::Dropdown, "Team", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_TeamFilterOpts, 5, 0, nullptr, 0,
                 "Team filter for the target."},
-        {ERowType::Dropdown, "Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Friend", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0,
                 "Friend filter (both / ignore / only)."},
-        {ERowType::Dropdown, "Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Dummy", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 3, 0, nullptr, 0,
                 "Include or ignore dummies."},
-        {ERowType::Dropdown, "Clanmate", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Clanmate", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0,
                 "Clanmate filter (both / ignore / only)."},
-        {ERowType::Dropdown, "Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Freeze", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0,
                 "Freeze-state filter (both / freeze / no freeze)."},
         // v1.56.277: Off while freeze — pause the bot while we are frozen.
-        {ERowType::Toggle, "Off while freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Off while freeze", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Pause the bot while you are frozen."},
         // v1.56.275: FNG Freeze — ninja counts as frozen (FNG does not sync freeze).
-        {ERowType::Toggle, "FNG Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "FNG Freeze", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Treat ninja as frozen (FNG does not sync freeze)."},
-        {ERowType::Dropdown, "Targets", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Targets", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0,
                 "Include only / ignore specific target ids."},
-        {ERowType::Input, "Targets IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0,
+        {ERowType::Input, "Targets IDs", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0,
                 "Target id list (used when Targets = Only/Ignore)."},
 };
 // v1.56.83: AimBot expandable — 15 children.
 static SRow g_AimBotChildren[] = {
-        {ERowType::Dropdown, "Weapon", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABWeaponOpts, 7, 0, nullptr, 0,
+        {ERowType::Dropdown, "Weapon", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABWeaponOpts, 7, 0, nullptr, 0,
                 "Which weapon's AimBot settings are being edited."},
         // v1.56.291: Entity Mode — visible only for Weapon = Hook. Tee = players;
         // the rest target the matching map entities (blocks).
-        {ERowType::Dropdown, "Entity Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_EntityModeOpts, 6, 0, nullptr, 0,
+        {ERowType::Dropdown, "Entity Mode", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_EntityModeOpts, 6, 0, nullptr, 0,
                 "What the Hook aims at: Tee = players; Hookable/Unhookable/Freeze/Death/Others = the matching map entities (blocks)."},
-        {ERowType::Toggle, "Enable", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Enable", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Enable the AimBot for the selected weapon."},
-        {ERowType::Slider, "FOV", nullptr, false, false, 1.0f, 360.0f, 1.0f, 90.0f, "\xc2\xb0", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "FOV", nullptr, false, false, true,1.0f, 360.0f, 1.0f, 90.0f, "\xc2\xb0", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Aiming field of view (degrees)."},
-        {ERowType::Slider, "Radius", nullptr, false, false, 1.0f, 2000.0f, 1.0f, 300.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Radius", nullptr, false, false, true,1.0f, 2000.0f, 1.0f, 300.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Maximum aiming distance (units)."},
-        {ERowType::Toggle, "Show FOV", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Show FOV", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Draw the FOV cone."},
-        {ERowType::Toggle, "Show Radius", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Show Radius", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Draw the aim radius circle."},
         // v1.56.276: Auto Switch Weapon — switch to this weapon when it has a target in its zone.
-        {ERowType::Toggle, "Auto Switch Weapon", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Auto Switch Weapon", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Switch to this weapon when a target enters its zone."},
-        {ERowType::Toggle, "Use raycast (Show)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Use raycast (Show)", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Use a raycast for the displayed aim."},
-        {ERowType::Dropdown, "Rules", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABRulesOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Rules", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABRulesOpts, 3, 0, nullptr, 0,
                 "Line-of-sight rules (None / Insert line / Raycast)."},
-        {ERowType::Toggle, "Use raycast angle (AB)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Use raycast angle (AB)", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Use the raycast angle for the actual aim."},
         // v1.56.192: AimBot Predict — iterative time-of-flight prediction (NOT in TriggerBot).
-        {ERowType::Toggle, "Predict", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Predict", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Predict the target's position by time-of-flight."},
         // v1.56.248: AB Jitter — randomize the aim point within the player hitbox
         // (raycast-angle mode: random RAY THAT HIT the player + random distance).
-        {ERowType::Slider, "Jitter", nullptr, false, false, 0.0f, 100.0f, 1.0f, 0.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Jitter", nullptr, false, false, true,0.0f, 100.0f, 1.0f, 0.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Randomize the aim point within the target hitbox (%)."},
         // v1.56.262: Silent toggle + Mode dropdown (Edge/Trigger/Always/Smooth).
-        {ERowType::Toggle, "Silent", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Silent", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Aim silently — your own view stays unchanged."},
-        {ERowType::Dropdown, "Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABModeOpts, 4, 0, nullptr, 0,
+        {ERowType::Dropdown, "Mode", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABModeOpts, 4, 0, nullptr, 0,
                 "Aim mode: Edge / Trigger / Always / Smooth."},
-        {ERowType::Slider, "Smooth Speed", nullptr, false, false, 0.1f, 50.0f, 0.1f, 3.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Smooth Speed", nullptr, false, false, true,0.1f, 50.0f, 0.1f, 3.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Smoothing speed for the Smooth mode."},
-        {ERowType::Toggle, "Center snap", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Center snap", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Snap exactly to the target center."},
         // v1.56.275: "Team" — Both/My/War/Blue/Red.
-        {ERowType::Dropdown, "Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TeamFilterOpts, 5, 0, nullptr, 0,
+        {ERowType::Dropdown, "Team", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_TeamFilterOpts, 5, 0, nullptr, 0,
                 "Team filter for the target."},
-        {ERowType::Dropdown, "Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Friend", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0,
                 "Friend filter (both / ignore / only)."},
-        {ERowType::Dropdown, "Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Dummy", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 3, 0, nullptr, 0,
                 "Include or ignore dummies."},
-        {ERowType::Dropdown, "Clanmate", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Clanmate", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0,
                 "Clanmate filter (both / ignore / only)."},
-        {ERowType::Dropdown, "Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Freeze", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0,
                 "Freeze-state filter (both / freeze / no freeze)."},
         // v1.56.277: Off while freeze — pause the bot while we are frozen.
-        {ERowType::Toggle, "Off while freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Off while freeze", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Pause the bot while you are frozen."},
         // v1.56.275: FNG Freeze — ninja counts as frozen (FNG does not sync freeze).
-        {ERowType::Toggle, "FNG Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "FNG Freeze", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Treat ninja as frozen (FNG does not sync freeze)."},
-        {ERowType::Dropdown, "Priority", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABPriorityOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Priority", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABPriorityOpts, 3, 0, nullptr, 0,
                 "Target priority (nearest FOV / aim / to me)."},
-        {ERowType::Dropdown, "Targets", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Targets", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0,
                 "Include only / ignore specific target ids."},
-        {ERowType::Input, "Targets IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0,
+        {ERowType::Input, "Targets IDs", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0,
                 "Target id list (used when Targets = Only/Ignore)."},
 };
 // v1.56.292: TriggerBot expandable — Weapon has 7 entries now (hook included);
 // the Trigger fire/hook dropdown is gone (weapons 0..5 fire, Hook hooks).
 static SRow g_TriggerBotChildren[] = {
-        {ERowType::Dropdown, "Weapon", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABWeaponOpts, 7, 0, nullptr, 0,
+        {ERowType::Dropdown, "Weapon", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABWeaponOpts, 7, 0, nullptr, 0,
                 "Which weapon's TriggerBot settings are being edited."},
-        {ERowType::Toggle, "Enable", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Enable", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Enable the TriggerBot for the selected weapon."},
-        {ERowType::Dropdown, "Trigger mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTriggerModeOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Trigger mode", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTriggerModeOpts, 3, 0, nullptr, 0,
                 "When the trigger fires: One tick = a single shot per target entry; Hold = keeps firing while the target stays in the zone (required for FNG); Every tick = re-trigger every tick (best for hammer)."},
         // v1.56.291: Entity Mode — visible only for Weapon = Hook.
-        {ERowType::Dropdown, "Entity Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_EntityModeOpts, 6, 0, nullptr, 0,
+        {ERowType::Dropdown, "Entity Mode", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_EntityModeOpts, 6, 0, nullptr, 0,
                 "What the Hook targets: Tee = players; Hookable/Unhookable/Freeze/Death/Others = the matching map entities (blocks)."},
-        {ERowType::Slider, "FOV", nullptr, false, false, 1.0f, 360.0f, 1.0f, 90.0f, "\xc2\xb0", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "FOV", nullptr, false, false, true,1.0f, 360.0f, 1.0f, 90.0f, "\xc2\xb0", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Trigger field of view (degrees)."},
-        {ERowType::Slider, "Radius", nullptr, false, false, 1.0f, 2000.0f, 1.0f, 300.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Radius", nullptr, false, false, true,1.0f, 2000.0f, 1.0f, 300.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Maximum trigger distance (units)."},
-        {ERowType::Toggle, "Show FOV", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Show FOV", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Draw the FOV cone."},
-        {ERowType::Toggle, "Show Radius", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Show Radius", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Draw the trigger radius circle."},
         // v1.56.276: Auto Switch Weapon — switch to this weapon when it has a target in its zone.
-        {ERowType::Toggle, "Auto Switch Weapon", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Auto Switch Weapon", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Switch to this weapon when a target enters its zone."},
-        {ERowType::Toggle, "Use raycast (Show)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Use raycast (Show)", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Use a raycast for the displayed aim."},
-        {ERowType::Dropdown, "Rules", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABRulesOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Rules", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABRulesOpts, 3, 0, nullptr, 0,
                 "Line-of-sight rules (None / Insert line / Raycast)."},
-        {ERowType::Slider, "Latency", nullptr, false, false, 0.0f, 10.0f, 1.0f, 0.0f, " ticks", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Latency", nullptr, false, false, true,0.0f, 10.0f, 1.0f, 0.0f, " ticks", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Delay the trigger by N ticks."},
         // v1.56.275: "Team" — Both/My/War/Blue/Red.
-        {ERowType::Dropdown, "Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TeamFilterOpts, 5, 0, nullptr, 0,
+        {ERowType::Dropdown, "Team", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_TeamFilterOpts, 5, 0, nullptr, 0,
                 "Team filter for the target."},
-        {ERowType::Dropdown, "Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Friend", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0,
                 "Friend filter (both / ignore / only)."},
-        {ERowType::Dropdown, "Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Dummy", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 3, 0, nullptr, 0,
                 "Include or ignore dummies."},
-        {ERowType::Dropdown, "Clanmate", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Clanmate", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0,
                 "Clanmate filter (both / ignore / only)."},
-        {ERowType::Dropdown, "Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Freeze", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0,
                 "Freeze-state filter (both / freeze / no freeze)."},
         // v1.56.277: Off while freeze — pause the bot while we are frozen.
-        {ERowType::Toggle, "Off while freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Off while freeze", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Pause the bot while you are frozen."},
         // v1.56.275: FNG Freeze — ninja counts as frozen (FNG does not sync freeze).
-        {ERowType::Toggle, "FNG Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "FNG Freeze", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Treat ninja as frozen (FNG does not sync freeze)."},
-        {ERowType::Dropdown, "Priority", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABPriorityOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Priority", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABPriorityOpts, 3, 0, nullptr, 0,
                 "Target priority (nearest FOV / aim / to me)."},
-        {ERowType::Dropdown, "Targets", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Targets", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0,
                 "Include only / ignore specific target ids."},
-        {ERowType::Input, "Targets IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0,
+        {ERowType::Input, "Targets IDs", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0,
                 "Target id list (used when Targets = Only/Ignore)."},
         // v1.56.279: Use silent channel AB — while the AimBot's silent aim is
         // in action, this weapon's zone (and Show FOV/Radius) follows the
         // silent direction instead of the crosshair.
-        {ERowType::Toggle, "Use silent channel AB", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Use silent channel AB", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Follow the AimBot's silent direction for this weapon's zone."},
 };
 // ============================================================================
@@ -481,15 +523,15 @@ static void InitDummyManagerRows()
         g_DummyRowsInitialized = true;
 
         int n = 0;
-        g_DummyConnectChildren[n++] = {ERowType::Button, "Connect Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        g_DummyConnectChildren[n++] = {ERowType::Button, "Connect Dummy", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Connect the dummy to the server."};
-        g_DummyConnectChildren[n++] = {ERowType::Button, "Switch to Main", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        g_DummyConnectChildren[n++] = {ERowType::Button, "Switch to Main", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Make this dummy the main (anchor)."};
         for(int D = 1; D < MAX_DUMMIES; ++D)
         {
                 str_format(g_aDblConnectNames[D], sizeof(g_aDblConnectNames[D]), "D%d Connect", D);
                 str_format(g_aDblSwitchNames[D], sizeof(g_aDblSwitchNames[D]), "D%d Switch", D);
-                g_DummyConnectChildren[n++] = {ERowType::DoubleButton, g_aDblConnectNames[D], g_aDblSwitchNames[D], false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                g_DummyConnectChildren[n++] = {ERowType::Custom, g_aDblConnectNames[D], g_aDblSwitchNames[D], false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                         "Connect / disconnect this dummy.", "Switch control to this dummy."};
         }
 
@@ -499,7 +541,7 @@ static void InitDummyManagerRows()
                         str_copy(g_aDummyRowNames[D], "Main", sizeof(g_aDummyRowNames[D]));
                 else
                         str_format(g_aDummyRowNames[D], sizeof(g_aDummyRowNames[D]), "Dummy %d", D);
-                g_DummyProxyChildren[D] = {ERowType::ToggleInput, g_aDummyRowNames[D], nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, "u:p@socks5:proxy", nullptr, 0, 0, nullptr, 0,
+                g_DummyProxyChildren[D] = {ERowType::ToggleInput, g_aDummyRowNames[D], nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, "u:p@socks5:proxy", nullptr, 0, 0, nullptr, 0,
                         "SOCKS5 proxy for this dummy (user:pass@host:port). Toggle to enable."};
         }
 
@@ -508,43 +550,43 @@ static void InitDummyManagerRows()
                 SRow *pRows = (pass == 0) ? g_DummyProfilesMaster : g_DummyTeeMaster;
                 const bool Tee = pass != 0;
                 int m = 0;
-                pRows[m++] = {ERowType::Dropdown, "Edit Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_DummyEditModeOpts, 3, 0, nullptr, 0,
+                pRows[m++] = {ERowType::Dropdown, "Edit Mode", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_DummyEditModeOpts, 3, 0, nullptr, 0,
                         "Edit scope: Per-Dummy / All / Targets."};
                 if(Tee)
-                        pRows[m++] = {ERowType::Button, "Open Main Tee", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                        pRows[m++] = {ERowType::Button, "Open Main Tee", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                                 "Open the Main dummy's tee."};
                 else
-                        pRows[m++] = {ERowType::Button, "Open Main Profile", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                        pRows[m++] = {ERowType::Button, "Open Main Profile", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                                 "Open the Main dummy's profile."};
                 for(int D = 0; D < MAX_DUMMIES; ++D)
-                        pRows[m++] = {ERowType::Toggle, g_aDummyRowNames[D], nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                        pRows[m++] = {ERowType::Toggle, g_aDummyRowNames[D], nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                                 "Include this dummy in the current edit scope."};
                 if(Tee)
-                        pRows[m++] = {ERowType::Button, "Open Targets Tee", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                        pRows[m++] = {ERowType::Button, "Open Targets Tee", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                                 "Open the combined tee for the selected targets."};
                 else
-                        pRows[m++] = {ERowType::Button, "Open Targets Profile", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                        pRows[m++] = {ERowType::Button, "Open Targets Profile", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                                 "Open the combined profile for the selected targets."};
                 for(int D = 1; D < MAX_DUMMIES; ++D)
                 {
                         if(Tee)
                         {
                                 str_format(g_aOpenTeeNames[D], sizeof(g_aOpenTeeNames[D]), "Open Dummy %d Tee", D);
-                                pRows[m++] = {ERowType::Button, g_aOpenTeeNames[D], nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                                pRows[m++] = {ERowType::Button, g_aOpenTeeNames[D], nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                                         "Open this dummy's tee."};
                         }
                         else
                         {
                                 str_format(g_aOpenProfNames[D], sizeof(g_aOpenProfNames[D]), "Open Dummy %d Profile", D);
-                                pRows[m++] = {ERowType::Button, g_aOpenProfNames[D], nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                                pRows[m++] = {ERowType::Button, g_aOpenProfNames[D], nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                                         "Open this dummy's profile."};
                         }
                 }
                 if(Tee)
-                        pRows[m++] = {ERowType::Button, "Open All Tee", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                        pRows[m++] = {ERowType::Button, "Open All Tee", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                                 "Open tees for all dummies."};
                 else
-                        pRows[m++] = {ERowType::Button, "Open All Profile", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                        pRows[m++] = {ERowType::Button, "Open All Profile", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                                 "Open profiles for all dummies."};
         }
 
@@ -558,17 +600,17 @@ static void InitDummyManagerRows()
 // limit incl. Main (enforced engine-side via IClient::SetDummyLimit);
 // "Reconnect (Apply)" is visible only while proxy changes are staged.
 static SRow g_DummyMgrRows[] = {
-        {ERowType::Slider, "Dummies", nullptr, false, false, 1.0f, (float)MAX_DUMMIES, 1.0f, 8.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Dummies", nullptr, false, false, true,1.0f, (float)MAX_DUMMIES, 1.0f, 8.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Number of dummies (including Main) to keep connected."},
-        {ERowType::Expandable, "Dummies", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_DummyConnectChildren, 2 + MAX_DUMMIES - 1,
+        {ERowType::Expandable, "Dummies", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_DummyConnectChildren, 2 + MAX_DUMMIES - 1,
                 "Connect / disconnect and switch control of individual dummies."},
-        {ERowType::Expandable, "Proxy manager", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_DummyProxyChildren, MAX_DUMMIES,
+        {ERowType::Expandable, "Proxy manager", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_DummyProxyChildren, MAX_DUMMIES,
                 "Per-dummy SOCKS5 proxies (staged changes apply on Reconnect)."},
-        {ERowType::Expandable, "Dummy Profiles", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_DummyProfilesChildren, 4 + MAX_DUMMIES + (MAX_DUMMIES - 1),
+        {ERowType::Expandable, "Dummy Profiles", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_DummyProfilesChildren, 4 + MAX_DUMMIES + (MAX_DUMMIES - 1),
                 "Open a dummy's saved config profile."},
-        {ERowType::Expandable, "Dummy Tee", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_DummyTeeChildren, 4 + MAX_DUMMIES + (MAX_DUMMIES - 1),
+        {ERowType::Expandable, "Dummy Tee", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_DummyTeeChildren, 4 + MAX_DUMMIES + (MAX_DUMMIES - 1),
                 "Open a dummy's tee (skin/config)."},
-        {ERowType::Button, "Reconnect (Apply)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Button, "Reconnect (Apply)", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Reconnect the dummies to apply staged proxy changes."},
 };
 // v1.56.258: Block expandable — compact config (was 37 rows). Movement, fire,
@@ -577,57 +619,57 @@ static SRow g_DummyMgrRows[] = {
 // toggles is gone. "All Target"/"All Rescue" turn the ID fields into exclusion
 // lists (renamed to "Untarget IDs"/"Unrescue IDs" in sync). "Dists:" is a label.
 static SRow g_HelpersChildren[] = {
-        {ERowType::Toggle, "Auto Main", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Auto Main", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Automatically keep the main dummy under control."},
-        {ERowType::Input, "Main ID", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0,
+        {ERowType::Input, "Main ID", nullptr, false, false, true,0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0,
                 "Dummy id treated as the main (anchor) dummy."},
-        {ERowType::Toggle, "All Target", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "All Target", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Target every valid player instead of the Target IDs list."},
-        {ERowType::Input, "Target IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0,
+        {ERowType::Input, "Target IDs", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0,
                 "Target id list (used when All Target is off)."},
-        {ERowType::Toggle, "Rescue", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Rescue", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Rescue frozen teammates (unfreeze / hook them out)."},
-        {ERowType::Toggle, "All Rescue", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "All Rescue", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Rescue every frozen teammate instead of the Rescue IDs list."},
-        {ERowType::Input, "Rescue IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0,
+        {ERowType::Input, "Rescue IDs", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0,
                 "Rescue id list (used when All Rescue is off)."},
-        {ERowType::Input, "Dummy IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "0,1,2,3,4,5,6,7", "0,1,2...", nullptr, 0, 0, nullptr, 0,
+        {ERowType::Input, "Dummy IDs", nullptr, false, false, true,0, 0, 0, 0, nullptr, "0,1,2,3,4,5,6,7", "0,1,2...", nullptr, 0, 0, nullptr, 0,
                 "Dummy ids the bot is allowed to use."},
-        {ERowType::Label, "Dists:", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Label, "Dists:", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Distance thresholds for fire / hook / target / rescue."},
-        {ERowType::Slider, "Fire Dist", nullptr, false, false, 32.0f, 64.0f, 1.0f, 50.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Fire Dist", nullptr, false, false, true,32.0f, 64.0f, 1.0f, 50.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Distance (units) at which the bot fires at the target."},
-        {ERowType::Slider, "Hook Dist", nullptr, false, false, 64.0f, 400.0f, 1.0f, 400.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Hook Dist", nullptr, false, false, true,64.0f, 400.0f, 1.0f, 400.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Distance (units) at which the bot uses the hook."},
-        {ERowType::Input, "Main Dist", nullptr, false, false, 0, 0, 0, 0, nullptr, "100000", "value...", nullptr, 0, 0, nullptr, 0,
+        {ERowType::Input, "Main Dist", nullptr, false, false, true,0, 0, 0, 0, nullptr, "100000", "value...", nullptr, 0, 0, nullptr, 0,
                 "Max distance the main dummy may keep from you."},
-        {ERowType::Input, "Target Dist", nullptr, false, false, 0, 0, 0, 0, nullptr, "300", "value...", nullptr, 0, 0, nullptr, 0,
+        {ERowType::Input, "Target Dist", nullptr, false, false, true,0, 0, 0, 0, nullptr, "300", "value...", nullptr, 0, 0, nullptr, 0,
                 "Max distance at which the bot engages a target."},
-        {ERowType::Input, "Rescue Dist", nullptr, false, false, 0, 0, 0, 0, nullptr, "500", "value...", nullptr, 0, 0, nullptr, 0,
+        {ERowType::Input, "Rescue Dist", nullptr, false, false, true,0, 0, 0, 0, nullptr, "500", "value...", nullptr, 0, 0, nullptr, 0,
                 "Max distance to reach a rescue target."},
-        {ERowType::Input, "Stand Dist", nullptr, false, false, 0, 0, 0, 0, nullptr, "64", "value...", nullptr, 0, 0, nullptr, 0,
+        {ERowType::Input, "Stand Dist", nullptr, false, false, true,0, 0, 0, 0, nullptr, "64", "value...", nullptr, 0, 0, nullptr, 0,
                 "Distance at which the bot stops moving."},
-        {ERowType::Input, "MStand Dist", nullptr, false, false, 0, 0, 0, 0, nullptr, "128", "value...", nullptr, 0, 0, nullptr, 0,
+        {ERowType::Input, "MStand Dist", nullptr, false, false, true,0, 0, 0, 0, nullptr, "128", "value...", nullptr, 0, 0, nullptr, 0,
                 "Standing distance for the main dummy."},
 };
 // ---------- Children shared by the Functions and Visuals panels ----------
 // "Laser unfreeze" expandable: predictive laser self-unfreeze.
 static SRow g_LaserUnfreezeChildren[] = {
-        {ERowType::Toggle, "Auto laser", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Auto laser", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Automatically aim the laser to unfreeze yourself."},
-        {ERowType::Slider, "FOV", nullptr, false, false, 5.0f, 360.0f, 5.0f, 90.0f, "°", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "FOV", nullptr, false, false, true,5.0f, 360.0f, 5.0f, 90.0f, "°", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Laser search field of view (degrees)."},
-        {ERowType::Slider, "Angles", nullptr, false, false, 1.0f, 144.0f, 1.0f, 9.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Angles", nullptr, false, false, true,1.0f, 144.0f, 1.0f, 9.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Number of candidate angles to scan."},
-        {ERowType::Slider, "Ticks", nullptr, false, false, 1.0f, 50.0f, 1.0f, 10.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Ticks", nullptr, false, false, true,1.0f, 50.0f, 1.0f, 10.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Ticks to simulate ahead for the laser prediction."},
-        {ERowType::Slider, "Current dir ticks", nullptr, false, false, 1.0f, 100.0f, 1.0f, 21.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Current dir ticks", nullptr, false, false, true,1.0f, 100.0f, 1.0f, 21.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Ticks simulated for the current aim before the angle search starts."},
-        {ERowType::Toggle, "Most bounces", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Most bounces", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Prefer the candidate with the most bounces instead of the least."},
-        {ERowType::Toggle, "Silent", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Silent", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Aim the laser silently (your own view stays unchanged)."},
-        {ERowType::Toggle, "Show attempt", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Show attempt", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Draw the attempted laser prediction."},
 };
 // "Fake Aim" expandable.
@@ -637,22 +679,22 @@ static SRow g_LaserUnfreezeChildren[] = {
 // applies to ALL modes plus the real aim and the laser unfreeze aim channel.
 static const char *const g_FakeAimModeOpts[] = {"Random", "Robot", "Spin", "Lag", "Chaos", "Real"};
 static SRow g_FakeAimChildren[] = {
-        {ERowType::Dropdown, "Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_FakeAimModeOpts, 6, 0, nullptr, 0,
+        {ERowType::Dropdown, "Mode", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_FakeAimModeOpts, 6, 0, nullptr, 0,
                 "Fake aim mode: Random / Robot / Spin / Lag / Chaos / Real."},
-        {ERowType::Slider, "Speed", nullptr, false, false, 1.0f, 100.0f, 1.0f, 10.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Speed", nullptr, false, false, true,1.0f, 100.0f, 1.0f, 10.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Re-roll cadence (lower = slower switching)."},
-        {ERowType::Slider, "Jitter", nullptr, false, false, 1.0f, 100.0f, 1.0f, 20.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Jitter", nullptr, false, false, true,1.0f, 100.0f, 1.0f, 20.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Max random offset of the fake aim (units)."},
-        {ERowType::Slider, "Distance from center", nullptr, false, false, 0.0f, 500.0f, 5.0f, 0.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Distance from center", nullptr, false, false, true,0.0f, 500.0f, 5.0f, 0.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Offset the aim from the target center (units)."},
-        {ERowType::Toggle, "Show for me", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Show for me", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Render the fake aim locally."},
         // v1.56.262: renders what the server actually sees (visible only with Show for me).
-        {ERowType::Toggle, "Show Server-Side Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Show Server-Side Aim", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Render what the server actually sees instead of the local aim."},
         // v1.56.263: between ticks advance the rendered aim at frame rate;
         // Real mode renders exactly like no Fake Aim.
-        {ERowType::Toggle, "Predict", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Predict", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Advance the rendered aim between ticks at frame rate."},
 };
 // v1.56.178: "Trajectory" expandable — per-type settings (Tee/Pistol/Shotgun/Grenade/Laser).
@@ -662,19 +704,19 @@ static SRow g_FakeAimChildren[] = {
 // projectiles for the tee type — it predicts tee movement only).
 static const char *const g_TrajTypeOpts[] = {"Tee", "Pistol", "Shotgun", "Grenade", "Laser"};
 static SRow g_TrajectoryChildren[] = {
-        {ERowType::Dropdown, "Type", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TrajTypeOpts, 5, 0, nullptr, 0,
+        {ERowType::Dropdown, "Type", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_TrajTypeOpts, 5, 0, nullptr, 0,
                 "Which projectile type's settings are being edited."},
-        {ERowType::Toggle, "Show", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Show", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Show the trajectory for the selected type."},
-        {ERowType::Slider, "Prediction Ticks", nullptr, false, false, 1.0f, 50.0f, 1.0f, 10.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Prediction Ticks", nullptr, false, false, true,1.0f, 50.0f, 1.0f, 10.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Ticks to simulate the projectile forward."},
-        {ERowType::Toggle, "Alpha Gradient", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Alpha Gradient", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Fade the trajectory along its length."},
-        {ERowType::Toggle, "Simulate Players", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Simulate Players", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Include player collisions in the simulation."},
-        {ERowType::Toggle, "Show for other players", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Show for other players", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Draw predicted trajectories for other players."},
-        {ERowType::Toggle, "Show for current", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Show for current", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Draw the trajectory for the currently held projectile."},
 };
 // v1.56.104: "ESP" expandable — lines from point A to all players matching filters.
@@ -690,50 +732,50 @@ static const char *const g_EspStyleOpts[] = {"Line", "Arrow", "Dotted line", "Do
 static const char *const g_EspBoxStyleOpts[] = {"Box", "Dotted box"};
 static SRow g_EspChildren[] = {
         // v1.56.256: "Pointer"/"Box" visibility toggles.
-        {ERowType::Toggle, "Pointer", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Pointer", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Draw a pointer line to targets."},
-        {ERowType::Dropdown, "Pointer Style", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_EspStyleOpts, 4, 0, nullptr, 0,
+        {ERowType::Dropdown, "Pointer Style", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_EspStyleOpts, 4, 0, nullptr, 0,
                 "Pointer line style."},
-        {ERowType::Slider, "Pointer Speed", nullptr, false, false, 0.0f, 100.0f, 1.0f, 30.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Pointer Speed", nullptr, false, false, true,0.0f, 100.0f, 1.0f, 30.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Pointer animation speed."},
-        {ERowType::Toggle, "Box", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Box", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Draw a box around targets."},
-        {ERowType::Dropdown, "Box Style", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_EspBoxStyleOpts, 2, 0, nullptr, 0,
+        {ERowType::Dropdown, "Box Style", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_EspBoxStyleOpts, 2, 0, nullptr, 0,
                 "Box outline style."},
-        {ERowType::Slider, "Box Speed", nullptr, false, false, 0.0f, 100.0f, 1.0f, 30.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Box Speed", nullptr, false, false, true,0.0f, 100.0f, 1.0f, 30.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Box animation speed."},
         // v1.56.256: box size scale (X/Y — box dimensions, not line width).
-        {ERowType::Slider, "X Box scale", nullptr, false, false, 10.0f, 1000.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "X Box scale", nullptr, false, false, true,10.0f, 1000.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Box width scale (%)."},
-        {ERowType::Slider, "Y Box scale", nullptr, false, false, 10.0f, 1000.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Y Box scale", nullptr, false, false, true,10.0f, 1000.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Box height scale (%)."},
         // v1.56.275: "Team" -> "DDrace Team" + Target ID + new "Team" filter.
-        {ERowType::Dropdown, "DDrace Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_DDraceTeamOpts, 4, 0, nullptr, 0,
+        {ERowType::Dropdown, "DDrace Team", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_DDraceTeamOpts, 4, 0, nullptr, 0,
                 "DDrace team filter for the target."},
-        {ERowType::Input, "Target ID", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0,
+        {ERowType::Input, "Target ID", nullptr, false, false, true,0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0,
                 "Explicit target id (used when DDrace Team = Target)."},
-        {ERowType::Dropdown, "Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TeamFilterOpts, 5, 0, nullptr, 0,
+        {ERowType::Dropdown, "Team", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_TeamFilterOpts, 5, 0, nullptr, 0,
                 "Team filter for the target."},
-        {ERowType::Dropdown, "Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Friend", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0,
                 "Friend filter (both / ignore / only)."},
-        {ERowType::Dropdown, "Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Dummy", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 3, 0, nullptr, 0,
                 "Include or ignore dummies."},
-        {ERowType::Dropdown, "Clanmate", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Clanmate", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0,
                 "Clanmate filter (both / ignore / only)."},
-        {ERowType::Dropdown, "Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Freeze", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0,
                 "Freeze-state filter (both / freeze / no freeze)."},
         // v1.56.275: FNG Freeze — ninja counts as frozen (FNG does not sync freeze).
-        {ERowType::Toggle, "FNG Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "FNG Freeze", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Treat ninja as frozen (FNG does not sync freeze)."},
-        {ERowType::Dropdown, "Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_EspModeOpts, 2, 0, nullptr, 0,
+        {ERowType::Dropdown, "Mode", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_EspModeOpts, 2, 0, nullptr, 0,
                 "Pointer anchor: target's active player or fixed screen coordinates."},
-        {ERowType::Slider, "X", nullptr, false, false, 0.0f, 7680.0f, 1.0f, 0.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "X", nullptr, false, false, true,0.0f, 7680.0f, 1.0f, 0.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Screen X anchor (Screen coordinates mode)."},
-        {ERowType::Slider, "Y", nullptr, false, false, 0.0f, 4320.0f, 1.0f, 0.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Y", nullptr, false, false, true,0.0f, 4320.0f, 1.0f, 0.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Screen Y anchor (Screen coordinates mode)."},
-        {ERowType::Dropdown, "Targets", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Targets", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0,
                 "Include only / ignore specific target ids."},
-        {ERowType::Input, "Targets IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0,
+        {ERowType::Input, "Targets IDs", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0,
                 "Target id list (used when Targets = Only/Ignore)."},
 };
 // v1.56.256: "Hitboxes" expandable — tee tile-collision square (28x28) and the
@@ -742,96 +784,96 @@ static SRow g_EspChildren[] = {
 // duplicates — sync/write code disambiguates them by child index.
 static const char *const g_HitboxStyleOpts[] = {"Filled", "Box", "Dotted Box"};
 static SRow g_HitboxesChildren[] = {
-        {ERowType::Toggle, "Tee tile", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Tee tile", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Draw the tee tile-collision square (28x28)."},
-        {ERowType::Dropdown, "Hitbox Style", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_HitboxStyleOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Hitbox Style", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_HitboxStyleOpts, 3, 0, nullptr, 0,
                 "Style of the tee-tile hitbox."},
-        {ERowType::Slider, "Box Speed", nullptr, false, false, 0.0f, 100.0f, 1.0f, 30.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Box Speed", nullptr, false, false, true,0.0f, 100.0f, 1.0f, 30.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Animation speed of the tile hitbox."},
-        {ERowType::Toggle, "Tee trigger", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Tee trigger", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Draw the round trigger hitbox (radius 28)."},
-        {ERowType::Dropdown, "Hitbox Style", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_HitboxStyleOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Hitbox Style", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_HitboxStyleOpts, 3, 0, nullptr, 0,
                 "Style of the trigger hitbox."},
-        {ERowType::Slider, "Box Speed", nullptr, false, false, 0.0f, 100.0f, 1.0f, 30.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Box Speed", nullptr, false, false, true,0.0f, 100.0f, 1.0f, 30.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Animation speed of the trigger hitbox."},
-        {ERowType::Toggle, "Show for others", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Show for others", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Also draw the hitboxes for other players."},
         // v1.56.257: full filter set (same as ESP/AimBot), visible when Show for others.
         // v1.56.275: "Team" -> "DDrace Team" + Target ID + new "Team" filter.
-        {ERowType::Dropdown, "DDrace Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_DDraceTeamOpts, 4, 0, nullptr, 0,
+        {ERowType::Dropdown, "DDrace Team", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_DDraceTeamOpts, 4, 0, nullptr, 0,
                 "DDrace team filter for the target."},
-        {ERowType::Input, "Target ID", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0,
+        {ERowType::Input, "Target ID", nullptr, false, false, true,0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0,
                 "Explicit target id (used when DDrace Team = Target)."},
-        {ERowType::Dropdown, "Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TeamFilterOpts, 5, 0, nullptr, 0,
+        {ERowType::Dropdown, "Team", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_TeamFilterOpts, 5, 0, nullptr, 0,
                 "Team filter for the target."},
-        {ERowType::Dropdown, "Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Friend", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0,
                 "Friend filter (both / ignore / only)."},
-        {ERowType::Dropdown, "Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Dummy", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABDummyOpts, 3, 0, nullptr, 0,
                 "Include or ignore dummies."},
-        {ERowType::Dropdown, "Clanmate", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Clanmate", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0,
                 "Clanmate filter (both / ignore / only)."},
-        {ERowType::Dropdown, "Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Freeze", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0,
                 "Freeze-state filter (both / freeze / no freeze)."},
         // v1.56.275: FNG Freeze — ninja counts as frozen (FNG does not sync freeze).
-        {ERowType::Toggle, "FNG Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "FNG Freeze", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Treat ninja as frozen (FNG does not sync freeze)."},
-        {ERowType::Dropdown, "Targets", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Targets", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0,
                 "Include only / ignore specific target ids."},
-        {ERowType::Input, "Targets IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0,
+        {ERowType::Input, "Targets IDs", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0,
                 "Target id list (used when Targets = Only/Ignore)."},
 };
 // v1.56.121: "Avoid Freeze" expandable.
 static SRow g_AvoidFreezeChildren[] = {
-        {ERowType::Label, "Tiles", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Label, "Tiles", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Freeze", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Avoid freeze tiles."},
-        {ERowType::Toggle, "Teleports", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Teleports", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Avoid teleport tiles."},
-        {ERowType::Toggle, "Deaths", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Deaths", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Avoid death tiles."},
-        {ERowType::Toggle, "Unfreeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Unfreeze", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Keep the plan safe after leaving a freeze tile."},
-        {ERowType::Slider, "Unfreeze Ticks", nullptr, false, false, 1.0f, 100.0f, 1.0f, 26.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Unfreeze Ticks", nullptr, false, false, true,1.0f, 100.0f, 1.0f, 26.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Ticks simulated after leaving a freeze tile."},
-        {ERowType::Label, "Behaviour", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "NSIF", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Label, "Behaviour", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "NSIF", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Reuse the stored plan tail when no safe result was found."},
-        {ERowType::Toggle, "Simulate Players", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Simulate Players", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Simulate nearby players instead of the local tee alone."},
-        {ERowType::Slider, "Afk Protection", nullptr, false, false, 0.0f, 60000.0f, 100.0f, 0.0f, " ms", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Afk Protection", nullptr, false, false, true,0.0f, 60000.0f, 100.0f, 0.0f, " ms", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Suspend while no input changed for this many milliseconds (0 = off)."},
-        {ERowType::Slider, "Check Ticks", nullptr, false, false, 1.0f, 100.0f, 1.0f, 26.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Check Ticks", nullptr, false, false, true,1.0f, 100.0f, 1.0f, 26.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Ticks checked for survival in the search."},
-        {ERowType::Slider, "Kick Ticks", nullptr, false, false, 1.0f, 100.0f, 1.0f, 26.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Kick Ticks", nullptr, false, false, true,1.0f, 100.0f, 1.0f, 26.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Ticks checked by the cheap constant-input guard."},
-        {ERowType::Toggle, "Hook", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Hook", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Allow hook inputs in the search."},
-        {ERowType::Toggle, "Fire", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Fire", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Allow the search to change fire inputs."},
-        {ERowType::Toggle, "Direction", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Direction", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Allow direction changes."},
-        {ERowType::Toggle, "Jump", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Jump", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Allow jump inputs in the search."},
-        {ERowType::Toggle, "Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Aim", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Scan hook directions in the FOV for a safer aim."},
-        {ERowType::Slider, "Angles", nullptr, false, false, 1.0f, 50.0f, 1.0f, 5.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Angles", nullptr, false, false, true,1.0f, 50.0f, 1.0f, 5.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Number of FOV segments scanned for the aim."},
-        {ERowType::Slider, "FOV", nullptr, false, false, 5.0f, 360.0f, 5.0f, 90.0f, "\xc2\xb0", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "FOV", nullptr, false, false, true,5.0f, 360.0f, 5.0f, 90.0f, "\xc2\xb0", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Aim search field of view (degrees)."},
-        {ERowType::Toggle, "Silent", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Silent", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Keep the visible aim unchanged."},
-        {ERowType::Toggle, "Auto Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Auto Aim", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Use the aim with the longest survival."},
-        {ERowType::Toggle, "Aim Assist", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Aim Assist", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Use the aim that is closest to the mouse."},
-        {ERowType::Toggle, "Track Point", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Track Point", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Track a hook point while it keeps the tee safe."},
-        {ERowType::Toggle, "Safe Tracking", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Safe Tracking", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Only accept a track point when the plan stays safe."},
-        {ERowType::Label, "Visuals", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Track Point", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Label, "Visuals", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Track Point", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Draw the tracked hook point."},
-        {ERowType::Toggle, "Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Aim", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Draw the aim assist / auto aim points."},
 };
 // v6.7: Smart Copy Moves expandable — header is the master toggle. Children:
@@ -840,27 +882,27 @@ static SRow g_AvoidFreezeChildren[] = {
 static const char *const g_SmartSortOpts[] = {"ID", "Nearest To Me", "Nearest To Aim", "Last Active"};
 static const char *const g_SmartApplyOpts[] = {"Trigger", "Always"};
 static SRow g_SmartCopyMovesChildren[] = {
-        {ERowType::Dropdown, "Sort Type", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_SmartSortOpts, 4, 0, nullptr, 0,
+        {ERowType::Dropdown, "Sort Type", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_SmartSortOpts, 4, 0, nullptr, 0,
                 "How the top dummies are picked."},
-        {ERowType::Dropdown, "Apply Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_SmartApplyOpts, 2, 0, nullptr, 0,
+        {ERowType::Dropdown, "Apply Mode", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_SmartApplyOpts, 2, 0, nullptr, 0,
                 "Trigger: capture the top on copy moves enable; Always: recompute every tick."},
-        {ERowType::Slider, "Apply Dummies", nullptr, false, false, 1.0f, 7.0f, 1.0f, 2.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Apply Dummies", nullptr, false, false, true,1.0f, 7.0f, 1.0f, 2.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "How many top dummies receive copy moves (max follows the dummy limit)."},
-        {ERowType::Dropdown, "Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TeamFilterOpts, 5, 0, nullptr, 0,
+        {ERowType::Dropdown, "Team", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_TeamFilterOpts, 5, 0, nullptr, 0,
                 "Team filter for the dummy."},
-        {ERowType::Dropdown, "DDrace Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_DDraceTeamOpts, 4, 0, nullptr, 0,
+        {ERowType::Dropdown, "DDrace Team", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_DDraceTeamOpts, 4, 0, nullptr, 0,
                 "DDrace team filter for the dummy."},
-        {ERowType::Input, "Target ID", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0,
+        {ERowType::Input, "Target ID", nullptr, false, false, true,0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0,
                 "Explicit DDrace team id (used when DDrace Team = Target)."},
-        {ERowType::Dropdown, "Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Friend", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0,
                 "Friend filter (both / ignore / only)."},
-        {ERowType::Dropdown, "Clanmate", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Clanmate", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0,
                 "Clanmate filter (both / ignore / only)."},
-        {ERowType::Dropdown, "Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Freeze", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0,
                 "Freeze-state filter (both / freeze / no freeze)."},
-        {ERowType::Dropdown, "Targets", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Targets", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0,
                 "Include only / ignore specific target ids."},
-        {ERowType::Input, "Targets IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0,
+        {ERowType::Input, "Targets IDs", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0,
                 "Target id list (used when Targets = Only/Ignore)."},
 };
 
@@ -871,64 +913,64 @@ static const char *const g_AledSortOpts[] = {"ID", "Nearest To Me", "Nearest To 
 static const char *const g_AledUseDummiesOpts[] = {"Never", "Dummy Freezes", "Active Dummy Freezes", "Both"};
 static const char *const g_AledApplyModeOpts[] = {"Trigger", "Always"};
 static SRow g_AledBotChildren[] = {
-        {ERowType::Slider, "Trigger Ticks", nullptr, false, false, 0.0f, 30.0f, 1.0f, 0.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Trigger Ticks", nullptr, false, false, true,0.0f, 30.0f, 1.0f, 0.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "React this many ticks before the dummy enters the freeze (0 = only once it is frozen)."},
-        {ERowType::Slider, "Ticks", nullptr, false, false, 1.0f, 250.0f, 1.0f, 50.0f, "t", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Ticks", nullptr, false, false, true,1.0f, 250.0f, 1.0f, 50.0f, "t", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Simulation horizon for the aled plan."},
-        {ERowType::Toggle, "Silent", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Silent", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Don't touch the client-side aim (compatible with Fake Aim)."},
-        {ERowType::Dropdown, "Sort Target Dummy", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_AledSortOpts, 4, 0, nullptr, 0,
+        {ERowType::Dropdown, "Sort Target Dummy", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_AledSortOpts, 4, 0, nullptr, 0,
                 "How the frozen target dummy is picked."},
-        {ERowType::Dropdown, "Use Dummies Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_AledUseDummiesOpts, 4, 0, nullptr, 0,
+        {ERowType::Dropdown, "Use Dummies Mode", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_AledUseDummiesOpts, 4, 0, nullptr, 0,
                 "When dummies may act: never / target is not the active dummy / target is the active dummy / both."},
-        {ERowType::Dropdown, "Apply Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_AledApplyModeOpts, 2, 0, nullptr, 0,
+        {ERowType::Dropdown, "Apply Mode", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_AledApplyModeOpts, 2, 0, nullptr, 0,
                 "Trigger = only the top-N acting dummies; Always = every acting dummy."},
-        {ERowType::Slider, "Apply Dummies", nullptr, false, false, 1.0f, 8.0f, 1.0f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Apply Dummies", nullptr, false, false, true,1.0f, 8.0f, 1.0f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "How many acting dummies may be used."},
-        {ERowType::Dropdown, "Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TeamFilterOpts, 5, 0, nullptr, 0,
+        {ERowType::Dropdown, "Team", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_TeamFilterOpts, 5, 0, nullptr, 0,
                 "Team filter for the target dummy."},
-        {ERowType::Dropdown, "DDrace Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_DDraceTeamOpts, 4, 0, nullptr, 0,
+        {ERowType::Dropdown, "DDrace Team", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_DDraceTeamOpts, 4, 0, nullptr, 0,
                 "DDrace team filter for the target dummy."},
-        {ERowType::Input, "Target ID", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0,
+        {ERowType::Input, "Target ID", nullptr, false, false, true,0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0,
                 "Explicit DDrace team id (used when DDrace Team = Target)."},
-        {ERowType::Dropdown, "Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Friend", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0,
                 "Friend filter (both / ignore / only)."},
-        {ERowType::Dropdown, "Clanmate", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Clanmate", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0,
                 "Clanmate filter (both / ignore / only)."},
-        {ERowType::Dropdown, "Targets", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Targets", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0,
                 "Include only / ignore specific target ids."},
-        {ERowType::Input, "Targets IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0,
+        {ERowType::Input, "Targets IDs", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0,
                 "Target id list (used when Targets = Only/Ignore)."},
 };
 
 static SRow g_QuickStopChildren[] = {
-        {ERowType::Toggle, "Grounded only", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Grounded only", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Brake only while standing on the ground."},
 };
 static SRow g_AutoTeamChildren[] = {
-        {ERowType::Slider, "Preferred team", nullptr, false, false, 1.0f, 63.0f, 1.0f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Preferred team", nullptr, false, false, true,1.0f, 63.0f, 1.0f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Team number to join when it is free."},
 };
 static SRow g_AntiAfkChildren[] = {
-        {ERowType::Slider, "Interval", nullptr, false, false, 1.0f, 300.0f, 1.0f, 100.0f, "s", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Interval", nullptr, false, false, true,1.0f, 300.0f, 1.0f, 100.0f, "s", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Seconds between mouse nudges."},
 };
 static const char *const g_AutoVoteOpts[] = {"Yes", "No"};
 static SRow g_AutoVoteChildren[] = {
-        {ERowType::Dropdown, "Vote", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_AutoVoteOpts, 2, 0, nullptr, 0,
+        {ERowType::Dropdown, "Vote", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_AutoVoteOpts, 2, 0, nullptr, 0,
                 "Answer every vote with yes or no."},
 };
 static const char *const g_AutoVoteKickModeOpts[] = {"Random", "Target"};
 static SRow g_AutoVoteKickChildren[] = {
-        {ERowType::Dropdown, "Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_AutoVoteKickModeOpts, 2, 0, nullptr, 0,
+        {ERowType::Dropdown, "Mode", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_AutoVoteKickModeOpts, 2, 0, nullptr, 0,
                 "Kick a random client or the configured target id."},
-        {ERowType::Input, "Target ID", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0,
+        {ERowType::Input, "Target ID", nullptr, false, false, true,0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0,
                 "Client id kicked in Target mode."},
-        {ERowType::Input, "Reason", nullptr, false, false, 0, 0, 0, 0, nullptr, "krx detected", "reason...", nullptr, 0, 0, nullptr, 0,
+        {ERowType::Input, "Reason", nullptr, false, false, true,0, 0, 0, 0, nullptr, "krx detected", "reason...", nullptr, 0, 0, nullptr, 0,
                 "Reason shown in the kick vote."},
 };
 static SRow g_FastInputChildren[] = {
-        {ERowType::Toggle, "Others", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Others", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Apply the early tick to other tees as well (makes dragging easier)."},
 };
 
@@ -937,128 +979,131 @@ static SRow g_FastInputChildren[] = {
 // panel; Random Aim rows removed (feature deleted).
 static SRow g_FunctionsRows[] = {
         // v1.56.282: "Dummies" expandable moved to the Dummy Manager panel.
-        {ERowType::Expandable, "Helpers", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_HelpersChildren, 16,
+        {ERowType::Expandable, "Helpers", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_HelpersChildren, 16,
                 "Auto bot: aim, fire, hook, hammer and rescue targets."},
         // v1.56.83: AimBot + TriggerBot expandables (AimBot: 23 children since v1.56.262)
-        {ERowType::Expandable, "AimBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AimBotChildren, 27,
+        {ERowType::Expandable, "AimBot", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AimBotChildren, 27,
                 "Aim assist, configured per weapon."},
-        {ERowType::Expandable, "TriggerBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TriggerBotChildren, 23,
+        {ERowType::Expandable, "TriggerBot", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TriggerBotChildren, 23,
                 "Auto-fire when a target enters the weapon's zone."},
         // v1.56.262: Auto Fire + BalanceBot expandables.
-        {ERowType::Expandable, "Auto Fire", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AutoFireChildren, 1,
+        {ERowType::Expandable, "Auto Fire", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AutoFireChildren, 1,
                 "Automatically fire at a fixed tick rate."},
-        {ERowType::Expandable, "BalanceBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BalanceBotChildren, 14,
+        {ERowType::Expandable, "BalanceBot", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BalanceBotChildren, 14,
                 "Balance against a target by standing above/below it."},
-        {ERowType::Toggle, "Moonwalk", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Moonwalk", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Hold both directions to walk backwards."},
-        {ERowType::Expandable, "Quick Stop", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_QuickStopChildren, 1,
+        {ERowType::Expandable, "Quick Stop", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_QuickStopChildren, 1,
                 "Brake with the opposite direction when you release the keys."},
-        {ERowType::Toggle, "Hide Chat Bubble", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Hide Chat Bubble", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Keep playing (and the helpers active) while chat or the menu is open."},
-        {ERowType::Expandable, "Fast Input", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_FastInputChildren, 1,
+        {ERowType::Expandable, "Fast Input", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_FastInputChildren, 1,
                 "Predict your input one tick earlier (lower visual delay)."},
         // Fly sub-section
-        {ERowType::Toggle, "Preserve input", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Preserve input", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Keep your own input while a fly/hammer feature is active."},
-        {ERowType::Expandable, "Custom latency", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CustomLatencyChildren, 1,
+        {ERowType::Expandable, "Custom latency", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CustomLatencyChildren, 1,
                 "Add artificial input latency."},
         // v6.7: Auto fly is a plain toggle — it only checks whether the next tick
         // can really hit and fires exactly then (no distance/predict settings).
-        {ERowType::Toggle, "Auto fly", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Auto fly", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Hammer only when the next tick can really hit; aim is set on the hit."},
-        {ERowType::Toggle, "Fix Dummy Hammer", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Fix Dummy Hammer", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Keep the dummy on the hammer while hammering (fixes Copy Moves switching it to the copied weapon)."},
-        {ERowType::Expandable, "Auto Triple Fly", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TripleFlyChildren, 6,
+        {ERowType::Expandable, "Auto Triple Fly", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TripleFlyChildren, 6,
                 "Triple-fly anchored to a dummy."},
         // Copy Moves sub-section
         // v6.7: Smart Copy Moves — restrict copy moves to the top-N dummies.
-        {ERowType::Expandable, "Smart Copy Moves", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_SmartCopyMovesChildren, 11,
+        {ERowType::Expandable, "Smart Copy Moves", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_SmartCopyMovesChildren, 11,
                 "Apply copy moves only to the top-N dummies (header = master toggle)."},
-        {ERowType::Expandable, "Copy Moves Filter", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CopyMovesFilterChildren, 6,
+        {ERowType::Expandable, "Copy Moves Filter", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CopyMovesFilterChildren, 6,
                 "Choose which inputs are excluded from copied moves."},
-        {ERowType::Toggle, "Mirror direction", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Mirror direction", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Mirror the followed player's movement direction."},
-        {ERowType::Dropdown, "Aim mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_AimModeOpts, 2, 0, nullptr, 0,
+        {ERowType::Dropdown, "Aim mode", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_AimModeOpts, 2, 0, nullptr, 0,
                 "How the copied aim is applied (Direct / Mirror)."},
         // Conditional aim options (visibility based on Aim mode)
-        {ERowType::Toggle, "Mirror aim X", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Mirror aim X", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Mirror the aim X axis of the followed player."},
-        {ERowType::Toggle, "Mirror aim Y", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Mirror aim Y", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Mirror the aim Y axis of the followed player."},
-        {ERowType::Toggle, "Smart aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Smart aim", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Smart-remap the copied aim to match your position."},
         // v1.56.151: Fly Ride — pilot hooks/hammers nearest dummy, WASD moves anchor.
-        {ERowType::Toggle, "Fly Ride", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Fly Ride", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "PROTOTYPE / in development — ride the nearest dummy (WASD moves the anchor)."},
-        {ERowType::Toggle, "Jet Ride (Beta)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Jet Ride (Beta)", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Fly with the gun jetpack; WASD moves the target point."},
-        {ERowType::Toggle, "Hook Ride (Beta)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Hook Ride (Beta)", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Stay hooked above a target point; WASD moves it."},
         // v1.56.186: Copy Moves Latency — staggered input replay delay for inactive dummies.
-        {ERowType::Expandable, "Copy Moves Latency", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CopyMovesLatencyChildren, 1,
+        {ERowType::Expandable, "Copy Moves Latency", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CopyMovesLatencyChildren, 1,
                 "Staggered input-replay delay for inactive dummies."},
-        {ERowType::Expandable, "Auto Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AutoTeamChildren, 1,
+        {ERowType::Expandable, "Auto Team", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AutoTeamChildren, 1,
                 "Join and lock a free team on spawn."},
-        {ERowType::Expandable, "Anti Afk", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AntiAfkChildren, 1,
+        {ERowType::Expandable, "Anti Afk", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AntiAfkChildren, 1,
                 "Nudge the mouse periodically so the server does not mark you as afk."},
-        {ERowType::Expandable, "Auto Vote", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AutoVoteChildren, 1,
+        {ERowType::Expandable, "Auto Vote", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AutoVoteChildren, 1,
                 "Answer every vote automatically."},
-        {ERowType::Expandable, "Auto Vote Kick", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AutoVoteKickChildren, 3,
+        {ERowType::Expandable, "Auto Vote Kick", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AutoVoteKickChildren, 3,
                 "Start kick votes while no other vote is running."},
         // v1.56.260: former Advanced rows (Trajectory/ESP/Hitboxes now live in Visuals).
-        {ERowType::Expandable, "Laser unfreeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LaserUnfreezeChildren, 8,
+        {ERowType::Expandable, "Laser unfreeze", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LaserUnfreezeChildren, 8,
                 "Predictive laser self-unfreeze."},
-        {ERowType::Expandable, "Fake Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_FakeAimChildren, 7,
+        {ERowType::Expandable, "Fake Aim", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_FakeAimChildren, 7,
                 "Spoof the aim the server sees (fake aim)."},
-        {ERowType::Expandable, "Avoid Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AvoidFreezeChildren, 27,
+        {ERowType::Expandable, "Avoid Freeze", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AvoidFreezeChildren, 27,
                 "Auto-escape a freeze by overriding the input."},
         // v6.9: AledBot — hammer a frozen dummy so it unfreezes outside the freeze tile.
-        {ERowType::Expandable, "AledBot", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AledBotChildren, 14,
+        {ERowType::Expandable, "AledBot", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AledBotChildren, 14,
                 "Bot for aleds: unfreeze a frozen dummy in the first non-freeze tile."},
+        // v6.15: optimized Pathfinder simulation hot path (Fast Sim).
+        {ERowType::Toggle, "Fast Sim", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Optimized Pathfinder simulation: skips recording of discarded trajectories, stack-buffer tile queries, reused candidate buffers. Turn OFF if paths look wrong (OFF = exact original simulation)."},
 };
 
 // ---------- Settings panel (6) ----------
 // "IRC" expandable: 2 sub-toggles.
 static SRow g_IrcChildren[] = {
-        {ERowType::Toggle, "Reveal join", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Reveal join", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Announce locally when an IRC friend joins."},
-        {ERowType::Toggle, "Nameplate tag", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Nameplate tag", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Show an IRC tag on friends' nameplates."},
 };
 // "Spoofer" expandable: slider + dropdown + input.
 static const char *const g_ClientPresetOpts[] = {"DDNet", "TClient", "BestClient", "Custom"};
 static SRow g_SpooferChildren[] = {
-        {ERowType::Slider, "Version ID", nullptr, false, false, 10000.0f, 21000.0f, 1.0f, 20000.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Version ID", nullptr, false, false, true,10000.0f, 21000.0f, 1.0f, 20000.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Spoofed DDNet version id (10000-21000)."},
-        {ERowType::Dropdown, "Client preset", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ClientPresetOpts, 4, 0, nullptr, 0,
+        {ERowType::Dropdown, "Client preset", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ClientPresetOpts, 4, 0, nullptr, 0,
                 "Which client-identity preset to spoof."},
-        {ERowType::Input, "Custom client name", nullptr, false, false, 0, 0, 0, 0, nullptr, "MyClient", "name...", nullptr, 0, 0, nullptr, 0,
+        {ERowType::Input, "Custom client name", nullptr, false, false, true,0, 0, 0, 0, nullptr, "MyClient", "name...", nullptr, 0, 0, nullptr, 0,
                 "Custom client name (preset = Custom)."},
-        {ERowType::Input, "Client version", nullptr, false, false, 0, 0, 0, 0, nullptr, "20.0", "version...", nullptr, 0, 0, nullptr, 0,
+        {ERowType::Input, "Client version", nullptr, false, false, true,0, 0, 0, 0, nullptr, "20.0", "version...", nullptr, 0, 0, nullptr, 0,
                 "Spoofed client version string."},
-        {ERowType::Toggle, "Git hash", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Git hash", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Spoof the git hash reported to the server."},
-        {ERowType::Input, "Git hash value", nullptr, false, false, 0, 0, 0, 0, nullptr, "abc1234", "hash...", nullptr, 0, 0, nullptr, 0,
+        {ERowType::Input, "Git hash value", nullptr, false, false, true,0, 0, 0, 0, nullptr, "abc1234", "hash...", nullptr, 0, 0, nullptr, 0,
                 "The git hash value to spoof."},
         // v1.56.174: BestClient extra NETMSGs toggle (visible only when preset=BestClient, see SpooferChildVisible).
-        {ERowType::Toggle, "Extra NETMSGs", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Extra NETMSGs", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Send BestClient's extra NETMSGs."},
 };
 // v1.56.273: "Spoof Zoom" expandable: fake zoom slider (header = master toggle).
 static SRow g_SpoofZoomChildren[] = {
-        {ERowType::Slider, "Fake Zoom", nullptr, false, false, 1.0f, 50.0f, 0.1f, 10.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Fake Zoom", nullptr, false, false, true,1.0f, 50.0f, 0.1f, 10.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Spoofed zoom level reported to the server."},
 };
 // v1.56.273: "Spoof Spectate" expandable: mode + fake fields (header = master toggle).
 static const char *const g_SpoofSpectateModeOpts[] = {"Follow Coordinates", "Follow Player"};
 static SRow g_SpoofSpectateChildren[] = {
-        {ERowType::Dropdown, "Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_SpoofSpectateModeOpts, 2, 0, nullptr, 0,
+        {ERowType::Dropdown, "Mode", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_SpoofSpectateModeOpts, 2, 0, nullptr, 0,
                 "Follow fixed coordinates or a player's position."},
-        {ERowType::Input, "Fake spectate X", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "x...", nullptr, 0, 0, nullptr, 0,
+        {ERowType::Input, "Fake spectate X", nullptr, false, false, true,0, 0, 0, 0, nullptr, "0", "x...", nullptr, 0, 0, nullptr, 0,
                 "Spoofed spectate X coordinate."},
-        {ERowType::Input, "Fake spectate Y", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "y...", nullptr, 0, 0, nullptr, 0,
+        {ERowType::Input, "Fake spectate Y", nullptr, false, false, true,0, 0, 0, 0, nullptr, "0", "y...", nullptr, 0, 0, nullptr, 0,
                 "Spoofed spectate Y coordinate."},
-        {ERowType::Input, "Fake Follow ID", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0,
+        {ERowType::Input, "Fake Follow ID", nullptr, false, false, true,0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0,
                 "Player id to follow (Follow Player mode)."},
 };
 // v1.56.283: g_RainbowChildren removed - "Rainbow Main Color" + "Speed" are now
@@ -1072,91 +1117,91 @@ static SRow g_SpoofSpectateChildren[] = {
 // slider min lowered from 0.1 to 0 (frozen rainbow is now possible).
 static const char *const g_LineComponentOpts[] = {"AimBot", "TriggerBot", "Trajectory", "Laser Unfreeze", "Pathfinder", "ESP", "TAS", "Hitboxes", "RT Pathfinder"};
 static SRow g_LineRenderingChildren[] = {
-        {ERowType::Dropdown, "Component", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_LineComponentOpts, 9, 0, nullptr, 0,
+        {ERowType::Dropdown, "Component", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_LineComponentOpts, 9, 0, nullptr, 0,
                 "Which component's Size/Color/Opacity is being edited."},
-        {ERowType::Input, "Line color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ffbf00", "hex...", nullptr, 0, 0, nullptr, 0,
+        {ERowType::Input, "Line color", nullptr, false, false, true,0, 0, 0, 0, nullptr, "ffbf00", "hex...", nullptr, 0, 0, nullptr, 0,
                 "Line color of the selected component (hex RGB)."},
-        {ERowType::Slider, "Line size", nullptr, false, false, 0.0f, 20.0f, 1.0f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Line size", nullptr, false, false, true,0.0f, 20.0f, 1.0f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Line width of the selected component."},
-        {ERowType::Slider, "Line opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 80.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Line opacity", nullptr, false, false, true,0.0f, 100.0f, 1.0f, 80.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Line opacity of the selected component (%)."},
-        {ERowType::Toggle, "Rainbow", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Rainbow", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Animate the line color with a hue cycle."},
-        {ERowType::Slider, "Speed", nullptr, false, false, 0.0f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Speed", nullptr, false, false, true,0.0f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Rainbow hue rotation speed (0 = frozen)."},
-        {ERowType::Toggle, "Gradient", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Gradient", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Fade the line along its length (requires Rainbow)."},
-        {ERowType::Slider, "Step", nullptr, false, false, 1.0f, 180.0f, 1.0f, 15.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Step", nullptr, false, false, true,1.0f, 180.0f, 1.0f, 15.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Gradient step size for the line."},
-        {ERowType::Slider, "Layer", nullptr, false, false, 0.0f, 10.0f, 1.0f, 0.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Layer", nullptr, false, false, true,0.0f, 10.0f, 1.0f, 0.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Draw layer (z-order) of the line (global)."},
 };
 // v1.56.283: "ClickGUI Settings" expandable - all UI settings in one place.
 // Header = master toggle (KxUiSettingsOn): off = built-in defaults.
 static SRow g_ClickGuiSettingsChildren[] = {
-        {ERowType::Input, "Main Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "9d4edd", "hex...", nullptr, 0, 0, nullptr, 0, "Accent color of the GUI (hex RGB). Setting a manual color turns the rainbow off."},
-        {ERowType::Toggle, "Rainbow Main Color", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Continuously cycle the accent color hue."},
-        {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Rainbow hue rotation speed."},
-        {ERowType::Slider, "Main Opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Opacity of the accent color."},
-        {ERowType::Input, "Panel Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "161622", "hex...", nullptr, 0, 0, nullptr, 0, "Background color of the panels (hex RGB)."},
-        {ERowType::Slider, "Panel Opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Opacity of the panel background."},
-        {ERowType::Slider, "BG Blackout", nullptr, false, false, 0.0f, 100.0f, 1.0f, 30.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Darkens the game behind the panels (0-100%)."},
+        {ERowType::Input, "Main Color", nullptr, false, false, true,0, 0, 0, 0, nullptr, "9d4edd", "hex...", nullptr, 0, 0, nullptr, 0, "Accent color of the GUI (hex RGB). Setting a manual color turns the rainbow off."},
+        {ERowType::Toggle, "Rainbow Main Color", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Continuously cycle the accent color hue."},
+        {ERowType::Slider, "Speed", nullptr, false, false, true,0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Rainbow hue rotation speed."},
+        {ERowType::Slider, "Main Opacity", nullptr, false, false, true,0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Opacity of the accent color."},
+        {ERowType::Input, "Panel Color", nullptr, false, false, true,0, 0, 0, 0, nullptr, "161622", "hex...", nullptr, 0, 0, nullptr, 0, "Background color of the panels (hex RGB)."},
+        {ERowType::Slider, "Panel Opacity", nullptr, false, false, true,0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Opacity of the panel background."},
+        {ERowType::Slider, "BG Blackout", nullptr, false, false, true,0.0f, 100.0f, 1.0f, 30.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Darkens the game behind the panels (0-100%)."},
         // v1.56.287: BG Blur — blurs the game behind the panels (FBO-based).
-        {ERowType::Toggle, "BG Blur", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Blurs the game behind the ClickGUI panels."},
-        {ERowType::Slider, "Blur Radius", nullptr, false, false, 0.0f, 100.0f, 5.0f, 40.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Blur strength of the game behind the panels (visible when BG Blur is on)."},
-        {ERowType::Slider, "ClickGUI Scale", nullptr, false, false, 0.1f, 2.0f, 0.1f, 1.0f, "x", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Overall scale of the whole ClickGUI."},
-        {ERowType::Slider, "Panels Start X", nullptr, false, false, 0.0f, 1920.0f, 1.0f, 60.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Default X position of the panel grid."},
-        {ERowType::Slider, "Panels Start Y", nullptr, false, false, 0.0f, 1080.0f, 1.0f, 90.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Default Y position of the panel grid."},
-        {ERowType::Slider, "Panels X-indentation", nullptr, false, false, 0.0f, 200.0f, 1.0f, 30.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Horizontal spacing between the panels in the grid."},
-        {ERowType::Slider, "Panels Y-indentation", nullptr, false, false, 0.0f, 200.0f, 1.0f, 12.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Vertical spacing between the panels in the grid."},
-        {ERowType::Toggle, "Dynamic scale (Beta)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Dynamic panel sizing: drag the panel edges to resize. Hides the fixed width/height sliders."},
-        {ERowType::Slider, "Panels width", nullptr, false, false, 150.0f, 800.0f, 1.0f, 300.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Fixed panel width in pixels (visible when Dynamic scale is off)."},
-        {ERowType::Slider, "Panels height", nullptr, false, false, 200.0f, 2000.0f, 1.0f, 600.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Maximum visible body height of a panel (when Dynamic scale is off)."},
-        {ERowType::Toggle, "Drag-To-Sort", nullptr, true, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Drag a panel header onto another slot to swap their positions."},
+        {ERowType::Toggle, "BG Blur", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Blurs the game behind the ClickGUI panels."},
+        {ERowType::Slider, "Blur Radius", nullptr, false, false, true,0.0f, 100.0f, 5.0f, 40.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Blur strength of the game behind the panels (visible when BG Blur is on)."},
+        {ERowType::Slider, "ClickGUI Scale", nullptr, false, false, true,0.1f, 2.0f, 0.1f, 1.0f, "x", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Overall scale of the whole ClickGUI."},
+        {ERowType::Slider, "Panels Start X", nullptr, false, false, true,0.0f, 1920.0f, 1.0f, 60.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Default X position of the panel grid."},
+        {ERowType::Slider, "Panels Start Y", nullptr, false, false, true,0.0f, 1080.0f, 1.0f, 90.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Default Y position of the panel grid."},
+        {ERowType::Slider, "Panels X-indentation", nullptr, false, false, true,0.0f, 200.0f, 1.0f, 30.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Horizontal spacing between the panels in the grid."},
+        {ERowType::Slider, "Panels Y-indentation", nullptr, false, false, true,0.0f, 200.0f, 1.0f, 12.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Vertical spacing between the panels in the grid."},
+        {ERowType::Toggle, "Dynamic scale (Beta)", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Dynamic panel sizing: drag the panel edges to resize. Hides the fixed width/height sliders."},
+        {ERowType::Slider, "Panels width", nullptr, false, false, true,150.0f, 800.0f, 1.0f, 300.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Fixed panel width in pixels (visible when Dynamic scale is off)."},
+        {ERowType::Slider, "Panels height", nullptr, false, false, true,200.0f, 2000.0f, 1.0f, 600.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Maximum visible body height of a panel (when Dynamic scale is off)."},
+        {ERowType::Toggle, "Drag-To-Sort", nullptr, true, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Drag a panel header onto another slot to swap their positions."},
         // v6.3: ToolTips master switch + per-part opacity.
-        {ERowType::Toggle, "Show ToolTips", nullptr, true, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Show the ClickGUI tooltips."},
-        {ERowType::Slider, "ToolTips Text Opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Opacity of the tooltip text."},
-        {ERowType::Slider, "ToolTips Main Opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Opacity of the tooltip border."},
-        {ERowType::Slider, "ToolTips Panel Opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Opacity of the tooltip background."},
+        {ERowType::Toggle, "Show ToolTips", nullptr, true, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Show the ClickGUI tooltips."},
+        {ERowType::Slider, "ToolTips Text Opacity", nullptr, false, false, true,0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Opacity of the tooltip text."},
+        {ERowType::Slider, "ToolTips Main Opacity", nullptr, false, false, true,0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Opacity of the tooltip border."},
+        {ERowType::Slider, "ToolTips Panel Opacity", nullptr, false, false, true,0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Opacity of the tooltip background."},
 };
 static const char *const g_DiscordRpcIdOpts[] = {"DDNet", "DDNet 2", "Custom"};
 static SRow g_DiscordRpcChildren[] = {
-        {ERowType::Dropdown, "App ID", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_DiscordRpcIdOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "App ID", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_DiscordRpcIdOpts, 3, 0, nullptr, 0,
                 "Which Discord application the presence is published under."},
-        {ERowType::Input, "Custom ID", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "id...", nullptr, 0, 0, nullptr, 0,
+        {ERowType::Input, "Custom ID", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "id...", nullptr, 0, 0, nullptr, 0,
                 "Custom Discord application id (App ID = Custom)."},
 };
 static SRow g_SettingsRows[] = {
-        {ERowType::Expandable, "ClickGUI Settings", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ClickGuiSettingsChildren, 22, "Master switch: off = built-in default look."},
-        {ERowType::Expandable, "Line rendering", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LineRenderingChildren, 9,
+        {ERowType::Expandable, "ClickGUI Settings", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ClickGuiSettingsChildren, 22, "Master switch: off = built-in default look."},
+        {ERowType::Expandable, "Line rendering", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LineRenderingChildren, 9,
                 "Global line-render settings shared by all features."},
-        {ERowType::Expandable, "IRC", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_IrcChildren, 2,
+        {ERowType::Expandable, "IRC", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_IrcChildren, 2,
                 "IRC friend join / nameplate options."},
-        {ERowType::Expandable, "Spoofer", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_SpooferChildren, 7,
+        {ERowType::Expandable, "Spoofer", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_SpooferChildren, 7,
                 "Spoof the client identity sent to the server."},
         // v1.56.273: Spoof Zoom / Spoof Spectate (headers are master toggles).
-        {ERowType::Expandable, "Spoof Zoom", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_SpoofZoomChildren, 1,
+        {ERowType::Expandable, "Spoof Zoom", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_SpoofZoomChildren, 1,
                 "Spoof the zoom level reported to the server."},
-        {ERowType::Expandable, "Spoof Spectate", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_SpoofSpectateChildren, 4,
+        {ERowType::Expandable, "Spoof Spectate", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_SpoofSpectateChildren, 4,
                 "Spoof spectate coordinates / follow target."},
-        {ERowType::Toggle, "Auto Verify", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Auto Verify", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Visit the verification site so DDOS protected servers accept you."},
-        {ERowType::Expandable, "Discord RPC", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_DiscordRpcChildren, 2,
+        {ERowType::Expandable, "Discord RPC", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_DiscordRpcChildren, 2,
                 "Discord Rich Presence (applied on the next start)."},
 };
 
 // ---------- Pathfinder panel (7) ----------
 // "Visuals" visual expandable.
 static SRow g_VisualsChildren[] = {
-        {ERowType::Toggle, "Path", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Speed", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Hooks", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Field", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Start/End Pos", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Show field", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Show hooks", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Show branches", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Show speed", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
-static const char *const g_PfEffortOpts[] = {"Low", "Medium", "Max"};
+static const char *const g_PfEffortOpts[] = {"Very Low", "Low", "Medium", "High", "Ultra", "Max", "Custom"};
+static const char *const g_PfAlgorithmOpts[] = {"BFS", "Beam", "RHEA", "BMCTS"};
 static SRow g_PfFreedomPathChildren[] = {
-        {ERowType::Slider, "Ratio", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "x", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Ratio", nullptr, false, false, true,0.1f, 10.0f, 0.1f, 1.0f, "x", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Freedom path ratio (x)."},
 };
 static char g_PfDyn_Progress[96];
@@ -1165,51 +1210,175 @@ static char g_PfDyn_Time[96];
 static bool g_PfShowRunLabels = false;
 static bool g_PfShowStatLabels = false;
 
-static SRow g_PfTunnelChildren[] = {
-        {ERowType::Slider, "Size", nullptr, false, false, 0.0f, 10.0f, 1.0f, 2.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Size of the generated tunnel."},
-        {ERowType::Button, "Generate", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Generate a tunnel using the tunnel size."},
-};
+// v1.56.283: "Settings" visual expandable - effort-based knobs in one place.
+// kx_pf_hook_angles removed entirely: the hook fan is always 36 rays.
 static SRow g_PfSettingsChildren[] = {
-        {ERowType::Slider, "Max Ticks", nullptr, false, false, 100.0f, 10000.0f, 100.0f, 10000.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Maximum ticks the search may simulate."},
-        {ERowType::Slider, "Performance", nullptr, false, false, 1.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Pathfinder performance budget (0-100%)."},
-        {ERowType::Label, "Tweaker", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Slider, "Tweaker Inputs", nullptr, false, false, 4.0f, 5000.0f, 1.0f, 160.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Candidate sequences per generation."},
-        {ERowType::Slider, "Tweaker Ticks", nullptr, false, false, 1.0f, 30.0f, 1.0f, 8.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Ticks per candidate sequence."},
-        {ERowType::Slider, "Tweaker Dosage", nullptr, false, false, 1.0f, 5000.0f, 1.0f, 160.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Generations per batch."},
-        {ERowType::Toggle, "Freeze Support (Beta)", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Let the pathfinder route through freeze tiles."},
-        {ERowType::Slider, "Unfreeze Radius", nullptr, false, false, 0.0f, 20.0f, 1.0f, 3.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Unfreeze search radius in tiles."},
+        {ERowType::Slider, "A* Weight", nullptr, false, false, true,1.0f, 20.0f, 0.01f, 3.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "A* path cost weight (requires Effort = Custom)."},
+        {ERowType::Slider, "Evolutions", nullptr, false, false, true,1.0f, 100.0f, 1.0f, 10.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "RHEA evolution count (Effort = Custom + Algorithm = RHEA)."},
+        {ERowType::Slider, "Beam width", nullptr, false, false, true,8.0f, 4096.0f, 1.0f, 128.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Beam search width (Effort = Custom + Algorithm = Beam)."},
+        {ERowType::Slider, "Performance", nullptr, false, false, true,1.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Pathfinder performance budget (0-100%)."},
+        {ERowType::Toggle, "Freeze Support (Beta)", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Let the pathfinder route through freeze tiles."},
+        // v6.15: event-chunked rollout + per-tick refinement knobs.
+        {ERowType::Slider, "Chunk", nullptr, false, false, true,1.0f, 32.0f, 1.0f, 8.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Chunk rollout ticks per candidate (event-terminated at decision points; 1 = exact per-tick). On failure the search retries with half the chunk."},
+        {ERowType::Slider, "Polish", nullptr, false, false, true,0.0f, 8.0f, 1.0f, 2.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Per-tick refinement passes over the found path (budget-capped, replay-verified). 0 = off."},
 };
+// v6.15: children of the converted Custom rows — plain rows, each with its
+// own tooltip; color/label/visibility are resolved per frame by
+// CustomChildStyle.
+static SRow g_PfActionChildren[] = {
+        {ERowType::Button, "Pathfinding", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Compute a path from your tee to the finish."},
+        {ERowType::Button, "Paste", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Paste a path from the clipboard."},
+        {ERowType::Button, "Spectate", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
+static SRow g_PfForbiddenChildren[] = {
+        {ERowType::Button, "Open Editor", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Open the forbidden-tiles editor."},
+        {ERowType::Button, "Clear", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Clear all forbidden tiles."},
+};
+static SRow g_PfFinishChildren[] = {
+        {ERowType::Button, "Open Editor", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Open the finish-tiles editor."},
+        {ERowType::Button, "Clear", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Clear all finish tiles."},
+};
+static SRow g_RtForbiddenChildren[] = {
+        {ERowType::Button, "Open Editor", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Open the forbidden-tiles editor."},
+        {ERowType::Button, "Clear", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Clear all forbidden tiles."},
+};
+static SRow g_RtFinishChildren[] = {
+        {ERowType::Button, "Open Editor", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Open the finish-tiles editor."},
+        {ERowType::Button, "Clear", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Clear all finish tiles."},
+};
+static SRow g_ExecPickFileChildren[] = {
+        {ERowType::Button, "Pick File", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Pick a Lua script file to execute."},
+        {ERowType::Button, "Unpick File", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Unload the current script."},
+};
+static SRow g_SpawnerKillChildren[] = {
+        {ERowType::Button, "Kill", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Remove the spawned entity or tile at the target coordinates."},
+        {ERowType::Button, "Kill All", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Remove every spawned entity of the selected type (or every spawned tile of the selected tile id)."},
+};
+static SRow g_TasPickFileChildren[] = {
+        {ERowType::Button, "Pick File", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Pick a TAS file to load."},
+        {ERowType::Button, "Unpick File", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Unpick the current TAS file."},
+};
+static SRow g_TasActionChildren[] = {
+        {ERowType::Button, "Action", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Start / stop the current action (Play or Record)."},
+        {ERowType::Button, "Reset Record", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Clear the record/saved buffer and unload the picked .tas file."},
+};
+static SRow g_TasJoinChildren[] = {
+        {ERowType::Button, "Join", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Join / leave the TAS playground."},
+        {ERowType::Button, "Reset Playground", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Drop every spawned object, tile and chat line in the playground."},
+};
+static SRow g_TasRewindChildren[] = {
+        {ERowType::Button, "Rewind", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Step the TAS back one tick."},
+        {ERowType::Button, "Forward", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Step the TAS forward one tick."},
+};
+// ArrayList editor family: [section][button] — 0 = ArrayList, 1 = ArrayInfo,
+// 2 = ArrayAgent, 3 = ArrayPlayer. Each container gets [Editor|Reset] children
+// with its own tooltips.
+static SRow g_aArrayListEdBtns[4][2] = {
+        {{ERowType::Button, "Editor", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Toggle the ArrayList editor (closes the ClickGUI)."},
+        {ERowType::Button, "Reset", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Reset the list position to its default."}},
+        {{ERowType::Button, "Editor", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Toggle the ArrayInfo editor (closes the ClickGUI)."},
+        {ERowType::Button, "Reset", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Reset the info bar position to its default."}},
+        {{ERowType::Button, "Editor", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Toggle the ArrayAgent editor (closes the ClickGUI)."},
+        {ERowType::Button, "Reset", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Reset the agent panel position to its default."}},
+        {{ERowType::Button, "Editor", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Toggle the ArrayPlayer editor (closes the ClickGUI)."},
+        {ERowType::Button, "Reset", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Reset the player position to its default."}},
+};
+static SRow g_aArrayListGameEdBtns[4][2] = {
+        {{ERowType::Button, "Game Editor", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Toggle the ArrayList editor for the in-game position (closes the ClickGUI)."},
+        {ERowType::Button, "Reset", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Reset the in-game position to its default."}},
+        {{ERowType::Button, "Game Editor", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Toggle the ArrayInfo editor for the in-game position (closes the ClickGUI)."},
+        {ERowType::Button, "Reset", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Reset the in-game position to its default."}},
+        {{ERowType::Button, "Game Editor", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Toggle the ArrayAgent editor for the in-game position (closes the ClickGUI)."},
+        {ERowType::Button, "Reset", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Reset the in-game position to its default."}},
+        {{ERowType::Button, "Game Editor", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Toggle the ArrayPlayer editor for the in-game position (closes the ClickGUI)."},
+        {ERowType::Button, "Reset", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Reset the in-game position to its default."}},
+};
+static SRow g_aArrayListGuiEdBtns[4][2] = {
+        {{ERowType::Button, "ClickGUI Editor", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Toggle the ArrayList editor for the ClickGUI position."},
+        {ERowType::Button, "Reset", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Reset the ClickGUI position to its default."}},
+        {{ERowType::Button, "ClickGUI Editor", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Toggle the ArrayInfo editor for the ClickGUI position."},
+        {ERowType::Button, "Reset", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Reset the ClickGUI position to its default."}},
+        {{ERowType::Button, "ClickGUI Editor", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Toggle the ArrayAgent editor for the ClickGUI position."},
+        {ERowType::Button, "Reset", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Reset the ClickGUI position to its default."}},
+        {{ERowType::Button, "ClickGUI Editor", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Toggle the ArrayPlayer editor for the ClickGUI position."},
+        {ERowType::Button, "Reset", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Reset the ClickGUI position to its default."}},
+};
+// Section order for the [4] dimension of the editor button arrays above.
+static constexpr int ARR_SECTION_LIST = 0;
+static constexpr int ARR_SECTION_INFO = 1;
+static constexpr int ARR_SECTION_AGENT = 2;
+static constexpr int ARR_SECTION_PLAYER = 3;
+
 static SRow g_PathfinderRows[] = {
-        {ERowType::Dropdown, "Effort", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_PfEffortOpts, 3, 0, nullptr, 0,
-                "Search effort preset (Low / Medium / Max)."},
-        {ERowType::Label, "Map", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Expandable, "Freedom Path", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_PfFreedomPathChildren, 1,
+        {ERowType::Dropdown, "Effort", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_PfEffortOpts, 7, 0, nullptr, 0,
+                "Search effort preset (Very Low … Max / Custom)."},
+        {ERowType::Dropdown, "Algorithm", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_PfAlgorithmOpts, 4, 0, nullptr, 0,
+                "Search algorithm (BFS / Beam / RHEA / BMCTS)."},
+        {ERowType::Expandable, "Freedom Path", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_PfFreedomPathChildren, 1,
                 "Allow freer paths through the search space."},
-        {ERowType::Expandable, "Tunnel", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_PfTunnelChildren, 2,
-                "Generate a tunnel through the map."},
-        {ERowType::Expandable, "Settings", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_PfSettingsChildren, 8,
-                "Search and tweaker settings."},
-        {ERowType::Expandable, "Visuals", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_VisualsChildren, 5,
+        {ERowType::Expandable, "Settings", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_PfSettingsChildren, 7, "Effort-based pathfinder knobs: visible rows depend on Effort/Algorithm."},
+        {ERowType::Expandable, "Visuals", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_VisualsChildren, 4,
                 "Pathfinder visualization toggles."},
-        // v1.56.150: DoubleButton — Pathfinding (left) + Play (right, visible only when FINISHED).
-        {ERowType::DoubleButton, "Pathfinding", "Paste", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Compute a path from your tee to the finish.", "Paste a path from the clipboard."},
-        {ERowType::DoubleButton, "Editor Forbidden Tiles", "Clear Forbidden Tiles", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Open the forbidden-tiles editor.", "Clear all forbidden tiles."},
-        {ERowType::DoubleButton, "Editor Finish Tiles", "Clear Finish Tiles", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Open the finish-tiles editor.", "Clear all finish tiles."},
-        {ERowType::Label, g_PfDyn_Progress, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Label, g_PfDyn_Eta, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Label, g_PfDyn_Time, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        // v1.56.150: Custom — Pathfinding (left) + Play (right, visible only when FINISHED).
+        {ERowType::Custom, "Pathfinding", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+                g_PfActionChildren, (int)(sizeof(g_PfActionChildren) / sizeof(g_PfActionChildren[0]))},
+        {ERowType::Custom, "Editor Forbidden Tiles", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+                g_PfForbiddenChildren, (int)(sizeof(g_PfForbiddenChildren) / sizeof(g_PfForbiddenChildren[0]))},
+        {ERowType::Slider, "Tunnel size", nullptr, false, false, true,0.0f, 10.0f, 1.0f, 2.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Size of the generated tunnel."},
+        {ERowType::Button, "Generate tunnel", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Generate a tunnel using the tunnel size."},
+        {ERowType::Custom, "Editor Finish Tiles", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+                g_PfFinishChildren, (int)(sizeof(g_PfFinishChildren) / sizeof(g_PfFinishChildren[0]))},
+        {ERowType::Label, g_PfDyn_Progress, nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_PfDyn_Eta, nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_PfDyn_Time, nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 
 struct SPanel
@@ -1224,119 +1393,156 @@ struct SPanel
 // v1.56.283: "Binds" visual expandable - all bind fields in one place, plus
 // the former TAS expandable flattened with a "TAS " name prefix.
 static SRow g_BindsMainChildren[] = {
-        {ERowType::Input, "ClickGUI", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle the ClickGUI."},
-        {ERowType::Input, "AimBot", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle the AimBot on/off."},
-        {ERowType::Input, "TriggerBot", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle the TriggerBot on/off."},
-        {ERowType::Input, "Fake Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle Fake Aim."},
-        {ERowType::Input, "Laser Unfreeze", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle laser unfreeze."},
-        {ERowType::Input, "Copy Moves Filter", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle the copy moves filter."},
-        {ERowType::Input, "Copy Moves Latency", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle copy moves latency."},
-        {ERowType::Input, "Trajectory", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle the trajectory."},
-        {ERowType::Input, "ESP", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle the ESP."},
-        {ERowType::Input, "Avoid Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle avoid freeze."},
-        {ERowType::Input, "Helpers", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle the Helpers (Block) bot."},
-        {ERowType::Input, "Auto Triple Fly", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle Auto Triple Fly."},
-        {ERowType::Input, "Auto Fire", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle Auto Fire."},
-        {ERowType::Input, "BalanceBot", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle BalanceBot."},
-        {ERowType::Input, "TAS Record", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle TAS recording."},
-        {ERowType::Input, "TAS Pause", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle TAS pause."},
-        {ERowType::Input, "TAS Rewind", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to trigger a TAS rewind."},
-        {ERowType::Input, "TAS Forward", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to trigger a TAS forward."},
+        {ERowType::Input, "ClickGUI", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle the ClickGUI."},
+        {ERowType::Input, "AimBot", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle the AimBot on/off."},
+        {ERowType::Input, "TriggerBot", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle the TriggerBot on/off."},
+        {ERowType::Input, "Fake Aim", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle Fake Aim."},
+        {ERowType::Input, "Laser Unfreeze", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle laser unfreeze."},
+        {ERowType::Input, "Copy Moves Filter", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle the copy moves filter."},
+        {ERowType::Input, "Copy Moves Latency", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle copy moves latency."},
+        {ERowType::Input, "Trajectory", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle the trajectory."},
+        {ERowType::Input, "ESP", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle the ESP."},
+        {ERowType::Input, "Avoid Freeze", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle avoid freeze."},
+        {ERowType::Input, "Helpers", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle the Helpers (Block) bot."},
+        {ERowType::Input, "Auto Triple Fly", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle Auto Triple Fly."},
+        {ERowType::Input, "Auto Fire", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle Auto Fire."},
+        {ERowType::Input, "BalanceBot", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle BalanceBot."},
+        {ERowType::Input, "TAS Record", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle TAS recording."},
+        {ERowType::Input, "TAS Pause", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to toggle TAS pause."},
+        {ERowType::Input, "TAS Rewind", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to trigger a TAS rewind."},
+        {ERowType::Input, "TAS Forward", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0, "Bind a key to trigger a TAS forward."},
 };
 
 static SRow g_BindsEdgeChildren[] = {
-        {ERowType::Input, "Buttons", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "a,b,c...", nullptr, 0, 0, nullptr, 0,
+        {ERowType::Input, "Buttons", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "a,b,c...", nullptr, 0, 0, nullptr, 0,
                 "Buttons (comma-separated) that trigger the edge bind."},
-        {ERowType::Slider, "Edge in ms", nullptr, false, false, 1.0f, 1000.0f, 10.0f, 100.0f, "ms", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Edge in ms", nullptr, false, false, true,1.0f, 1000.0f, 10.0f, 100.0f, "ms", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Edge-bind activation window (ms)."},
 };
 static const char *const g_BindsModeOpts[] = {"Merge", "Override"};
 // v6.7: Smart Dummy Switch — candidate order + Without Repeat + filters.
 static const char *const g_SdsOrderOpts[] = {"ID", "Nearest To Me", "Nearest To Aim", "Last Active"};
 static SRow g_BindsSdsChildren[] = {
-        {ERowType::Input, "Button", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0,
+        {ERowType::Input, "Button", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "bind...", nullptr, 0, 0, nullptr, 0,
                 "Button that triggers the smart dummy switch."},
-        {ERowType::Dropdown, "Order Type", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_SdsOrderOpts, 4, 0, nullptr, 0,
+        {ERowType::Dropdown, "Order Type", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_SdsOrderOpts, 4, 0, nullptr, 0,
                 "How the next dummy is picked."},
-        {ERowType::Toggle, "Without Repeat", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Without Repeat", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Don't revisit dummies until every candidate was visited once (new round after)."},
-        {ERowType::Dropdown, "Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TeamFilterOpts, 5, 0, nullptr, 0,
+        {ERowType::Dropdown, "Team", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_TeamFilterOpts, 5, 0, nullptr, 0,
                 "Team filter for the switch candidates."},
-        {ERowType::Dropdown, "DDrace Team", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_DDraceTeamOpts, 4, 0, nullptr, 0,
+        {ERowType::Dropdown, "DDrace Team", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_DDraceTeamOpts, 4, 0, nullptr, 0,
                 "DDrace team filter for the switch candidates."},
-        {ERowType::Input, "Target ID", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0,
+        {ERowType::Input, "Target ID", nullptr, false, false, true,0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0,
                 "Explicit DDrace team id (used when DDrace Team = Target)."},
-        {ERowType::Dropdown, "Friend", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Friend", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0,
                 "Friend filter (both / ignore / only)."},
-        {ERowType::Dropdown, "Clanmate", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Clanmate", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFriendOpts, 3, 0, nullptr, 0,
                 "Clanmate filter (both / ignore / only)."},
-        {ERowType::Dropdown, "Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Freeze", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABFreezeOpts, 3, 0, nullptr, 0,
                 "Freeze-state filter (both / freeze / no freeze)."},
-        {ERowType::Dropdown, "Targets", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Targets", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ABTargetsFilterOpts, 3, 0, nullptr, 0,
                 "Include only / ignore specific target ids."},
-        {ERowType::Input, "Targets IDs", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0,
+        {ERowType::Input, "Targets IDs", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "1,2,3...", nullptr, 0, 0, nullptr, 0,
                 "Target id list (used when Targets = Only/Ignore)."},
 };
 
 static SRow g_BindsRows[] = {
-        {ERowType::Dropdown, "Bind Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_BindsModeOpts, 2, 0, nullptr, 0,
+        {ERowType::Dropdown, "Bind Mode", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_BindsModeOpts, 2, 0, nullptr, 0,
                 "Merge with existing binds or override them."},
-        {ERowType::Expandable, "Binds", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BindsMainChildren, 18, "Bind keys to toggle features. Commits on Enter or on focus loss."},
-        {ERowType::Expandable, "Edge bind", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BindsEdgeChildren, 2,
+        {ERowType::Expandable, "Binds", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BindsMainChildren, 18, "Bind keys to toggle features. Commits on Enter or on focus loss."},
+        {ERowType::Expandable, "Edge bind", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BindsEdgeChildren, 2,
                 "Bind mouse buttons to a toggle with an edge window."},
-        {ERowType::Expandable, "Smart dummy switch", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BindsSdsChildren, 11,
+        {ERowType::Expandable, "Smart dummy switch", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_BindsSdsChildren, 11,
                 "Cycle dummies with a bound button."},
 };
 
-// v1.56.176: Info panel — client identity + version + FPS + social links.
-// Content is dynamic: depends on Show spoofed toggle and live FPS.
-// We keep static SRow array with pName pointing into g_InfoDynamicBuffers,
+// v6.15: Info panel — reworked layout. Kinetix / DDNet version labels (with
+// the client icon spanning both rows), "Client Info" expandable (spoof toggle
+// + identity), "Kinetix" expandable (binary date/hash, scripts/TASes counts,
+// folder button), Telegram|TikTok|GitHub row, RAM|CPU spark pair, FPS spark.
+// We keep static SRow arrays with pName pointing into dynamic buffers,
 // which are rewritten each frame by UpdateInfoRows().
-//
-// Layout (top to bottom):
-//   [toggle] Show spoofed
-//   Client Name:    <real or spoofed>
-//   Client Version: <real "X.Y" or spoofed "X.Y / id">   (real includes DDNet id)
-//   Client Hash:    <GIT_SHORTREV_HASH or spoofed hash>
-//   Kinetix Version: v2 beta
-//   AVG FPS: <n>
-//   [button] Telegram
-//   [button] TikTok
-//
-// Real strings come from version.h: GAME_NAME, GAME_RELEASE_VERSION, GIT_SHORTREV_HASH,
-// DDNET_VERSION_NUMBER. Spoofed strings come from config: m_KxSpoofClientName,
-// m_KxSpoofClientVersion, m_KxSpoofGitHash, m_KxVersionSpoofId.
-// "Show spoofed" toggles between showing real (off) vs spoofed (on) identity.
-static char g_InfoDyn_Name[64];
-static char g_InfoDyn_Version[96];
-static char g_InfoDyn_Hash[64];
-static char g_InfoDyn_Fps[32];
-static char g_InfoDyn_ExeHash[96];
+static char g_InfoDyn_Kx[64];       // "Kinetix: v6"
+static char g_InfoDyn_Ddnet[96];    // "DDNet: v20.2 / id"
+static char g_InfoDyn_Name[64];     // "Name: ..." (real or spoofed)
+static char g_InfoDyn_Version[96];  // "Version: X.Y | id" (real or spoofed)
+static char g_InfoDyn_Hash[64];     // "Git Hash: ..." (real or spoofed)
+static char g_InfoDyn_Binary[96];   // "exe Created: ..." / apk
+static char g_InfoDyn_Sha[64];      // "SHA-256: <20 chars> ..."
+static char g_InfoDyn_Scripts[48];  // "Scripts: N"
+static char g_InfoDyn_Tases[48];    // "TASes: N"
 
-// Index of the "Show spoofed" toggle in g_InfoRows (so UpdateInfoRows can read it).
-static constexpr int INFO_ROW_SHOWSPOOFED = 0;
-static constexpr int INFO_ROW_NAME = 1;
-static constexpr int INFO_ROW_VERSION = 2;
-static constexpr int INFO_ROW_HASH = 3;
-static constexpr int INFO_ROW_KINETIX = 4;
-static constexpr int INFO_ROW_FPS = 5;
-static constexpr int INFO_ROW_EXEHASH = 6;
-static constexpr int INFO_ROW_TELEGRAM = 7;
-static constexpr int INFO_ROW_TIKTOK = 8;
+// Indexes of the top-level rows in g_InfoRows.
+static constexpr int INFO_ROW_KX = 0;
+static constexpr int INFO_ROW_DDNET = 1;
+static constexpr int INFO_ROW_CLIENTINFO = 2;
+static constexpr int INFO_ROW_KINETIX = 3;
+static constexpr int INFO_ROW_LINKS = 4;
+static constexpr int INFO_ROW_RAMCPU = 5;
+static constexpr int INFO_ROW_FPS = 6;
+// Child index of the "Spoofed" toggle inside the "Client Info" expandable.
+static constexpr int INFO_CHILD_SPOOFED = 0;
+
+// v6.15: sparkline data series (pushed in UpdateInfoRows; the Graph rows
+// render its last GraphPoints values).
+static KxGraphSeries g_InfoFpsGraph;
+static KxGraphSeries g_InfoRamGraph;
+static KxGraphSeries g_InfoCpuGraph;
+
+// "Client Info" expandable children: Spoofed toggle + identity labels.
+static SRow g_InfoClientChildren[] = {
+        {ERowType::Toggle, "Spoofed", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Show the spoofed client identity instead of the real one."},
+        {ERowType::Label, g_InfoDyn_Name, nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_InfoDyn_Version, nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_InfoDyn_Hash, nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
+
+// "Kinetix" expandable children: binary info + counts + folder button.
+static SRow g_InfoKinetixChildren[] = {
+        {ERowType::Label, g_InfoDyn_Binary, nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_InfoDyn_Sha, nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_InfoDyn_Scripts, nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_InfoDyn_Tases, nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Button, "Kinetix Folder", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Open the main Kinetix folder."},
+};
+
+// v6.15: Info Custom rows are just plain arrays of child rows — every child
+// keeps its own label, tooltip and click dispatch; the Custom row lays its
+// children out as equal horizontal zones (no hardcoded zone counts).
+static SRow g_InfoLinkChildren[] = {
+        {ERowType::Button, "Telegram", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Open the Kinetix Telegram channel."},
+        {ERowType::Button, "TikTok", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Open the Kinetix TikTok page."},
+        {ERowType::Button, "GitHub", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Open the Kinetix GitHub repository."},
+};
+
+static SRow g_InfoGraphChildren[] = {
+        {ERowType::Graph, "RAM", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "RAM usage history."},
+        {ERowType::Graph, "CPU", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "CPU usage history."},
+};
 
 static SRow g_InfoRows[] = {
-        {ERowType::Toggle, "Show spoofed", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Show the spoofed client identity instead of the real one."},
-        {ERowType::Label, g_InfoDyn_Name, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Label, g_InfoDyn_Version, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Label, g_InfoDyn_Hash, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Label, "Kinetix Version: " KINETIX_VERSION, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Label, g_InfoDyn_Fps, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Label, g_InfoDyn_ExeHash, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Button, "Telegram", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Open the Kinetix Telegram channel."},
-        {ERowType::Button, "TikTok", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Open the Kinetix TikTok."},
+        {ERowType::Label, g_InfoDyn_Kx, nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_InfoDyn_Ddnet, nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Expandable, "Client Info", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+                g_InfoClientChildren, (int)(sizeof(g_InfoClientChildren) / sizeof(g_InfoClientChildren[0])),
+                "Client identity: name, version and git hash (real or spoofed)."},
+        {ERowType::Expandable, "Kinetix", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+                g_InfoKinetixChildren, (int)(sizeof(g_InfoKinetixChildren) / sizeof(g_InfoKinetixChildren[0])),
+                "Binary info, scripts/TASes counts and the Kinetix folder."},
+        {ERowType::Custom, "Links", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+                g_InfoLinkChildren, (int)(sizeof(g_InfoLinkChildren) / sizeof(g_InfoLinkChildren[0]))},
+        {ERowType::Custom, "RAMCPU", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+                g_InfoGraphChildren, (int)(sizeof(g_InfoGraphChildren) / sizeof(g_InfoGraphChildren[0]))},
+        {ERowType::Graph, "FPS", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "FPS history sparkline."},
 };
 
 static char g_ExecDyn_Path[560];
@@ -1470,15 +1676,15 @@ static bool IsGitHubTasLoadButtonName(const char *pName, int *pOutIdx)
 }
 
 static SRow g_ExecSettingsChildren[] = {
-        {ERowType::Toggle, "Access To The Internet", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Access To The Internet", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Allow scripts to use net.* HTTP requests."},
-        {ERowType::Toggle, "OS Commands", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "OS Commands", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Allow scripts to run OS commands (os.execute / io.popen)."},
-        {ERowType::Dropdown, "Shell", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Dropdown, "Shell", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Shell used for OS commands. Missing shells are not offered."},
-        {ERowType::Toggle, "Sandbox", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Sandbox", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Restrict script file access to Kinetix/Sandbox in the user directory. Relative paths resolve inside it, absolute paths outside are denied."},
-        {ERowType::Toggle, "Debug", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Debug", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Log every script function call/return to the console log (lua_debug)."},
 };
 
@@ -1487,44 +1693,44 @@ static char g_LuaCTDyn_Btn[16] = "Start";
 static char g_LuaCTDyn_Result[128] = "";
 static char g_LuaCTDyn_Failed[512] = "";
 static SRow g_LuaCTChildren[] = {
-        {ERowType::Button, g_LuaCTDyn_Btn, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Button, g_LuaCTDyn_Btn, nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Run the Lua Compatibility Test against all bindings. Clear removes the results."},
-        {ERowType::Label, g_LuaCTDyn_Result, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Label, g_LuaCTDyn_CE, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Label, g_LuaCTDyn_Result, nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_LuaCTDyn_CE, nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Version of the Code Execution binding API in this client (v1 = sol2 era, v2 = LuaBridge3 era)."},
-        {ERowType::Label, g_LuaCTDyn_SoFE, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Label, g_LuaCTDyn_SoFE, nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "SoFE (Speed Of Function Execution): minimum / average / maximum time of a single binding-access test."},
-        {ERowType::Label, g_LuaCTDyn_Failed, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_LuaCTDyn_Failed, nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 
 static SRow g_CodeExecRows[] = {
-        {ERowType::Expandable, "GitHub Scripts", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+        {ERowType::Expandable, "GitHub Scripts", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
                 nullptr, 0, // children are rebuilt from scripts.json in UpdateCodeExecRows
                 "Script repository (storage/scripts in the client repo). Update List downloads only the metadata; Load loads the script into Code Execution from memory (nothing is saved to disk); Download saves it to Kinetix/Scripts."},
-        {ERowType::DoubleButton, "Pick File", "Unpick File", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Pick a Lua script file to execute.", "Unload the current script."},
-        {ERowType::Label, g_ExecDyn_Path, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Label, g_ExecDyn_Name, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Label, g_ExecDyn_Version, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Label, g_ExecDyn_CE, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Custom, "Pick File", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+                g_ExecPickFileChildren, (int)(sizeof(g_ExecPickFileChildren) / sizeof(g_ExecPickFileChildren[0]))},
+        {ERowType::Label, g_ExecDyn_Path, nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_ExecDyn_Name, nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_ExecDyn_Version, nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_ExecDyn_CE, nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Code Execution API version the script."},
-        {ERowType::Label, g_ExecDyn_Author, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Label, g_ExecDyn_Desc, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Expandable, "Execution Settings", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+        {ERowType::Label, g_ExecDyn_Author, nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_ExecDyn_Desc, nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Expandable, "Execution Settings", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
                 g_ExecSettingsChildren, (int)(sizeof(g_ExecSettingsChildren) / sizeof(g_ExecSettingsChildren[0])),
                 "Master toggle: off = all execution permissions disabled. On: internet access, OS commands, sandbox and debug logging for scripts."},
-        {ERowType::Expandable, "LuaCT", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+        {ERowType::Expandable, "LuaCT", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
                 g_LuaCTChildren, (int)(sizeof(g_LuaCTChildren) / sizeof(g_LuaCTChildren[0])),
                 "Lua Compatibility Test — checks every binding for existence and access, shows the Code Execution API version (CE Version) and SoFE — Speed Of Function Execution (min/avg/max binding call time)."},
-        {ERowType::Button, g_ExecDyn_Btn, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Button, g_ExecDyn_Btn, nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Execute the loaded Lua script."},
         // Script Warnings — red labels, each visible only when its warning is
         // active (see CodeExecRowVisible + the Label render color rule).
-        {ERowType::Label, g_ExecWarn_Header, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Label, g_ExecWarn_Internet, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Label, g_ExecWarn_Os, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Label, g_ExecWarn_Files, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Label, g_ExecWarn_Version, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_ExecWarn_Header, nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_ExecWarn_Internet, nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_ExecWarn_Os, nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_ExecWarn_Files, nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_ExecWarn_Version, nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 
 // ---------- TAS panel (8) ----------
@@ -1539,7 +1745,7 @@ static bool g_TasFilePicked = false;
         // TAS Fake Aim: rendered-aim modes for playback (visible in Play mode).
         static const char *const g_TasFakeAimModeOpts[] = {"Real", "Smooth", "Random", "Robot", "Spin", "Lag"};
         static SRow g_TasFakeAimChildren[] = {
-                {ERowType::Dropdown, "Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TasFakeAimModeOpts, 6, 0, nullptr, 0,
+                {ERowType::Dropdown, "Mode", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_TasFakeAimModeOpts, 6, 0, nullptr, 0,
                         "Rendered-aim mode used during TAS playback."},
         };
         // Auto Rewind/Forward: per-tile auto actions, Record mode only. The
@@ -1548,20 +1754,20 @@ static bool g_TasFilePicked = false;
         static const char *const g_TasAutoTileOpts[] = {"Freeze", "Teleport", "Death"};
         static const char *const g_TasAutoModeOpts[] = {"Rewind", "Forward"};
         static SRow g_TasAutoRfChildren[] = {
-                {ERowType::Dropdown, "Tile", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TasAutoTileOpts, 3, 0, nullptr, 0,
+                {ERowType::Dropdown, "Tile", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_TasAutoTileOpts, 3, 0, nullptr, 0,
                         "Which tile type's auto action is being edited."},
-                {ERowType::Dropdown, "Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TasAutoModeOpts, 2, 0, nullptr, 0,
+                {ERowType::Dropdown, "Mode", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_TasAutoModeOpts, 2, 0, nullptr, 0,
                         "Rewind or forward when the tile is hit."},
-                {ERowType::Slider, "Rewind Ticks", nullptr, false, false, 0.0f, 100.0f, 1.0f, 0.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                {ERowType::Slider, "Rewind Ticks", nullptr, false, false, true,0.0f, 100.0f, 1.0f, 0.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                         "Ticks to rewind/forward on the tile (0 = disabled)."},
         };
         static SRow g_TasVisualsChildren[] = {
-                {ERowType::Toggle, "Show Path", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-                {ERowType::Toggle, "Show Hooks", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-                {ERowType::Toggle, "Show Speed", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-                {ERowType::Toggle, "Trajectory", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                {ERowType::Toggle, "Show Path", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+                {ERowType::Toggle, "Show Hooks", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+                {ERowType::Toggle, "Show Speed", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+                {ERowType::Toggle, "Trajectory", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                         "Draw the TAS trajectory."},
-                {ERowType::Toggle, "Start/End Pos", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                {ERowType::Toggle, "Start/End Pos", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                         "Draw the start and the end position of the replay."},
         };
 
@@ -1634,98 +1840,98 @@ enum
 };
 
 static SRow g_TasSpawnerChildren[TAS_SPAWN_ROW_COUNT] = {
-	{ERowType::Dropdown, "Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TasSpawnerModeOpts, 2, 0, nullptr, 0,
+	{ERowType::Dropdown, "Mode", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_TasSpawnerModeOpts, 2, 0, nullptr, 0,
 		"Spawn an entity or a tile in the playground."},
-	{ERowType::Slider, "Entity ID", nullptr, false, false, 0.0f, (float)(TAS_SPAWN_ENT_COUNT - 1), 1.0f, 0.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+	{ERowType::Slider, "Entity ID", nullptr, false, false, true,0.0f, (float)(TAS_SPAWN_ENT_COUNT - 1), 1.0f, 0.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Entity type to spawn (the name is shown instead of the number)."},
-	{ERowType::Input, "Name", nullptr, false, false, 0, 0, 0, 0, nullptr, "Spawned", "name...", nullptr, 0, 0, nullptr, 0,
+	{ERowType::Input, "Name", nullptr, false, false, true,0, 0, 0, 0, nullptr, "Spawned", "name...", nullptr, 0, 0, nullptr, 0,
 		"Spawned tee name."},
-	{ERowType::Input, "Clan", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "clan...", nullptr, 0, 0, nullptr, 0,
+	{ERowType::Input, "Clan", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "clan...", nullptr, 0, 0, nullptr, 0,
 		"Spawned tee clan."},
-	{ERowType::Input, "ID", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0,
+	{ERowType::Input, "ID", nullptr, false, false, true,0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0,
 		"Client id used by the spawned tee."},
-	{ERowType::Input, "Skin ID", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "skin...", nullptr, 0, 0, nullptr, 0,
+	{ERowType::Input, "Skin ID", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "skin...", nullptr, 0, 0, nullptr, 0,
 		"Skin name of the spawned tee."},
-	{ERowType::Toggle, "Custom Color Tee", nullptr, true, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+	{ERowType::Toggle, "Custom Color Tee", nullptr, true, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Use a custom body color for the spawned tee."},
-	{ERowType::Input, "Tee Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "hex...", nullptr, 0, 0, nullptr, 0,
+	{ERowType::Input, "Tee Color", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "hex...", nullptr, 0, 0, nullptr, 0,
 		"Spawned tee body color (hex RGB)."},
-	{ERowType::Toggle, "Custom Color Legs", nullptr, true, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+	{ERowType::Toggle, "Custom Color Legs", nullptr, true, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Use a custom feet color for the spawned tee."},
-	{ERowType::Input, "Legs Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "hex...", nullptr, 0, 0, nullptr, 0,
+	{ERowType::Input, "Legs Color", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "hex...", nullptr, 0, 0, nullptr, 0,
 		"Spawned tee feet color (hex RGB)."},
-	{ERowType::Slider, "Hook Strength", nullptr, false, false, 0.0f, 100.0f, 1.0f, 10.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+	{ERowType::Slider, "Hook Strength", nullptr, false, false, true,0.0f, 100.0f, 1.0f, 10.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Strong/weak hook id of the spawned tee (0-100)."},
-	{ERowType::Dropdown, "Hook Strength", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TasSpawnerHookModeOpts, 2, 1, nullptr, 0,
+	{ERowType::Dropdown, "Hook Strength", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_TasSpawnerHookModeOpts, 2, 1, nullptr, 0,
 		"Strong or weak hook for the spawned tee."},
-	{ERowType::Toggle, "Practice Particles", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+	{ERowType::Toggle, "Practice Particles", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Draw the practice (super) particles around the spawned tee."},
-	{ERowType::Slider, "Weapon ID", nullptr, false, false, -1.0f, 5.0f, 1.0f, 0.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+	{ERowType::Slider, "Weapon ID", nullptr, false, false, true,-1.0f, 5.0f, 1.0f, 0.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Weapon the spawned tee owns and holds (-1 = no weapons at all)."},
 	// v6.3: per-entity parameters.
-	{ERowType::Toggle, "Freeze", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+	{ERowType::Toggle, "Freeze", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Projectile freezes tees on hit (freeze bullets)."},
-	{ERowType::Toggle, "Explosive", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+	{ERowType::Toggle, "Explosive", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Projectile explodes on hit (grenades are always explosive)."},
-	{ERowType::Toggle, "Sound", nullptr, true, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+	{ERowType::Toggle, "Sound", nullptr, true, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Play the projectile fire sound."},
-	{ERowType::Dropdown, "Laser Type", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TasSpawnerLaserTypeOpts, 2, 0, nullptr, 0,
+	{ERowType::Dropdown, "Laser Type", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_TasSpawnerLaserTypeOpts, 2, 0, nullptr, 0,
 		"Rifle beam or shotgun (freeze) beam."},
-	{ERowType::Dropdown, "Pickup Type", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TasSpawnerPickupTypeOpts, 4, 0, nullptr, 0,
+	{ERowType::Dropdown, "Pickup Type", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_TasSpawnerPickupTypeOpts, 4, 0, nullptr, 0,
 		"Type of the spawned pickup."},
-	{ERowType::Input, "Subtype", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0,
+	{ERowType::Input, "Subtype", nullptr, false, false, true,0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0,
 		"Pickup: weapon id / armor amount. Plasma: 1 = explosive, 2 = freeze, 3 = both."},
-	{ERowType::Input, "Switch", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "0-255...", nullptr, 0, 0, nullptr, 0,
+	{ERowType::Input, "Switch", nullptr, false, false, true,0, 0, 0, 0, nullptr, "0", "0-255...", nullptr, 0, 0, nullptr, 0,
 		"Switch layer number the entity belongs to (0 = always active; door / dragger / plasma / pickup)."},
-	{ERowType::Toggle, "Apply Physics", nullptr, true, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+	{ERowType::Toggle, "Apply Physics", nullptr, true, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Apply physics to the spawned entity (off = hangs in the air, no collision)."},
-	{ERowType::Input, "PrevPos X", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "x...", nullptr, 0, 0, nullptr, 0,
+	{ERowType::Input, "PrevPos X", nullptr, false, false, true,0, 0, 0, 0, nullptr, "0", "x...", nullptr, 0, 0, nullptr, 0,
 		"Tee only: previous-position delta (physics kick on spawn)."},
-	{ERowType::Input, "PrevPos Y", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "y...", nullptr, 0, 0, nullptr, 0,
+	{ERowType::Input, "PrevPos Y", nullptr, false, false, true,0, 0, 0, 0, nullptr, "0", "y...", nullptr, 0, 0, nullptr, 0,
 		"Tee only: previous-position delta (physics kick on spawn)."},
-	{ERowType::Input, "Timeline Tick", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "tick...", nullptr, 0, 0, nullptr, 0,
+	{ERowType::Input, "Timeline Tick", nullptr, false, false, true,0, 0, 0, 0, nullptr, "0", "tick...", nullptr, 0, 0, nullptr, 0,
 		"Tee only: playground tick the tee is treated as spawned at."},
-	{ERowType::Slider, "Tile ID", nullptr, false, false, 0.0f, (float)(TAS_SPAWNER_TILE_COUNT - 1), 1.0f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+	{ERowType::Slider, "Tile ID", nullptr, false, false, true,0.0f, (float)(TAS_SPAWNER_TILE_COUNT - 1), 1.0f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Tile to spawn (the name is shown instead of the number)."},
-	{ERowType::Toggle, "Apply Physics", nullptr, true, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+	{ERowType::Toggle, "Apply Physics", nullptr, true, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Make the spawned tile solid (off = visual only)."},
-	{ERowType::Input, "Tile Number", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "0-255...", nullptr, 0, 0, nullptr, 0,
+	{ERowType::Input, "Tile Number", nullptr, false, false, true,0, 0, 0, 0, nullptr, "0", "0-255...", nullptr, 0, 0, nullptr, 0,
 		"Tune tile: the tune zone. Tele tiles: the tele number pairing TeleIn with TeleOut."},
-	{ERowType::Dropdown, "Direction", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TasSpawnerDirOpts, 8, 0, nullptr, 0,
+	{ERowType::Dropdown, "Direction", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_TasSpawnerDirOpts, 8, 0, nullptr, 0,
 		"Direction the spawned entity is launched / aimed in."},
-	{ERowType::Input, "Vel X", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "x...", nullptr, 0, 0, nullptr, 0,
+	{ERowType::Input, "Vel X", nullptr, false, false, true,0, 0, 0, 0, nullptr, "0", "x...", nullptr, 0, 0, nullptr, 0,
 		"Extra velocity added along the direction (units/tick)."},
-	{ERowType::Input, "Vel Y", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "y...", nullptr, 0, 0, nullptr, 0,
+	{ERowType::Input, "Vel Y", nullptr, false, false, true,0, 0, 0, 0, nullptr, "0", "y...", nullptr, 0, 0, nullptr, 0,
 		"Extra velocity added along the direction (units/tick)."},
-	{ERowType::Input, "Lifespan", nullptr, false, false, 0, 0, 0, 0, nullptr, "-1", "ticks...", nullptr, 0, 0, nullptr, 0,
+	{ERowType::Input, "Lifespan", nullptr, false, false, true,0, 0, 0, 0, nullptr, "-1", "ticks...", nullptr, 0, 0, nullptr, 0,
 		"Projectile lifespan in ticks (-1 = never expires)."},
-	{ERowType::Input, "Laser Reach", nullptr, false, false, 0, 0, 0, 0, nullptr, "800", "units...", nullptr, 0, 0, nullptr, 0,
+	{ERowType::Input, "Laser Reach", nullptr, false, false, true,0, 0, 0, 0, nullptr, "800", "units...", nullptr, 0, 0, nullptr, 0,
 		"Laser reach of the spawned rifle beam."},
-	{ERowType::Input, "Door Length", nullptr, false, false, 0, 0, 0, 0, nullptr, "64", "units...", nullptr, 0, 0, nullptr, 0,
+	{ERowType::Input, "Door Length", nullptr, false, false, true,0, 0, 0, 0, nullptr, "64", "units...", nullptr, 0, 0, nullptr, 0,
 		"Length of the spawned door (only the door entity uses it)."},
-	{ERowType::Input, "Dragger Strength", nullptr, false, false, 0, 0, 0, 0, nullptr, "1", "0-255...", nullptr, 0, 0, nullptr, 0,
+	{ERowType::Input, "Dragger Strength", nullptr, false, false, true,0, 0, 0, 0, nullptr, "1", "0-255...", nullptr, 0, 0, nullptr, 0,
 		"Pull strength of the spawned dragger."},
-	{ERowType::Input, "Speedup Force", nullptr, false, false, 0, 0, 0, 0, nullptr, "50", "0-255...", nullptr, 0, 0, nullptr, 0,
+	{ERowType::Input, "Speedup Force", nullptr, false, false, true,0, 0, 0, 0, nullptr, "50", "0-255...", nullptr, 0, 0, nullptr, 0,
 		"Acceleration strength of the spawned speedup tile."},
-	{ERowType::Input, "Speedup Max Speed", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "0-255...", nullptr, 0, 0, nullptr, 0,
+	{ERowType::Input, "Speedup Max Speed", nullptr, false, false, true,0, 0, 0, 0, nullptr, "0", "0-255...", nullptr, 0, 0, nullptr, 0,
 		"Speed cap of the spawned speedup tile (0 = unlimited)."},
-	{ERowType::Input, "Speedup Angle", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "0-359...", nullptr, 0, 0, nullptr, 0,
+	{ERowType::Input, "Speedup Angle", nullptr, false, false, true,0, 0, 0, 0, nullptr, "0", "0-359...", nullptr, 0, 0, nullptr, 0,
 		"Push direction of the spawned speedup tile in degrees (0 = right, 90 = down)."},
-	{ERowType::Dropdown, "Coordinates Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TasSpawnerCoordOpts, 3, 0, nullptr, 0,
+	{ERowType::Dropdown, "Coordinates Mode", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_TasSpawnerCoordOpts, 3, 0, nullptr, 0,
 		"Where to spawn: at the cursor, at absolute X/Y, or at the previous spawn."},
-	{ERowType::Input, "X", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "x...", nullptr, 0, 0, nullptr, 0,
+	{ERowType::Input, "X", nullptr, false, false, true,0, 0, 0, 0, nullptr, "0", "x...", nullptr, 0, 0, nullptr, 0,
 		"Absolute world X coordinate."},
-	{ERowType::Input, "Y", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "y...", nullptr, 0, 0, nullptr, 0,
+	{ERowType::Input, "Y", nullptr, false, false, true,0, 0, 0, 0, nullptr, "0", "y...", nullptr, 0, 0, nullptr, 0,
 		"Absolute world Y coordinate."},
-	{ERowType::Toggle, "Snap Coordinates", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+	{ERowType::Toggle, "Snap Coordinates", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Snap the spawn coordinates to the 32-unit tile grid."},
-	{ERowType::Button, "Spawn", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+	{ERowType::Button, "Spawn", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Spawn the configured entity or tile."},
-	{ERowType::DoubleButton, "Kill", "Kill All", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-		"Remove the spawned entity or tile at the target coordinates.", "Remove every spawned entity of the selected type (or every spawned tile of the selected tile id)."},
-	{ERowType::Slider, "Loop Spawn Delay", nullptr, false, false, 0.0f, 10000.0f, 20.0f, 1000.0f, "ms", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+	{ERowType::Custom, "Kill", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+		g_SpawnerKillChildren, (int)(sizeof(g_SpawnerKillChildren) / sizeof(g_SpawnerKillChildren[0]))},
+	{ERowType::Slider, "Loop Spawn Delay", nullptr, false, false, true,0.0f, 10000.0f, 20.0f, 1000.0f, "ms", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Delay between automatic spawns."},
-	{ERowType::Button, g_TasDyn_Loop, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+	{ERowType::Button, g_TasDyn_Loop, nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Start / stop spawning at the configured delay."},
 };
 
@@ -1743,56 +1949,56 @@ enum
 	TAS_PG_ROW_COUNT,
 };
 static SRow g_TasPgChildren[TAS_PG_ROW_COUNT] = {
-	{ERowType::Toggle, "Virtual RCON", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+	{ERowType::Toggle, "Virtual RCON", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Run rcon commands (F2 console, the rcon command or the field below) against the playground."},
-	{ERowType::Input, "RCON Command", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "command...  (Enter to run)", nullptr, 0, 0, nullptr, 0,
+	{ERowType::Input, "RCON Command", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "command...  (Enter to run)", nullptr, 0, 0, nullptr, 0,
 		"Command executed in the virtual rcon on Enter (the field clears afterwards)."},
-	{ERowType::Toggle, "Virtual Chat", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+	{ERowType::Toggle, "Virtual Chat", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Keep chat inside the playground (whispers still go to the real server)."},
-	{ERowType::Input, "Chat", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "message...  (Enter to send)", nullptr, 0, 0, nullptr, 0,
+	{ERowType::Input, "Chat", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "message...  (Enter to send)", nullptr, 0, 0, nullptr, 0,
 		"Message sent to the virtual chat on Enter."},
-	{ERowType::Toggle, "Practice", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+	{ERowType::Toggle, "Practice", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Enable practice commands (/tc, telecursor) in the virtual chat and rcon."},
 };
 
 static SRow g_TasRows[] = {
-	{ERowType::Expandable, "GitHub TASes", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+	{ERowType::Expandable, "GitHub TASes", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
 		nullptr, 0, // children are rebuilt from tas.json in UpdateTasRows
 		"TAS repository (storage/tas in the client repo). Update List downloads only the metadata; Load loads the .tas file into the TAS panel from memory (nothing is saved to disk); Download saves it to Kinetix/TAS."},
-	{ERowType::Dropdown, "Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TasModeOpts, 2, 0, nullptr, 0,
+	{ERowType::Dropdown, "Mode", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_TasModeOpts, 2, 0, nullptr, 0,
 		"Play a recorded TAS or record a new one."},
-	{ERowType::DoubleButton, "Pick File", "Unpick File", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-		"Pick a TAS file to load.", "Unpick the current TAS file."},
-	{ERowType::DoubleButton, g_TasDyn_Action, "Reset Record", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-		"Start / stop the current action (Play or Record).", "Clear the record/saved buffer and unload the picked .tas file."},
-	{ERowType::Input, "Map", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "map...", nullptr, 0, 0, nullptr, 0,
+	{ERowType::Custom, "Pick File", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+		g_TasPickFileChildren, (int)(sizeof(g_TasPickFileChildren) / sizeof(g_TasPickFileChildren[0]))},
+	{ERowType::Custom, g_TasDyn_Action, nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+		g_TasActionChildren, (int)(sizeof(g_TasActionChildren) / sizeof(g_TasActionChildren[0]))},
+	{ERowType::Input, "Map", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "map...", nullptr, 0, 0, nullptr, 0,
 		"Map name saved with the TAS."},
-	{ERowType::Input, "Description", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "description...", nullptr, 0, 0, nullptr, 0,
+	{ERowType::Input, "Description", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "description...", nullptr, 0, 0, nullptr, 0,
 		"TAS description."},
-	{ERowType::Input, "Author", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "author...", nullptr, 0, 0, nullptr, 0,
+	{ERowType::Input, "Author", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "author...", nullptr, 0, 0, nullptr, 0,
 		"TAS author."},
-	{ERowType::Label, g_TasDyn_SaveCreated, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-	{ERowType::Label, "TAS Version: v2.0", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+	{ERowType::Label, g_TasDyn_SaveCreated, nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+	{ERowType::Label, "TAS Version: v2.0", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Version of the .tas file format used by this client."},
-	{ERowType::Button, "Save", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+	{ERowType::Button, "Save", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Save the recorded TAS to a file."},
-	{ERowType::DoubleButton, g_TasDyn_Join, "Reset Playground", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-		"Join / leave the TAS playground.", "Drop every spawned object, tile and chat line in the playground."},
-        {ERowType::Slider, "TPS", nullptr, false, false, 1.0f, 50.0f, 1.0f, 50.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+	{ERowType::Custom, g_TasDyn_Join, nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+		g_TasJoinChildren, (int)(sizeof(g_TasJoinChildren) / sizeof(g_TasJoinChildren[0]))},
+        {ERowType::Slider, "TPS", nullptr, false, false, true,1.0f, 50.0f, 1.0f, 50.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Ticks per second used during playback.", "Pause/resume the TAS playback."},
-        {ERowType::Expandable, "Auto Rewind/Forward", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TasAutoRfChildren, 3,
+        {ERowType::Expandable, "Auto Rewind/Forward", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TasAutoRfChildren, 3,
                 "Auto rewind/forward on freeze/teleport/death tiles."},
-        {ERowType::Expandable, "Fake Aim", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TasFakeAimChildren, 1,
+        {ERowType::Expandable, "Fake Aim", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TasFakeAimChildren, 1,
                 "Spoof the rendered aim during playback."},
-        {ERowType::Expandable, "Visuals", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TasVisualsChildren, 5,
+        {ERowType::Expandable, "Visuals", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TasVisualsChildren, 5,
                 "TAS visualization toggles."},
-        {ERowType::Expandable, "Playground Settings", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TasPgChildren, TAS_PG_ROW_COUNT,
+        {ERowType::Expandable, "Playground Settings", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TasPgChildren, TAS_PG_ROW_COUNT,
                 "Virtual RCON, virtual chat and practice inside the playground."},
-        {ERowType::Expandable, "Spawner", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TasSpawnerChildren, TAS_SPAWN_ROW_COUNT,
+        {ERowType::Expandable, "Spawner", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TasSpawnerChildren, TAS_SPAWN_ROW_COUNT,
                 "Spawn entities and tiles in the TAS playground."},
-        {ERowType::DoubleButton, "Rewind", "Forward", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Step the TAS back one tick.", "Step the TAS forward one tick."},
-	{ERowType::Label, g_TasDyn_Status, nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Custom, "Rewind", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+                g_TasRewindChildren, (int)(sizeof(g_TasRewindChildren) / sizeof(g_TasRewindChildren[0]))},
+	{ERowType::Label, g_TasDyn_Status, nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 
 // ---------- Real-Time Pathfinder panel (9, v1.56.280) ----------
@@ -1801,64 +2007,64 @@ static SRow g_TasRows[] = {
 // deviation from the planned path exceeds the trigger (Anti-TAS chaos).
 // The tile editors are SEPARATE from the Pathfinder tab (own mode/tiles/grids).
 static SRow g_RtVisualsChildren[] = {
-        {ERowType::Toggle, "Previous Path", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Previous Path", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Draw the previous planned path as well."},
-        {ERowType::Toggle, "Path", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Path", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         // Visible only when Path is on.
-        {ERowType::Toggle, "Speed", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Hooks", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Field", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Start/End Pos", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Speed", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Hooks", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Field", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Start/End Pos", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 // v1.56.281: "Reconstruct" expandable — the header checkbox is the master
 // toggle (kx_rt_pf_reconstruct); the trigger slider lives inside it.
 static SRow g_RtReconstructChildren[] = {
-        {ERowType::Slider, "Reconstruct Trigger", nullptr, false, false, 1.0f, 32.0f, 1.0f, 8.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Reconstruct Trigger", nullptr, false, false, true,1.0f, 32.0f, 1.0f, 8.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Deviation from the plan (tiles) that triggers a re-anchor."},
 };
 // v1.56.281: "Future Limit" expandable — the header checkbox is the master
 // toggle (kx_rt_pf_future_limit); the Future Ticks slider lives inside it.
 static SRow g_RtFutureLimitChildren[] = {
-        {ERowType::Slider, "Ticks", nullptr, false, false, 1.0f, 150.0f, 1.0f, 50.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Ticks", nullptr, false, false, true,1.0f, 150.0f, 1.0f, 50.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "How far ahead the plan is allowed to extend (ticks)."},
 };
 // Sequence search knobs: population of movement sequences per planning step,
 // ticks simulated per sequence and how many of the winner's ticks are replayed.
 static const char *const g_RtModeOpts[] = {"Finish", "Cursor", "Target"};
 static SRow g_RtSettingsChildren[] = {
-        {ERowType::Toggle, "Simulate Players", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Simulate Players", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Simulate nearby players instead of the local tee alone."},
-        {ERowType::Slider, "Population", nullptr, false, false, 128.0f, 8192.0f, 1.0f, 128.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Population", nullptr, false, false, true,128.0f, 8192.0f, 1.0f, 128.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Movement sequences generated per planning step."},
-        {ERowType::Slider, "Exploration Depth", nullptr, false, false, 5.0f, 50.0f, 1.0f, 12.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Exploration Depth", nullptr, false, false, true,5.0f, 50.0f, 1.0f, 12.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Ticks simulated per generated sequence."},
-        {ERowType::Slider, "Top Candidates", nullptr, false, false, 1.0f, 100.0f, 1.0f, 4.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Top Candidates", nullptr, false, false, true,1.0f, 100.0f, 1.0f, 4.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Top candidates validated before replay."},
-        {ERowType::Slider, "Sequence Length", nullptr, false, false, 1.0f, 20.0f, 1.0f, 8.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Sequence Length", nullptr, false, false, true,1.0f, 20.0f, 1.0f, 8.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Ticks of the best sequence replayed before re-planning."},
-        {ERowType::Slider, "Search Budget", nullptr, false, false, 0.0f, 50.0f, 1.0f, 8.0f, " ms", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Search Budget", nullptr, false, false, true,0.0f, 50.0f, 1.0f, 8.0f, " ms", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Search time budget in milliseconds (0 = unlimited)."},
 };
 static SRow g_RtPathfinderRows[] = {
-        {ERowType::Dropdown, "Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_RtModeOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Mode", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_RtModeOpts, 3, 0, nullptr, 0,
                 "What the planner drives toward: the finish, the cursor or a target client."},
-        {ERowType::Input, "Target ID", nullptr, false, false, 0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0,
+        {ERowType::Input, "Target ID", nullptr, false, false, true,0, 0, 0, 0, nullptr, "0", "id...", nullptr, 0, 0, nullptr, 0,
                 "Client id used when Mode = Target."},
-        {ERowType::Expandable, "Reconstruct", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RtReconstructChildren, 1,
+        {ERowType::Expandable, "Reconstruct", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RtReconstructChildren, 1,
                 "Re-anchor the plan from the live position on deviation."},
-        {ERowType::Expandable, "Future Limit", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RtFutureLimitChildren, 1,
+        {ERowType::Expandable, "Future Limit", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RtFutureLimitChildren, 1,
                 "Limit how far ahead the plan may extend."},
-        {ERowType::Expandable, "Settings", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RtSettingsChildren, 6,
+        {ERowType::Expandable, "Settings", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RtSettingsChildren, 6,
                 "Sequence search settings."},
-        {ERowType::Expandable, "Visuals", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RtVisualsChildren, 6,
+        {ERowType::Expandable, "Visuals", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_RtVisualsChildren, 6,
                 "RT pathfinder visualization toggles."},
         // Label toggles Pathfinding (green) / Stop (red) via m_RtPfState (no Finish state).
-        {ERowType::Button, "Pathfinding", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Button, "Pathfinding", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Start / stop the real-time pathfinder."},
-        {ERowType::DoubleButton, "Editor Forbidden Tiles", "Clear Forbidden Tiles", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Open the forbidden-tiles editor.", "Clear all forbidden tiles."},
-        {ERowType::DoubleButton, "Editor Finish Tiles", "Clear Finish Tiles", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Open the finish-tiles editor.", "Clear all finish tiles."},
+        {ERowType::Custom, "Editor Forbidden Tiles", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+                g_RtForbiddenChildren, (int)(sizeof(g_RtForbiddenChildren) / sizeof(g_RtForbiddenChildren[0]))},
+        {ERowType::Custom, "Editor Finish Tiles", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+                g_RtFinishChildren, (int)(sizeof(g_RtFinishChildren) / sizeof(g_RtFinishChildren[0]))},
 };
 
 // ---------- Visuals panel (v1.56.260) ----------
@@ -1872,13 +2078,13 @@ static SRow g_RtPathfinderRows[] = {
 static const char *const g_CustomColorSpriteOpts[] = {"Tee", "Legs", "Entities", "Guns", "Hook", "HUD", "Particles", "Emotions"};
 static const char *const g_CustomColorEntityOpts[] = {"Hookable", "Unhookable", "Freeze", "Death", "Others"};
 static SRow g_CustomColorsChildren[] = {
-        {ERowType::Dropdown, "Sprite", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_CustomColorSpriteOpts, 8, 0, nullptr, 0, "Select which sprite group you are configuring."},
-        {ERowType::Dropdown, "Entity", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_CustomColorEntityOpts, 5, 0, nullptr, 0, "Entity category to configure (only for Sprite = Entities)."},
-        {ERowType::Toggle, "Enable", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Enable the custom color for the selected sprite."},
-        {ERowType::Input, "Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ffffff", "hex...", nullptr, 0, 0, nullptr, 0, "Custom color of the selected sprite (hex RGB)."},
-        {ERowType::Slider, "Opacity", nullptr, false, false, 0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Opacity of the custom color (0-100%)."},
-        {ERowType::Toggle, "Rainbow", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Animate the custom color with a hue cycle."},
-        {ERowType::Slider, "Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Rainbow hue rotation speed for the selected sprite."},
+        {ERowType::Dropdown, "Sprite", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_CustomColorSpriteOpts, 8, 0, nullptr, 0, "Select which sprite group you are configuring."},
+        {ERowType::Dropdown, "Entity", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_CustomColorEntityOpts, 5, 0, nullptr, 0, "Entity category to configure (only for Sprite = Entities)."},
+        {ERowType::Toggle, "Enable", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Enable the custom color for the selected sprite."},
+        {ERowType::Input, "Color", nullptr, false, false, true,0, 0, 0, 0, nullptr, "ffffff", "hex...", nullptr, 0, 0, nullptr, 0, "Custom color of the selected sprite (hex RGB)."},
+        {ERowType::Slider, "Opacity", nullptr, false, false, true,0.0f, 100.0f, 1.0f, 100.0f, "%", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Opacity of the custom color (0-100%)."},
+        {ERowType::Toggle, "Rainbow", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Animate the custom color with a hue cycle."},
+        {ERowType::Slider, "Speed", nullptr, false, false, true,0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Rainbow hue rotation speed for the selected sprite."},
 };
 
 // v1.56.283: resolves the config ints (enable, color, alpha, anim, speed x10)
@@ -1948,15 +2154,15 @@ static void CustomColorSelection(const SRow &Row, int *pSpriteIdx, int *pEntIdx)
 // only when Repeat is on (AdminAlarmChildVisible).
 static const char *const g_AdminLevelOpts[] = {"Helper", "Moderator", "Admin"};
 static SRow g_AdminAlarmChildren[] = {
-        {ERowType::Dropdown, "Admin level", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_AdminLevelOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Admin level", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_AdminLevelOpts, 3, 0, nullptr, 0,
                 "Which admin level's alarm is being edited."},
-        {ERowType::Input, "Message", nullptr, false, false, 0, 0, 0, 0, nullptr, "Admin on server!", "text...", nullptr, 0, 0, nullptr, 0,
+        {ERowType::Input, "Message", nullptr, false, false, true,0, 0, 0, 0, nullptr, "Admin on server!", "text...", nullptr, 0, 0, nullptr, 0,
                 "Alarm message; {n} = admin nickname."},
-        {ERowType::Label, "Use {n} for nickname", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Label, "Use {n} for nickname", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Replace {n} in the message with the admin's nickname."},
-        {ERowType::Toggle, "Repeat", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Repeat", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Repeat the alarm while an admin is present."},
-        {ERowType::Slider, "Every ms", nullptr, false, false, 100.0f, 10000.0f, 100.0f, 1000.0f, "ms", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Every ms", nullptr, false, false, true,100.0f, 10000.0f, 100.0f, 1000.0f, "ms", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Repeat interval of the alarm (ms)."},
 };
 
@@ -1972,42 +2178,42 @@ static const char *const g_ShowModeOpts[] = {"In Game", "In ClickGUI", "In Game+
 static const char *const g_ColorModeOpts[] = {"Static", "Rainbow"};
 // v6.14: one Color block = mode dropdown + ARGB field + rainbow controls.
 #define KX_ARRAY_COLOR_ROWS(Prefix) \
-        {ERowType::Dropdown, Prefix " Color Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ColorModeOpts, 2, 0, nullptr, 0, \
+        {ERowType::Dropdown, Prefix " Color Mode", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ColorModeOpts, 2, 0, nullptr, 0, \
                 Prefix " color: Static = fixed color, Rainbow = animated hue."}, \
-        {ERowType::Input, Prefix " Color", nullptr, false, false, 0, 0, 0, 0, nullptr, "ffffffff", "AARRGGBB...", nullptr, 0, 0, nullptr, 0, \
+        {ERowType::Input, Prefix " Color", nullptr, false, false, true,0, 0, 0, 0, nullptr, "ffffffff", "AARRGGBB...", nullptr, 0, 0, nullptr, 0, \
                 Prefix " color (hex ARGB)."}, \
-        {ERowType::Dropdown, Prefix " Rainbow Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ArrayListRainbowModeOpts, 3, 0, nullptr, 0, \
+        {ERowType::Dropdown, Prefix " Rainbow Mode", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ArrayListRainbowModeOpts, 3, 0, nullptr, 0, \
                 Prefix " rainbow mode (shown when the color mode is Rainbow)."}, \
-        {ERowType::Slider, Prefix " Rainbow Speed", nullptr, false, false, 0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, \
+        {ERowType::Slider, Prefix " Rainbow Speed", nullptr, false, false, true,0.1f, 10.0f, 0.1f, 1.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, \
                 Prefix " rainbow hue rotation speed."}, \
-        {ERowType::Slider, Prefix " Rainbow Step", nullptr, false, false, 1.0f, 180.0f, 1.0f, 25.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, \
+        {ERowType::Slider, Prefix " Rainbow Step", nullptr, false, false, true,1.0f, 180.0f, 1.0f, 25.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0, \
                 Prefix " rainbow hue offset (shown when the mode is not Group)."}
 static SRow g_ArrayListChildren[] = {
-        {ERowType::Label, "Array", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Dropdown, "Show Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ShowModeOpts, 4, 0, nullptr, 0,
+        {ERowType::Label, "Array", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "Show Mode", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ShowModeOpts, 4, 0, nullptr, 0,
                 "Where the HUD is shown. In Game+ClickGUI keeps TWO positions (game / GUI); Both keeps ONE for both."},
-        {ERowType::DoubleButton, "Game Editor", "Reset", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Toggle the ArrayList editor for the in-game position (closes the ClickGUI).", "Reset the in-game position to its default."},
-        {ERowType::DoubleButton, "ClickGUI Editor", "Reset", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Toggle the ArrayList editor for the ClickGUI position.", "Reset the ClickGUI position to its default."},
-        {ERowType::DoubleButton, "Editor", "Reset", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Toggle the ArrayList editor (closes the ClickGUI).", "Reset the list position to its default."},
-        {ERowType::Dropdown, "X Anchor", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ArrayListXAnchorOpts, 4, 0, nullptr, 0,
+        {ERowType::Custom, "Game Editor", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+                g_aArrayListGameEdBtns[ARR_SECTION_LIST], 2},
+        {ERowType::Custom, "ClickGUI Editor", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+                g_aArrayListGuiEdBtns[ARR_SECTION_LIST], 2},
+        {ERowType::Custom, "Editor", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+                g_aArrayListEdBtns[ARR_SECTION_LIST], 2},
+        {ERowType::Dropdown, "X Anchor", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ArrayListXAnchorOpts, 4, 0, nullptr, 0,
                 "Horizontal anchor of the list (Auto detects the screen side)."},
-        {ERowType::Dropdown, "Y Anchor", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ArrayListYAnchorOpts, 3, 0, nullptr, 0,
+        {ERowType::Dropdown, "Y Anchor", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ArrayListYAnchorOpts, 3, 0, nullptr, 0,
                 "Vertical anchor of the list."},
-        {ERowType::Dropdown, "Style", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ArrayListStyleOpts, 4, 0, nullptr, 0,
+        {ERowType::Dropdown, "Style", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ArrayListStyleOpts, 4, 0, nullptr, 0,
                 "Visual style of the list blocks."},
-        {ERowType::Slider, "Indentation", nullptr, false, false, 0.0f, 40.0f, 1.0f, 2.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Indentation", nullptr, false, false, true,0.0f, 40.0f, 1.0f, 2.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Vertical gap between features (the blocks move with it)."},
-        {ERowType::Slider, "ArrayList Size", nullptr, false, false, 0.1f, 2.0f, 0.1f, 1.0f, "x", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "ArrayList Size", nullptr, false, false, true,0.1f, 2.0f, 0.1f, 1.0f, "x", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Overall scale of the HUD (like ClickGUI Scale)."},
-        {ERowType::Label, "ArrayList", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Dropdown, "Sort Type", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ArrayListSortOpts, 3, 0, nullptr, 0,
+        {ERowType::Label, "ArrayList", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "Sort Type", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ArrayListSortOpts, 3, 0, nullptr, 0,
                 "Order of the enabled features."},
-        {ERowType::Slider, "Max Length", nullptr, false, false, 0.0f, 2000.0f, 10.0f, 0.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Max Length", nullptr, false, false, true,0.0f, 2000.0f, 10.0f, 0.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Wrap feature names wider than this (px, 0 = off)."},
-        {ERowType::Label, "Colors", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, "Colors", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         KX_ARRAY_COLOR_ROWS("Text"),
         KX_ARRAY_COLOR_ROWS("Main"),
         KX_ARRAY_COLOR_ROWS("Panel"),
@@ -2016,41 +2222,41 @@ static const int KX_ARRAYLIST_CHILD_COUNT = (int)(sizeof(g_ArrayListChildren) / 
 // v6.4: ArrayInfo — same settings model as the ArrayList, but the content is
 // an info line (logo | watermark | FPS | session | tee | nick | functions).
 static SRow g_ArrayInfoChildren[] = {
-        {ERowType::Label, "Array", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Dropdown, "Show Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ShowModeOpts, 4, 0, nullptr, 0,
+        {ERowType::Label, "Array", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "Show Mode", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ShowModeOpts, 4, 0, nullptr, 0,
                 "Where the HUD is shown. In Game+ClickGUI keeps TWO positions; Both keeps ONE for both."},
-        {ERowType::DoubleButton, "Game Editor", "Reset", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Toggle the ArrayInfo editor for the in-game position (closes the ClickGUI).", "Reset the in-game position to its default."},
-        {ERowType::DoubleButton, "ClickGUI Editor", "Reset", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Toggle the ArrayInfo editor for the ClickGUI position.", "Reset the ClickGUI position to its default."},
-        {ERowType::DoubleButton, "Editor", "Reset", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Toggle the ArrayInfo editor (closes the ClickGUI).", "Reset the info bar position to its default."},
-        {ERowType::Dropdown, "X Anchor", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ArrayListXAnchorOpts, 4, 0, nullptr, 0,
+        {ERowType::Custom, "Game Editor", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+                g_aArrayListGameEdBtns[ARR_SECTION_INFO], 2},
+        {ERowType::Custom, "ClickGUI Editor", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+                g_aArrayListGuiEdBtns[ARR_SECTION_INFO], 2},
+        {ERowType::Custom, "Editor", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+                g_aArrayListEdBtns[ARR_SECTION_INFO], 2},
+        {ERowType::Dropdown, "X Anchor", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ArrayListXAnchorOpts, 4, 0, nullptr, 0,
                 "Horizontal anchor of the info bar (Auto detects the screen side)."},
-        {ERowType::Dropdown, "Style", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ArrayListStyleOpts, 4, 0, nullptr, 0,
+        {ERowType::Dropdown, "Style", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ArrayListStyleOpts, 4, 0, nullptr, 0,
                 "Visual style of the info blocks."},
-        {ERowType::Slider, "Indentation", nullptr, false, false, 0.0f, 40.0f, 1.0f, 2.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Indentation", nullptr, false, false, true,0.0f, 40.0f, 1.0f, 2.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Vertical gap between info lines (the blocks move with it)."},
-        {ERowType::Slider, "ArrayInfo Size", nullptr, false, false, 0.1f, 2.0f, 0.1f, 1.0f, "x", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "ArrayInfo Size", nullptr, false, false, true,0.1f, 2.0f, 0.1f, 1.0f, "x", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Overall scale of the info bar (like ClickGUI Scale)."},
-        {ERowType::Label, "ArrayInfo", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Toggle, "Kinetix Logo", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Label, "ArrayInfo", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Toggle, "Kinetix Logo", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Show the Kinetix logo icon."},
-        {ERowType::Input, "Watermark", nullptr, false, false, 0, 0, 0, 0, nullptr, "t.me/KinetixClient", "watermark...", nullptr, 0, 0, nullptr, 0,
+        {ERowType::Input, "Watermark", nullptr, false, false, true,0, 0, 0, 0, nullptr, "t.me/KinetixClient", "watermark...", nullptr, 0, 0, nullptr, 0,
                 "Watermark text (empty = hidden)."},
-        {ERowType::Toggle, "Show FPS", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Show FPS", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Show the current FPS as \"1234 FPS\"."},
-        {ERowType::Toggle, "Session Time", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Session Time", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Show how long the client has been running."},
-        {ERowType::Toggle, "Tee", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Tee", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Show the main tee icon."},
-        {ERowType::Toggle, "Nickname", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Nickname", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Show the current nickname."},
-        {ERowType::Toggle, "Functions", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Functions", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Show the number of enabled functions as \"X Functions\"."},
-        {ERowType::Slider, "Max Length", nullptr, false, false, 0.0f, 2000.0f, 10.0f, 600.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Max Length", nullptr, false, false, true,0.0f, 2000.0f, 10.0f, 600.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Wrap the info line wider than this (px, 0 = off)."},
-        {ERowType::Label, "Colors", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, "Colors", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         KX_ARRAY_COLOR_ROWS("Text"),
         KX_ARRAY_COLOR_ROWS("Main"),
         KX_ARRAY_COLOR_ROWS("Panel"),
@@ -2064,130 +2270,130 @@ static const char *const g_ArrayPlayerStyleOpts[] = {"Group", "DDNet Group"};
 static const char *const g_AgentShowModeOpts[] = {"In Game", "In ClickGUI", "In Game+ClickGUI", "Both"};
 static const char *const g_AgentReasoningOpts[] = {"Hide", "Show", "Expand"};
 static SRow g_ArrayAgentChildren[] = {
-	{ERowType::Label, "Array", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-	{ERowType::Dropdown, "Show Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_AgentShowModeOpts, 4, 0, nullptr, 0,
+	{ERowType::Label, "Array", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+	{ERowType::Dropdown, "Show Mode", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_AgentShowModeOpts, 4, 0, nullptr, 0,
 		"Where the panel is shown. In Game+ClickGUI keeps TWO positions (game / GUI); Both keeps ONE for both."},
-	{ERowType::DoubleButton, "Game Editor", "Reset", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-		"Toggle the ArrayAgent editor for the in-game position (closes the ClickGUI).", "Reset the in-game position to its default."},
-	{ERowType::DoubleButton, "ClickGUI Editor", "Reset", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-		"Toggle the ArrayAgent editor for the ClickGUI position.", "Reset the ClickGUI position to its default."},
-	{ERowType::DoubleButton, "Editor", "Reset", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-		"Toggle the ArrayAgent editor (closes the ClickGUI).", "Reset the agent panel position to its default."},
-	{ERowType::Dropdown, "X Anchor", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_AgentXAnchorOpts, 5, 0, nullptr, 0,
+	{ERowType::Custom, "Game Editor", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+		g_aArrayListGameEdBtns[ARR_SECTION_AGENT], 2},
+	{ERowType::Custom, "ClickGUI Editor", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+		g_aArrayListGuiEdBtns[ARR_SECTION_AGENT], 2},
+	{ERowType::Custom, "Editor", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+		g_aArrayListEdBtns[ARR_SECTION_AGENT], 2},
+	{ERowType::Dropdown, "X Anchor", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_AgentXAnchorOpts, 5, 0, nullptr, 0,
 		"Message sides: user right / AI left, inverted, or everything on one side."},
-	{ERowType::Dropdown, "Style", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ArrayPlayerStyleOpts, 2, 0, nullptr, 0,
+	{ERowType::Dropdown, "Style", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ArrayPlayerStyleOpts, 2, 0, nullptr, 0,
 		"Visual style of the chat panel."},
-	{ERowType::Slider, "Indentation", nullptr, false, false, 0.0f, 40.0f, 1.0f, 6.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+	{ERowType::Slider, "Indentation", nullptr, false, false, true,0.0f, 40.0f, 1.0f, 6.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Gap between the screen edges and between messages."},
-	{ERowType::Slider, "Size", nullptr, false, false, 0.1f, 2.0f, 0.1f, 1.0f, "x", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+	{ERowType::Slider, "Size", nullptr, false, false, true,0.1f, 2.0f, 0.1f, 1.0f, "x", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Overall scale of the panel (like ClickGUI Scale)."},
-	{ERowType::Toggle, "Dynamic Scale", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+	{ERowType::Toggle, "Dynamic Scale", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Resize the panel by dragging its bottom-right corner in the editor."},
-	{ERowType::Slider, "Height", nullptr, false, false, 200.0f, 1200.0f, 1.0f, 560.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+	{ERowType::Slider, "Height", nullptr, false, false, true,200.0f, 1200.0f, 1.0f, 560.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Panel height in pixels."},
-	{ERowType::Slider, "Width", nullptr, false, false, 200.0f, 1200.0f, 1.0f, 480.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+	{ERowType::Slider, "Width", nullptr, false, false, true,200.0f, 1200.0f, 1.0f, 480.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Panel width in pixels."},
-	{ERowType::Label, "ArrayAgent", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-	{ERowType::Input, "API Endpoint", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "endpoint...", nullptr, 0, 0, nullptr, 0,
+	{ERowType::Label, "ArrayAgent", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+	{ERowType::Input, "API Endpoint", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "endpoint...", nullptr, 0, 0, nullptr, 0,
 		"OpenAI-compatible API endpoint (e.g. http://127.0.0.1:1234/v1)."},
-	{ERowType::Input, "API Key", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "key...", nullptr, 0, 0, nullptr, 0,
+	{ERowType::Input, "API Key", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "key...", nullptr, 0, 0, nullptr, 0,
 		"API key sent as the Authorization Bearer token."},
-	{ERowType::Input, "Models", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "model1,model2...", nullptr, 0, 0, nullptr, 0,
+	{ERowType::Input, "Models", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "model1,model2...", nullptr, 0, 0, nullptr, 0,
 		"Model list, comma separated (shown in the chat panel dropdown)."},
-	{ERowType::Toggle, "Show Time", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+	{ERowType::Toggle, "Show Time", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Show the message time/date in the meta line."},
-	{ERowType::Toggle, "Show Time Work", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+	{ERowType::Toggle, "Show Time Work", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Show the generation work time (seconds) in the meta line."},
-	{ERowType::Toggle, "Show Usage", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+	{ERowType::Toggle, "Show Usage", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Show the token usage in the meta line."},
-	{ERowType::Toggle, "Show Copy Message", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+	{ERowType::Toggle, "Show Copy Message", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Show a copy button next to every message."},
-	{ERowType::Input, "Workdir", nullptr, false, false, 0, 0, 0, 0, nullptr, "", "path...", nullptr, 0, 0, nullptr, 0,
+	{ERowType::Input, "Workdir", nullptr, false, false, true,0, 0, 0, 0, nullptr, "", "path...", nullptr, 0, 0, nullptr, 0,
 		"Agent working directory (empty = the Kinetix folder)."},
-	{ERowType::Toggle, "Save Sessions", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+	{ERowType::Toggle, "Save Sessions", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Persist chats as JSON files in Kinetix/Sessions."},
-	{ERowType::Toggle, "Show Main Page", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+	{ERowType::Toggle, "Show Main Page", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
 		"Show the session list when no chat is open."},
-	{ERowType::Dropdown, "Reasoning", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_AgentReasoningOpts, 3, 0, nullptr, 0,
+	{ERowType::Dropdown, "Reasoning", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_AgentReasoningOpts, 3, 0, nullptr, 0,
 		"Reasoning stream display: Hide = off, Show = collapsible grey block, Expand = always open."},
-	{ERowType::Label, "Colors", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+	{ERowType::Label, "Colors", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 	KX_ARRAY_COLOR_ROWS("Text"),
 	KX_ARRAY_COLOR_ROWS("Main"),
 	KX_ARRAY_COLOR_ROWS("Panel"),
 };
 static const int KX_ARRAYAGENT_CHILD_COUNT = (int)(sizeof(g_ArrayAgentChildren) / sizeof(g_ArrayAgentChildren[0]));
 static SRow g_ArrayPlayerChildren[] = {
-        {ERowType::Label, "Array", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Dropdown, "Show Mode", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ShowModeOpts, 4, 0, nullptr, 0,
+        {ERowType::Label, "Array", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Dropdown, "Show Mode", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ShowModeOpts, 4, 0, nullptr, 0,
                 "Where the HUD is shown. In Game+ClickGUI keeps TWO positions; Both keeps ONE for both."},
-        {ERowType::DoubleButton, "Game Editor", "Reset", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Toggle the ArrayPlayer editor for the in-game position (closes the ClickGUI).", "Reset the in-game position to its default."},
-        {ERowType::DoubleButton, "ClickGUI Editor", "Reset", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Toggle the ArrayPlayer editor for the ClickGUI position.", "Reset the ClickGUI position to its default."},
-        {ERowType::DoubleButton, "Editor", "Reset", false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Toggle the ArrayPlayer editor (closes the ClickGUI).", "Reset the player position to its default."},
-        {ERowType::Dropdown, "X Anchor", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ArrayListXAnchorOpts, 4, 0, nullptr, 0,
+        {ERowType::Custom, "Game Editor", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+                g_aArrayListGameEdBtns[ARR_SECTION_PLAYER], 2},
+        {ERowType::Custom, "ClickGUI Editor", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+                g_aArrayListGuiEdBtns[ARR_SECTION_PLAYER], 2},
+        {ERowType::Custom, "Editor", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+                g_aArrayListEdBtns[ARR_SECTION_PLAYER], 2},
+        {ERowType::Dropdown, "X Anchor", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ArrayListXAnchorOpts, 4, 0, nullptr, 0,
                 "Horizontal anchor of the title/artist text inside the card."},
-        {ERowType::Dropdown, "Style", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ArrayPlayerStyleOpts, 2, 0, nullptr, 0,
+        {ERowType::Dropdown, "Style", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, g_ArrayPlayerStyleOpts, 2, 0, nullptr, 0,
                 "Visual style of the player card."},
-        {ERowType::Slider, "Indentation", nullptr, false, false, 0.0f, 40.0f, 1.0f, 4.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Indentation", nullptr, false, false, true,0.0f, 40.0f, 1.0f, 4.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Vertical gap between the track title and the artist."},
-        {ERowType::Slider, "ArrayPlayer Size", nullptr, false, false, 0.1f, 2.0f, 0.1f, 1.0f, "x", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "ArrayPlayer Size", nullptr, false, false, true,0.1f, 2.0f, 0.1f, 1.0f, "x", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Overall scale of the player (like ClickGUI Scale)."},
-        {ERowType::Toggle, "Dynamic Scale", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Dynamic Scale", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Resize the player by dragging its bottom-right corner in the editor."},
-        {ERowType::Slider, "Height ArrayPlayer", nullptr, false, false, 40.0f, 600.0f, 1.0f, 90.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Height ArrayPlayer", nullptr, false, false, true,40.0f, 600.0f, 1.0f, 90.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Card height in pixels."},
-        {ERowType::Slider, "Width ArrayPlayer", nullptr, false, false, 100.0f, 1000.0f, 1.0f, 320.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Slider, "Width ArrayPlayer", nullptr, false, false, true,100.0f, 1000.0f, 1.0f, 320.0f, "px", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Card width in pixels."},
         // TODO(v6.14): ArrayPlayer content settings (Array* section). The media
         // card has no configurable content yet — extend it here (track/artist
         // toggles, time, progress, etc.) when the wider functionality lands.
-        {ERowType::Label, "ArrayPlayer", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Label, "Colors", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, "ArrayPlayer", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, "Colors", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
         KX_ARRAY_COLOR_ROWS("Text"),
         KX_ARRAY_COLOR_ROWS("Main"),
         KX_ARRAY_COLOR_ROWS("Panel"),
 };
 static const int KX_ARRAYPLAYER_CHILD_COUNT = (int)(sizeof(g_ArrayPlayerChildren) / sizeof(g_ArrayPlayerChildren[0]));
 static SRow g_VisualsRows[] = {
-        {ERowType::Expandable, "Custom colors", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CustomColorsChildren, 7, "Master switch: off = original game look."},
-        {ERowType::Toggle, "Hide particles", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Expandable, "Custom colors", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_CustomColorsChildren, 7, "Master switch: off = original game look."},
+        {ERowType::Toggle, "Hide particles", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Hide in-game particles."},
         // v1.56.260: moved from the Advanced panel.
-        {ERowType::Expandable, "Trajectory", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TrajectoryChildren, 7,
+        {ERowType::Expandable, "Trajectory", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TrajectoryChildren, 7,
                 "Predict projectile trajectories."},
-        {ERowType::Expandable, "ESP", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_EspChildren, 21,
+        {ERowType::Expandable, "ESP", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_EspChildren, 21,
                 "Draw pointers / boxes to targets."},
-        {ERowType::Expandable, "Hitboxes", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_HitboxesChildren, 17,
+        {ERowType::Expandable, "Hitboxes", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_HitboxesChildren, 17,
                 "Draw tee collision / trigger hitboxes."},
         // v1.56.262: bypass locks + admin alarm.
-        {ERowType::Toggle, "Bypass Zoom Lock", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Bypass Zoom Lock", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Bypass the server zoom lock."},
-        {ERowType::Toggle, "Bypass Asset Lock", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+        {ERowType::Toggle, "Bypass Asset Lock", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Bypass the asset (map) lock."},
-        {ERowType::Expandable, "Admin Alarm", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AdminAlarmChildren, 5,
+        {ERowType::Expandable, "Admin Alarm", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_AdminAlarmChildren, 5,
                 "Local alarm when an admin/helper/moderator is present."},
-        {ERowType::Expandable, "ArrayList", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ArrayListChildren, KX_ARRAYLIST_CHILD_COUNT,
+        {ERowType::Expandable, "ArrayList", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ArrayListChildren, KX_ARRAYLIST_CHILD_COUNT,
                 "On-screen list of enabled features (drag to move)."},
-        {ERowType::Expandable, "ArrayInfo", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ArrayInfoChildren, KX_ARRAYINFO_CHILD_COUNT,
+        {ERowType::Expandable, "ArrayInfo", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ArrayInfoChildren, KX_ARRAYINFO_CHILD_COUNT,
                 "On-screen info bar (drag to move)."},
-        {ERowType::Expandable, "ArrayPlayer", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ArrayPlayerChildren, KX_ARRAYPLAYER_CHILD_COUNT,
+        {ERowType::Expandable, "ArrayPlayer", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ArrayPlayerChildren, KX_ARRAYPLAYER_CHILD_COUNT,
                 "On-screen now-playing media card (drag to move)."},
-        {ERowType::Expandable, "ArrayAgent", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ArrayAgentChildren, KX_ARRAYAGENT_CHILD_COUNT,
+        {ERowType::Expandable, "ArrayAgent", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ArrayAgentChildren, KX_ARRAYAGENT_CHILD_COUNT,
                 "AI agent chat panel (OpenAI-compatible endpoint; drag to move)."},
 };
 
 // v1.56.286: Search panel — real-time filtering of every other panel.
 static SRow g_SearchParamChildren[] = {
-        {ERowType::Toggle, "Case Sensitive", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Match letter case exactly."},
-        {ERowType::Toggle, "Whole Word", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Match whole words only (no substring hits)."},
-        {ERowType::Toggle, "Use Regex", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Treat the query as an ECMAScript regular expression."},
-        {ERowType::Toggle, "Fuzzy Match", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Match when every query character appears in order."},
+        {ERowType::Toggle, "Case Sensitive", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Match letter case exactly."},
+        {ERowType::Toggle, "Whole Word", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Match whole words only (no substring hits)."},
+        {ERowType::Toggle, "Use Regex", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Treat the query as an ECMAScript regular expression."},
+        {ERowType::Toggle, "Fuzzy Match", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0, "Match when every query character appears in order."},
 };
 static SRow g_SearchRows[] = {
-        {ERowType::Input, "Search", nullptr, false, false, 0, 0, 0, 0, nullptr, g_SearchQuery, "search...", nullptr, 0, 0, nullptr, 0, "Type to filter all panels in real time. Empty = show everything."},
-        {ERowType::Expandable, "Search parameters", nullptr, false, false, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_SearchParamChildren, 4},
+        {ERowType::Input, "Search", nullptr, false, false, true,0, 0, 0, 0, nullptr, g_SearchQuery, "search...", nullptr, 0, 0, nullptr, 0, "Type to filter all panels in real time. Empty = show everything."},
+        {ERowType::Expandable, "Search parameters", nullptr, false, false, true,0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_SearchParamChildren, 4},
 };
 
 static SPanel g_Panels[NUM_PANELS] = {
@@ -2304,12 +2510,16 @@ static bool SearchMatchName(const char *pName)
 // SearchUpdateMatches(), so the call sites need no panel special-casing.
 static bool SearchKeepsRow(const SRow &row)
 {
+        if(!row.visible) // v6.15: runtime visibility gate
+                return false;
         if(g_SearchQuery[0] == 0)
                 return true;
         return row.m_SearchMatch || row.m_SearchChildMatch;
 }
 static bool SearchKeepsChild(const SRow &child)
 {
+        if(!child.visible) // v6.15: runtime visibility gate
+                return false;
         if(g_SearchQuery[0] == 0)
                 return true;
         return child.m_SearchMatch;
@@ -2380,20 +2590,13 @@ static bool PfRowVisible(const SRow *pRows, int rowCount, int idx)
         if(idx < 0 || idx >= rowCount)
                 return false;
         const SRow &row = pRows[idx];
-        if(str_comp(row.pName, "Speed") == 0)
-        {
-                for(int i = 0; i < rowCount; ++i)
-                        if(str_comp(pRows[i].pName, "Path") == 0)
-                                return pRows[i].on;
-                return false;
-        }
-        if(str_comp(row.pName, "Unfreeze Radius") == 0)
-        {
-                for(int i = 0; i < rowCount; ++i)
-                        if(str_comp(pRows[i].pName, "Freeze Support (Beta)") == 0)
-                                return pRows[i].on;
-                return false;
-        }
+        if(str_comp(row.pName, "A* Weight") == 0 || str_comp(row.pName, "Hook angles") == 0 ||
+           str_comp(row.pName, "Freeze Support (Beta)") == 0)
+                return g_Config.m_KxPfEffort == 6;
+        if(str_comp(row.pName, "Beam width") == 0)
+                return g_Config.m_KxPfEffort == 6 && g_Config.m_KxPfAlgorithm == 1;
+        if(str_comp(row.pName, "Evolutions") == 0)
+                return g_Config.m_KxPfEffort == 6 && g_Config.m_KxPfAlgorithm == 2;
         if(row.pName == g_PfDyn_Progress || row.pName == g_PfDyn_Eta)
                 return g_PfShowRunLabels;
         if(row.pName == g_PfDyn_Time)
@@ -2468,6 +2671,13 @@ static bool TasRowVisible(const SRow *pRows, int rowCount, int idx)
                                 return pRows[i].valueIdx == 0;
         }
         if(str_comp(row.pName, "Auto Rewind/Forward") == 0)
+        {
+                for(int i = 0; i < rowCount; ++i)
+                        if(str_comp(pRows[i].pName, "Mode") == 0)
+                                return pRows[i].valueIdx == 1;
+        }
+        // v6.15: the Spawner is a Record-mode tool — hidden while Mode = Play.
+        if(str_comp(row.pName, "Spawner") == 0)
         {
                 for(int i = 0; i < rowCount; ++i)
                         if(str_comp(pRows[i].pName, "Mode") == 0)
@@ -3281,7 +3491,7 @@ static bool DummyManagerChildVisible(const SRow *pChildren, int childCount, int 
         {
                 if(!DummiesChildVisible(pChildren, childCount, idx))
                         return false;
-                if(ch.type == ERowType::DoubleButton)
+                if(ch.type == ERowType::Custom)
                 {
                         const int d = DummyMgrParseD(ch.pName);
                         return d >= 1 && d < g_DummyLimit;
@@ -3547,7 +3757,7 @@ static bool VisualRainbowChildVisible(const SRow *pChildren, int childCount, int
                         HasSprite = true;
                 else if(str_comp(pChildren[i].pName, "Rainbow Main Color") == 0)
                         HasRainbowMain = true;
-                else if(str_comp(pChildren[i].pName, "Max Ticks") == 0)
+                else if(str_comp(pChildren[i].pName, "A* Weight") == 0)
                         HasAStarWeight = true;
         }
         if(HasSprite)
@@ -3606,13 +3816,19 @@ static bool VisualRainbowChildVisible(const SRow *pChildren, int childCount, int
         }
         if(HasAStarWeight)
         {
-                if(str_comp(ch.pName, "Unfreeze Radius") == 0)
-                {
-                        for(int i = 0; i < childCount; ++i)
-                                if(str_comp(pChildren[i].pName, "Freeze Support (Beta)") == 0)
-                                        return pChildren[i].on;
+                // Pathfinder Settings: A* Weight + Freeze Support need Custom
+                // effort (6); Beam width also Beam algorithm (1); Evolutions
+                // also RHEA (2); Performance/Chunk/Polish are always visible.
+                if(str_comp(ch.pName, "Performance") == 0)
+                        return true;
+                if(str_comp(ch.pName, "Chunk") == 0 || str_comp(ch.pName, "Polish") == 0)
+                        return true;
+                if(g_Config.m_KxPfEffort != 6)
                         return false;
-                }
+                if(str_comp(ch.pName, "Beam width") == 0)
+                        return g_Config.m_KxPfAlgorithm == 1;
+                if(str_comp(ch.pName, "Evolutions") == 0)
+                        return g_Config.m_KxPfAlgorithm == 2;
                 return true;
         }
         return true;
@@ -3818,6 +4034,9 @@ static constexpr float ROW_H_SLIDER = 48.0f;
 static constexpr float ROW_H_INPUT = 34.0f;
 static constexpr float ROW_H_EXPANDABLE = 30.0f;
 static constexpr float ROW_H_BUTTON = 36.0f;
+// v6.15: Graph row — the height of two Label rows (6px pad + graph 20px +
+// name 17px, with a 3px gap). Same total as 2 labels (23px each).
+static constexpr float ROW_H_GRAPH = 46.0f;
 
 // Row internal layout (px) — scaled up 1.25x.
 static constexpr float CHECK_W = 22.0f; // v1.56.61: enlarged from 18 for better visibility
@@ -3853,7 +4072,9 @@ static bool IsVisualExpandableName(const char *pName)
                 str_comp(pName, "Spawner") == 0 ||
                 str_comp(pName, "LuaCT") == 0 ||
                 str_comp(pName, "GitHub Scripts") == 0 ||
-                str_comp(pName, "GitHub TASes") == 0;
+                str_comp(pName, "GitHub TASes") == 0 ||
+                str_comp(pName, "Client Info") == 0 || // v6.15: Info panel
+                str_comp(pName, "Kinetix") == 0; // v6.15: Info panel
 }
 
 static float RowHeight(ERowType t)
@@ -3873,10 +4094,12 @@ static float RowHeight(ERowType t)
                 return ROW_H_EXPANDABLE;
         case ERowType::Button:
                 return ROW_H_BUTTON;
-        case ERowType::DoubleButton:
+        case ERowType::Custom:
                 return ROW_H_BUTTON;
         case ERowType::Label:
                 return ROW_H_TOGGLE; // v1.56.176: Label uses same height as a toggle row
+        case ERowType::Graph:
+                return ROW_H_GRAPH; // v6.15: two label rows (graph + centered name)
         }
         return ROW_H_TOGGLE;
 }
@@ -3926,9 +4149,215 @@ static int KxLabelLineCount(const char *pText, float MaxWidth)
         return (int)vLines.size();
 }
 
+// v6.15: which horizontal zone of a child-bearing Custom row is under the
+// mouse (LocalX is relative to the row left). Children are laid out as equal
+// zones separated by the same 2 px gap used by the renderer; HIDDEN children
+// occupy no zone. Returns the child INDEX among visible children, -1 when no
+// child zone is under the mouse (empty row).
+static int CustomZoneAt(const SRow &row, float LocalX, float RowW)
+{
+        if(!row.pChildren)
+                return -1;
+        int aVisible[16];
+        int Vis = 0;
+        for(int i = 0; i < row.childCount && Vis < 16; ++i)
+                if(row.pChildren[i].visible)
+                        aVisible[Vis++] = i;
+        if(Vis == 0)
+                return -1;
+        if(Vis == 1)
+                return aVisible[0];
+        const float ZoneW = (RowW - 4.0f - (Vis - 1) * 2.0f) / Vis;
+        int Zone = (int)((LocalX - 2.0f) / (ZoneW + 2.0f));
+        if(Zone < 0)
+                Zone = 0;
+        if(Zone > Vis - 1)
+                Zone = Vis - 1;
+        return aVisible[Zone];
+}
+
+// v6.15: per-child state for child-bearing Custom rows — the single place
+// where a Custom child resolves its own color, label and visibility from the
+// game state (each child fully owns its values). Sets Child.visible = false
+// when the child is currently hidden (it then occupies no zone). pPanel is
+// the panel title, pSection the top-level row name the container lives in
+// (for the ArrayList editor family); both may be nullptr. Accent=true =
+// default accent color. (SRow lives in this TU, so this cannot be a member.)
+static bool CustomChildStyle(CClickGui &Gui, CBotNet &BN, CTas &Tas, const char *pPanel, const char *pSection,
+        const SRow &Container, SRow &Child, ColorRGBA &Col, const char *&pLabel, bool &Accent)
+{
+        const ColorRGBA Green = ColorRGBA(0xff3da35a, true);
+        const ColorRGBA Red = ColorRGBA(0xffc43d3d, true);
+        const ColorRGBA Orange = ColorRGBA(0xffe69528, true);
+        const ColorRGBA Blue = ColorRGBA(0xff3d7ac4, true);
+        Child.visible = true;
+        Accent = true; // default accent (the caller applies alpha)
+        Col = Green;
+        pLabel = Child.pName;
+
+        // Pathfinder tab — Pathfinding (IDLE/RUNNING/FINISHED) + Paste + Spectate.
+        if(str_comp(Container.pName, "Pathfinding") == 0)
+        {
+                if(str_comp(Child.pName, "Pathfinding") == 0)
+                {
+                        Accent = false;
+                        if(BN.m_PfState == PF_STATE_RUNNING)
+                        {
+                                Col = Red;
+                                pLabel = "Stop";
+                        }
+                        else if(BN.m_PfState == PF_STATE_FINISHED)
+                        {
+                                Col = Orange;
+                                pLabel = "Finish";
+                        }
+                        return true;
+                }
+                if(str_comp(Child.pName, "Paste") == 0)
+                {
+                        Accent = false;
+                        Child.visible = BN.m_PfState == PF_STATE_FINISHED; // green Paste
+                        return true;
+                }
+                if(str_comp(Child.pName, "Spectate") == 0)
+                {
+                        if(BN.m_PfState != PF_STATE_RUNNING)
+                        {
+                                Child.visible = false;
+                                return true;
+                        }
+                        Accent = false;
+                        Col = Blue;
+                        pLabel = BN.m_PfSpecFollow ? "Unspectate" : "Spectate";
+                        return true;
+                }
+        }
+        // Tile editor pairs — Pathfinder and Real-Time Pathfinder panels.
+        if(str_comp(Container.pName, "Editor Forbidden Tiles") == 0 || str_comp(Container.pName, "Editor Finish Tiles") == 0)
+        {
+                const bool RtPanel = str_comp(pPanel, "Real-Time Pathfinder") == 0;
+                const bool isForbidden = str_comp(Container.pName, "Editor Forbidden Tiles") == 0;
+                const bool editorActive = isForbidden ? (RtPanel ? BN.m_RtPfEditorMode == 1 : BN.m_PfEditorMode == 1)
+                        : (RtPanel ? BN.m_RtPfEditorMode == 2 : BN.m_PfEditorMode == 2);
+                if(str_comp(Child.pName, "Clear") == 0)
+                {
+                        const bool Any = isForbidden ? !(RtPanel ? BN.m_RtPfForbiddenTiles : BN.m_PfForbiddenTiles).empty()
+                                : !(RtPanel ? BN.m_RtPfCustomFinishTiles : BN.m_PfCustomFinishTiles).empty();
+                        if(!Any)
+                        {
+                                Child.visible = false;
+                                return true;
+                        }
+                        Accent = false;
+                        Col = RtPanel ? Red : Orange;
+                        pLabel = "Clear";
+                        return true;
+                }
+                Accent = false;
+                Col = editorActive ? Red : Green;
+                pLabel = editorActive ? "Exit Editor" : Container.pName;
+                return true;
+        }
+        // Pick File | Unpick File — TAS panel and Code Execution panel.
+        if(str_comp(Container.pName, "Pick File") == 0)
+        {
+                const bool Loaded = str_comp(pPanel, "TAS") == 0 ? g_TasFilePicked : g_ExecLoaded;
+                if(str_comp(Child.pName, "Unpick File") == 0)
+                {
+                        Accent = false;
+                        Col = Red;
+                        Child.visible = Loaded;
+                        return true;
+                }
+                Accent = false;
+                Col = Green;
+                return true;
+        }
+        // TAS Play/Record + Reset Record.
+        if(Container.pName == g_TasDyn_Action)
+        {
+                if(str_comp(Child.pName, "Reset Record") == 0)
+                {
+                        Accent = false;
+                        Col = Red;
+                        Child.visible = Tas.RecordDirty();
+                        return true;
+                }
+                Accent = false;
+                Col = (Tas.IsPlaying() || Tas.IsRealPlaying() || Tas.IsRecording()) ? Red : Green;
+                pLabel = Container.pName;
+                return true;
+        }
+        // Join/Leave Playground + Reset Playground.
+        if(Container.pName == g_TasDyn_Join)
+        {
+                if(str_comp(Child.pName, "Reset Playground") == 0)
+                {
+                        Accent = false;
+                        Col = Red;
+                        Child.visible = Tas.PlaygroundDirty();
+                        return true;
+                }
+                Accent = false;
+                Col = Tas.IsJoined() ? Red : Green;
+                pLabel = Tas.IsJoined() ? "Leave Playground" : "Join Playground";
+                return true;
+        }
+        // ArrayList editor family (child rows): Editor | Game Editor | ClickGUI
+        // Editor, each with a Reset half that appears when its position moved.
+        // The state itself is private to CClickGui — resolved by the member
+        // ArrayEditorChildState below.
+        if(str_comp(Container.pName, "Editor") == 0 || str_comp(Container.pName, "Game Editor") == 0 || str_comp(Container.pName, "ClickGUI Editor") == 0)
+        {
+                bool EditorActive = false;
+                bool ResetVisible = false;
+                Gui.ArrayEditorChildState(pSection, Container.pName, EditorActive, ResetVisible);
+                if(str_comp(Child.pName, "Reset") == 0)
+                {
+                        if(!ResetVisible)
+                        {
+                                Child.visible = false;
+                                return true;
+                        }
+                        Accent = false;
+                        Col = Orange;
+                        return true;
+                }
+                Accent = false;
+                Col = EditorActive ? Red : Green;
+                pLabel = EditorActive ? "Exit Editor" : "Editor";
+                return true;
+        }
+        // Kill | Kill All — both halves red.
+        if(str_comp(Container.pName, "Kill") == 0)
+        {
+                Accent = false;
+                Col = Red;
+                return true;
+        }
+        // Rewind | Forward — accent both.
+        if(str_comp(Container.pName, "Rewind") == 0)
+                return true;
+        return true;
+}
+
 // Row height taking the wrapped Label height into account.
 static float RowHeightForRow(const SRow &row)
 {
+        // v6.15: Custom rows with children size by their tallest child (the
+        // children are plain rows laid out as equal horizontal zones); legacy
+        // childless Custom rows are button height.
+        if(row.type == ERowType::Custom)
+        {
+                if(row.pChildren)
+                {
+                        float h = 0.0f;
+                        for(int i = 0; i < row.childCount; ++i)
+                                h = std::max(h, RowHeightForRow(row.pChildren[i]));
+                        return h;
+                }
+                return ROW_H_BUTTON;
+        }
         if(row.type != ERowType::Label)
                 return RowHeight(row.type);
         // Labels are tighter than control rows: 17 px per wrapped text line
@@ -3937,6 +4366,35 @@ static float RowHeightForRow(const SRow &row)
 }
 
 } // anonymous namespace
+
+// v6.15: state of one ArrayList editor button — see the declaration in the
+// class. Temporarily re-points the GuiPass flag so the "position modified"
+// check reads the position this button edits. (Defined outside the anonymous
+// namespace: member functions cannot be defined in it.)
+void CClickGui::ArrayEditorChildState(const char *pSection, const char *pContainerName, bool &EditorActive, bool &ResetVisible)
+{
+        const int Kind = (str_comp(pSection, "ArrayInfo") == 0) ? 1 : (str_comp(pSection, "ArrayPlayer") == 0) ? 2 : (str_comp(pSection, "ArrayAgent") == 0) ? 3 : 0;
+        const bool ClickGuiBtn = str_comp(pContainerName, "ClickGUI Editor") == 0;
+        const int SectionMode = Kind == 1 ? g_Config.m_KxArrayInfoShowMode
+                : Kind == 2 ? g_Config.m_KxArrayPlayerShowMode
+                : Kind == 3 ? g_Config.m_KxArrayAgentShowMode
+                           : g_Config.m_KxArrayListShowMode;
+        const bool DualPos = SectionMode == 2;
+        const bool EditorBool = Kind == 1 ? m_ArrayInfoEditor : Kind == 2 ? m_ArrayPlayerEditor : Kind == 3 ? m_AgentEditor : m_ArrayListEditor;
+        bool &GuiPassRef = Kind == 1 ? m_ArrayInfoEditorGuiPass : Kind == 2 ? m_ArrayPlayerEditorGuiPass : Kind == 3 ? m_AgentEditorGuiPass : m_ArrayListEditorGuiPass;
+        EditorActive = EditorBool;
+        if(DualPos)
+        {
+                if(ClickGuiBtn)
+                        EditorActive = EditorBool && GuiPassRef;
+                else if(str_comp(pContainerName, "Game Editor") == 0)
+                        EditorActive = EditorBool && !GuiPassRef;
+        }
+        const bool WasGuiPass = GuiPassRef;
+        GuiPassRef = ClickGuiBtn && DualPos;
+        ResetVisible = Kind == 1 ? ArrayInfoPositionModified() : Kind == 2 ? ArrayPlayerPositionModified() : Kind == 3 ? ArrayAgentPositionModified() : ArrayListPositionModified();
+        GuiPassRef = WasGuiPass;
+}
 
 // ============================================================================
 // CClickGui — static helpers
@@ -4420,7 +4878,7 @@ void CClickGui::UpdateDummyManagerRows()
 }
 
 // v1.56.176: refresh Info panel dynamic row text buffers.
-// Reads the "Show spoofed" toggle from g_InfoRows[INFO_ROW_SHOWSPOOFED]
+// Reads the "Spoofed" toggle from the Client Info expandable
 // and builds the client identity strings (real vs spoofed) + FPS.
 // Real:    GAME_NAME / GAME_RELEASE_VERSION / GIT_SHORTREV_HASH
 //          + version id DDNET_VERSION_NUMBER (shown as "X.Y / id")
@@ -4429,13 +4887,17 @@ void CClickGui::UpdateDummyManagerRows()
 // v1.56.284: EXE SHA-256 — computed once per session from the running executable.
 // Extracted so it can run during CClickGui::OnInit() (client loading stage)
 // instead of stalling the first ClickGUI open.
+// v6.15: exe/apk identity shared with the Info panel (binary label, sha line).
+static char g_InfoExePath[1024];
+static char g_InfoExeShaFull[SHA256_MAXSTRSIZE];
+static time_t g_InfoExeMtime = 0;
+
 static void KxComputeExeHash()
 {
         static bool s_Done = false;
         if(s_Done)
                 return;
         s_Done = true;
-        str_copy(g_InfoDyn_ExeHash, "EXE SHA-256: n/a", sizeof(g_InfoDyn_ExeHash));
         char aExePath[1024];
         aExePath[0] = 0;
 #ifdef _WIN32
@@ -4452,6 +4914,9 @@ static void KxComputeExeHash()
 #endif
         if(aExePath[0])
         {
+                str_copy(g_InfoExePath, aExePath, sizeof(g_InfoExePath));
+                time_t Created = 0;
+                fs_file_time(aExePath, &Created, &g_InfoExeMtime); // fs_file_time writes BOTH out params (no null check!)
                 IOHANDLE File = io_open(aExePath, IOFLAG_READ);
                 if(File)
                 {
@@ -4464,9 +4929,7 @@ static void KxComputeExeHash()
                                         if(io_read(File, pData, (unsigned)FileSize) == (unsigned)FileSize)
                                         {
                                                 SHA256_DIGEST Digest = sha256(pData, (size_t)FileSize);
-                                                char aHashStr[SHA256_MAXSTRSIZE];
-                                                sha256_str(Digest, aHashStr, sizeof(aHashStr));
-                                                str_format(g_InfoDyn_ExeHash, sizeof(g_InfoDyn_ExeHash), "EXE SHA-256: %s", aHashStr);
+                                                sha256_str(Digest, g_InfoExeShaFull, sizeof(g_InfoExeShaFull));
                                         }
                                         free(pData);
                                 }
@@ -4474,6 +4937,100 @@ static void KxComputeExeHash()
                         io_close(File);
                 }
         }
+}
+
+// v6.15: system usage samplers for the Info sparklines (0..100).
+static void KxSampleRam(float &RamPct)
+{
+        RamPct = 0.0f;
+#if defined(_WIN32)
+        KxMemoryStatusEx Mem;
+        Mem.dwLength = sizeof(Mem);
+        if(GlobalMemoryStatusEx(&Mem) && Mem.ullTotalPhys > 0)
+                RamPct = 100.0f * (float)(Mem.ullTotalPhys - Mem.ullAvailPhys) / (float)Mem.ullTotalPhys;
+#else
+        char *pMemInfo = nullptr;
+        IOHANDLE File = io_open("/proc/meminfo", IOFLAG_READ);
+        if(File)
+        {
+                pMemInfo = io_read_all_str(File);
+                io_close(File);
+        }
+        if(pMemInfo)
+        {
+                const char *pTotal = strstr(pMemInfo, "MemTotal:");
+                const char *pAvail = strstr(pMemInfo, "MemAvailable:");
+                if(pTotal && pAvail)
+                {
+                        const long long Total = atoll(pTotal + 9);
+                        const long long Avail = atoll(pAvail + 13);
+                        if(Total > 0 && Avail >= 0)
+                                RamPct = 100.0f * (float)(Total - Avail) / (float)Total;
+                }
+                free(pMemInfo);
+        }
+#endif
+}
+
+static void KxSampleCpu(float &CpuPct)
+{
+        CpuPct = 0.0f;
+#if defined(_WIN32)
+        static KxFileTime s_PrevIdle = {}, s_PrevKernel = {}, s_PrevUser = {};
+        static bool s_HavePrev = false;
+        KxFileTime Idle, Kernel, User;
+        if(!GetSystemTimes(&Idle, &Kernel, &User))
+                return;
+        auto ToU64 = [](const KxFileTime &t) { return (unsigned long long)t.dwHighDateTime << 32 | t.dwLowDateTime; };
+        if(s_HavePrev)
+        {
+                const unsigned long long dKernel = ToU64(Kernel) - ToU64(s_PrevKernel);
+                const unsigned long long dUser = ToU64(User) - ToU64(s_PrevUser);
+                const unsigned long long dIdle = ToU64(Idle) - ToU64(s_PrevIdle);
+                const unsigned long long dBusy = dKernel + dUser - dIdle;
+                const unsigned long long dTotal = dKernel + dUser;
+                if(dTotal > 0)
+                        CpuPct = 100.0f * (float)dBusy / (float)dTotal;
+        }
+        s_PrevIdle = Idle;
+        s_PrevKernel = Kernel;
+        s_PrevUser = User;
+        s_HavePrev = true;
+#else
+        static long long s_PrevBusy = -1, s_PrevTotal = -1;
+        IOHANDLE File = io_open("/proc/stat", IOFLAG_READ);
+        if(!File)
+                return;
+        char *pStat = io_read_all_str(File);
+        io_close(File);
+        if(!pStat)
+                return;
+        long long u, n, s, id, iow, irq, softirq, steal = 0;
+        const bool Parsed = sscanf(pStat, "cpu %lld %lld %lld %lld %lld %lld %lld %lld",
+                &u, &n, &s, &id, &iow, &irq, &softirq, &steal) >= 5;
+        free(pStat);
+        if(!Parsed)
+                return;
+        const long long Total = u + n + s + id + iow + irq + softirq + steal;
+        const long long Busy = Total - id - iow;
+        if(s_PrevTotal > 0)
+        {
+                const long long dTotal = Total - s_PrevTotal;
+                const long long dBusy = Busy - s_PrevBusy;
+                if(dTotal > 0)
+                        CpuPct = 100.0f * (float)dBusy / (float)dTotal;
+        }
+        s_PrevTotal = Total;
+        s_PrevBusy = Busy;
+#endif
+}
+
+static int InfoCountFilesCb(const char *pName, int IsDir, int DirType, void *pUser)
+{
+        (void)DirType;
+        if(!IsDir && pName && pName[0] != '.')
+                ++*(int *)pUser;
+        return 0;
 }
 
 void CClickGui::UpdateInfoRows()
@@ -4489,53 +5046,117 @@ void CClickGui::UpdateInfoRows()
                         m_AvgFps = m_AvgFps + 0.05f * (instantFps - m_AvgFps);
         }
 
-        // Show spoofed toggle: local ClickGUI state (g_InfoRows[0].on).
-        const bool showSpoofed = g_InfoRows[INFO_ROW_SHOWSPOOFED].on;
+        // v6.15: FPS history for the Graph row — sampled once per second.
+        // Cap the buffer so long sessions don't grow unbounded; the row
+        // renders its last GraphPoints values.
+        static float s_FpsAccum = 0.0f;
+        s_FpsAccum += dt;
+        if(s_FpsAccum >= 1.0f)
+        {
+                s_FpsAccum = 0.0f;
+                g_InfoFpsGraph.vVals.push_back(m_AvgFps);
+                if(g_InfoFpsGraph.vVals.size() > 600)
+                        g_InfoFpsGraph.vVals.erase(g_InfoFpsGraph.vVals.begin());
+        }
 
-        // --- Client Name ---
+        // v6.15: RAM / CPU usage — sampled every 0.25s (both series in percent).
+        static float s_SampleAccum = 0.0f;
+        s_SampleAccum += dt;
+        if(s_SampleAccum >= 0.25f)
+        {
+                s_SampleAccum = 0.0f;
+                float RamPct = 0.0f, CpuPct = 0.0f;
+                KxSampleRam(RamPct);
+                KxSampleCpu(CpuPct);
+                g_InfoRamGraph.vVals.push_back(RamPct);
+                if(g_InfoRamGraph.vVals.size() > 600)
+                        g_InfoRamGraph.vVals.erase(g_InfoRamGraph.vVals.begin());
+                g_InfoCpuGraph.vVals.push_back(CpuPct);
+                if(g_InfoCpuGraph.vVals.size() > 600)
+                        g_InfoCpuGraph.vVals.erase(g_InfoCpuGraph.vVals.begin());
+        }
+
+        // Wire the graph data sources (RAM/CPU live on the Custom row's
+        // Graph children — each child carries its own series).
+        g_InfoRows[INFO_ROW_RAMCPU].pChildren[0].pGraph = &g_InfoRamGraph;
+        g_InfoRows[INFO_ROW_RAMCPU].pChildren[1].pGraph = &g_InfoCpuGraph;
+        g_InfoRows[INFO_ROW_FPS].pGraph = &g_InfoFpsGraph;
+
+        // --- Top version labels (always the real identity) ---
+        str_copy(g_InfoDyn_Kx, "Kinetix: " KINETIX_VERSION, sizeof(g_InfoDyn_Kx));
+        str_format(g_InfoDyn_Ddnet, sizeof(g_InfoDyn_Ddnet), "DDNet: v%s / %d",
+                GAME_RELEASE_VERSION, DDNET_VERSION_NUMBER);
+
+        // Spoofed toggle: local ClickGUI state (Client Info expandable child).
+        const bool showSpoofed = g_InfoRows[INFO_ROW_CLIENTINFO].pChildren[INFO_CHILD_SPOOFED].on;
+
+        // --- Name ---
         if(showSpoofed)
         {
                 const char *pName = g_Config.m_KxSpoofClientName[0] ? g_Config.m_KxSpoofClientName : GAME_NAME;
-                str_format(g_InfoDyn_Name, sizeof(g_InfoDyn_Name), "Client Name: %s", pName);
+                str_format(g_InfoDyn_Name, sizeof(g_InfoDyn_Name), "Name: %s", pName);
         }
         else
         {
-                str_format(g_InfoDyn_Name, sizeof(g_InfoDyn_Name), "Client Name: %s", GAME_NAME);
+                str_format(g_InfoDyn_Name, sizeof(g_InfoDyn_Name), "Name: %s", GAME_NAME);
         }
 
-        // --- Client Version (real includes DDNet id; spoofed includes spoof id) ---
+        // --- Version ---
         if(showSpoofed)
         {
                 const char *pVer = g_Config.m_KxSpoofClientVersion[0] ? g_Config.m_KxSpoofClientVersion : GAME_RELEASE_VERSION;
                 str_format(g_InfoDyn_Version, sizeof(g_InfoDyn_Version),
-                        "Client Version: %s / %d", pVer, g_Config.m_KxVersionSpoofId);
+                        "Version: %s | %d", pVer, g_Config.m_KxVersionSpoofId);
         }
         else
         {
                 str_format(g_InfoDyn_Version, sizeof(g_InfoDyn_Version),
-                        "Client Version: %s / %d", GAME_RELEASE_VERSION, DDNET_VERSION_NUMBER);
+                        "Version: %s | %d", GAME_RELEASE_VERSION, DDNET_VERSION_NUMBER);
         }
 
-        // --- Client Hash ---
+        // --- Git Hash ---
         if(showSpoofed)
         {
                 const char *pHash = g_Config.m_KxSpoofGitHashEnabled
                         ? (g_Config.m_KxSpoofGitHash[0] ? g_Config.m_KxSpoofGitHash : "0")
                         : (GIT_SHORTREV_HASH ? GIT_SHORTREV_HASH : "none");
-                str_format(g_InfoDyn_Hash, sizeof(g_InfoDyn_Hash), "Client Hash: %s", pHash);
+                str_format(g_InfoDyn_Hash, sizeof(g_InfoDyn_Hash), "Git Hash: %s", pHash);
         }
         else
         {
                 str_format(g_InfoDyn_Hash, sizeof(g_InfoDyn_Hash),
-                        "Client Hash: %s", GIT_SHORTREV_HASH ? GIT_SHORTREV_HASH : "none");
+                        "Git Hash: %s", GIT_SHORTREV_HASH ? GIT_SHORTREV_HASH : "none");
         }
 
-        // --- AVG FPS ---
-        str_format(g_InfoDyn_Fps, sizeof(g_InfoDyn_Fps), "AVG FPS: %d", (int)(m_AvgFps + 0.5f));
-
-        // v1.56.284: EXE SHA-256 — computed once per session from the running
-        // executable file (precomputed during CClickGui::OnInit()).
+        // v1.56.284 / v6.15: EXE SHA-256 + mtime — computed once per session
+        // from the running executable file (precomputed during OnInit()).
         KxComputeExeHash();
+        if(g_InfoExePath[0])
+        {
+                // "exe" / "apk" from the path extension.
+                const char *pDot = strrchr(g_InfoExePath, '.');
+                const char *pKind = (pDot && str_comp_nocase(pDot, ".apk") == 0) ? ".apk" : ".exe";
+                char aTime[64];
+                str_timestamp_ex(g_InfoExeMtime, aTime, sizeof(aTime), "%Y-%m-%d %H:%M");
+                str_format(g_InfoDyn_Binary, sizeof(g_InfoDyn_Binary), "%s Created: %s", pKind, aTime);
+                str_copy(g_InfoDyn_Sha, "SHA-256: ...", sizeof(g_InfoDyn_Sha)); // rendered adaptively (see the Label case)
+        }
+        else
+        {
+                str_copy(g_InfoDyn_Binary, "Created: n/a", sizeof(g_InfoDyn_Binary));
+                str_copy(g_InfoDyn_Sha, "SHA-256: n/a", sizeof(g_InfoDyn_Sha));
+        }
+
+        // v6.15: scripts / TASes counts — recount every ~2s while the GUI runs.
+        static int s_CountFrame = 0;
+        if((s_CountFrame++ % 120) == 0)
+        {
+                int Scripts = 0, Tases = 0;
+                Storage()->ListDirectory(IStorage::TYPE_SAVE, "Kinetix/Scripts", InfoCountFilesCb, &Scripts);
+                Storage()->ListDirectory(IStorage::TYPE_SAVE, "Kinetix/TAS", InfoCountFilesCb, &Tases);
+                str_format(g_InfoDyn_Scripts, sizeof(g_InfoDyn_Scripts), "Scripts: %d", Scripts);
+                str_format(g_InfoDyn_Tases, sizeof(g_InfoDyn_Tases), "TASes: %d", Tases);
+        }
 }
 
 void CClickGui::UpdatePathfinderLabels()
@@ -4792,7 +5413,7 @@ void CClickGui::UpdateCodeExecRows()
                         AddLabel(g_aGitHubAuthor[i]);
                         AddLabel(g_aGitHubDesc[i]);
                         AddButton(g_aGitHubLoadBtn[i]);
-                        g_vGitHubChildren.back().type = ERowType::DoubleButton;
+                        g_vGitHubChildren.back().type = ERowType::Custom;
                         g_vGitHubChildren.back().pName2 = "Download";
                         g_vGitHubChildren.back().pToolTip = "Load the script into Code Execution from memory (nothing is saved to disk).";
                         g_vGitHubChildren.back().pToolTip2 = "Download the script to Kinetix/Scripts.";
@@ -5287,7 +5908,7 @@ void CClickGui::UpdateTasRows()
 			AddLabel(g_aGitHubTasVersion[i]);
 			AddLabel(g_aGitHubTasCreated[i]);
 			AddButton(g_aGitHubTasLoadBtn[i]);
-			g_vGitHubTasChildren.back().type = ERowType::DoubleButton;
+			g_vGitHubTasChildren.back().type = ERowType::Custom;
 			g_vGitHubTasChildren.back().pName2 = "Download";
 			g_vGitHubTasChildren.back().pToolTip = "Load the .tas file into the TAS panel from memory (nothing is saved to disk).";
 			g_vGitHubTasChildren.back().pToolTip2 = "Download the .tas file to Kinetix/TAS.";
@@ -6078,9 +6699,12 @@ void CClickGui::OnRender()
 
                 const float sw = VScreenWidth();
                 const float sh = VScreenHeight();
-                // A fresh fly-in anchor for the Agent panel on every open, same
-                // as the panels below.
+                // A fresh fly-in anchor for the Agent panel and the array HUDs
+                // on every open, same as the panels below.
                 m_AgentOffscreenValid = false;
+                m_ArrayListOffscreenValid = false;
+                m_ArrayInfoOffscreenValid = false;
+                m_ArrayPlayerOffscreenValid = false;
                 for(int i = 0; i < NUM_PANELS; ++i)
                 {
                         m_aOffscreenPos[i] = PickRandomOffscreenPos(i, sw, sh);
@@ -6178,6 +6802,9 @@ void CClickGui::OnRender()
                                         row.on = g_Config.m_KxAutoVote != 0;
                                 else if(str_comp(row.pName, "Auto Vote Kick") == 0)
                                         row.on = g_Config.m_KxAutoVoteKick != 0;
+                                // v6.15: Functions → Fast Sim (optimized Pathfinder sim).
+                                else if(str_comp(row.pName, "Fast Sim") == 0)
+                                        row.on = g_Config.m_KxPfFastSim != 0;
                                 else if(str_comp(row.pName, "Fast Input") == 0)
                                         row.on = g_Config.m_KxFastInput != 0;
                                 else if(str_comp(row.pName, "Auto Verify") == 0)
@@ -6185,10 +6812,18 @@ void CClickGui::OnRender()
                                 else if(str_comp(row.pName, "Discord RPC") == 0)
                                         row.on = g_Config.m_KxDiscordRpc != 0;
                                 // Pathfinder top-level sliders/toggles
+                                else if(str_comp(row.pName, "A* Weight") == 0)
+                                        row.value = g_Config.m_KxPfAStarWeight / 100.0f;
+                                else if(str_comp(row.pName, "Beam width") == 0)
+                                        row.value = (float)g_Config.m_KxPfBeamWidth;
+                                else if(str_comp(row.pName, "Evolutions") == 0)
+                                        row.value = (float)g_Config.m_KxPfRheaGenerations;
                                 else if(str_comp(row.pName, "Performance") == 0)
                                         row.value = (float)g_Config.m_KxPfPerf;
                                 else if(str_comp(row.pName, "Effort") == 0)
                                         row.valueIdx = g_Config.m_KxPfEffort;
+                                else if(str_comp(row.pName, "Algorithm") == 0)
+                                        row.valueIdx = g_Config.m_KxPfAlgorithm;
                                 else if(str_comp(row.pName, "Freeze Support (Beta)") == 0)
                                         row.on = g_Config.m_KxPfFreezeSupport != 0;
                                 else if(str_comp(row.pName, "Freedom Path") == 0)
@@ -6712,21 +7347,15 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                         child.m_InputInitialized = true;
                                                 }
                                         }
-                                        // Pathfinder → Visuals children (panel-gated: TAS and
-                                        // Real-Time Pathfinder use overlapping child labels).
-                                        else if(str_comp(row.pName, "Visuals") == 0 && str_comp(g_Panels[p].pTitle, "Pathfinder") == 0)
-                                        {
-                                                if(str_comp(child.pName, "Path") == 0)
-                                                        child.on = g_Config.m_KxPfShowPath != 0;
-                                                else if(str_comp(child.pName, "Speed") == 0)
-                                                        child.on = g_Config.m_KxPfShowSpeed != 0;
-                                                else if(str_comp(child.pName, "Hooks") == 0)
-                                                        child.on = g_Config.m_KxPfShowHooks != 0;
-                                                else if(str_comp(child.pName, "Field") == 0)
-                                                        child.on = g_Config.m_KxPfShowField != 0;
-                                                else if(str_comp(child.pName, "Start/End Pos") == 0)
-                                                        child.on = g_Config.m_KxPfDrawStartEndPos != 0;
-                                        }
+                                        // Pathfinder → Visuals children
+                                        else if(str_comp(child.pName, "Show field") == 0)
+                                                child.on = g_Config.m_KxPfShowField != 0;
+                                        else if(str_comp(child.pName, "Show hooks") == 0)
+                                                child.on = g_Config.m_KxPfShowHooks != 0;
+                                        else if(str_comp(child.pName, "Show branches") == 0)
+                                                child.on = g_Config.m_KxPfShowBranches != 0;
+                                        else if(str_comp(child.pName, "Show speed") == 0)
+                                                child.on = g_Config.m_KxPfShowSpeed != 0;
                                         // v1.56.280: Real-Time Pathfinder Visuals children
                                         // (panel-gated: TAS/Pathfinder use overlapping child labels)
                                         else if(str_comp(row.pName, "Visuals") == 0 && str_comp(g_Panels[p].pTitle, "Real-Time Pathfinder") == 0)
@@ -7243,7 +7872,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                         // Hide if already on main (g_Config.m_ClDummy == 0).
                                                         ch.on = (g_Config.m_ClDummy != 0);
                                                 }
-                                                else if(ch.type != ERowType::DoubleButton && ch.pName && ch.pName[0] == 'D' && DummyMgrParseD(ch.pName) >= 1)
+                                                else if(ch.type != ERowType::Custom && ch.pName && ch.pName[0] == 'D' && DummyMgrParseD(ch.pName) >= 1)
                                                 {
                                                         const int d = DummyMgrParseD(ch.pName);
                                                         if(strstr(ch.pName, "Connect"))
@@ -7251,8 +7880,8 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                         else if(strstr(ch.pName, "Switch"))
                                                                 ch.on = (g_Config.m_ClDummy == d);
                                                 }
-                                                // v1.56.282: DoubleButton (Connect+Switch+Send) — ch.on=connected, ch.value=active, ch.expanded=send
-                                                else if(ch.type == ERowType::DoubleButton && ch.pName && ch.pName[0] == 'D')
+                                                // v1.56.282: Custom (Connect+Switch+Send) — ch.on=connected, ch.value=active, ch.expanded=send
+                                                else if(ch.type == ERowType::Custom && ch.pName && ch.pName[0] == 'D')
                                                 {
                                                         const int d = DummyMgrParseD(ch.pName);
                                                         if(d >= 1 && d < MAX_DUMMIES)
@@ -7956,38 +8585,38 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 {
                                         SRow &child = row.pChildren[c];
                                         const bool Dragging = (m_DragSliderPanel == p && m_DragSliderRow == r && m_DragSliderChild == c);
-                                        if(str_comp(child.pName, "Max Ticks") == 0)
+                                        if(str_comp(child.pName, "A* Weight") == 0)
                                         {
                                                 if(!Dragging)
-                                                        child.value = (float)g_Config.m_KxPfTicks;
+                                                        child.value = (float)g_Config.m_KxPfAStarWeight / 100.0f;
+                                        }
+                                        else if(str_comp(child.pName, "Evolutions") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = (float)g_Config.m_KxPfRheaGenerations;
+                                        }
+                                        else if(str_comp(child.pName, "Beam width") == 0)
+                                        {
+                                                if(!Dragging)
+                                                        child.value = (float)g_Config.m_KxPfBeamWidth;
                                         }
                                         else if(str_comp(child.pName, "Performance") == 0)
                                         {
                                                 if(!Dragging)
                                                         child.value = (float)g_Config.m_KxPfPerf;
                                         }
-                                        else if(str_comp(child.pName, "Tweaker Inputs") == 0)
+                                        else if(str_comp(child.pName, "Chunk") == 0)
                                         {
                                                 if(!Dragging)
-                                                        child.value = (float)g_Config.m_KxPfInputs;
+                                                        child.value = (float)g_Config.m_KxPfChunk;
                                         }
-                                        else if(str_comp(child.pName, "Tweaker Ticks") == 0)
+                                        else if(str_comp(child.pName, "Polish") == 0)
                                         {
                                                 if(!Dragging)
-                                                        child.value = (float)g_Config.m_KxPfInputTicks;
-                                        }
-                                        else if(str_comp(child.pName, "Tweaker Dosage") == 0)
-                                        {
-                                                if(!Dragging)
-                                                        child.value = (float)g_Config.m_KxPfDosage;
+                                                        child.value = (float)g_Config.m_KxPfPolish;
                                         }
                                         else if(str_comp(child.pName, "Freeze Support (Beta)") == 0)
                                                 child.on = g_Config.m_KxPfFreezeSupport != 0;
-                                        else if(str_comp(child.pName, "Unfreeze Radius") == 0)
-                                        {
-                                                if(!Dragging)
-                                                        child.value = (float)g_Config.m_KxPfFreezeRadius;
-                                        }
                                 }
                         }
                         // v1.56.260: Panels Start X/Y + Drag-To-Sort.
@@ -8952,18 +9581,18 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 g_Config.m_KxBalanceBotRadius = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Stand Radius") == 0)
                                 g_Config.m_KxBalanceBotStandRadius = (int)pTarget->value;
-                        else if(str_comp(pTarget->pName, "Max Ticks") == 0 && str_comp(row.pName, "Settings") == 0)
-                                g_Config.m_KxPfTicks = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "A* Weight") == 0 && str_comp(row.pName, "Settings") == 0)
+                                g_Config.m_KxPfAStarWeight = (int)(pTarget->value * 100.0f + 0.5f);
+                        else if(str_comp(pTarget->pName, "Evolutions") == 0 && str_comp(row.pName, "Settings") == 0)
+                                g_Config.m_KxPfRheaGenerations = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Beam width") == 0 && str_comp(row.pName, "Settings") == 0)
+                                g_Config.m_KxPfBeamWidth = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Performance") == 0 && str_comp(row.pName, "Settings") == 0)
                                 g_Config.m_KxPfPerf = (int)pTarget->value;
-                        else if(str_comp(pTarget->pName, "Tweaker Inputs") == 0 && str_comp(row.pName, "Settings") == 0)
-                                g_Config.m_KxPfInputs = (int)pTarget->value;
-                        else if(str_comp(pTarget->pName, "Tweaker Ticks") == 0 && str_comp(row.pName, "Settings") == 0)
-                                g_Config.m_KxPfInputTicks = (int)pTarget->value;
-                        else if(str_comp(pTarget->pName, "Tweaker Dosage") == 0 && str_comp(row.pName, "Settings") == 0)
-                                g_Config.m_KxPfDosage = (int)pTarget->value;
-                        else if(str_comp(pTarget->pName, "Unfreeze Radius") == 0 && str_comp(row.pName, "Settings") == 0)
-                                g_Config.m_KxPfFreezeRadius = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Chunk") == 0 && str_comp(row.pName, "Settings") == 0)
+                                g_Config.m_KxPfChunk = (int)pTarget->value;
+                        else if(str_comp(pTarget->pName, "Polish") == 0 && str_comp(row.pName, "Settings") == 0)
+                                g_Config.m_KxPfPolish = (int)pTarget->value;
                         else if(str_comp(pTarget->pName, "Tunnel size") == 0)
                                 g_Config.m_KxPfTunnelSize = (int)pTarget->value;
                         // v1.56.280: RT Pathfinder sliders (live while dragging)
@@ -9041,20 +9670,29 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
         // game (behind the dim/blur) instead of floating above the panels.
         // v6.11: "Show In ClickGUI" opt-outs — those arrays are drawn ABOVE the
         // panels instead (second pass after the panel render loop below).
-        if(ArrayListVisible && g_Config.m_KxArrayListShowMode == 0)
+        // v6.15: "In Game+ClickGUI" keeps two positions. While the ClickGUI
+        // animation plays, the game-position copy cross-fades with the GUI copy
+        // (drawn above the panels below) instead of popping out/in.
+        if(ArrayListVisible && (g_Config.m_KxArrayListShowMode == 0 || g_Config.m_KxArrayListShowMode == 2))
         {
                 UpdateArrayList(Client()->RenderFrameTime());
-                RenderArrayList(1.0f);
+                const float UnderAlpha = g_Config.m_KxArrayListShowMode == 2 ? (1.0f - eased) : 1.0f;
+                if(UnderAlpha > 0.01f)
+                        RenderArrayList(UnderAlpha);
         }
-        if(ArrayInfoVisible && g_Config.m_KxArrayInfoShowMode == 0)
+        if(ArrayInfoVisible && (g_Config.m_KxArrayInfoShowMode == 0 || g_Config.m_KxArrayInfoShowMode == 2))
         {
                 UpdateArrayInfo(Client()->RenderFrameTime());
-                RenderArrayInfo(1.0f);
+                const float UnderAlpha = g_Config.m_KxArrayInfoShowMode == 2 ? (1.0f - eased) : 1.0f;
+                if(UnderAlpha > 0.01f)
+                        RenderArrayInfo(UnderAlpha);
         }
-        if(ArrayPlayerVisible && g_Config.m_KxArrayPlayerShowMode == 0)
+        if(ArrayPlayerVisible && (g_Config.m_KxArrayPlayerShowMode == 0 || g_Config.m_KxArrayPlayerShowMode == 2))
         {
                 UpdateArrayPlayer(Client()->RenderFrameTime());
-                RenderArrayPlayer(1.0f);
+                const float UnderAlpha = g_Config.m_KxArrayPlayerShowMode == 2 ? (1.0f - eased) : 1.0f;
+                if(UnderAlpha > 0.01f)
+                        RenderArrayPlayer(UnderAlpha);
         }
         if(ArrayAgentVisible && (g_Config.m_KxArrayAgentShowMode == 0 || g_Config.m_KxArrayAgentShowMode == 2 || g_Config.m_KxArrayAgentShowMode == 3))
         {
@@ -9284,12 +9922,14 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
 
         // v6.11: "Show In ClickGUI" pass — these arrays float ABOVE the panels
         // (still under the dropdown popup / file browser / tooltips below).
-        // Update + Render run exactly once per frame: the under-pass above
-        // skipped them.
+        // In Game+ClickGUI (mode 2) the under-pass above draws the game copy, so
+        // both copies cross-fade while the ClickGUI animation plays.
+        // v6.15: fade the GUI copy in/out with the ClickGUI open/close animation
+        // (mode 3 keeps ONE shared position, so it stays static like the Agent).
         if(ArrayListVisible && (g_Config.m_KxArrayListShowMode == 1 || g_Config.m_KxArrayListShowMode == 2 || g_Config.m_KxArrayListShowMode == 3))
         {
                 UpdateArrayList(Client()->RenderFrameTime());
-                RenderArrayList(1.0f);
+                RenderArrayList(g_Config.m_KxArrayListShowMode == 3 ? 1.0f : eased, true);
         }
         // Hover feedback: the grab cursor over a draggable "Show In ClickGUI" HUD.
         if((ArrayListVisible && (g_Config.m_KxArrayListShowMode == 1 || g_Config.m_KxArrayListShowMode == 2 || g_Config.m_KxArrayListShowMode == 3) && ArrayListHitTest(m_MousePos)) ||
@@ -9301,12 +9941,12 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
         if(ArrayInfoVisible && (g_Config.m_KxArrayInfoShowMode == 1 || g_Config.m_KxArrayInfoShowMode == 2 || g_Config.m_KxArrayInfoShowMode == 3))
         {
                 UpdateArrayInfo(Client()->RenderFrameTime());
-                RenderArrayInfo(1.0f);
+                RenderArrayInfo(g_Config.m_KxArrayInfoShowMode == 3 ? 1.0f : eased, true);
         }
         if(ArrayPlayerVisible && (g_Config.m_KxArrayPlayerShowMode == 1 || g_Config.m_KxArrayPlayerShowMode == 2 || g_Config.m_KxArrayPlayerShowMode == 3))
         {
                 UpdateArrayPlayer(Client()->RenderFrameTime());
-                RenderArrayPlayer(1.0f);
+                RenderArrayPlayer(g_Config.m_KxArrayPlayerShowMode == 3 ? 1.0f : eased, true);
         }
         if(ArrayAgentVisible && (g_Config.m_KxArrayAgentShowMode == 1 || g_Config.m_KxArrayAgentShowMode == 2 || g_Config.m_KxArrayAgentShowMode == 3))
         {
@@ -10222,14 +10862,14 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         return;
                                 }
                         }
-                        if(pTarget->type == ERowType::Button || pTarget->type == ERowType::DoubleButton)
+                        if(pTarget->type == ERowType::Button || pTarget->type == ERowType::Custom)
                         {
                                 // v6.3: ArrayList Editor / Reset. The right half (Reset)
                                 // only exists once the list position was moved.
-                                const bool ArrayEditorBtn = pTarget->type == ERowType::DoubleButton &&
+                                const bool ArrayEditorBtn = pTarget->type == ERowType::Custom &&
                                         (str_comp(row.pName, "ArrayList") == 0 || str_comp(row.pName, "ArrayInfo") == 0 || str_comp(row.pName, "ArrayPlayer") == 0 || str_comp(row.pName, "ArrayAgent") == 0) &&
                                         (str_comp(pTarget->pName, "Editor") == 0 || str_comp(pTarget->pName, "Game Editor") == 0 || str_comp(pTarget->pName, "ClickGUI Editor") == 0);
-                                if((str_comp(pTarget->pName, "Editor") == 0 || ArrayEditorBtn) && pTarget->type == ERowType::DoubleButton)
+                                if((str_comp(pTarget->pName, "Editor") == 0 || ArrayEditorBtn) && pTarget->type == ERowType::Custom)
                                 {
                                         // v6.13: Kind 3 = ArrayAgent.
                                         const int Kind = (str_comp(row.pName, "ArrayInfo") == 0) ? 1 : (str_comp(row.pName, "ArrayPlayer") == 0) ? 2 : (str_comp(row.pName, "ArrayAgent") == 0) ? 3 : 0;
@@ -10241,19 +10881,17 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 : Kind == 2 ? g_Config.m_KxArrayPlayerShowMode
                                                 : Kind == 3 ? g_Config.m_KxArrayAgentShowMode
                                                            : g_Config.m_KxArrayListShowMode;
-                                        const bool EditorGuiPass = str_comp(pTarget->pName, "ClickGUI Editor") == 0 && SectionMode == 2;
-                                        if(Kind == 1)
-                                                m_ArrayInfoEditorGuiPass = EditorGuiPass;
-                                        else if(Kind == 2)
-                                                m_ArrayPlayerEditorGuiPass = EditorGuiPass;
-                                        else if(Kind == 3)
-                                                m_AgentEditorGuiPass = EditorGuiPass;
-                                        else
-                                                m_ArrayListEditorGuiPass = EditorGuiPass;
+                                        const bool DualPos = SectionMode == 2;
+                                        const bool ClickGuiBtn = str_comp(pTarget->pName, "ClickGUI Editor") == 0;
+                                        const bool ButtonGuiPass = ClickGuiBtn && DualPos;
+                                        bool &GuiPassRef = Kind == 1 ? m_ArrayInfoEditorGuiPass : Kind == 2 ? m_ArrayPlayerEditorGuiPass : Kind == 3 ? m_AgentEditorGuiPass : m_ArrayListEditorGuiPass;
+                                        const bool WasGuiPass = GuiPassRef;
+                                        GuiPassRef = ButtonGuiPass;
                                         const bool Modified = Kind == 1 ? ArrayInfoPositionModified() : Kind == 2 ? ArrayPlayerPositionModified() : Kind == 3 ? ArrayAgentPositionModified() : ArrayListPositionModified();
-                                        const float btnW = (rw - 6.0f) * 0.5f;
-                                        if(Modified && mousePos.x >= rx + 2.0f + btnW)
+                                        GuiPassRef = WasGuiPass;
+                                        if(Modified && CustomZoneAt(*pTarget, mousePos.x - rx, rw) == 1)
                                         {
+                                                GuiPassRef = ButtonGuiPass;
                                                 if(Kind == 1)
                                                         ResetArrayInfoPosition();
                                                 else if(Kind == 2)
@@ -10262,13 +10900,21 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                         ResetArrayAgentPosition();
                                                 else
                                                         ResetArrayListPosition();
+                                                GuiPassRef = WasGuiPass;
                                         }
                                         else
                                         {
                                                 bool &EditorRef = Kind == 1 ? m_ArrayInfoEditor : Kind == 2 ? m_ArrayPlayerEditor : Kind == 3 ? m_AgentEditor : m_ArrayListEditor;
-                                                EditorRef = !EditorRef;
-                                                if(EditorRef)
+                                                // v6.15: only the button for the pass being edited
+                                                // exits the editor; the other pass button switches
+                                                // the editor over to that position.
+                                                const bool ActiveForThisButton = EditorRef && (!DualPos || (ClickGuiBtn ? GuiPassRef : !GuiPassRef));
+                                                GuiPassRef = ButtonGuiPass;
+                                                if(ActiveForThisButton)
+                                                        EditorRef = false;
+                                                else
                                                 {
+                                                        EditorRef = true;
                                                         if(Kind != 0)
                                                                 m_ArrayListEditor = false;
                                                         if(Kind != 1)
@@ -10279,27 +10925,26 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                                 m_AgentEditor = false;
                                                         // The ClickGUI Editor edits the panel right in the
                                                         // GUI — keep the GUI open; the others close it.
-                                                        if(!EditorGuiPass)
+                                                        if(!ButtonGuiPass)
                                                                 g_Config.m_ClClickGui = 0;
                                                 }
                                         }
                                         return;
                                 }
-                                        // v1.56.150: Pathfinding is now DoubleButton (Pathfinding + Paste).
+                                        // v1.56.150: Pathfinding is now Custom (Pathfinding + Paste).
                                         // Left zone = Pathfinding toggle, right zone = Paste (kx_pf_paste).
                                         // Right zone active only when m_PfState == FINISHED.
-                                if(str_comp(pTarget->pName, "Pathfinding") == 0 && pTarget->type == ERowType::DoubleButton && str_comp(panel.pTitle, "Pathfinder") == 0)
+                                if(str_comp(pTarget->pName, "Pathfinding") == 0 && pTarget->type == ERowType::Custom && str_comp(panel.pTitle, "Pathfinder") == 0)
                                 {
                                         CBotNet &BN = GameClient()->m_BotNet;
                                         const bool playVisible = (BN.m_PfState == PF_STATE_FINISHED);
                                         const bool specVisible = (BN.m_PfState == PF_STATE_RUNNING);
                                         bool playClicked = false;
                                         bool specClicked = false;
-                                        if(pTarget->type == ERowType::DoubleButton && (playVisible || specVisible))
+                                        if(pTarget->type == ERowType::Custom && (playVisible || specVisible))
                                         {
-                                                const float btnW = (rw - 6.0f) * 0.5f;
-                                                const float zone1End = rx + 2.0f + btnW;
-                                                if(mousePos.x >= zone1End)
+                                                // v6.15: zones come from the visible Custom children.
+                                                if(CustomZoneAt(*pTarget, mousePos.x - rx, rw) == 1)
                                                 {
                                                         if(playVisible)
                                                                 playClicked = true;
@@ -10344,14 +10989,14 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                                 // Find best open node (lowest H = closest to goal)
                                                                 int bestIdx = -1;
                                                                 float bestH = 1e18f;
-                                                                for(int idx : BN.m_PfAOpen)
+                                                                for(const CBotNet::KxPfOpenEnt &ent : BN.m_PfAOpen)
                                                                 {
-                                                                        if(idx < 0 || idx >= (int)BN.m_PfANodes.size())
+                                                                        if(ent.Idx < 0 || ent.Idx >= BN.PfNodeTotal())
                                                                                 continue;
-                                                                        if(BN.m_PfANodes[idx].H < bestH)
+                                                                        if(ent.H < bestH)
                                                                         {
-                                                                                bestH = BN.m_PfANodes[idx].H;
-                                                                                bestIdx = idx;
+                                                                                bestH = ent.H;
+                                                                                bestIdx = ent.Idx;
                                                                         }
                                                                 }
                                                                 if(bestIdx >= 0)
@@ -10380,7 +11025,7 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 }
                                         }
                                 }
-                                else if(str_comp(pTarget->pName, "Editor Forbidden Tiles") == 0 && pTarget->type == ERowType::DoubleButton && str_comp(panel.pTitle, "Pathfinder") == 0)
+                                else if(str_comp(pTarget->pName, "Editor Forbidden Tiles") == 0 && pTarget->type == ERowType::Custom && str_comp(panel.pTitle, "Pathfinder") == 0)
                                 {
                                         CBotNet &BN = GameClient()->m_BotNet;
                                         const float btnW = (rw - 6.0f) * 0.5f;
@@ -10393,7 +11038,7 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                         BN.LoadMapGrid();
                                         }
                                 }
-                                else if(str_comp(pTarget->pName, "Editor Finish Tiles") == 0 && pTarget->type == ERowType::DoubleButton && str_comp(panel.pTitle, "Pathfinder") == 0)
+                                else if(str_comp(pTarget->pName, "Editor Finish Tiles") == 0 && pTarget->type == ERowType::Custom && str_comp(panel.pTitle, "Pathfinder") == 0)
                                 {
                                         CBotNet &BN = GameClient()->m_BotNet;
                                         const float btnW = (rw - 6.0f) * 0.5f;
@@ -10425,7 +11070,7 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         }
                                 }
                                 // RT tile editors — SEPARATE storage from the Pathfinder editors.
-                                else if(str_comp(pTarget->pName, "Editor Forbidden Tiles") == 0 && pTarget->type == ERowType::DoubleButton && str_comp(panel.pTitle, "Real-Time Pathfinder") == 0)
+                                else if(str_comp(pTarget->pName, "Editor Forbidden Tiles") == 0 && pTarget->type == ERowType::Custom && str_comp(panel.pTitle, "Real-Time Pathfinder") == 0)
                                 {
                                         CBotNet &BN = GameClient()->m_BotNet;
                                         const float btnW = (rw - 6.0f) * 0.5f;
@@ -10438,7 +11083,7 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                         BN.LoadMapGrid();
                                         }
                                 }
-                                else if(str_comp(pTarget->pName, "Editor Finish Tiles") == 0 && pTarget->type == ERowType::DoubleButton && str_comp(panel.pTitle, "Real-Time Pathfinder") == 0)
+                                else if(str_comp(pTarget->pName, "Editor Finish Tiles") == 0 && pTarget->type == ERowType::Custom && str_comp(panel.pTitle, "Real-Time Pathfinder") == 0)
                                 {
                                         CBotNet &BN = GameClient()->m_BotNet;
                                         const float btnW = (rw - 6.0f) * 0.5f;
@@ -10457,24 +11102,23 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         CTas &Tas = GameClient()->m_Tas;
                                         // v6.3: right half = "Reset Record" (shown only when
                                         // the take buffer holds something or a file is loaded).
-                                        const float btnW = (rw - 6.0f) * 0.5f;
-                                        if(Tas.RecordDirty() && pTarget->type == ERowType::DoubleButton && mousePos.x >= rx + 2.0f + btnW)
+                                        if(Tas.RecordDirty() && pTarget->type == ERowType::Custom &&
+                                                CustomZoneAt(*pTarget, mousePos.x - rx, rw) == 1)
                                                 Tas.ResetRecord();
                                         else if(Tas.Mode() == 1)
                                                 Tas.ToggleRecord();
                                         else
                                                 Tas.TogglePlay();
                                 }
-                                else if(str_comp(row.pName, "Spawner") == 0 && (pTarget->type == ERowType::Button || pTarget->type == ERowType::DoubleButton))
+                                else if(str_comp(row.pName, "Spawner") == 0 && (pTarget->type == ERowType::Button || pTarget->type == ERowType::Custom))
                                 {
                                         CTas &Tas = GameClient()->m_Tas;
                                         SyncTasSpawnerRows(Tas);
                                         if(str_comp(pTarget->pName, "Spawn") == 0)
                                                 Tas.SpawnerSpawn();
-                                        else if(str_comp(pTarget->pName, "Kill") == 0 && pTarget->type == ERowType::DoubleButton)
+                                        else if(str_comp(pTarget->pName, "Kill") == 0 && pTarget->type == ERowType::Custom)
                                         {
-                                                const float btnW = (rw - 6.0f) * 0.5f;
-                                                if(mousePos.x >= rx + 2.0f + btnW)
+                                                if(CustomZoneAt(*pTarget, mousePos.x - rx, rw) == 1)
                                                         Tas.SpawnerKillAll();
                                                 else
                                                         Tas.SpawnerKill();
@@ -10488,27 +11132,26 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         // v6.2: the right half is "Reset Playground",
                                         // shown only while joined and something exists to drop.
                                         const bool ResetVisible = Tas.PlaygroundDirty();
-                                        const float btnW = (rw - 6.0f) * 0.5f;
-                                        if(ResetVisible && pTarget->type == ERowType::DoubleButton && mousePos.x >= rx + 2.0f + btnW)
+                                        if(ResetVisible && pTarget->type == ERowType::Custom &&
+                                                CustomZoneAt(*pTarget, mousePos.x - rx, rw) == 1)
                                                 Tas.PlaygroundReset();
                                         else
                                                 Tas.JoinLeavePlayground();
                                 }
                                 // v6.2: Rewind | Forward in one row.
-                                else if(str_comp(pTarget->pName, "Rewind") == 0 && pTarget->type == ERowType::DoubleButton)
+                                else if(str_comp(pTarget->pName, "Rewind") == 0 && pTarget->type == ERowType::Custom)
                                 {
-                                        const float btnW = (rw - 6.0f) * 0.5f;
-                                        if(mousePos.x >= rx + 2.0f + btnW)
+                                        // v6.15: right child = Forward.
+                                        if(CustomZoneAt(*pTarget, mousePos.x - rx, rw) == 1)
                                                 GameClient()->m_Tas.StepForward();
                                         else
                                                 GameClient()->m_Tas.StepRewind();
                                 }
-                                else if(str_comp(pTarget->pName, "Pick File") == 0 && pTarget->type == ERowType::DoubleButton &&
+                                else if(str_comp(pTarget->pName, "Pick File") == 0 && pTarget->type == ERowType::Custom &&
                                         str_comp(panel.pTitle, "TAS") == 0)
                                 {
                                         CTas &Tas = GameClient()->m_Tas;
-                                        const float btnW = (rw - 6.0f) * 0.5f;
-                                        if(g_TasFilePicked && mousePos.x >= rx + 2.0f + btnW)
+                                        if(g_TasFilePicked && CustomZoneAt(*pTarget, mousePos.x - rx, rw) == 1)
                                         {
                                                 Tas.UnpickFile();
                                         }
@@ -10563,13 +11206,12 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         }
                                         GameClient()->m_Tas.SaveTake(pMap, pDescription, pAuthor);
                                 }
-                                else if(str_comp(pTarget->pName, "Pick File") == 0 && pTarget->type == ERowType::DoubleButton &&
+                                else if(str_comp(pTarget->pName, "Pick File") == 0 && pTarget->type == ERowType::Custom &&
                                         str_comp(panel.pTitle, "Code Execution (Lua)") == 0)
                                 {
                                         // v6.12: right half = "Unpick File" (only while a script
                                         // is loaded); left half / full width = file picker.
-                                        const float btnW = (rw - 6.0f) * 0.5f;
-                                        if(g_ExecLoaded && mousePos.x >= rx + 2.0f + btnW)
+                                        if(g_ExecLoaded && CustomZoneAt(*pTarget, mousePos.x - rx, rw) == 1)
                                         {
                                                 ExecUnloadScript();
                                                 return;
@@ -10607,21 +11249,21 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         GameClient()->m_Tas.GitHubUpdateList();
                                         return;
                                 }
-                                else if((pTarget->type == ERowType::Button || pTarget->type == ERowType::DoubleButton) &&
+                                else if((pTarget->type == ERowType::Button || pTarget->type == ERowType::Custom) &&
                                         IsGitHubLoadButtonName(pTarget->pName, &GitHubLoadIdx))
                                 {
                                         // Left half = Load (download + select), right half
-                                        // of the DoubleButton = Download only.
-                                        const bool DownloadOnly = pTarget->type == ERowType::DoubleButton &&
+                                        // of the Custom = Download only.
+                                        const bool DownloadOnly = pTarget->type == ERowType::Custom &&
                                                 mousePos.x >= rx + 2.0f + (rw - 6.0f) * 0.5f;
                                         g_GitHubLoadRequestedIdx = GitHubLoadIdx;
                                         GameClient()->m_CodeExec.GitHubLoadScript(GitHubLoadIdx, !DownloadOnly);
                                         return;
                                 }
-                                else if((pTarget->type == ERowType::Button || pTarget->type == ERowType::DoubleButton) &&
+                                else if((pTarget->type == ERowType::Button || pTarget->type == ERowType::Custom) &&
                                         IsGitHubTasLoadButtonName(pTarget->pName, &GitHubLoadIdx))
                                 {
-                                        const bool DownloadOnly = pTarget->type == ERowType::DoubleButton &&
+                                        const bool DownloadOnly = pTarget->type == ERowType::Custom &&
                                                 mousePos.x >= rx + 2.0f + (rw - 6.0f) * 0.5f;
                                         g_TasGitHubLoadRequestedIdx = GitHubLoadIdx;
                                         GameClient()->m_Tas.GitHubLoadItem(GitHubLoadIdx, !DownloadOnly);
@@ -10684,8 +11326,8 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         else if(str_comp(pTarget->pName, "Switch to Main") == 0)
                                                 g_Config.m_ClDummy = 0;
                                 }
-                                // v1.56.90: Dummies DoubleButton (Connect+Switch+Send)
-                                else if(str_comp(row.pName, "Dummies") == 0 && pTarget->type == ERowType::DoubleButton)
+                                // v1.56.90: Dummies Custom (Connect+Switch+Send)
+                                else if(str_comp(row.pName, "Dummies") == 0 && pTarget->type == ERowType::Custom)
                                 {
                                         const int d = DummyMgrParseD(pTarget->pName);
                                         if(d < 1)
@@ -10723,6 +11365,21 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         }
                                 }
                                 // v1.56.176: Info panel social buttons — open URL in browser.
+                                // v6.15: the row is a Custom with plain Button children
+                                // laid out as equal zones; the zone under the mouse picks
+                                // the child, dispatched by the child's own name.
+                                else if(pTarget->type == ERowType::Custom && pTarget->pChildren &&
+                                        pTarget->childCount > 0 && str_comp(panel.pTitle, "Info") == 0)
+                                {
+                                        const SRow &Child = pTarget->pChildren[CustomZoneAt(*pTarget, mousePos.x - rx, rw)];
+                                        if(str_comp(Child.pName, "Telegram") == 0)
+                                                Client()->ViewLink("https://t.me/KinetixClient");
+                                        else if(str_comp(Child.pName, "TikTok") == 0)
+                                                Client()->ViewLink("https://tiktok.com/@KinetixClient");
+                                        else if(str_comp(Child.pName, "GitHub") == 0)
+                                                Client()->ViewLink("https://github.com/lothiann/Kinetix-Client");
+                                        return;
+                                }
                                 else if(str_comp(row.pName, "Telegram") == 0)
                                 {
                                         Client()->ViewLink("https://t.me/KinetixClient");
@@ -10731,6 +11388,17 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 else if(str_comp(row.pName, "TikTok") == 0)
                                 {
                                         Client()->ViewLink("https://tiktok.com/@KinetixClient");
+                                        return;
+                                }
+                                // v6.15: open the main Kinetix folder in the file manager.
+                                else if(str_comp(pTarget->pName, "Kinetix Folder") == 0)
+                                {
+                                        char aDir[1024];
+                                        Storage()->GetCompletePath(IStorage::TYPE_SAVE, "Kinetix", aDir, sizeof(aDir));
+#ifdef _WIN32
+                                        const std::wstring DirWide = windows_utf8_to_wide(aDir);
+                                        ShellExecuteW(nullptr, L"open", DirWide.c_str(), nullptr, nullptr, 5); // 5 = SW_SHOWNORMAL
+#endif
                                         return;
                                 }
                                 return;
@@ -10996,18 +11664,18 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         if(sel >= 0 && sel < CTrajectory::NUM_TRAJ_TYPES)
                                                 traj.m_aTypes[sel].m_PredictionTicks = (int)pTarget->value;
                                 }
-                                else if(str_comp(pTarget->pName, "Max Ticks") == 0 && str_comp(row.pName, "Settings") == 0)
-                                        g_Config.m_KxPfTicks = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "A* Weight") == 0 && str_comp(row.pName, "Settings") == 0)
+                                        g_Config.m_KxPfAStarWeight = (int)(pTarget->value * 100.0f + 0.5f);
+                                else if(str_comp(pTarget->pName, "Evolutions") == 0 && str_comp(row.pName, "Settings") == 0)
+                                        g_Config.m_KxPfRheaGenerations = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Beam width") == 0 && str_comp(row.pName, "Settings") == 0)
+                                        g_Config.m_KxPfBeamWidth = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Performance") == 0 && str_comp(row.pName, "Settings") == 0)
                                         g_Config.m_KxPfPerf = (int)pTarget->value;
-                                else if(str_comp(pTarget->pName, "Tweaker Inputs") == 0 && str_comp(row.pName, "Settings") == 0)
-                                        g_Config.m_KxPfInputs = (int)pTarget->value;
-                                else if(str_comp(pTarget->pName, "Tweaker Ticks") == 0 && str_comp(row.pName, "Settings") == 0)
-                                        g_Config.m_KxPfInputTicks = (int)pTarget->value;
-                                else if(str_comp(pTarget->pName, "Tweaker Dosage") == 0 && str_comp(row.pName, "Settings") == 0)
-                                        g_Config.m_KxPfDosage = (int)pTarget->value;
-                                else if(str_comp(pTarget->pName, "Unfreeze Radius") == 0 && str_comp(row.pName, "Settings") == 0)
-                                        g_Config.m_KxPfFreezeRadius = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Chunk") == 0 && str_comp(row.pName, "Settings") == 0)
+                                        g_Config.m_KxPfChunk = (int)pTarget->value;
+                                else if(str_comp(pTarget->pName, "Polish") == 0 && str_comp(row.pName, "Settings") == 0)
+                                        g_Config.m_KxPfPolish = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Tunnel size") == 0)
                                         g_Config.m_KxPfTunnelSize = (int)pTarget->value;
                                 // v1.56.280: RT Pathfinder sliders (commit on click)
@@ -11299,6 +11967,9 @@ bool CClickGui::HandleToggleTail(void *pTargetV, void *pRowV, void *pPanelV)
                 g_Config.m_KxAutoVote = pTarget->on ? 1 : 0;
         else if(str_comp(pTarget->pName, "Auto Vote Kick") == 0)
                 g_Config.m_KxAutoVoteKick = pTarget->on ? 1 : 0;
+        // v6.15: Functions → Fast Sim (optimized Pathfinder sim).
+        else if(str_comp(pTarget->pName, "Fast Sim") == 0)
+                g_Config.m_KxPfFastSim = pTarget->on ? 1 : 0;
         else if(str_comp(pTarget->pName, "Fast Input") == 0)
                 g_Config.m_KxFastInput = pTarget->on ? 1 : 0;
         else if(str_comp(pTarget->pName, "Others") == 0 && str_comp(row.pName, "Fast Input") == 0)
@@ -11386,21 +12057,15 @@ bool CClickGui::HandleToggleTail(void *pTargetV, void *pRowV, void *pPanelV)
         // v1.56.257: Hitboxes expandable header = master toggle (like IRC/Spoofer).
         else if(str_comp(pTarget->pName, "Hitboxes") == 0)
                 g_Config.m_KxHitboxes = pTarget->on ? 1 : 0;
-        // Pathfinder → Visuals children (panel-gated: TAS and Real-Time
-        // Pathfinder use overlapping child labels).
-        else if(str_comp(row.pName, "Visuals") == 0 && str_comp(panel.pTitle, "Pathfinder") == 0)
-        {
-                if(str_comp(pTarget->pName, "Path") == 0)
-                        g_Config.m_KxPfShowPath = pTarget->on ? 1 : 0;
-                else if(str_comp(pTarget->pName, "Speed") == 0)
-                        g_Config.m_KxPfShowSpeed = pTarget->on ? 1 : 0;
-                else if(str_comp(pTarget->pName, "Hooks") == 0)
-                        g_Config.m_KxPfShowHooks = pTarget->on ? 1 : 0;
-                else if(str_comp(pTarget->pName, "Field") == 0)
-                        g_Config.m_KxPfShowField = pTarget->on ? 1 : 0;
-                else if(str_comp(pTarget->pName, "Start/End Pos") == 0)
-                        g_Config.m_KxPfDrawStartEndPos = pTarget->on ? 1 : 0;
-        }
+        // Pathfinder → Visuals children
+        else if(str_comp(pTarget->pName, "Show field") == 0)
+                g_Config.m_KxPfShowField = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Show hooks") == 0)
+                g_Config.m_KxPfShowHooks = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Show branches") == 0)
+                g_Config.m_KxPfShowBranches = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Show speed") == 0)
+                g_Config.m_KxPfShowSpeed = pTarget->on ? 1 : 0;
         // Pathfinder top-level
         else if(str_comp(pTarget->pName, "Freeze Support (Beta)") == 0)
                 g_Config.m_KxPfFreezeSupport = pTarget->on ? 1 : 0;
@@ -11727,30 +12392,9 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                                         else if(str_comp(target.pName, "Box Style") == 0 && str_comp(row.pName, "ESP") == 0)
                                                 g_Config.m_KxEspBoxStyle = o;
                                         else if(str_comp(target.pName, "Effort") == 0)
-                                        {
                                                 g_Config.m_KxPfEffort = o;
-                                                if(o == 0)
-                                                {
-                                                        g_Config.m_KxPfTicks = 10000;
-                                                        g_Config.m_KxPfInputs = 88;
-                                                        g_Config.m_KxPfInputTicks = 8;
-                                                        g_Config.m_KxPfDosage = 88;
-                                                }
-                                                else if(o == 1)
-                                                {
-                                                        g_Config.m_KxPfTicks = 10000;
-                                                        g_Config.m_KxPfInputs = 160;
-                                                        g_Config.m_KxPfInputTicks = 8;
-                                                        g_Config.m_KxPfDosage = 160;
-                                                }
-                                                else
-                                                {
-                                                        g_Config.m_KxPfTicks = 10000;
-                                                        g_Config.m_KxPfInputs = 1000;
-                                                        g_Config.m_KxPfInputTicks = 8;
-                                                        g_Config.m_KxPfDosage = 300;
-                                                }
-                                        }
+                                        else if(str_comp(target.pName, "Algorithm") == 0)
+                                                g_Config.m_KxPfAlgorithm = o;
                                         else if(str_comp(target.pName, "Mode") == 0 && str_comp(row.pName, "Mode") == 0)
                                                 g_Config.m_KxRtPfMode = o;
                                         m_DropdownOpen = false;
@@ -13465,9 +14109,17 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                 ++rowIdx;
 
                 // Hover highlight: the same subtle rounded tint as the Agent rows.
+                // v6.15: Info version labels highlight only the label part, not
+                // the icon zone (label x = 4 + IconShift, see the Label case).
                 if(PointInRect(m_MousePos, rx, ry, rw, rh))
-                        DrawRoundedRect(rx - 2.0f, ry - 1.0f, rw + 4.0f, rh + 2.0f, 3.0f,
+                {
+                        const bool InfoLbl = str_comp(panel.pTitle, "Info") == 0 &&
+                                (row.pName == g_InfoDyn_Kx || row.pName == g_InfoDyn_Ddnet);
+                        const float HlX = InfoLbl ? rx + 40.0f : rx - 2.0f;
+                        const float HlW = InfoLbl ? rw - 38.0f : rw + 4.0f;
+                        DrawRoundedRect(HlX, ry - 1.0f, HlW, rh + 2.0f, 3.0f,
                                 IGraphics::CORNER_ALL, ColorRGBA(1.0f, 1.0f, 1.0f, alpha * 0.06f));
+                }
 
                 // v1.56.289: record the hovered top-level row for the ToolTip
                 // (previously only child rows were recorded, so headers and
@@ -13475,7 +14127,15 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                 // processed later in the same iteration and override this.
                 {
                         const char *pTT = row.pToolTip;
-                        if(row.type == ERowType::DoubleButton && row.pToolTip2 &&
+                        // v6.15: child-bearing Custom rows show the tooltip of the
+                        // child zone under the mouse (each child keeps its own).
+                        if(row.type == ERowType::Custom && row.pChildren && row.childCount > 0)
+                        {
+                                const SRow &ZoneChild = row.pChildren[CustomZoneAt(row, m_MousePos.x - rx, rw)];
+                                if(ZoneChild.pToolTip)
+                                        pTT = ZoneChild.pToolTip;
+                        }
+                        else if(row.type == ERowType::Custom && row.pToolTip2 &&
                                 m_MousePos.x >= rx + rw * 0.5f)
                                 pTT = row.pToolTip2;
                         // TPS slider: hovering the Pause checkbox on the right shows
@@ -13500,6 +14160,105 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                         ? ColorRGBA(COL_ROW_TEXT_ON, true)
                         : ColorRGBA(COL_ROW_TEXT, true);
                 const ColorRGBA textCol = rowTextCol.WithAlpha(alpha);
+
+                // v6.15: shared sparkline drawing for Graph rows and the Info
+                // panel Custom "RAM|CPU" row: grid + line + area fill + Y labels
+                // (max/mid/min), name centered below the graph.
+                const size_t GraphWantPts = (size_t)std::max(10, row.GraphPoints);
+                const float GraphH = 20.0f; // graph height (name takes the rest)
+                auto DrawGraph = [&](float x, float w, KxGraphSeries *pSeries, const char *pName) {
+                        const ColorRGBA GraphTextCol = ColorRGBA(0xffb8b8c8, true).WithAlpha(alpha);
+                        const float GutterW = 20.0f; // Y-labels gutter on the left
+                        const float Gx = x + 4.0f + GutterW;
+                        const float Gw = w - 8.0f - GutterW;
+                        const float Gy = ry + 2.0f;
+                        const float Gh = GraphH;
+                        if(pSeries && pSeries->vVals.size() >= 2 && Gw > 4.0f)
+                        {
+                                const size_t Total = pSeries->vVals.size();
+                                const size_t Start = Total > GraphWantPts ? Total - GraphWantPts : 0;
+                                const size_t N = Total - Start;
+                                const float *pVals = pSeries->vVals.data() + Start;
+
+                                float Min = pVals[0], Max = pVals[0];
+                                for(size_t i = 1; i < N; ++i)
+                                {
+                                        Min = std::min(Min, pVals[i]);
+                                        Max = std::max(Max, pVals[i]);
+                                }
+                                if(Max - Min < 1.0f)
+                                {
+                                        Min -= 0.5f;
+                                        Max += 0.5f;
+                                }
+                                const float Range = Max - Min;
+                                auto MapY = [&](float v) { return Gy + Gh - (v - Min) / Range * Gh; };
+
+                                // grid: 3 horizontal lines (top / mid / bottom)
+                                const ColorRGBA GridCol = ColorRGBA(1.0f, 1.0f, 1.0f, 0.07f * alpha);
+                                for(int g = 0; g < 3; ++g)
+                                        DrawRoundedRect(Gx, Gy + Gh * 0.5f * g, Gw, 1.0f, 0.0f,
+                                                IGraphics::CORNER_NONE, GridCol);
+
+                                // Y labels: max / mid / min, right-aligned in the gutter
+                                char aYBuf[16];
+                                str_format(aYBuf, sizeof(aYBuf), "%.0f", Max);
+                                DrawText(Gx - 5.0f, Gy - 5.0f, 11.0f, aYBuf, GraphTextCol, TEXTALIGN_RIGHT);
+                                str_format(aYBuf, sizeof(aYBuf), "%.0f", Min + Range * 0.5f);
+                                DrawText(Gx - 5.0f, Gy + Gh * 0.5f - 5.0f, 11.0f, aYBuf, GraphTextCol, TEXTALIGN_RIGHT);
+                                str_format(aYBuf, sizeof(aYBuf), "%.0f", Min);
+                                DrawText(Gx - 5.0f, Gy + Gh - 6.0f, 11.0f, aYBuf, GraphTextCol, TEXTALIGN_RIGHT);
+
+                                const ColorRGBA LineCol = KxColorWithAlpha(m_AccentColorRGBA, alpha);
+                                const ColorRGBA AreaCol = KxColorWithAlpha(m_AccentColorRGBA, alpha * 0.18f);
+
+                                // area fill: 1px-wide columns sampled from the polyline
+                                Graphics()->QuadsBegin();
+                                Graphics()->QuadsSetSubset(0.0f, 0.0f, 1.0f, 1.0f);
+                                Graphics()->SetColor(AreaCol);
+                                for(float px = 0.0f; px < Gw; px += 1.0f)
+                                {
+                                        const float t = px / Gw * (float)(N - 1);
+                                        const size_t i0 = (size_t)t;
+                                        const size_t i1 = std::min(i0 + 1, N - 1);
+                                        const float f = t - (float)i0;
+                                        const float yLine = MapY(pVals[i0] + (pVals[i1] - pVals[i0]) * f);
+                                        IGraphics::CQuadItem AreaQuad(Gx + px, yLine, 1.0f, Gy + Gh - yLine);
+                                        Graphics()->QuadsDrawTL(&AreaQuad, 1);
+                                }
+                                Graphics()->QuadsEnd();
+
+                                // the line itself: thin quads rotated along each segment
+                                // (QuadsSetRotation pivots around the quad center)
+                                Graphics()->QuadsBegin();
+                                Graphics()->QuadsSetSubset(0.0f, 0.0f, 1.0f, 1.0f);
+                                Graphics()->SetColor(LineCol);
+                                float PrevX = Gx, PrevY = MapY(pVals[0]);
+                                for(size_t i = 1; i < N; ++i)
+                                {
+                                        const float CurX = Gx + Gw * (float)i / (float)(N - 1);
+                                        const float CurY = MapY(pVals[i]);
+                                        const float dx = CurX - PrevX;
+                                        const float dy = CurY - PrevY;
+                                        const float len = std::sqrt(dx * dx + dy * dy);
+                                        if(len > 0.01f)
+                                        {
+                                                Graphics()->QuadsSetRotation(std::atan2(dy, dx));
+                                                IGraphics::CQuadItem LineQuad(
+                                                        (PrevX + CurX) * 0.5f - len * 0.5f,
+                                                        (PrevY + CurY) * 0.5f - 0.75f, len, 1.5f);
+                                                Graphics()->QuadsDrawTL(&LineQuad, 1);
+                                        }
+                                        PrevX = CurX;
+                                        PrevY = CurY;
+                                }
+                                Graphics()->QuadsEnd();
+                        }
+
+                        // name centered below the graph (mid anchor)
+                        const float Nw = TextRender()->TextWidth(16.0f, pName);
+                        DrawText(x + (w - Nw) * 0.5f, ry + 25.0f, 16.0f, pName, GraphTextCol);
+                };
 
                 switch(row.type)
                 {
@@ -13942,8 +14701,66 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 ColorRGBA(0xffffffff, true).WithAlpha(alpha));
                         break;
                 }
-                case ERowType::DoubleButton:
+                case ERowType::Custom:
                 {
+                        // v6.15: Custom rows with children — the children are plain
+                        // rows laid out as equal horizontal zones (2 px gaps, 2 px
+                        // side padding). Every child keeps its own label, color,
+                        // tooltip and click dispatch; hidden children (resolved by
+                        // CustomChildStyle) occupy no zone.
+                        if(row.pChildren && row.childCount > 0)
+                        {
+                                ColorRGBA aCol[16];
+                                const char *apLabel[16];
+                                bool aAccent[16];
+                                int VisCount = 0;
+                                for(int z = 0; z < row.childCount && z < 16; ++z)
+                                {
+                                        SRow &Child = row.pChildren[z];
+                                        aCol[z] = ColorRGBA(0, 0, 0, 0);
+                                        apLabel[z] = Child.pName;
+                                        aAccent[z] = true;
+                                        if(Child.type == ERowType::Graph)
+                                                Child.visible = true;
+                                        else
+                                                CustomChildStyle(*this, GameClient()->m_BotNet, GameClient()->m_Tas,
+                                                        panel.pTitle, nullptr, row, Child, aCol[z], apLabel[z], aAccent[z]);
+                                        if(Child.visible)
+                                                ++VisCount;
+                                }
+                                if(VisCount > 0)
+                                {
+                                        const float ZoneW = (rw - 4.0f - (VisCount - 1) * 2.0f) / VisCount;
+                                        int Zone = 0;
+                                        for(int z = 0; z < row.childCount && z < 16; ++z)
+                                        {
+                                                const SRow &Child = row.pChildren[z];
+                                                if(!Child.visible)
+                                                        continue;
+                                                const float zx = rx + 2.0f + Zone * (ZoneW + 2.0f);
+                                                ++Zone;
+                                                if(Child.type == ERowType::Graph)
+                                                        DrawGraph(zx, ZoneW, Child.pGraph, Child.pName);
+                                                else
+                                                {
+                                                        const ColorRGBA ZoneCol = aAccent[z] ? KxColorWithAlpha(m_AccentColorRGBA, alpha)
+                                                                : aCol[z].WithAlpha(alpha);
+                                                        DrawRoundedRect(zx, ry + 2.0f, ZoneW, rh - 4.0f, 4.0f,
+                                                                IGraphics::CORNER_ALL, ZoneCol);
+                                                        float FontSize = 13.0f;
+                                                        float lw = TextRender()->TextWidth(FontSize, apLabel[z]);
+                                                        if(lw > ZoneW - 6.0f)
+                                                        {
+                                                                FontSize = 11.0f;
+                                                                lw = TextRender()->TextWidth(FontSize, apLabel[z]);
+                                                        }
+                                                        DrawText(zx + (ZoneW - lw) * 0.5f, ry + 8.0f, FontSize, apLabel[z],
+                                                                ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                                                }
+                                        }
+                                }
+                                break;
+                        }
                         // v6.3: ArrayList Editor / Reset. The right half (Reset) only
                         // appears once the list position has been moved.
                         if(str_comp(row.pName, "Editor") == 0)
@@ -13976,7 +14793,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                 ColorRGBA(0xffffffff, true).WithAlpha(alpha));
                                 }
                         }
-                        // v1.56.150: Pathfinder DoubleButton — Pathfinding (left) + Paste (right).
+                        // v1.56.150: Pathfinder Custom — Pathfinding (left) + Paste (right).
                         // Paste visible only when m_PfState == FINISHED (path ready).
                         // When Paste hidden: Pathfinding takes full row width.
                         else if(str_comp(row.pName, "Pathfinding") == 0)
@@ -14278,16 +15095,56 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                         // label buffer pointers, same way buttons match their text).
                         const bool WarnLabel = row.pName == g_ExecWarn_Header || row.pName == g_ExecWarn_Internet ||
                                 row.pName == g_ExecWarn_Os || row.pName == g_ExecWarn_Files || row.pName == g_ExecWarn_Version;
+                        // v6.15: Info panel — the client icon spans the first two
+                        // rows (Kinetix / DDNet); their text is indented past it.
+                        const bool InfoIcon = str_comp(panel.pTitle, "Info") == 0 &&
+                                (row.pName == g_InfoDyn_Kx || row.pName == g_InfoDyn_Ddnet);
+                        const float IconShift = InfoIcon ? 38.0f : 0.0f;
+                        if(InfoIcon && row.pName == g_InfoDyn_Kx && m_ArrayInfoLogo.IsValid())
+                        {
+                                const float IconH = 42.0f; // spans the two label rows
+                                const float IconW = IconH;
+                                // v6.15: center the icon in the two-row SLOT (Kinetix +
+                                // ROW_GAP + DDNet row heights = 50 px), not on the text
+                                // glyphs: a 17 px line box leaves descender slack at the
+                                // bottom, so glyph-based centering floated the star up
+                                // (3.8 px of ink above it vs 9.3 px below). Heights come
+                                // from RowHeightForRow so this survives label height or
+                                // wrap changes; if the DDNet row is search-hidden, center
+                                // on this row alone. The quad is drawn at rx — the text
+                                // gutter is exactly IconW wide (4 + IconShift), so the
+                                // ink margins are symmetric; at rx + 4 the star poked
+                                // 2.4 px into the text column.
+                                float BlockH = RowHeightForRow(row);
+                                if(r + 1 < panel.rowCount && SearchKeepsRow(panel.pRows[r + 1]))
+                                        BlockH += ROW_GAP + RowHeightForRow(panel.pRows[r + 1]);
+                                const float IconY = ry + (BlockH - IconH) * 0.5f;
+                                Graphics()->BlendNormal();
+                                Graphics()->TextureSet(m_ArrayInfoLogo);
+                                Graphics()->QuadsBegin();
+                                Graphics()->SetColor(ColorRGBA(1.0f, 1.0f, 1.0f, alpha));
+                                IGraphics::CQuadItem IconQuad(rx, IconY, IconW, IconH);
+                                Graphics()->QuadsDrawTL(&IconQuad, 1);
+                                Graphics()->QuadsEnd();
+                                Graphics()->TextureClear();
+                        }
                         std::vector<std::string> vLines;
-                        KxWrapText(row.pName, rw - 8.0f, vLines);
+                        KxWrapText(row.pName, rw - 8.0f - IconShift, vLines);
                         float LabelY = ry + 2.0f;
                         for(const std::string &Line : vLines)
                         {
-                                DrawText(rx + 4.0f, LabelY, 16.0f, Line.c_str(),
+                                DrawText(rx + 4.0f + IconShift, LabelY, 16.0f, Line.c_str(),
                                         WarnLabel ? ColorRGBA(0xffc43d3d, true).WithAlpha(alpha)
                                                   : ColorRGBA(0xffb8b8c8, true).WithAlpha(alpha));
                                 LabelY += 17.0f;
                         }
+                        break;
+                }
+                case ERowType::Graph:
+                {
+                        // v6.15: sparkline — non-interactive, drawn by the shared
+                        // DrawGraph above (grid + line + area + Y labels + name).
+                        DrawGraph(rx, rw, row.pGraph, row.pName);
                         break;
                 }
                 }
@@ -14477,12 +15334,21 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                 IGraphics::CORNER_ALL, ColorRGBA(1.0f, 1.0f, 1.0f, alpha * 0.05f));
 
                                 // v1.56.284: record hovered child row for the ToolTip.
-                                // v1.56.288: DoubleButton — left half uses pToolTip,
+                                // v1.56.288: Custom — left half uses pToolTip,
                                 // right half uses pToolTip2 (falls back to pToolTip).
                                 // Keying on the chosen pointer means switching halves
                                 // restarts the hover delay, so each button has its own.
                                 const char *pTT = child.pToolTip;
-                                if(child.type == ERowType::DoubleButton && child.pToolTip2 &&
+                                if(child.type == ERowType::Custom && child.pChildren && child.childCount > 0)
+                                {
+                                        // v6.15: child-bearing Custom rows show the tooltip of
+                                        // the child zone under the mouse (each child keeps its
+                                        // own; switching zones restarts the hover delay).
+                                        const int ZoneChild = CustomZoneAt(child, m_MousePos.x - crx, crw);
+                                        if(ZoneChild >= 0 && child.pChildren[ZoneChild].pToolTip)
+                                                pTT = child.pChildren[ZoneChild].pToolTip;
+                                }
+                                else if(child.type == ERowType::Custom && child.pToolTip2 &&
                                         m_MousePos.x >= crx + crw * 0.5f)
                                         pTT = child.pToolTip2;
                                 // Clipped-away children must not show a tooltip.
@@ -14843,6 +15709,45 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                 }
                                 case ERowType::Label:
                                 {
+                                        // v6.15: adaptive single-line hashes — the SHA-256 /
+                                        // Git Hash children of the Info panel expandables show
+                                        // the full text when it fits the row width, otherwise
+                                        // they are truncated to the width with " ..." appended
+                                        // (the dots reserve their own width, so they never
+                                        // overflow). The SHA buffer only holds the
+                                        // "SHA-256: ..." stub — the full hash lives in
+                                        // g_InfoExeShaFull. These rows are CHILDREN drawn here,
+                                        // so the top-level Label case never handled them.
+                                        const bool InfoHashChild = str_comp(panel.pTitle, "Info") == 0 &&
+                                                (child.pName == g_InfoDyn_Sha || child.pName == g_InfoDyn_Hash);
+                                        if(InfoHashChild)
+                                        {
+                                                static char s_aHashLine[128];
+                                                if(child.pName == g_InfoDyn_Sha)
+                                                {
+                                                        if(!g_InfoExeShaFull[0])
+                                                                str_copy(s_aHashLine, "SHA-256: n/a", sizeof(s_aHashLine));
+                                                        else
+                                                                str_format(s_aHashLine, sizeof(s_aHashLine), "SHA-256: %s", g_InfoExeShaFull);
+                                                }
+                                                else
+                                                {
+                                                        str_copy(s_aHashLine, child.pName, sizeof(s_aHashLine));
+                                                }
+                                                int n = str_length(s_aHashLine);
+                                                const float MaxW = crw - 8.0f;
+                                                if(TextRender()->TextWidth(15.0f, s_aHashLine, n) > MaxW)
+                                                {
+                                                        const float DotsW = TextRender()->TextWidth(15.0f, " ...");
+                                                        while(n > 0 && TextRender()->TextWidth(15.0f, s_aHashLine, n) + DotsW > MaxW)
+                                                                n--;
+                                                        s_aHashLine[n] = '\0';
+                                                        str_append(s_aHashLine, " ...", sizeof(s_aHashLine));
+                                                }
+                                                DrawText(crx + 4.0f, cry + 2.0f, 15.0f, s_aHashLine,
+                                                        ColorRGBA(0xffb8b8c8, true).WithAlpha(alpha));
+                                                break;
+                                        }
                                         // v1.56.258: Label child — non-interactive text.
                                         // v6.2: wrapped like every other label.
                                         std::vector<std::string> vLines;
@@ -14856,8 +15761,66 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                         }
                                         break;
                                 }
-                                case ERowType::DoubleButton:
+                                case ERowType::Custom:
                                 {
+                                        // v6.15: child Custom rows with children — the same
+                                        // equal-zone layout as the top-level case. The section
+                                        // (for the ArrayList editor family) is the top-level
+                                        // row's name; every child resolves its own state via
+                                        // CustomChildStyle and hidden children occupy no zone.
+                                        if(child.pChildren && child.childCount > 0)
+                                        {
+                                                ColorRGBA aCol[16];
+                                                const char *apLabel[16];
+                                                bool aAccent[16];
+                                                int VisCount = 0;
+                                                for(int z = 0; z < child.childCount && z < 16; ++z)
+                                                {
+                                                        SRow &CChild = child.pChildren[z];
+                                                        aCol[z] = ColorRGBA(0, 0, 0, 0);
+                                                        apLabel[z] = CChild.pName;
+                                                        aAccent[z] = true;
+                                                        if(CChild.type == ERowType::Graph)
+                                                                CChild.visible = true;
+                                                        else
+                                                                CustomChildStyle(*this, GameClient()->m_BotNet, GameClient()->m_Tas,
+                                                                        panel.pTitle, row.pName, child, CChild, aCol[z], apLabel[z], aAccent[z]);
+                                                        if(CChild.visible)
+                                                                ++VisCount;
+                                                }
+                                                if(VisCount > 0)
+                                                {
+                                                        const float ZoneW = (crw - 4.0f - (VisCount - 1) * 2.0f) / VisCount;
+                                                        int Zone = 0;
+                                                        for(int z = 0; z < child.childCount && z < 16; ++z)
+                                                        {
+                                                                const SRow &CChild = child.pChildren[z];
+                                                                if(!CChild.visible)
+                                                                        continue;
+                                                                const float zx = crx + 2.0f + Zone * (ZoneW + 2.0f);
+                                                                ++Zone;
+                                                                if(CChild.type == ERowType::Graph)
+                                                                        DrawGraph(zx, ZoneW, CChild.pGraph, CChild.pName);
+                                                                else
+                                                                {
+                                                                        const ColorRGBA ZoneCol = aAccent[z] ? KxColorWithAlpha(m_AccentColorRGBA, alpha)
+                                                                                : aCol[z].WithAlpha(alpha);
+                                                                        DrawRoundedRect(zx, cry + 2.0f, ZoneW, crh - 4.0f, 4.0f,
+                                                                                IGraphics::CORNER_ALL, ZoneCol);
+                                                                        float FontSize = 13.0f;
+                                                                        float lw = TextRender()->TextWidth(FontSize, apLabel[z]);
+                                                                        if(lw > ZoneW - 6.0f)
+                                                                        {
+                                                                                FontSize = 11.0f;
+                                                                                lw = TextRender()->TextWidth(FontSize, apLabel[z]);
+                                                                        }
+                                                                        DrawText(zx + (ZoneW - lw) * 0.5f, cry + 8.0f, FontSize, apLabel[z],
+                                                                                ColorRGBA(0xffffffff, true).WithAlpha(alpha));
+                                                                }
+                                                        }
+                                                }
+                                                break;
+                                        }
                                         // v6.12: GitHub Scripts/TASes Load | Download. The
                                         // dispatch splits this row into halves, but the generic
                                         // Dummies fallback below draws !on rows full-width —
@@ -14887,18 +15850,30 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                         {
                                                 // v6.13: Kind 3 = ArrayAgent.
                                                 const int Kind = (str_comp(row.pName, "ArrayInfo") == 0) ? 1 : (str_comp(row.pName, "ArrayPlayer") == 0) ? 2 : (str_comp(row.pName, "ArrayAgent") == 0) ? 3 : 0;
-                                                const bool EditorActive = Kind == 1 ? m_ArrayInfoEditor : Kind == 2 ? m_ArrayPlayerEditor : Kind == 3 ? m_AgentEditor : m_ArrayListEditor;
-                                                // Reset half reflects the position the button edits.
-                                                bool Modified;
-                                                if(Kind == 3)
+                                                const int SectionMode = Kind == 1 ? g_Config.m_KxArrayInfoShowMode
+                                                        : Kind == 2 ? g_Config.m_KxArrayPlayerShowMode
+                                                        : Kind == 3 ? g_Config.m_KxArrayAgentShowMode
+                                                                   : g_Config.m_KxArrayListShowMode;
+                                                const bool DualPos = SectionMode == 2;
+                                                const bool ClickGuiBtn = str_comp(child.pName, "ClickGUI Editor") == 0;
+                                                const bool EditorBool = Kind == 1 ? m_ArrayInfoEditor : Kind == 2 ? m_ArrayPlayerEditor : Kind == 3 ? m_AgentEditor : m_ArrayListEditor;
+                                                bool &GuiPassRef = Kind == 1 ? m_ArrayInfoEditorGuiPass : Kind == 2 ? m_ArrayPlayerEditorGuiPass : Kind == 3 ? m_AgentEditorGuiPass : m_ArrayListEditorGuiPass;
+                                                // v6.15: In Game+ClickGUI keeps two positions, so the two
+                                                // editor buttons must be independent — only the button for
+                                                // the pass being edited shows "Exit Editor".
+                                                bool EditorActive = EditorBool;
+                                                if(DualPos)
                                                 {
-                                                        const bool WasGuiPass = m_AgentEditorGuiPass;
-                                                        m_AgentEditorGuiPass = str_comp(child.pName, "ClickGUI Editor") == 0;
-                                                        Modified = ArrayAgentPositionModified();
-                                                        m_AgentEditorGuiPass = WasGuiPass;
+                                                        if(ClickGuiBtn)
+                                                                EditorActive = EditorBool && GuiPassRef;
+                                                        else if(str_comp(child.pName, "Game Editor") == 0)
+                                                                EditorActive = EditorBool && !GuiPassRef;
                                                 }
-                                                else
-                                                        Modified = Kind == 1 ? ArrayInfoPositionModified() : Kind == 2 ? ArrayPlayerPositionModified() : ArrayListPositionModified();
+                                                // Reset half reflects the position the button edits.
+                                                const bool WasGuiPass = GuiPassRef;
+                                                GuiPassRef = ClickGuiBtn && DualPos;
+                                                const bool Modified = Kind == 1 ? ArrayInfoPositionModified() : Kind == 2 ? ArrayPlayerPositionModified() : Kind == 3 ? ArrayAgentPositionModified() : ArrayListPositionModified();
+                                                GuiPassRef = WasGuiPass;
                                                 // Editor green, Exit Editor red; Reset the Clear-yellow half.
                                                 const ColorRGBA leftCol = (EditorActive ? ColorRGBA(0xffc43d3d, true) : ColorRGBA(0xff3da35a, true)).WithAlpha(alpha);
                                                 const char *pLeftLabel = EditorActive ? "Exit Editor" : "Editor";
@@ -14946,7 +15921,7 @@ if((str_comp(row.pName, "Smart dummy switch") == 0 && !BindsChildVisible(row.pCh
                                                         ColorRGBA(0xffffffff, true).WithAlpha(alpha));
                                                 break;
                                         }
-                                        // v1.56.90: DoubleButton child — Connect + Switch + Send toggle (Dummies).
+                                        // v1.56.90: Custom child — Connect + Switch + Send toggle (Dummies).
                                         // If dummy NOT connected: only Connect button (full row width).
                                         // If dummy connected: Connect (left) + Switch (middle) + Send checkbox (right).
                                         // v1.56.197: left button label is dynamic — "D# Connect" (idle),

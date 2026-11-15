@@ -29,9 +29,19 @@ void CBotNet::PfClearSearchState()
 	}
 	m_PfLocalID = -1;
 	m_PfThreadResult.store(-1);
-	std::vector<AStarNode>().swap(m_PfANodes);
-	std::vector<int>().swap(m_PfAOpen);
-	std::unordered_map<uint64_t, float>().swap(m_PfABestG);
+	PfNodeStoreReset();
+	std::vector<KxPfOpenEnt>().swap(m_PfAOpen);
+	std::vector<KxPfOpenEnt>().swap(m_PfABeamReserve);
+	m_PfABestG.Clear();
+	std::unordered_map<uint64_t, PfHookCell>().swap(m_PfAHookCells);
+	std::vector<uint64_t>().swap(m_PfAHookCellOrder);
+	m_PfAHookCellOrderHead = 0;
+	m_PfVBranchCache.clear();
+	m_PfVBranchBuilt = 0;
+	m_PfARefined = false;
+	m_PfARefinedInputs.clear();
+	m_PfARefinedPath.clear();
+	m_PfARefinedSegs.clear();
 	m_PfAGoalIdx = -1;
 	m_PfAStarted = false;
 	m_PfAPathReady = false;
@@ -167,7 +177,7 @@ void CBotNet::PfPasteToTas()
 // Forbidden zones are always impassable (via the walk predicates).
 // =========================================================
 
-void CBotNet::PfComputeFlowField(const vec2 &StartPos)
+void CBotNet::PfComputeFlowField(const vec2 &StartPos, bool IgnoreForbidden)
 {
 	if(!m_MapGridLoaded || m_MapWidth <= 0 || m_MapHeight <= 0)
 		return;
@@ -198,7 +208,26 @@ void CBotNet::PfComputeFlowField(const vec2 &StartPos)
 		return;
 	}
 
-	auto fnTileWalk = [this](int tx, int ty) -> bool { return IsTileWalkable(tx, ty); };
+	// IgnoreForbidden: the tunnel generator builds its route field with the
+	// painted forbidden zones lifted — otherwise regenerating a tunnel is
+	// blocked by the previous tunnel's own zones (the field never reaches
+	// the start and the button silently does nothing).
+	auto fnTileWalk = [this, IgnoreForbidden](int tx, int ty) -> bool {
+		if(IgnoreForbidden)
+		{
+			if(tx < 0 || ty < 0 || tx >= m_MapWidth || ty >= m_MapHeight)
+				return false;
+			int idx = ty * m_MapWidth + tx;
+			unsigned char tile = m_pMapGrid[idx];
+			if(tile == TILE_SOLID || tile == TILE_DEATH || tile == TILE_NOHOOK)
+				return false;
+			unsigned char ftile = m_pFrontGrid[idx];
+			if(ftile == TILE_SOLID || ftile == TILE_DEATH)
+				return false;
+			return true;
+		}
+		return IsTileWalkable(tx, ty);
+	};
 	auto fnTileFreeze = [this](int tx, int ty) -> bool {
 		if(tx < 0 || ty < 0 || tx >= m_MapWidth || ty >= m_MapHeight)
 			return false;
@@ -219,9 +248,10 @@ void CBotNet::PfComputeFlowField(const vec2 &StartPos)
 
 	// Freedom Path: tiles far from any non-air tile (walls, freeze,
 	// teleports, painted forbidden zones) are cheaper to traverse, so
-	// the flow field prefers open space. Ratio is stored x10 in config;
-	// the per-tile speed is squared so the modifier has real teeth.
-	const float freedomRatio = (g_Config.m_KxPfFreedom != 0) ? (float)g_Config.m_KxPfFreedomRatio / 10.0f : 0.0f;
+	// the flow field prefers open space. Ratio is stored x10 in config
+	// and additionally scaled down x10: the raw square was far too
+	// aggressive (even x0.1 warped every route).
+	const float freedomRatio = (g_Config.m_KxPfFreedom != 0) ? (float)g_Config.m_KxPfFreedomRatio / 100.0f : 0.0f;
 	std::vector<float> vHop;
 	if(freedomRatio > 0.0f)
 	{
@@ -397,18 +427,18 @@ void CBotNet::UpdatePathfinder()
 		return; // still searching
 
 	if(result == 1 && !PfEffortFreezeSupport()
-		&& m_PfAGoalIdx >= 0 && m_PfAGoalIdx < (int)m_PfANodes.size()
-		&& m_PfANodes[m_PfAGoalIdx].FreezeChainTicks > 0)
+		&& m_PfAGoalIdx >= 0 && m_PfAGoalIdx < PfNodeTotal()
+		&& PfNodeGet(m_PfAGoalIdx).FreezeChainTicks > 0)
 	{
-		dbg_msg("pathfinder", "result rejected: goal node carries %d freeze ticks", m_PfANodes[m_PfAGoalIdx].FreezeChainTicks);
+		dbg_msg("pathfinder", "result rejected: goal node carries %d freeze ticks", PfNodeGet(m_PfAGoalIdx).FreezeChainTicks);
 		result = -1;
 	}
 
 	if(result == 1
-		&& m_PfAGoalIdx >= 0 && m_PfAGoalIdx < (int)m_PfANodes.size()
-		&& m_PfANodes[m_PfAGoalIdx].ForbiddenChainTicks > 0)
+		&& m_PfAGoalIdx >= 0 && m_PfAGoalIdx < PfNodeTotal()
+		&& PfNodeGet(m_PfAGoalIdx).ForbiddenChainTicks > 0)
 	{
-		dbg_msg("pathfinder", "result rejected: goal node carries %d forbidden ticks", m_PfANodes[m_PfAGoalIdx].ForbiddenChainTicks);
+		dbg_msg("pathfinder", "result rejected: goal node carries %d forbidden ticks", PfNodeGet(m_PfAGoalIdx).ForbiddenChainTicks);
 		result = -1;
 	}
 
@@ -417,8 +447,8 @@ void CBotNet::UpdatePathfinder()
 		PfAStarReconstruct();
 		m_PfAPathReady = true;
 		m_PfFullInputsIdx = 0;
-		dbg_msg("pathfinder", "path found: %d ticks, %zu nodes, %d expansions",
-			(int)m_PfFullInputs.size(), m_PfANodes.size(), m_PfAExpandCount);
+		dbg_msg("pathfinder", "path found: %d ticks, %d nodes, %d expansions",
+			(int)m_PfFullInputs.size(), PfNodeTotal(), m_PfAExpandCount);
 		return;
 	}
 
@@ -431,26 +461,27 @@ void CBotNet::UpdatePathfinder()
 		int bestCleanIdx = -1;
 		float bestCleanH = 1e18f;
 		bool allowFrozen = PfEffortFreezeSupport();
-		for(size_t i = 0; i < m_PfANodes.size(); i++)
+		for(int i = 0; i < PfNodeTotal(); i++)
 		{
-			if(m_PfANodes[i].ParentIdx < 0)
+			const AStarNode node = PfNodeGet(i);
+			if(node.ParentIdx < 0)
 				continue;
-			if(m_PfANodes[i].H < bestH)
+			if(node.H < bestH)
 			{
-				bestH = m_PfANodes[i].H;
-				bestIdx = (int)i;
+				bestH = node.H;
+				bestIdx = i;
 			}
-			if(!allowFrozen && m_PfANodes[i].FreezeChainTicks <= 0 && m_PfANodes[i].ForbiddenChainTicks <= 0 && m_PfANodes[i].H < bestCleanH)
+			if(!allowFrozen && node.FreezeChainTicks <= 0 && node.ForbiddenChainTicks <= 0 && node.H < bestCleanH)
 			{
-				bestCleanH = m_PfANodes[i].H;
-				bestCleanIdx = (int)i;
+				bestCleanH = node.H;
+				bestCleanIdx = i;
 			}
 		}
 		if(bestCleanIdx >= 0)
 			bestIdx = bestCleanIdx;
 		else if(!allowFrozen)
 			bestIdx = -1;
-		if(bestIdx >= 0 && m_PfANodes[bestIdx].ForbiddenChainTicks > 0)
+		if(bestIdx >= 0 && PfNodeGet(bestIdx).ForbiddenChainTicks > 0)
 			bestIdx = -1;
 		if(bestIdx >= 0)
 		{
@@ -460,14 +491,14 @@ void CBotNet::UpdatePathfinder()
 			{
 				m_PfAPathReady = true;
 				m_PfFullInputsIdx = 0;
-				dbg_msg("pathfinder", "no complete path — showing best partial (%d ticks, %zu nodes, %d expansions)",
-					(int)m_PfFullInputs.size(), m_PfANodes.size(), m_PfAExpandCount);
+				dbg_msg("pathfinder", "no complete path — showing best partial (%d ticks, %d nodes, %d expansions)",
+					(int)m_PfFullInputs.size(), PfNodeTotal(), m_PfAExpandCount);
 			}
 			else
-				dbg_msg("pathfinder", "no path found (%d expansions, %zu nodes)", m_PfAExpandCount, m_PfANodes.size());
+				dbg_msg("pathfinder", "no path found (%d expansions, %d nodes)", m_PfAExpandCount, PfNodeTotal());
 		}
 		else
-			dbg_msg("pathfinder", "no path found (%d expansions, %zu nodes)", m_PfAExpandCount, m_PfANodes.size());
+			dbg_msg("pathfinder", "no path found (%d expansions, %d nodes)", m_PfAExpandCount, PfNodeTotal());
 	}
 	m_PfState = PF_STATE_FINISHED;
 }
@@ -1058,8 +1089,10 @@ void CBotNet::RenderPathfinderPath()
 		Graphics()->LinesEnd();
 	}
 
-	// Other branches (semi-transparent). Snapshot the segments under the
-	// data mutex — the worker appends to m_PfANodes while the search runs.
+	// Other branches (semi-transparent). Nodes are immutable after push, so
+	// the branch segments are cached incrementally: only nodes appended since
+	// the last frame are processed under the data mutex; rendering reads the
+	// renderer-owned cache without locking (was a full O(N) rebuild per frame).
 	if(g_Config.m_KxPfShowBranches)
 	{
 		float HalfWidth = 0.5f + (float)(LineSize - 1) * 0.25f;
@@ -1067,24 +1100,28 @@ void CBotNet::RenderPathfinderPath()
 			std::unique_lock<std::mutex> lock(m_PfDataMutex, std::try_to_lock);
 			if(lock.owns_lock())
 			{
-				m_PfVBranchSegsRender.clear();
-				for(size_t i = 1; i < m_PfANodes.size(); i++)
+				const int Total = PfNodeTotal();
+				if(m_PfVBranchBuilt <= Total)
 				{
-					AStarNode &node = m_PfANodes[i];
-					if(node.ParentIdx < 0)
-						continue;
-					const AStarNode &parent = m_PfANodes[node.ParentIdx];
-					if(node.PrimIdx == 0)
+					for(int i = m_PfVBranchBuilt; i < Total; i++)
 					{
-						for(size_t k = 1; k < node.Traj.size(); k++)
-							m_PfVBranchSegsRender.emplace_back(node.Traj[k - 1], node.Traj[k]);
+						const AStarNode node = PfNodeGet(i);
+						if(node.ParentIdx < 0)
+							continue;
+						const AStarNode parent = PfNodeGet(node.ParentIdx);
+						if(node.PrimIdx == 0)
+						{
+							for(size_t k = 1; k < node.Traj.size(); k++)
+								m_PfVBranchCache.emplace_back(node.Traj[k - 1], node.Traj[k]);
+						}
+						else
+							m_PfVBranchCache.emplace_back(parent.Core.Pos, node.Core.Pos);
 					}
-					else
-						m_PfVBranchSegsRender.emplace_back(parent.Core.Pos, node.Core.Pos);
+					m_PfVBranchBuilt = Total;
 				}
 			}
 		}
-		std::vector<std::pair<vec2, vec2>> &vBranchSegs = m_PfVBranchSegsRender;
+		const std::vector<std::pair<vec2, vec2>> &vBranchSegs = m_PfVBranchCache;
 		if(!vBranchSegs.empty())
 		{
 			if(LineSize > 0)
@@ -1164,25 +1201,6 @@ void CBotNet::RenderPathfinderPath()
 			}
 			Graphics()->LinesEnd();
 		}
-	}
-
-	if(g_Config.m_KxPfDrawStartEndPos)
-	{
-		const vec2 aPos[] = {vPath.front(), vPath.back()};
-		const ColorRGBA aColor[] = {ColorRGBA(0.2f, 1.0f, 0.2f, 1.0f), ColorRGBA(1.0f, 0.2f, 0.2f, 1.0f)};
-		Graphics()->LinesBegin();
-		for(int i = 0; i < 2; i++)
-		{
-			Graphics()->SetColor(aColor[i]);
-			IGraphics::CLineItem aBox[] = {
-				IGraphics::CLineItem(aPos[i] + vec2(-16, -16), aPos[i] + vec2(16, -16)),
-				IGraphics::CLineItem(aPos[i] + vec2(16, -16), aPos[i] + vec2(16, 16)),
-				IGraphics::CLineItem(aPos[i] + vec2(16, 16), aPos[i] + vec2(-16, 16)),
-				IGraphics::CLineItem(aPos[i] + vec2(-16, 16), aPos[i] + vec2(-16, -16)),
-			};
-			Graphics()->LinesDraw(aBox, 4);
-		}
-		Graphics()->LinesEnd();
 	}
 
 	// Main path with optional speed gradient (rainbow hue sweep).

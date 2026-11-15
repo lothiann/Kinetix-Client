@@ -75,7 +75,9 @@ void CBotNet::PfGenerateTunnel()
 	// Force a fresh flow field for the currently active finish sources
 	// (same as PfResetRun does). Map finishes are only collected inside
 	// PfComputeFlowField, so without this the tunnel demanded custom
-	// finish tiles on a freshly loaded map.
+	// finish tiles on a freshly loaded map. The field ignores painted
+	// forbidden zones so regenerating a tunnel is never blocked by the
+	// previous tunnel's own corridor.
 	PfEditorBeginChange();
 
 	if(m_PfFlowField)
@@ -84,7 +86,7 @@ void CBotNet::PfGenerateTunnel()
 		m_PfFlowField = nullptr;
 	}
 	m_PfFinishTiles.clear();
-	PfComputeFlowField(vec2(startTX * 32.0f + 16.0f, startTY * 32.0f + 16.0f));
+	PfComputeFlowField(vec2(startTX * 32.0f + 16.0f, startTY * 32.0f + 16.0f), true);
 	if(!m_PfFlowField)
 	{
 		dbg_msg("pathfinder", "tunnel: flow field unavailable");

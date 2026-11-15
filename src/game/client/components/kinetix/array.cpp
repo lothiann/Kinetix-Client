@@ -288,14 +288,25 @@ bool CClickGui::ShouldRenderArrayList() const
 
 bool CClickGui::ArrayListPositionModified() const
 {
-        return g_Config.m_KxArrayListPosX != KX_ARRAYLIST_DEF_POS_X ||
-                g_Config.m_KxArrayListPosY != KX_ARRAYLIST_DEF_POS_Y;
+        // v6.15: In Game+ClickGUI keeps two positions; the editor pass selects
+        // which one the Editor / Reset button works with.
+        const bool GuiPos = g_Config.m_KxArrayListShowMode == 2 && m_ArrayListEditorGuiPass;
+        return (GuiPos ? g_Config.m_KxArrayListPosXGui : g_Config.m_KxArrayListPosX) != KX_ARRAYLIST_DEF_POS_X ||
+                (GuiPos ? g_Config.m_KxArrayListPosYGui : g_Config.m_KxArrayListPosY) != KX_ARRAYLIST_DEF_POS_Y;
 }
 
 void CClickGui::ResetArrayListPosition()
 {
-        g_Config.m_KxArrayListPosX = KX_ARRAYLIST_DEF_POS_X;
-        g_Config.m_KxArrayListPosY = KX_ARRAYLIST_DEF_POS_Y;
+        if(g_Config.m_KxArrayListShowMode == 2 && m_ArrayListEditorGuiPass)
+        {
+                g_Config.m_KxArrayListPosXGui = KX_ARRAYLIST_DEF_POS_X;
+                g_Config.m_KxArrayListPosYGui = KX_ARRAYLIST_DEF_POS_Y;
+        }
+        else
+        {
+                g_Config.m_KxArrayListPosX = KX_ARRAYLIST_DEF_POS_X;
+                g_Config.m_KxArrayListPosY = KX_ARRAYLIST_DEF_POS_Y;
+        }
 }
 
 bool CClickGui::ArrayListHitTest(vec2 mousePos) const
@@ -410,7 +421,7 @@ void CClickGui::UpdateArrayList(float dt)
         }
 }
 
-void CClickGui::RenderArrayList(float alpha)
+void CClickGui::RenderArrayList(float alpha, bool GuiPass)
 {
         m_ArrayListRectValid = false;
 
@@ -438,7 +449,7 @@ void CClickGui::RenderArrayList(float alpha)
         // keeps the sorted order (new entries at the bottom). The list itself
         // is always positioned by its top edge, so switching the anchor never
         // moves it.
-        const bool GuiPos = g_Config.m_ClClickGui != 0 && g_Config.m_KxArrayListShowMode == 2;
+        const bool GuiPos = GuiPass && g_Config.m_KxArrayListShowMode == 2;
         const float YRatio = (GuiPos ? g_Config.m_KxArrayListPosYGui : g_Config.m_KxArrayListPosY) / 10000.0f;
         int YA = g_Config.m_KxArrayListYAnchor; // 0 Auto, 1 Top, 2 Bottom
         if(YA == 0)
@@ -568,6 +579,32 @@ void CClickGui::RenderArrayList(float alpha)
                 // dragged freely and must not bump against the screen edges.
                 Left = std::clamp(Left, 0.0f, std::max(0.0f, ScreenW - BoxW));
                 Top = std::clamp(Top, 0.0f, std::max(0.0f, ScreenH - BoxH));
+        }
+
+        // v6.15: ClickGUI pass — fly in/out with the ClickGUI open animation,
+        // exactly like the ClickGUI panels (the game copy only fades).
+        if(GuiPass && !m_ArrayListEditor && g_Config.m_KxArrayListShowMode != 3)
+        {
+                const float Margin = 100.0f;
+                if(!m_ArrayListOffscreenValid)
+                {
+                        const int Side = (int)(std::rand() % 4);
+                        if(Side == 0)
+                                m_ArrayListOffscreenPos = vec2(-BoxW - Margin - (float)(std::rand() % 200),
+                                        (float)(std::rand() % (int)std::max(ScreenH - BoxH, 100.0f)));
+                        else if(Side == 1)
+                                m_ArrayListOffscreenPos = vec2(ScreenW + Margin + (float)(std::rand() % 200),
+                                        (float)(std::rand() % (int)std::max(ScreenH - BoxH, 100.0f)));
+                        else if(Side == 2)
+                                m_ArrayListOffscreenPos = vec2((float)(std::rand() % (int)std::max(ScreenW - BoxW, 100.0f)),
+                                        -BoxH - Margin - (float)(std::rand() % 200));
+                        else
+                                m_ArrayListOffscreenPos = vec2((float)(std::rand() % (int)std::max(ScreenW - BoxW, 100.0f)),
+                                        ScreenH + Margin + (float)(std::rand() % 200));
+                        m_ArrayListOffscreenValid = true;
+                }
+                Left = m_ArrayListOffscreenPos.x + (Left - m_ArrayListOffscreenPos.x) * m_AnimProgress;
+                Top = m_ArrayListOffscreenPos.y + (Top - m_ArrayListOffscreenPos.y) * m_AnimProgress;
         }
 
         m_ArrayListRectX = Left;
@@ -822,14 +859,25 @@ bool CClickGui::ShouldRenderArrayInfo() const
 
 bool CClickGui::ArrayInfoPositionModified() const
 {
-        return g_Config.m_KxArrayInfoPosX != KX_ARRAYINFO_DEF_POS_X ||
-                g_Config.m_KxArrayInfoPosY != KX_ARRAYINFO_DEF_POS_Y;
+        // v6.15: In Game+ClickGUI keeps two positions; the editor pass selects
+        // which one the Editor / Reset button works with.
+        const bool GuiPos = g_Config.m_KxArrayInfoShowMode == 2 && m_ArrayInfoEditorGuiPass;
+        return (GuiPos ? g_Config.m_KxArrayInfoPosXGui : g_Config.m_KxArrayInfoPosX) != KX_ARRAYINFO_DEF_POS_X ||
+                (GuiPos ? g_Config.m_KxArrayInfoPosYGui : g_Config.m_KxArrayInfoPosY) != KX_ARRAYINFO_DEF_POS_Y;
 }
 
 void CClickGui::ResetArrayInfoPosition()
 {
-        g_Config.m_KxArrayInfoPosX = KX_ARRAYINFO_DEF_POS_X;
-        g_Config.m_KxArrayInfoPosY = KX_ARRAYINFO_DEF_POS_Y;
+        if(g_Config.m_KxArrayInfoShowMode == 2 && m_ArrayInfoEditorGuiPass)
+        {
+                g_Config.m_KxArrayInfoPosXGui = KX_ARRAYINFO_DEF_POS_X;
+                g_Config.m_KxArrayInfoPosYGui = KX_ARRAYINFO_DEF_POS_Y;
+        }
+        else
+        {
+                g_Config.m_KxArrayInfoPosX = KX_ARRAYINFO_DEF_POS_X;
+                g_Config.m_KxArrayInfoPosY = KX_ARRAYINFO_DEF_POS_Y;
+        }
 }
 
 bool CClickGui::ArrayInfoHitTest(vec2 mousePos) const
@@ -864,7 +912,7 @@ void CClickGui::UpdateArrayInfo(float dt)
         }
 }
 
-void CClickGui::RenderArrayInfo(float alpha)
+void CClickGui::RenderArrayInfo(float alpha, bool GuiPass)
 {
         m_ArrayInfoRectValid = false;
 
@@ -1014,7 +1062,7 @@ void CClickGui::RenderArrayInfo(float alpha)
         else
                 BoxH = (float)vLines.size() * RowH + (float)(vLines.size() - 1) * LineGap;
 
-        const bool GuiPos = g_Config.m_ClClickGui != 0 && g_Config.m_KxArrayInfoShowMode == 2;
+        const bool GuiPos = GuiPass && g_Config.m_KxArrayInfoShowMode == 2;
         const float XRatio = (GuiPos ? g_Config.m_KxArrayInfoPosXGui : g_Config.m_KxArrayInfoPosX) / 10000.0f;
         int XA = g_Config.m_KxArrayInfoXAnchor;
         if(XA == 0)
@@ -1032,6 +1080,32 @@ void CClickGui::RenderArrayInfo(float alpha)
                 // dragged freely and must not bump against the screen edges.
                 Left = std::clamp(Left, 0.0f, std::max(0.0f, ScreenW - BoxW));
                 Top = std::clamp(Top, 0.0f, std::max(0.0f, ScreenH - BoxH));
+        }
+
+        // v6.15: ClickGUI pass — fly in/out with the ClickGUI open animation,
+        // exactly like the ClickGUI panels (the game copy only fades).
+        if(GuiPass && !m_ArrayInfoEditor && g_Config.m_KxArrayInfoShowMode != 3)
+        {
+                const float Margin = 100.0f;
+                if(!m_ArrayInfoOffscreenValid)
+                {
+                        const int Side = (int)(std::rand() % 4);
+                        if(Side == 0)
+                                m_ArrayInfoOffscreenPos = vec2(-BoxW - Margin - (float)(std::rand() % 200),
+                                        (float)(std::rand() % (int)std::max(ScreenH - BoxH, 100.0f)));
+                        else if(Side == 1)
+                                m_ArrayInfoOffscreenPos = vec2(ScreenW + Margin + (float)(std::rand() % 200),
+                                        (float)(std::rand() % (int)std::max(ScreenH - BoxH, 100.0f)));
+                        else if(Side == 2)
+                                m_ArrayInfoOffscreenPos = vec2((float)(std::rand() % (int)std::max(ScreenW - BoxW, 100.0f)),
+                                        -BoxH - Margin - (float)(std::rand() % 200));
+                        else
+                                m_ArrayInfoOffscreenPos = vec2((float)(std::rand() % (int)std::max(ScreenW - BoxW, 100.0f)),
+                                        ScreenH + Margin + (float)(std::rand() % 200));
+                        m_ArrayInfoOffscreenValid = true;
+                }
+                Left = m_ArrayInfoOffscreenPos.x + (Left - m_ArrayInfoOffscreenPos.x) * m_AnimProgress;
+                Top = m_ArrayInfoOffscreenPos.y + (Top - m_ArrayInfoOffscreenPos.y) * m_AnimProgress;
         }
 
         m_ArrayInfoRectX = Left;
@@ -1210,14 +1284,25 @@ bool CClickGui::ShouldRenderArrayPlayer() const
 
 bool CClickGui::ArrayPlayerPositionModified() const
 {
-        return g_Config.m_KxArrayPlayerPosX != KX_ARRAYPLAYER_DEF_POS_X ||
-                g_Config.m_KxArrayPlayerPosY != KX_ARRAYPLAYER_DEF_POS_Y;
+        // v6.15: In Game+ClickGUI keeps two positions; the editor pass selects
+        // which one the Editor / Reset button works with.
+        const bool GuiPos = g_Config.m_KxArrayPlayerShowMode == 2 && m_ArrayPlayerEditorGuiPass;
+        return (GuiPos ? g_Config.m_KxArrayPlayerPosXGui : g_Config.m_KxArrayPlayerPosX) != KX_ARRAYPLAYER_DEF_POS_X ||
+                (GuiPos ? g_Config.m_KxArrayPlayerPosYGui : g_Config.m_KxArrayPlayerPosY) != KX_ARRAYPLAYER_DEF_POS_Y;
 }
 
 void CClickGui::ResetArrayPlayerPosition()
 {
-        g_Config.m_KxArrayPlayerPosX = KX_ARRAYPLAYER_DEF_POS_X;
-        g_Config.m_KxArrayPlayerPosY = KX_ARRAYPLAYER_DEF_POS_Y;
+        if(g_Config.m_KxArrayPlayerShowMode == 2 && m_ArrayPlayerEditorGuiPass)
+        {
+                g_Config.m_KxArrayPlayerPosXGui = KX_ARRAYPLAYER_DEF_POS_X;
+                g_Config.m_KxArrayPlayerPosYGui = KX_ARRAYPLAYER_DEF_POS_Y;
+        }
+        else
+        {
+                g_Config.m_KxArrayPlayerPosX = KX_ARRAYPLAYER_DEF_POS_X;
+                g_Config.m_KxArrayPlayerPosY = KX_ARRAYPLAYER_DEF_POS_Y;
+        }
 }
 
 bool CClickGui::ArrayPlayerHitTest(vec2 mousePos) const
@@ -1330,7 +1415,7 @@ static void KxRoundImageCorners(CImageInfo &Img, float Radius)
 	}
 }
 
-void CClickGui::RenderArrayPlayer(float alpha)
+void CClickGui::RenderArrayPlayer(float alpha, bool GuiPass)
 {
         m_ArrayPlayerRectValid = false;
 
@@ -1375,13 +1460,39 @@ void CClickGui::RenderArrayPlayer(float alpha)
         if(ScreenW <= 0.0f || ScreenH <= 0.0f)
                 return;
 
-        const bool GuiPos = g_Config.m_ClClickGui != 0 && g_Config.m_KxArrayPlayerShowMode == 2;
+        const bool GuiPos = GuiPass && g_Config.m_KxArrayPlayerShowMode == 2;
         float Left = ((GuiPos ? g_Config.m_KxArrayPlayerPosXGui : g_Config.m_KxArrayPlayerPosX) / 10000.0f) * ScreenW;
         float Top = ((GuiPos ? g_Config.m_KxArrayPlayerPosYGui : g_Config.m_KxArrayPlayerPosY) / 10000.0f) * ScreenH;
         if(!m_ArrayPlayerEditor)
         {
                 Left = std::clamp(Left, 0.0f, std::max(0.0f, ScreenW - W));
                 Top = std::clamp(Top, 0.0f, std::max(0.0f, ScreenH - H));
+        }
+
+        // v6.15: ClickGUI pass — fly in/out with the ClickGUI open animation,
+        // exactly like the ClickGUI panels (the game copy only fades).
+        if(GuiPass && !m_ArrayPlayerEditor && g_Config.m_KxArrayPlayerShowMode != 3)
+        {
+                const float Margin = 100.0f;
+                if(!m_ArrayPlayerOffscreenValid)
+                {
+                        const int Side = (int)(std::rand() % 4);
+                        if(Side == 0)
+                                m_ArrayPlayerOffscreenPos = vec2(-W - Margin - (float)(std::rand() % 200),
+                                        (float)(std::rand() % (int)std::max(ScreenH - H, 100.0f)));
+                        else if(Side == 1)
+                                m_ArrayPlayerOffscreenPos = vec2(ScreenW + Margin + (float)(std::rand() % 200),
+                                        (float)(std::rand() % (int)std::max(ScreenH - H, 100.0f)));
+                        else if(Side == 2)
+                                m_ArrayPlayerOffscreenPos = vec2((float)(std::rand() % (int)std::max(ScreenW - W, 100.0f)),
+                                        -H - Margin - (float)(std::rand() % 200));
+                        else
+                                m_ArrayPlayerOffscreenPos = vec2((float)(std::rand() % (int)std::max(ScreenW - W, 100.0f)),
+                                        ScreenH + Margin + (float)(std::rand() % 200));
+                        m_ArrayPlayerOffscreenValid = true;
+                }
+                Left = m_ArrayPlayerOffscreenPos.x + (Left - m_ArrayPlayerOffscreenPos.x) * m_AnimProgress;
+                Top = m_ArrayPlayerOffscreenPos.y + (Top - m_ArrayPlayerOffscreenPos.y) * m_AnimProgress;
         }
 
         m_ArrayPlayerRectX = Left;

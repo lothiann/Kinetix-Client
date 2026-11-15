@@ -933,15 +933,17 @@ static void RtPfSetupWorld(CGameWorld *pWorld, CGameWorld *pSrc, int LocalID)
 		std::vector<CEntity *> vRemove;
 		for(CEntity *pEnt = pWorld->FindLast(Type); pEnt; pEnt = pEnt->TypePrev())
 			vRemove.push_back(pEnt);
+		// The copies are throwaway: delete them (the dtor unlinks from the
+		// world), a bare RemoveEntity would orphan them and leak the snapshot.
 		for(CEntity *pEnt : vRemove)
-			pWorld->RemoveEntity(pEnt);
+			delete pEnt;
 	}
 	for(int i = 0; i < MAX_CLIENTS; i++)
 	{
 		if(i == LocalID)
 			continue;
 		if(CCharacter *pChar = pWorld->GetCharacterById(i))
-			pWorld->RemoveEntity(pChar);
+			delete pChar;
 	}
 }
 

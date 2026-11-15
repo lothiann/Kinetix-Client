@@ -197,7 +197,7 @@ void CParticles::RenderGroup(int Group)
 		return;
 
 	// v1.56.260: Visuals rainbow particles — one animated hue for the group.
-	const bool RainbowParts = g_Config.m_KxRainbowParticles != 0;
+	const bool RainbowParts = KxCustomColorsOn() && g_Config.m_KxRainbowParticles != 0;
 	// v1.56.275: rainbow anim or static Color, both with Opacity.
 	const ColorRGBA RainbowPartsColor = RainbowParts ? (g_Config.m_KxRainbowParticlesAnim ? KxVisualRainbowColor(Client()->GlobalTime(), g_Config.m_KxRainbowParticlesSpeed, g_Config.m_KxRainbowParticlesAlpha / 100.0f) : KxVisualFixedColor(g_Config.m_KxRainbowParticlesColor, g_Config.m_KxRainbowParticlesAlpha)) : ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f);
 	auto PartColor = [&](const CParticle &Part, float Alpha) {

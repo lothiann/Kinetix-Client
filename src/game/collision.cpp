@@ -997,6 +997,44 @@ std::vector<int> CCollision::GetMapIndices(vec2 PrevPos, vec2 Pos, unsigned MaxI
 	}
 }
 
+// Buffer variant of GetMapIndices — identical traversal and order, no heap
+// allocation. Returns the count, or -1 when the result does not fit (the
+// caller falls back to GetMapIndices to stay exact).
+int CCollision::GetMapIndicesBuf(vec2 PrevPos, vec2 Pos, int *pInds, int MaxInds) const
+{
+	if(!pInds || MaxInds <= 0)
+		return -1;
+	int Count = 0;
+	float d = distance(PrevPos, Pos);
+	int End(d + 1);
+	if(!d)
+	{
+		int Nx = std::clamp((int)Pos.x / 32, 0, m_Width - 1);
+		int Ny = std::clamp((int)Pos.y / 32, 0, m_Height - 1);
+		int Index = Ny * m_Width + Nx;
+		if(TileExists(Index))
+			pInds[Count++] = Index;
+		return Count;
+	}
+	int LastIndex = 0;
+	for(int i = 0; i < End; i++)
+	{
+		float a = i / d;
+		vec2 Tmp = mix(PrevPos, Pos, a);
+		int Nx = std::clamp((int)Tmp.x / 32, 0, m_Width - 1);
+		int Ny = std::clamp((int)Tmp.y / 32, 0, m_Height - 1);
+		int Index = Ny * m_Width + Nx;
+		if(TileExists(Index) && LastIndex != Index)
+		{
+			if(Count >= MaxInds)
+				return -1;
+			pInds[Count++] = Index;
+			LastIndex = Index;
+		}
+	}
+	return Count;
+}
+
 vec2 CCollision::GetPos(int Index) const
 {
 	if(Index < 0)

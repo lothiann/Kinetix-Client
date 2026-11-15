@@ -55,6 +55,12 @@ public:
 
         static constexpr int NUM_PANELS = 11; // v1.56.286: + Search (last panel)
 
+        // v6.15: state of one ArrayList editor button (Editor / Game Editor /
+        // ClickGUI Editor) for the given section row ("ArrayList", "ArrayInfo",
+        // "ArrayPlayer", "ArrayAgent"). Fills the editor-active flag (label and
+        // color) and whether the Reset half is visible (position modified).
+        void ArrayEditorChildState(const char *pSection, const char *pContainerName, bool &EditorActive, bool &ResetVisible);
+
 
 private:
         // Animation state: 0.0 = fully closed, 1.0 = fully open.
@@ -323,6 +329,14 @@ private:
         // panel is lerped from a random offscreen point by m_AnimProgress).
         vec2 m_AgentOffscreenPos = vec2(0.0f, 0.0f);
         bool m_AgentOffscreenValid = false;
+        // v6.15: ClickGUI open/close fly-in anchors for the array HUDs (same
+        // treatment as the panels / ArrayAgent: lerp by m_AnimProgress).
+        vec2 m_ArrayListOffscreenPos = vec2(0.0f, 0.0f);
+        bool m_ArrayListOffscreenValid = false;
+        vec2 m_ArrayInfoOffscreenPos = vec2(0.0f, 0.0f);
+        bool m_ArrayInfoOffscreenValid = false;
+        vec2 m_ArrayPlayerOffscreenPos = vec2(0.0f, 0.0f);
+        bool m_ArrayPlayerOffscreenValid = false;
         // Eases the agent collapse animation; must run EVERY frame (also on the
         // HUD-only early path, which skips UpdateAnimations).
         void UpdateAgentPanelAnim(float dt);
@@ -409,7 +423,7 @@ private:
         void ArrayListBuildList(std::vector<std::string> &vOut) const;
         void ArrayListUpdateHistory(const std::vector<std::string> &vEnabled);
         void UpdateArrayList(float dt);
-        void RenderArrayList(float alpha);
+        void RenderArrayList(float alpha, bool GuiPass = false);
         bool ArrayListHitTest(vec2 mousePos) const;
         bool ShouldRenderArrayList() const;
         bool ArrayListPositionModified() const;
@@ -417,7 +431,7 @@ private:
 
         // v6.4: ArrayInfo HUD — info line rendered in game.
         void UpdateArrayInfo(float dt);
-        void RenderArrayInfo(float alpha);
+        void RenderArrayInfo(float alpha, bool GuiPass = false);
         bool ArrayInfoHitTest(vec2 mousePos) const;
         bool ShouldRenderArrayInfo() const;
         bool ArrayInfoPositionModified() const;
@@ -425,7 +439,7 @@ private:
 
         // v6.7: ArrayPlayer HUD — now-playing media card rendered in game.
         void UpdateArrayPlayer(float dt);
-        void RenderArrayPlayer(float alpha);
+        void RenderArrayPlayer(float alpha, bool GuiPass = false);
         bool ArrayPlayerHitTest(vec2 mousePos) const;
         bool ArrayPlayerResizeHitTest(vec2 mousePos) const;
         bool ShouldRenderArrayPlayer() const;

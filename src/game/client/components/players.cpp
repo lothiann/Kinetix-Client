@@ -616,7 +616,7 @@ void CPlayers::RenderHook(
         ColorRGBA HookSpriteColor = ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f);
         if(ClientId == -2)
                 HookSpriteColor = ColorRGBA(1.0f, 1.0f, 1.0f, 0.5f);
-        if(g_Config.m_KxRainbowHook)
+        if(KxCustomColorsOn() && g_Config.m_KxRainbowHook)
         {
                 // v1.56.275: rainbow anim or static Color, both with Opacity.
                 if(g_Config.m_KxRainbowHookAnim)
@@ -696,7 +696,7 @@ void CPlayers::RenderPlayer(
 	CTeeRenderInfo RenderInfo = *pRenderInfo;
 
         // v1.56.260: Visuals rainbow — tee body and legs colors.
-        if(g_Config.m_KxRainbowTee)
+        if(KxCustomColorsOn() && g_Config.m_KxRainbowTee)
         {
                 // v1.56.275: rainbow anim or static Color, both with Opacity.
                 if(g_Config.m_KxRainbowTeeAnim)
@@ -704,7 +704,7 @@ void CPlayers::RenderPlayer(
                 else
                         RenderInfo.m_ColorBody = KxVisualFixedColor(g_Config.m_KxRainbowTeeColor, g_Config.m_KxRainbowTeeAlpha);
         }
-        if(g_Config.m_KxRainbowLegs)
+        if(KxCustomColorsOn() && g_Config.m_KxRainbowLegs)
         {
                 if(g_Config.m_KxRainbowLegsAnim)
                         RenderInfo.m_ColorFeet = KxVisualRainbowColor(Client()->GlobalTime(), g_Config.m_KxRainbowLegsSpeed, g_Config.m_KxRainbowLegsAlpha / 100.0f);
@@ -819,7 +819,7 @@ void CPlayers::RenderPlayer(
                 if(!(RenderInfo.m_TeeRenderFlags & TEE_NO_WEAPON))
                 {
                         // v1.56.260: Visuals rainbow guns. v1.56.275: Color/Opacity.
-                        if(g_Config.m_KxRainbowGuns)
+                        if(KxCustomColorsOn() && g_Config.m_KxRainbowGuns)
                         {
                                 if(g_Config.m_KxRainbowGunsAnim)
                                         Graphics()->SetColor(KxVisualRainbowColor(Client()->GlobalTime(), g_Config.m_KxRainbowGunsSpeed, Alpha * (g_Config.m_KxRainbowGunsAlpha / 100.0f)));
@@ -1045,7 +1045,7 @@ void CPlayers::RenderPlayer(
                         Graphics()->TextureSet(GameClient()->m_EmoticonsSkin.m_aSpriteEmoticons[CurEmoticon]);
                         int QuadOffset = QuadOffsetToEmoticon + CurEmoticon;
                         // v1.56.260: Visuals rainbow emoticons. v1.56.275: Color/Opacity.
-                        if(g_Config.m_KxRainbowEmoticons)
+                        if(KxCustomColorsOn() && g_Config.m_KxRainbowEmoticons)
                         {
                                 if(g_Config.m_KxRainbowEmoticonsAnim)
                                         Graphics()->SetColor(KxVisualRainbowColor(Client()->GlobalTime(), g_Config.m_KxRainbowEmoticonsSpeed, Alpha * (g_Config.m_KxRainbowEmoticonsAlpha / 100.0f)));
@@ -1086,7 +1086,7 @@ void CPlayers::RenderPlayer(
                         Graphics()->QuadsSetRotation(pi / 6 * WiggleAngle);
 
                         // v1.56.260: Visuals rainbow emoticons. v1.56.275: Color/Opacity.
-                        if(g_Config.m_KxRainbowEmoticons)
+                        if(KxCustomColorsOn() && g_Config.m_KxRainbowEmoticons)
                         {
                                 if(g_Config.m_KxRainbowEmoticonsAnim)
                                         Graphics()->SetColor(KxVisualRainbowColor(Client()->GlobalTime(), g_Config.m_KxRainbowEmoticonsSpeed, a * Alpha * (g_Config.m_KxRainbowEmoticonsAlpha / 100.0f)));

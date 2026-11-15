@@ -46,9 +46,10 @@ CBotNet::CBotNet()
         m_PfBacktrackIdx = 0;
 
         // State-Lattice A* state
-        m_PfANodes.clear();
+        PfNodeStoreReset();
         m_PfAOpen.clear();
-        m_PfABestG.clear();
+        m_PfABeamReserve.clear();
+        m_PfABestG.Clear();
         m_PfAGoalIdx = -1;
         m_PfAStarted = false;
         m_PfAPathReady = false;

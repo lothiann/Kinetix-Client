@@ -765,7 +765,7 @@ void CHud::RenderAmmoHealthAndArmor(const CNetObj_Character *pCharacter)
 		{
 			// v1.56.260: Visuals rainbow HUD — tint ammo pips.
 			// v1.56.261: plain RenderQuadContainer ignores the current color — use Ex when tinting.
-			const bool RainbowHudAmmo = g_Config.m_KxRainbowHud != 0;
+			const bool RainbowHudAmmo = KxCustomColorsOn() && g_Config.m_KxRainbowHud != 0;
 			if(RainbowHudAmmo)
 			{
 				// v1.56.275: rainbow anim or static Color, both with Opacity.
@@ -792,7 +792,7 @@ void CHud::RenderAmmoHealthAndArmor(const CNetObj_Character *pCharacter)
 	{
 		// v1.56.260: Visuals rainbow HUD — tint health/armor pips.
 		// v1.56.261: plain RenderQuadContainer ignores the current color — use Ex when tinting.
-		const bool RainbowHud = g_Config.m_KxRainbowHud != 0;
+		const bool RainbowHud = KxCustomColorsOn() && g_Config.m_KxRainbowHud != 0;
 		if(RainbowHud)
 		{
 			// v1.56.275: rainbow anim or static Color, both with Opacity.
@@ -941,7 +941,7 @@ void CHud::RenderPlayerState(const int ClientId)
 
                 // render available and used jumps
                 // v1.56.261: rainbow HUD tints the jump icons.
-                if(g_Config.m_KxRainbowHud)
+                if(KxCustomColorsOn() && g_Config.m_KxRainbowHud)
                 {
                         // v1.56.275: rainbow anim or static Color, both with Opacity.
                         if(g_Config.m_KxRainbowHudAnim)
@@ -966,7 +966,7 @@ void CHud::RenderPlayerState(const int ClientId)
                         Graphics()->RenderQuadContainer(m_HudQuadContainerIndex, m_AirjumpEmptyOffset + AvailableJumpsToDisplay, TotalJumpsToDisplay - AvailableJumpsToDisplay);
                 }
                 // v1.56.261: reset the tinted jump icons color.
-                if(g_Config.m_KxRainbowHud)
+                if(KxCustomColorsOn() && g_Config.m_KxRainbowHud)
                         Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
         }
 
@@ -989,7 +989,7 @@ void CHud::RenderPlayerState(const int ClientId)
                                 InitialOffsetAdded = true;
                         }
                         // v1.56.261: rainbow guns also tints the top-left weapon icons.
-                        if(g_Config.m_KxRainbowGuns)
+                        if(KxCustomColorsOn() && g_Config.m_KxRainbowGuns)
                                 Graphics()->SetColor(KxVisualRainbowColor(Client()->GlobalTime(), g_Config.m_KxRainbowGunsSpeed, pPlayer->m_Weapon != Weapon ? 0.4f : 1.0f));
                         else if(pPlayer->m_Weapon != Weapon)
                                 Graphics()->SetColor(1.0f, 1.0f, 1.0f, 0.4f);
@@ -1012,7 +1012,7 @@ void CHud::RenderPlayerState(const int ClientId)
         }
 
         // v1.56.261: rainbow HUD tints the capability/status icons below.
-        if(g_Config.m_KxRainbowHud)
+        if(KxCustomColorsOn() && g_Config.m_KxRainbowHud)
         {
                 // v1.56.275: rainbow anim or static Color, both with Opacity.
                 if(g_Config.m_KxRainbowHudAnim)
@@ -1169,7 +1169,7 @@ void CHud::RenderPlayerState(const int ClientId)
                 Graphics()->RenderQuadContainerAsSprite(m_HudQuadContainerIndex, m_LiveFrozenOffset, x, y);
         }
         // v1.56.261: reset the tinted capability/status icons color.
-        if(g_Config.m_KxRainbowHud)
+        if(KxCustomColorsOn() && g_Config.m_KxRainbowHud)
                 Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
 }
 

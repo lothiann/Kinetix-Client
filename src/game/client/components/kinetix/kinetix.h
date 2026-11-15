@@ -65,6 +65,28 @@ struct PfHookSeg
         vec2 hookPos;
 };
 
+// Dynamic hook targets (Pathfinder tab): 36 angular segments covering 360°.
+// A segment stores the best (closest) validated hook target of a 90-ray fan
+// and is re-validated against the tile it was built on; aiming uses the
+// stored world coordinates, not an angle.
+struct PfHookTarget
+{
+        bool Valid = false;
+        vec2 SurfacePos = vec2(0, 0); // actual ray/tile intersection
+        vec2 AimPos = vec2(0, 0);     // SurfacePos + dir * 0.75 (inside the tile)
+        int TileX = 0;
+        int TileY = 0;
+        float Dist = 0.0f;
+};
+
+struct PfHookTargets
+{
+        PfHookTarget aSeg[36];
+        vec2 Origin = vec2(0, 0);
+        float HookLength = 380.0f;
+        bool Built = false;
+};
+
 // v1.56.280: RT Pathfinder hook segment — same as PfHookSeg plus the absolute
 // plan tick index it was captured at (used to split future/past hook lines in
 // the renderer: segments with tick > playback cursor are still future).
@@ -261,6 +283,109 @@ class CGameWorld;
 class IHttpRequest;
 
 // =========================================================
+// KxPfGMap — flat open-addressing hash map for the A* BestG table
+// (state key → best known G). Replaces std::unordered_map on the hot
+// path: linear probing, power-of-two capacity, grows at ~70% load.
+// Key 0 is the empty sentinel and is remapped to 1. Same contract as
+// the unordered_map it replaces: worker-thread-only, cleared while
+// the search thread is stopped.
+// =========================================================
+class KxPfGMap
+{
+public:
+	~KxPfGMap() { Clear(); }
+	void Clear()
+	{
+		delete[] m_pKeys;
+		delete[] m_pVals;
+		m_pKeys = nullptr;
+		m_pVals = nullptr;
+		m_Cap = 0;
+		m_Mask = 0;
+		m_Size = 0;
+	}
+	void Reserve(size_t Slots)
+	{
+		size_t Cap = 1024;
+		while(Cap * 7 / 10 < Slots)
+			Cap <<= 1;
+		if(Cap <= m_Cap)
+			return;
+		Grow(Cap);
+	}
+	const float *Find(uint64_t Key) const
+	{
+		if(!m_pKeys)
+			return nullptr;
+		Key = Key ? Key : 1;
+		size_t Idx = Key & m_Mask;
+		while(true)
+		{
+			uint64_t K = m_pKeys[Idx];
+			if(K == 0)
+				return nullptr;
+			if(K == Key)
+				return &m_pVals[Idx];
+			Idx = (Idx + 1) & m_Mask;
+		}
+	}
+	void Set(uint64_t Key, float Val)
+	{
+		if(!m_pKeys || (m_Size + 1) * 10 > m_Cap * 7)
+			Grow(m_pKeys ? m_Cap << 1 : 1024);
+		Key = Key ? Key : 1;
+		size_t Idx = Key & m_Mask;
+		while(true)
+		{
+			uint64_t K = m_pKeys[Idx];
+			if(K == 0)
+			{
+				m_pKeys[Idx] = Key;
+				m_pVals[Idx] = Val;
+				m_Size++;
+				return;
+			}
+			if(K == Key)
+			{
+				m_pVals[Idx] = Val;
+				return;
+			}
+			Idx = (Idx + 1) & m_Mask;
+		}
+	}
+	size_t Size() const { return m_Size; }
+
+private:
+	void Grow(size_t NewCap)
+	{
+		if(NewCap <= m_Cap)
+			NewCap = m_Cap ? (m_Cap << 1) : 1024;
+		uint64_t *pOldKeys = m_pKeys;
+		float *pOldVals = m_pVals;
+		const size_t OldCap = m_Cap;
+		m_pKeys = new uint64_t[NewCap];
+		m_pVals = new float[NewCap];
+		for(size_t i = 0; i < NewCap; i++)
+			m_pKeys[i] = 0;
+		m_Cap = NewCap;
+		m_Mask = NewCap - 1;
+		m_Size = 0;
+		for(size_t i = 0; i < OldCap; i++)
+		{
+			if(pOldKeys[i])
+				Set(pOldKeys[i], pOldVals[i]);
+		}
+		delete[] pOldKeys;
+		delete[] pOldVals;
+	}
+	uint64_t *m_pKeys = nullptr;
+	float *m_pVals = nullptr;
+	size_t m_Cap = 0;
+	size_t m_Mask = 0;
+	size_t m_Size = 0;
+};
+
+// =========================================================
 // CBotNet — botnet component (all inactive dummies)
 // =========================================================
 struct PfChunkResult;
@@ -340,6 +465,13 @@ public:
                 int PrimIdx;     // -1 = root, 0 = frozen fast-forward, >=1 = 1+packed single-tick input
                 int PrimTicks;
                 int TickOffset;
+                // Exact hook-fire aim (vector relative to the parent's Pos)
+                // captured when the child was simulated. The hook target cache
+                // is live and changes over time, so reconstruction must replay
+                // the exact input the search validated, not re-derive it
+                // from a segment index.
+                int AimX = 0;
+                int AimY = 0;
                 int FreezeChainTicks = 0;
                 int ForbiddenChainTicks = 0;
                 std::vector<vec2> Traj; // frozen fast-forward only; single-tick nodes derive parent.Pos → Pos
@@ -347,16 +479,79 @@ public:
                 // Hook segments, frozen fast-forward only (single-tick derives the grab seg from states).
                 std::vector<PfHookSeg> HookSegs;
         };
-        std::vector<AStarNode> m_PfANodes;
-        std::vector<int> m_PfAOpen;
-        std::vector<int> m_PfABeamReserve;
-        std::unordered_map<uint64_t, float> m_PfABestG;
+        // Per-64px-cell hook target cache for the tree searches. Nodes far from
+        // the run start have no targets if one global cache is reused, so every
+        // cell gets its own cache built on first visit (worker-owned, no
+        // locking needed). FIFO-evicted above the cap.
+        struct PfHookCell
+        {
+                PfHookTargets Targets;
+        };
+        std::unordered_map<uint64_t, PfHookCell> m_PfAHookCells;
+        std::vector<uint64_t> m_PfAHookCellOrder;
+        size_t m_PfAHookCellOrderHead = 0;
+        // v6.15: segmented compressed node store. Every PF_NODE_SEG_SIZE nodes
+        // the active tail is deep-serialized and LZ4-compressed into a segment
+        // (nodes are immutable after push, so old segments never change); the
+        // active vector only ever holds the newest <=1M nodes. Reads of old
+        // nodes go through PfNodeGet() which decompresses into a small LRU
+        // cache (guarded by m_PfSegMutex).
+        static constexpr int PF_NODE_SEG_SIZE = 1000000;
+        struct KxPfOpenEnt
+        {
+                int Idx;
+                float F, H;
+        };
+        struct KxPfNodeSer
+        {
+                PfAState Core;
+                int FreezeTime;
+                bool Grounded;
+                float G, H, F;
+                int ParentIdx, PrimIdx, PrimTicks, TickOffset, AimX, AimY;
+                int FreezeChainTicks, ForbiddenChainTicks;
+                int TrajCount, InputsCount, SegsCount;
+        };
+        struct KxPfNodeSeg
+        {
+                int BaseIdx = 0;   // global index of the first node in the segment
+                int NodeCount = 0;
+                std::vector<uint8_t> Data; // LZ4 block
+                size_t RawSize = 0;        // uncompressed size (deserialization bound)
+        };
+        struct KxPfNodeSegCache
+        {
+                int SegIdx = -1; // index into m_PfASegs, -1 = empty slot
+                std::vector<AStarNode> Nodes;
+        };
+        std::vector<AStarNode> m_PfANodes; // active tail: global indices >= m_PfASegTotal
+        std::vector<KxPfOpenEnt> m_PfAOpen; // heap with stored (F, H) — heap ops never touch node data
+        std::vector<KxPfOpenEnt> m_PfABeamReserve;
+        std::vector<KxPfNodeSeg> m_PfASegs;
+        int m_PfASegTotal = 0;
+        KxPfNodeSegCache m_PfASegCache[2];
+        size_t m_PfASegCacheClock = 0;
+        mutable std::mutex m_PfSegMutex;
+        KxPfGMap m_PfABestG;
+        // v6.15: near-finish stall fallback — greedy terminal walk.
+        bool m_PfAGreedy = false;                 // greedy walk active (worker-thread only)
+        bool m_PfAGreedyTried = false;            // one-shot latch per search run
+        std::vector<KxPfOpenEnt> m_PfAOpenBackup; // full open set parked while greedy
+        KxPfGMap m_PfAGreedyG;                    // visited map of the greedy walk
         int m_PfAGoalIdx;
         bool m_PfAStarted;
 	bool m_PfAPathReady;
 	int m_PfAExpandCount;
 	std::atomic<float> m_PfABestH{1e18f};
 	float m_PfAHRoot = 1e18f;
+	// v6.15: event-chunked rollout + per-tick refinement.
+	int m_PfAChunkCur = 8; // active chunk ladder value (worker-managed, halved on failure)
+	bool m_PfARefined = false;
+	std::vector<CNetObj_PlayerInput> m_PfARefinedInputs;
+	std::vector<vec2> m_PfARefinedPath;
+	std::vector<PfHookSeg> m_PfARefinedSegs;
+	PfAState m_PfARefinedEnd;
+	int m_PfARefinedEndFreeze = 0;
 	int m_PfUiBestDone = 0;
 	int m_PfUiBestTotal = 0;
         std::vector<CNetObj_PlayerInput> m_PfFullInputs;
@@ -381,6 +576,11 @@ public:
         std::vector<vec2> m_PfVPathRender;
         std::vector<PfHookSeg> m_PfVHookSegsRender;
         std::vector<std::pair<vec2, vec2>> m_PfVBranchSegsRender;
+        // v6.15: incremental branch-segment cache (nodes are immutable, so
+        // segments for [0, m_PfVBranchBuilt) never change — only new nodes are
+        // appended per frame under the data mutex; render reads without locks).
+        std::vector<std::pair<vec2, vec2>> m_PfVBranchCache;
+        int m_PfVBranchBuilt = 0;
 
 	int m_PfEditorMode = 0;
 	bool m_PfEditFireHeld = false;
@@ -608,7 +808,7 @@ public:
         // Laser unfreeze path storage (for Show attempt rendering)
         std::vector<vec2> m_LaserUnfreezePath;
         int64_t m_LaserUnfreezePathTime = 0;
-        void PfComputeFlowField(const vec2 &StartPos); // multi-source BFS to all finish tiles -> m_PfFlowField
+        void PfComputeFlowField(const vec2 &StartPos, bool IgnoreForbidden = false); // multi-source BFS to all finish tiles -> m_PfFlowField
         void PfGetUiStats(bool &outRunning, bool &outFinished, float &outPercent, int &outDoneTiles,
                 int &outTotalTiles, double &outElapsedSec, double &outEtaSec,
                 double &outPathTimeSec, double &outGenTimeSec);
@@ -638,17 +838,35 @@ public:
         // --- State-Lattice A* (v1.56) ---
         bool PfAStarInit();
         int PfAStarStep();               // 0=cont, 1=goal, -1=failed
+        // Segmented compressed node store (v6.15): every PF_NODE_SEG_SIZE
+        // nodes the active tail is serialized + LZ4-compressed; old nodes are
+        // read back through a 2-slot decompressed cache. Nodes are immutable
+        // after push, so compaction never changes search results.
+        int PfNodeTotal() const { return m_PfASegTotal + (int)m_PfANodes.size(); }
+	int PfNodeAppend(AStarNode &&Node);
+	AStarNode PfNodeGet(int Idx);            // by value — no dangling refs into the cache
+	void PfCompactNodeSegment();             // worker-thread only
+	void PfNodeStoreReset();                 // free all segments/cache (search stopped)
         void PfAStarReconstruct();
+        // v6.15: event-chunked rollout refinement. PfRefineWindowSearch re-searches
+        // one window (chunk edge pair) with an exact per-tick W=1 A* to the SAME
+        // bit-exact end state; PfRefineFoundPath slides windows over the found
+        // path and replay-verifies the refined package before committing it.
+        int PfRefineWindowSearch(const PfAState &Start, int StartFreeze, bool StartGrounded, int StartTickOffset,
+                const PfAState &Target, int TargetFreeze, bool TargetGrounded, bool ToFinish, int NodeBudget, int64_t &TickBudget,
+                std::vector<CNetObj_PlayerInput> &OutInputs, std::vector<PfAState> &OutStates);
+        void PfRefineFoundPath();
         void PfAStarUpdatePreview();
         void PfAStarResimulatePath(int targetIdx);  // re-simulate path root→target, fill m_PfVPath
         float PfAStarHeuristic(const vec2 &pos, const vec2 &endPos);
+        // Per-cell dynamic hook target cache (built on the first node in a
+        // 64px cell, then re-validated segment by segment on every use).
+        const PfHookTargets *PfAStarHookTargetsFor(const PfAState &core, CCollision *pColl, float hookLength);
         void PfThreadWorker();
-        void PfSearchWorker();
         void PfRheaWorker();
         void PfBmctsWorker();
-        float PfSearchScore(const PfChunkResult &res, bool LightTiles);
         bool PfEvalSequence(const PfAState &cur, int curFreeze, int tickOffset,
-                const std::vector<CNetObj_PlayerInput> &inSeq, PfChunkResult &out);
+                const std::vector<CNetObj_PlayerInput> &inSeq, PfChunkResult &out, bool FastSim = false);
         float PfSeqScore(const std::vector<vec2> &vFinishes, const PfChunkResult &res, bool freezeSupport);
         void PfSeqApplyEnd(PfAState &st, const PfChunkResult &res);
         void PfSeqAppend(std::vector<vec2> &fullTraj, std::vector<PfHookSeg> &fullSegs,

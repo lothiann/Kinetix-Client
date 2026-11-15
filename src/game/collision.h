@@ -102,6 +102,10 @@ public:
 	int GetPureMapIndex(float x, float y) const;
 	int GetPureMapIndex(vec2 Pos) const { return GetPureMapIndex(Pos.x, Pos.y); }
 	std::vector<int> GetMapIndices(vec2 PrevPos, vec2 Pos, unsigned MaxIndices = 0) const;
+	// Buffer variant of GetMapIndices: identical traversal and order into a
+	// caller-owned buffer. Returns the index count, or -1 when the result
+	// does not fit (the caller must fall back to GetMapIndices to stay exact).
+	int GetMapIndicesBuf(vec2 PrevPos, vec2 Pos, int *pInds, int MaxInds) const;
 	int GetMapIndex(vec2 Pos) const;
 	bool TileExists(int Index) const;
 	bool TileExistsNext(int Index) const;
