@@ -576,7 +576,7 @@ MACRO_CONFIG_INT(KxEspBox, kx_esp_box, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "
 MACRO_CONFIG_INT(KxEspBoxScaleX, kx_esp_box_scale_x, 100, 10, 1000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ESP box width scale in % (100 = 64px wide, scales the box size only)")
 MACRO_CONFIG_INT(KxEspBoxScaleY, kx_esp_box_scale_y, 100, 10, 1000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ESP box height scale in % (100 = 64px tall, scales the box size only)")
 // v1.56.256: Hitboxes — tee tile-collision square (28x28) / trigger circle (radius 28) on players
-MACRO_CONFIG_INT(KxHitboxes, kx_hitboxes, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Hitboxes master: draw the tile/trigger hitboxes (toggle on the Hitboxes header)")
+MACRO_CONFIG_INT(KxHitboxes, kx_hitboxes, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Hitboxes master: draw the tile/trigger hitboxes (toggle on the Hitboxes header)")
 MACRO_CONFIG_INT(KxHitboxesTeeTile, kx_hitboxes_tee_tile, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Hitboxes: show the tee tile-collision hitbox (28x28 square) on the active dummy")
 MACRO_CONFIG_INT(KxHitboxesTileStyle, kx_hitboxes_tile_style, 1, 0, 2, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Hitboxes tile style: 0=Filled 1=Box 2=Dotted Box")
 MACRO_CONFIG_INT(KxHitboxesTileSpeed, kx_hitboxes_tile_speed, 30, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Hitboxes dotted box animation speed for the tile hitbox (0-100, only for Dotted Box)")
@@ -605,9 +605,9 @@ MACRO_CONFIG_INT(KxPfPerf, kx_pf_perf, 100, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAV
 MACRO_CONFIG_INT(KxPfRheaGenerations, kx_pf_rhea_generations, 10, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder RHEA: number of evolution generations per chunk (more = better candidates but slower)")
 MACRO_CONFIG_INT(KxPfEffort, kx_pf_effort, 2, 0, 6, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder effort: 0=Very Low 1=Low 2=Medium(default) 3=High 4=Ultra 5=Max 6=Custom. Presets override chunk size / hook angles / candidates / search budget and score/penalty toggles at READ time; Custom uses the stored values.")
 MACRO_CONFIG_INT(KxPfShowPath, kx_pf_show_path, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: draw the path")
-MACRO_CONFIG_INT(KxPfFreezeSupport, kx_pf_freeze_support, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder freeze support (beta): ON allows phase-2 route analysis through freeze tiles and shows the Freeze penalty toggle. OFF rejects ANY candidate that touches freeze for even 1 tick.")
+MACRO_CONFIG_INT(KxPfFreezeSupport, kx_pf_freeze_support, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder freeze support (beta): ON allows phase-2 route analysis through freeze tiles and shows the Freeze penalty toggle. OFF rejects ANY candidate that touches freeze for even 1 tick.")
 MACRO_CONFIG_INT(KxPfTunnelSize, kx_pf_tunnel_size, 2, 0, 10, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder tunnel size 0-10, free corridor half-width around the FMM path")
-MACRO_CONFIG_INT(KxPfFreedom, kx_pf_freedom, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Freedom Path: FMM flow field prefers tiles far from walls/freeze/teleports (master toggle, see kx_pf_freedom_ratio)")
+MACRO_CONFIG_INT(KxPfFreedom, kx_pf_freedom, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Freedom Path: FMM flow field prefers tiles far from walls/freeze/teleports (master toggle, see kx_pf_freedom_ratio)")
 MACRO_CONFIG_INT(KxPfFreedomRatio, kx_pf_freedom_ratio, 10, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Freedom Path: how aggressively the FMM flow field prefers tiles far from walls/freeze/teleports (ratio x10: 10 = 1.0x default)")
 // v6.15: optimized simulation hot path (Functions panel "Fast Sim" toggle).
 MACRO_CONFIG_INT(KxPfFastSim, kx_pf_fast_sim, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Pathfinder: optimized simulation hot path (skip recording of discarded trajectories, stack-buffer tile queries, reused candidate buffers). OFF = exact original simulation.")
@@ -1287,8 +1287,8 @@ MACRO_CONFIG_INT(KxTriggerBotShowRadius, kx_triggerbot_show_radius, 0, 0, 1, CFG
 MACRO_CONFIG_INT(KxTriggerBotRaycastShow, kx_triggerbot_raycast_show, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "TriggerBot: use raycast for show rendering")
 
 // v1.56.255: ClickGUI UI persistence (accent/panel colors, rainbow, blackout).
-MACRO_CONFIG_STR(KxUiAccentColor, kx_ui_accent_color, 9, "9d4edd", CFGFLAG_CLIENT | CFGFLAG_SAVE, "ClickGUI accent color (hex RGB)")
-MACRO_CONFIG_STR(KxUiPanelColor, kx_ui_panel_color, 9, "161622", CFGFLAG_CLIENT | CFGFLAG_SAVE, "ClickGUI panel color (hex RGB)")
+MACRO_CONFIG_STR(KxUiAccentColor, kx_ui_accent_color, 9, "ff9d4edd", CFGFLAG_CLIENT | CFGFLAG_SAVE, "ClickGUI accent color (hex ARGB, alpha = accent opacity)")
+MACRO_CONFIG_STR(KxUiPanelColor, kx_ui_panel_color, 9, "ff161622", CFGFLAG_CLIENT | CFGFLAG_SAVE, "ClickGUI panel color (hex ARGB, alpha = panel opacity)")
 MACRO_CONFIG_INT(KxUiMainOpacity, kx_ui_main_opacity, 100, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ClickGUI accent color opacity (0-100)")
 MACRO_CONFIG_INT(KxUiPanelOpacity, kx_ui_panel_opacity, 100, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ClickGUI panel background opacity (0-100)")
 MACRO_CONFIG_INT(KxUiRainbow, kx_ui_rainbow, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ClickGUI: rainbow accent color animation")
@@ -1349,7 +1349,7 @@ MACRO_CONFIG_INT(KxDragToSort, kx_drag_to_sort, 1, 0, 1, CFGFLAG_CLIENT | CFGFLA
 
 // v1.56.283: ClickGUI Settings expandable - master toggle + panel layout extras.
 // Master off (kx_ui_settings_on 0) = built-in defaults for all the settings below.
-MACRO_CONFIG_INT(KxUiSettingsOn, kx_ui_settings_on, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ClickGUI: apply UI settings (master; 0 = built-in defaults)")
+MACRO_CONFIG_INT(KxUiSettingsOn, kx_ui_settings_on, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ClickGUI: apply UI settings (master; 0 = built-in defaults)")
 MACRO_CONFIG_INT(KxPanelsIndentX, kx_panels_indent_x, 30, 0, 200, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ClickGUI: panels X indentation (px)")
 MACRO_CONFIG_INT(KxPanelsIndentY, kx_panels_indent_y, 12, 0, 200, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ClickGUI: panels Y indentation (px)")
 MACRO_CONFIG_INT(KxPanelsDynamicScale, kx_panels_dynamic_scale, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ClickGUI: dynamic panel scale - drag edges to resize (beta)")
@@ -1473,7 +1473,7 @@ MACRO_CONFIG_INT(KxArrayPlayerPosXGui, kx_arrayplayer_pos_x_gui, 5000, -20000, 2
 MACRO_CONFIG_INT(KxArrayPlayerPosYGui, kx_arrayplayer_pos_y_gui, 5000, -20000, 20000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayPlayer: ClickGUI-mode Y position (Show Mode = In Game+ClickGUI)")
 
 // v6.13: ArrayAgent — AI chat HUD (OpenAI-compatible endpoint).
-MACRO_CONFIG_INT(KxArrayAgentEnabled, kx_arrayagent_enabled, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayAgent: show the agent chat panel")
+MACRO_CONFIG_INT(KxArrayAgentEnabled, kx_arrayagent_enabled, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayAgent: show the agent chat panel")
 MACRO_CONFIG_STR(KxArrayAgentEndpoint, kx_arrayagent_endpoint, 256, "", CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayAgent: API endpoint (OpenAI compatible, e.g. http://127.0.0.1:1234/v1)")
 MACRO_CONFIG_STR(KxArrayAgentApiKey, kx_arrayagent_api_key, 256, "", CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayAgent: API key (Bearer token)")
 MACRO_CONFIG_STR(KxArrayAgentModels, kx_arrayagent_models, 512, "", CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayAgent: model list, comma separated")
@@ -1513,7 +1513,7 @@ MACRO_CONFIG_STR(KxArrayAgentWorkdir, kx_arrayagent_workdir, 260, "", CFGFLAG_CL
 MACRO_CONFIG_INT(KxArrayAgentSaveSessions, kx_arrayagent_save_sessions, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayAgent: save sessions to disk (0 = temporary sessions only)")
 MACRO_CONFIG_INT(KxArrayAgentShowMainPage, kx_arrayagent_show_main_page, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ArrayAgent: show the main page when no session is active")
 
-MACRO_CONFIG_INT(KxCustomColors, kx_custom_colors, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: custom colors (master; 0 = original look)")
+MACRO_CONFIG_INT(KxCustomColors, kx_custom_colors, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Visuals: custom colors (master; 0 = original look)")
 
 // v1.56.283: per-entity-category custom colors (Visuals > Custom colors > Sprite = Entities > Entity).
 // Category enable 0 = the shared kx_rainbow_ent_* settings apply to that category.
@@ -1917,7 +1917,7 @@ MACRO_CONFIG_INT(KxTbEntOthersOffWhileFreeze, kx_tb_ent_others_off_while_freeze,
  * Add config variables for mods below this comment to avoid merge conflicts.
  */
 MACRO_CONFIG_INT(KxBindsMode, kx_binds_mode, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Binds panel bind mode: 0=merge (append to existing bind), 1=override")
-MACRO_CONFIG_INT(KxSdsEnabled, kx_sds_enabled, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Smart dummy switch master toggle (0 = the bound switch button does nothing)")
+MACRO_CONFIG_INT(KxSdsEnabled, kx_sds_enabled, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Smart dummy switch master toggle (0 = the bound switch button does nothing)")
 MACRO_CONFIG_INT(KxSdsMode, kx_sds_mode, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Smart dummy switch mode: 0=loop all connected dummies, 1=order targets")
 MACRO_CONFIG_STR(KxSdsDummyIds, kx_sds_dummy_ids, 32, "", CFGFLAG_CLIENT | CFGFLAG_SAVE, "Smart dummy switch: comma-separated dummy ids (0-7)")
 

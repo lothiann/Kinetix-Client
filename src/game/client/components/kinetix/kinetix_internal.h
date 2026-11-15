@@ -777,6 +777,26 @@ inline unsigned KxLineColor(EKxLineComponent c)
 	return g_Config.m_KxLineRenderingColor;
 }
 
+// v6.16: writable pointer to the selected component's line color cvar
+// (0xRRGGBB stored, alpha byte unused by rendering — KxLineAlpha is separate).
+// Used by the ClickGUI "Line color" row (dynamic Color-row binding).
+inline unsigned int *KxLineColorPtr(EKxLineComponent c)
+{
+	switch(c)
+	{
+	case KX_LINE_AIMBOT: return &g_Config.m_KxLineAimBotColor;
+	case KX_LINE_TRIGGERBOT: return &g_Config.m_KxLineTriggerBotColor;
+	case KX_LINE_TRAJECTORY: return &g_Config.m_KxLineTrajectoryColor;
+	case KX_LINE_LASER_UNFREEZE: return &g_Config.m_KxLineLaserUnfreezeColor;
+	case KX_LINE_PATHFINDER: return &g_Config.m_KxLinePathfinderColor;
+	case KX_LINE_ESP: return &g_Config.m_KxLineEspColor;
+	case KX_LINE_TAS: return &g_Config.m_KxLineTasColor;
+	case KX_LINE_HITBOXES: return &g_Config.m_KxLineHitboxesColor;
+	case KX_LINE_RT_PATHFINDER: return &g_Config.m_KxLineRtPathfinderColor;
+	}
+	return &g_Config.m_KxLineRenderingColor; // fallback
+}
+
 inline float KxLineAlpha(EKxLineComponent c)
 {
         switch(c)

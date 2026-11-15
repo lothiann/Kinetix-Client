@@ -135,6 +135,11 @@ private:
         int m_DragSliderPanel = -1;
         int m_DragSliderRow = -1;
         int m_DragSliderChild = -1; // -1 = top-level row, >=0 = child index within expandable
+        // v6.17: second nesting level — a slider inside a Custom row resolves
+        // to (Child = the Custom row, SubChild = its zone child). The zone rect
+        // is recomputed from these indices exactly like the expandable-child
+        // case recomputes its own rect. -1 = not a Custom zone.
+        int m_DragSliderSubChild = -1;
 
         // v1.56.284: panel edge resize (Dynamic scale). Dragging the right /
         // bottom edge of a panel live-updates KxPanelsWidth / KxPanelsHeight.
@@ -150,7 +155,32 @@ private:
         int m_DropdownPanel = -1;
         int m_DropdownRow = -1;
         int m_DropdownChild = -1;
+        // v6.17: Custom-zone grandchild (dropdown inside a Custom row of an
+        // expandable). -1 = the dropdown belongs to m_DropdownChild itself.
+        int m_DropdownSubChild = -1;
         float m_DropdownAnim = 0.0f;
+
+        // v6.16: Color picker popup state (opened from a Color row's swatch).
+        // Only one picker popup can be open at a time. m_pColorRow is the
+        // SRow* (void* — SRow is anon-namespace in the .cpp); the popup rect
+        // is anchored to the swatch's bottom-right corner (m_ColorPopupX/Y).
+        bool m_ColorPopupOpen = false;
+        void *m_pColorRow = nullptr;
+        int m_ColorPanel = -1;
+        int m_ColorRowIdx = -1;
+        int m_ColorChildIdx = -1;
+        float m_ColorPopupX = 0.0f;
+        float m_ColorPopupY = 0.0f;
+        // Active drag inside the popup: 0 = none, 1 = SV square, 2 = hue strip,
+        // 3 = component slider (m_ColorSliderIdx 0..3 = H/S/V/A, R/G/B/A, H/S/L/A).
+        int m_ColorDragMode = 0;
+        int m_ColorSliderIdx = 0;
+        // Hex field editing (independent of the row Input machinery: it edits
+        // m_aColorHexBuf directly and commits into the row's color on Enter).
+        bool m_ColorHexEditing = false;
+        char m_aColorHexBuf[16] = {};
+        int m_ColorHexLen = 0;
+        int m_ColorHexCursor = 0;
 
         // v1.56.284: ToolTip state. RenderPanel records the hovered row (if it
         // has a pToolTip); after TOOLTIP_DELAY seconds of steady hover the
@@ -168,6 +198,9 @@ private:
         int m_InputPanel = -1;
         int m_InputRow = -1;
         int m_InputChild = -1;
+        // v6.17: Custom-zone grandchild (input inside a Custom row of an
+        // expandable). -1 = the input is m_InputChild itself.
+        int m_InputSubChild = -1;
         // Edit buffer (static so it survives across frames; one field at a time).
         static constexpr int INPUT_BUF_SIZE = 256;
         char m_InputBuf[INPUT_BUF_SIZE] = {};
@@ -550,11 +583,22 @@ private:
 
         // Find which row a click hit. Returns row/child indices via out-params.
         // panelIdx is an input (which panel to test). Returns true if a row was hit.
-        bool HitTestRow(vec2 mousePos, int panelIdx, int &outRow, int &outChild, float &outRowX, float &outRowY, float &outRowW, float &outRowH);
+        // v6.17: outSubChild — grandchild inside a Custom row of an expandable
+        // (outChild = the Custom row, outSubChild = its zone child; -1 = none).
+        bool HitTestRow(vec2 mousePos, int panelIdx, int &outRow, int &outChild, int &outSubChild, float &outRowX, float &outRowY, float &outRowW, float &outRowH);
 
         // Dropdown popup rendering + hit testing.
         void RenderDropdownPopup(float alpha);
         bool HandleDropdownClick(vec2 mousePos);
+
+        // v6.16: Color row picker popup (SRow lives in the .cpp anon namespace,
+        // so the open row is held as void* like the tooltip/input machinery).
+        void RenderColorPopup(float alpha);
+        bool HandleColorPopupClick(vec2 mousePos);
+        // Updates the open picker's color from m_MousePos during an active drag
+        // (SV square / hue strip / component sliders).
+        void UpdateColorPopupDrag();
+        void CloseColorPopup();
 
         // Input field text editing. Returns pointer to the row being edited
         // (defined in .cpp where SRow is visible), or nullptr. We use void* to
