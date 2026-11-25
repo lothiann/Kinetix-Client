@@ -58,6 +58,7 @@ class CChat : public CComponent
 		std::shared_ptr<CManagedTeeRenderInfo> m_pManagedTeeRenderInfo;
 
 		float m_TextYOffset;
+		float m_KinetixLogoX = -1.0f;
 
 		int m_TimesRepeated;
 	};
@@ -145,6 +146,11 @@ class CChat : public CComponent
 	CStaticRingBuffer<CHistoryEntry, 64 * 1024, CRingBufferBase::FLAG_RECYCLE> m_History;
 	int m_PendingChatCounter;
 	int64_t m_LastChatSend;
+	// v6.21: UTF-8 length of the last sent line. The server's spam protection
+	// allows one message per (31 + Length) / 32 seconds, so a long line that
+	// carries an IRC payload must not be followed by another message too soon —
+	// the server would drop it and the payload with it.
+	int m_LastChatSendChars;
 	int64_t m_aLastSoundPlayed[CHAT_NUM];
 	bool m_IsInputCensored;
 	char m_aCurrentInputText[MAX_CHAT_LENGTH];
@@ -165,6 +171,9 @@ class CChat : public CComponent
 
 	bool LineShouldHighlight(const char *pLine, const char *pName);
 	void StoreSave(const char *pText);
+
+	// v6.21: mirrors the server's chat spam protection (see SendChatQueued).
+	bool ChatCooldownElapsed() const;
 
 public:
 	CChat();
@@ -205,6 +214,8 @@ public:
 	// forth restores exactly what was there.
 	void TasSetVirtual(bool On);
 	bool TasVirtual() const { return m_TasVirtual; }
+	void TasAddVirtualLine(int ClientId, int Team, const char *pLine);
+	void TasRefreshVirtualLines();
 
 	void OnWindowResize() override;
 	void OnConsoleInit() override;

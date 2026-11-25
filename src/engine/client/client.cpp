@@ -67,6 +67,7 @@
 
 #include <game/localization.h>
 #include <game/version.h>
+#include <game/client/gameclient.h>
 
 #if defined(CONF_VIDEORECORDER)
 #include "video.h"
@@ -419,6 +420,7 @@ void CClient::SendInput()
                 return;
 
         bool Force = false;
+        const bool KxBufferEnabled = g_Config.m_KxNetworkBuffer > 0;
 
         // Send input for the active connection (real player input)
         {
@@ -427,40 +429,96 @@ void CClient::SendInput()
 
                 if(Size)
                 {
-                        // pack input
-                        CMsgPacker Msg(NETMSG_INPUT, true);
-                        Msg.AddInt(m_aAckGameTick[Conn]);
-                        Msg.AddInt(m_aPredTick[g_Config.m_ClDummy]);
-                        Msg.AddInt(Size);
+                        bool SendNow = true;
+                        int InputTick = m_aPredTick[g_Config.m_ClDummy];
+                        int64_t InputTime = Now;
 
-                        m_aInputs[Conn][m_aCurrentInput[Conn]].m_Tick = m_aPredTick[g_Config.m_ClDummy];
-                        m_aInputs[Conn][m_aCurrentInput[Conn]].m_PredictedTime = m_aPredictedTime[Conn].Get(Now);
-                        m_aInputs[Conn][m_aCurrentInput[Conn]].m_PredictionMargin = PredictionMargin() * time_freq() / 1000;
-                        m_aInputs[Conn][m_aCurrentInput[Conn]].m_Time = Now;
-
-                        // pack it
-                        for(int k = 0; k < Size / 4; k++)
+                        // v6.18: subtick buffer. Keep only the freshest input and flush
+                        // it on a fixed cadence, or immediately when a gameplay-critical
+                        // button changes (the same idea as Valorant's subtick buffer).
+                        if(KxBufferEnabled)
                         {
-                                static const int FlagsOffset = offsetof(CNetObj_PlayerInput, m_PlayerFlags) / sizeof(int);
-                                if(k == FlagsOffset && IsSixup())
+                                static const int64_t aIntervals[] = {0, 8000000LL, 16000000LL, 32000000LL}; // nanoseconds (8/16/32 ms)
+                                const int Interval = aIntervals[g_Config.m_KxNetworkBuffer];
+                                KxBufferedInput &Buf = m_KxInputBuffer[Conn];
+                                int aPrevData[MAX_INPUT_SIZE];
+                                const int PrevSize = Buf.m_Size;
+                                if(PrevSize > 0)
+                                        mem_copy(aPrevData, Buf.m_aData, PrevSize * sizeof(int));
+                                static const int s_aFlushIdx[] = {
+                                        (int)(offsetof(CNetObj_PlayerInput, m_Direction) / sizeof(int)),
+                                        (int)(offsetof(CNetObj_PlayerInput, m_Jump) / sizeof(int)),
+                                        (int)(offsetof(CNetObj_PlayerInput, m_Fire) / sizeof(int)),
+                                        (int)(offsetof(CNetObj_PlayerInput, m_Hook) / sizeof(int)),
+                                };
+                                bool CriticalChange = PrevSize != Size;
+                                if(!CriticalChange)
+                                        for(int Idx : s_aFlushIdx)
+                                                if(aPrevData[Idx] != m_aInputs[Conn][m_aCurrentInput[Conn]].m_aData[Idx])
+                                                {
+                                                        CriticalChange = true;
+                                                        break;
+                                                }
+                                mem_copy(Buf.m_aData, m_aInputs[Conn][m_aCurrentInput[Conn]].m_aData, Size * sizeof(int));
+                                Buf.m_Size = Size;
+                                Buf.m_Tick = InputTick;
+                                Buf.m_PredictedTime = m_aPredictedTime[Conn].Get(Now);
+                                Buf.m_PredictionMargin = PredictionMargin() * time_freq() / 1000;
+                                Buf.m_Time = Now;
+                                SendNow = CriticalChange || Now >= m_aKxNextInputSend[Conn] + Interval;
+                                if(SendNow)
                                 {
-                                        int PlayerFlags = m_aInputs[Conn][m_aCurrentInput[Conn]].m_aData[k];
-                                        Msg.AddInt(PlayerFlags_SixToSeven(PlayerFlags));
+                                        m_aKxNextInputSend[Conn] = Now;
+                                        InputTick = Buf.m_Tick;
+                                        InputTime = Buf.m_Time;
                                 }
-                                else
+                                else if(PrevSize > 0)
                                 {
-                                        Msg.AddInt(m_aInputs[Conn][m_aCurrentInput[Conn]].m_aData[k]);
+                                        // keep the prediction ring at the last sent input
+                                        mem_copy(m_aInputs[Conn][m_aCurrentInput[Conn]].m_aData, aPrevData, PrevSize * sizeof(int));
                                 }
                         }
 
-                        m_aCurrentInput[Conn]++;
-                        m_aCurrentInput[Conn] %= 200;
+                        // pack input
+                        CMsgPacker Msg(NETMSG_INPUT, true);
+                        Msg.AddInt(m_aAckGameTick[Conn]);
+                        Msg.AddInt(InputTick);
+                        Msg.AddInt(Size);
 
-                        SendMsg(Conn, &Msg, MSGFLAG_FLUSH);
-                        // Carry Force over to dummy connections (same as original DDNet
-                        // where Force propagates from active to dummy in a single loop)
-                        if(m_aCurrentInput[Conn] % 2)
-                                Force = true;
+                        KxBufferedInput *pOut = KxBufferEnabled ? &m_KxInputBuffer[Conn] : nullptr;
+                        if(SendNow)
+                        {
+                                m_aInputs[Conn][m_aCurrentInput[Conn]].m_Tick = InputTick;
+                                m_aInputs[Conn][m_aCurrentInput[Conn]].m_PredictedTime = pOut ? pOut->m_PredictedTime : m_aPredictedTime[Conn].Get(Now);
+                                m_aInputs[Conn][m_aCurrentInput[Conn]].m_PredictionMargin = pOut ? pOut->m_PredictionMargin : PredictionMargin() * time_freq() / 1000;
+                                m_aInputs[Conn][m_aCurrentInput[Conn]].m_Time = InputTime;
+                                if(pOut)
+                                        mem_copy(m_aInputs[Conn][m_aCurrentInput[Conn]].m_aData, pOut->m_aData, Size * sizeof(int));
+
+                                // pack it
+                                for(int k = 0; k < Size / 4; k++)
+                                {
+                                        static const int FlagsOffset = offsetof(CNetObj_PlayerInput, m_PlayerFlags) / sizeof(int);
+                                        if(k == FlagsOffset && IsSixup())
+                                        {
+                                                int PlayerFlags = m_aInputs[Conn][m_aCurrentInput[Conn]].m_aData[k];
+                                                Msg.AddInt(PlayerFlags_SixToSeven(PlayerFlags));
+                                        }
+                                        else
+                                        {
+                                                Msg.AddInt(m_aInputs[Conn][m_aCurrentInput[Conn]].m_aData[k]);
+                                        }
+                                }
+
+                                m_aCurrentInput[Conn]++;
+                                m_aCurrentInput[Conn] %= 200;
+                                SendMsg(Conn, &Msg, MSGFLAG_FLUSH);
+                                m_KxInputSent++;
+                                // Carry Force over to dummy connections (same as original DDNet
+                                // where Force propagates from active to dummy in a single loop)
+                                if(m_aCurrentInput[Conn] % 2)
+                                        Force = true;
+                        }
                 }
         }
 
@@ -550,6 +608,28 @@ void CClient::ClearInput(int Conn)
         for(int i = 0; i < 200; i++)
                 m_aInputs[Conn][i].m_Tick = -1;
         m_aCurrentInput[Conn] = 0;
+        m_KxInputBuffer[Conn].m_Size = 0;
+        m_aKxNextInputSend[Conn] = 0;
+}
+
+NETSTATS CClient::KxNetStats() const
+{
+        NETSTATS Stats = {};
+        net_stats(&Stats);
+        return Stats;
+}
+
+void CClient::KxInputAckStats(int *pSent, int *pAcked) const
+{
+        if(pSent)
+                *pSent = m_KxInputSent;
+        if(pAcked)
+                *pAcked = m_KxInputAcked;
+}
+
+int CClient::KxSnapshotCount() const
+{
+        return m_aReceivedSnapshots[g_Config.m_ClDummy];
 }
 
 // ------ state handling -----
@@ -2420,6 +2500,14 @@ void CClient::ProcessServerPacket(CNetChunk *pPacket, int Conn, bool Dummy)
 
                         if(Target)
                                 m_aPredictedTime[Conn].Update(&m_aInputtimeMarginGraphs[Conn], Target, TimeLeft, CSmoothTime::ADJUSTDIRECTION_UP);
+                        // v6.18: an input timing reply proves this input arrived.
+                        if(Conn == g_Config.m_ClDummy)
+                                for(int k = 0; k < 200; k++)
+                                        if(m_aInputs[Conn][k].m_Tick == InputPredTick)
+                                        {
+                                                m_KxInputAcked++;
+                                                break;
+                                        }
                 }
                 else if(Msg == NETMSG_SNAP || Msg == NETMSG_SNAPSINGLE || Msg == NETMSG_SNAPEMPTY)
                 {

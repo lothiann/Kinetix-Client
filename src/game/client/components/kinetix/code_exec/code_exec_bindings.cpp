@@ -121,12 +121,18 @@
 // what made this translation unit take minutes on MSVC.
 // =============================================================
 
+// LuaBridge3 keeps Namespace::Class<T> in the private section of Namespace
+// (only the `auto` from beginClass is meant to name it): MSVC silently skips
+// the access check for the dependent name, clang (the Android build) rejects
+// it. The namespace object is therefore taken as a deduced generic NS and the
+// registered class is passed explicitly as the first template argument.
+//
 // LuaBridge3's addPropertyReadWrite requires a member pointer declared in T
 // itself, but many DDNet structs keep their fields in versioned/policy bases
 // (CMapItemGroup_v1, color4_base, snapshot cores). Register through a member
 // pointer of any declaring class with the same get/set semantics.
-template <class T, class D, class Field>
-static void AddField(luabridge::Namespace::Class<T> &ns, const char *pName, Field D::*pMember)
+template <class T, class NS, class D, class Field>
+static void AddField(NS &ns, const char *pName, Field D::*pMember)
 {
         ns.addProperty(pName,
                 [pMember](T &o) -> Field & { return o.*pMember; },
@@ -159,6 +165,27 @@ void CCodeExec::RegisterRawAPI()
         if(!m_pLua) return;
         lua_State *L = m_pLua;
         auto Stage = [](const char *) {};
+
+        // Fence for the raw net/io/os bindings below. The Windows build has
+        // C++ exceptions enabled, so a denied call raises a real Lua error;
+        // the Android build compiles with -fno-exceptions, where the same
+        // check logs to the console and the binding returns an empty/failed
+        // job instead.
+        auto ExecGate = [this](bool Allowed, const char *pMsg) {
+#if LUABRIDGE_HAS_EXCEPTIONS
+                (void)this;
+                if(!Allowed)
+                        throw std::runtime_error(pMsg);
+#else
+                if(!Allowed)
+                {
+                        char aBuf[256];
+                        str_format(aBuf, sizeof(aBuf), "code_exec: %s", pMsg);
+                        Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "code_exec", aBuf);
+                }
+#endif
+                return Allowed;
+        };
 
         Stage("netobj");
         // ===================== NETWORK OBJECTS =====================
@@ -1235,35 +1262,35 @@ void CCodeExec::RegisterRawAPI()
 
         {
                 auto ns = luabridge::getGlobalNamespace(L).beginClass<CMapItemGroup>("CMapItemGroup");
-                AddField(ns, "m_Version", &CMapItemGroup_v1::m_Version);
-                AddField(ns, "m_OffsetX", &CMapItemGroup_v1::m_OffsetX);
-                AddField(ns, "m_OffsetY", &CMapItemGroup_v1::m_OffsetY);
-                AddField(ns, "m_ParallaxX", &CMapItemGroup_v1::m_ParallaxX);
-                AddField(ns, "m_ParallaxY", &CMapItemGroup_v1::m_ParallaxY);
-                AddField(ns, "m_StartLayer", &CMapItemGroup_v1::m_StartLayer);
-                AddField(ns, "m_NumLayers", &CMapItemGroup_v1::m_NumLayers);
-                AddField(ns, "m_UseClipping", &CMapItemGroup::m_UseClipping);
-                AddField(ns, "m_ClipX", &CMapItemGroup::m_ClipX);
-                AddField(ns, "m_ClipY", &CMapItemGroup::m_ClipY);
-                AddField(ns, "m_ClipW", &CMapItemGroup::m_ClipW);
-                AddField(ns, "m_ClipH", &CMapItemGroup::m_ClipH);
+                AddField<CMapItemGroup>(ns, "m_Version", &CMapItemGroup_v1::m_Version);
+                AddField<CMapItemGroup>(ns, "m_OffsetX", &CMapItemGroup_v1::m_OffsetX);
+                AddField<CMapItemGroup>(ns, "m_OffsetY", &CMapItemGroup_v1::m_OffsetY);
+                AddField<CMapItemGroup>(ns, "m_ParallaxX", &CMapItemGroup_v1::m_ParallaxX);
+                AddField<CMapItemGroup>(ns, "m_ParallaxY", &CMapItemGroup_v1::m_ParallaxY);
+                AddField<CMapItemGroup>(ns, "m_StartLayer", &CMapItemGroup_v1::m_StartLayer);
+                AddField<CMapItemGroup>(ns, "m_NumLayers", &CMapItemGroup_v1::m_NumLayers);
+                AddField<CMapItemGroup>(ns, "m_UseClipping", &CMapItemGroup::m_UseClipping);
+                AddField<CMapItemGroup>(ns, "m_ClipX", &CMapItemGroup::m_ClipX);
+                AddField<CMapItemGroup>(ns, "m_ClipY", &CMapItemGroup::m_ClipY);
+                AddField<CMapItemGroup>(ns, "m_ClipW", &CMapItemGroup::m_ClipW);
+                AddField<CMapItemGroup>(ns, "m_ClipH", &CMapItemGroup::m_ClipH);
                 ns.endClass();
         }
 
         {
                 auto ns = luabridge::getGlobalNamespace(L).beginClass<CMapItemLayerTilemap>("CMapItemLayerTilemap");
-                AddField(ns, "m_Layer", &CMapItemLayerTilemap_v2::m_Layer);
-                AddField(ns, "m_Version", &CMapItemLayerTilemap_v2::m_Version);
-                AddField(ns, "m_Width", &CMapItemLayerTilemap_v2::m_Width);
-                AddField(ns, "m_Height", &CMapItemLayerTilemap_v2::m_Height);
-                AddField(ns, "m_Flags", &CMapItemLayerTilemap_v2::m_Flags);
-                AddField(ns, "m_Image", &CMapItemLayerTilemap_v2::m_Image);
-                AddField(ns, "m_Data", &CMapItemLayerTilemap_v2::m_Data);
-                AddField(ns, "m_Tele", &CMapItemLayerTilemap::m_Tele);
-                AddField(ns, "m_Speedup", &CMapItemLayerTilemap::m_Speedup);
-                AddField(ns, "m_Front", &CMapItemLayerTilemap::m_Front);
-                AddField(ns, "m_Switch", &CMapItemLayerTilemap::m_Switch);
-                AddField(ns, "m_Tune", &CMapItemLayerTilemap::m_Tune);
+                AddField<CMapItemLayerTilemap>(ns, "m_Layer", &CMapItemLayerTilemap_v2::m_Layer);
+                AddField<CMapItemLayerTilemap>(ns, "m_Version", &CMapItemLayerTilemap_v2::m_Version);
+                AddField<CMapItemLayerTilemap>(ns, "m_Width", &CMapItemLayerTilemap_v2::m_Width);
+                AddField<CMapItemLayerTilemap>(ns, "m_Height", &CMapItemLayerTilemap_v2::m_Height);
+                AddField<CMapItemLayerTilemap>(ns, "m_Flags", &CMapItemLayerTilemap_v2::m_Flags);
+                AddField<CMapItemLayerTilemap>(ns, "m_Image", &CMapItemLayerTilemap_v2::m_Image);
+                AddField<CMapItemLayerTilemap>(ns, "m_Data", &CMapItemLayerTilemap_v2::m_Data);
+                AddField<CMapItemLayerTilemap>(ns, "m_Tele", &CMapItemLayerTilemap::m_Tele);
+                AddField<CMapItemLayerTilemap>(ns, "m_Speedup", &CMapItemLayerTilemap::m_Speedup);
+                AddField<CMapItemLayerTilemap>(ns, "m_Front", &CMapItemLayerTilemap::m_Front);
+                AddField<CMapItemLayerTilemap>(ns, "m_Switch", &CMapItemLayerTilemap::m_Switch);
+                AddField<CMapItemLayerTilemap>(ns, "m_Tune", &CMapItemLayerTilemap::m_Tune);
                 ns.endClass();
         }
 
@@ -1372,10 +1399,10 @@ void CCodeExec::RegisterRawAPI()
         // ===================== ColorRGBA =====================
         {
                 auto ns = luabridge::getGlobalNamespace(L).beginClass<ColorRGBA>("ColorRGBA");
-                AddField(ns, "r", &ColorRGBA::r);
-                AddField(ns, "g", &ColorRGBA::g);
-                AddField(ns, "b", &ColorRGBA::b);
-                AddField(ns, "a", &ColorRGBA::a);
+                AddField<ColorRGBA>(ns, "r", &ColorRGBA::r);
+                AddField<ColorRGBA>(ns, "g", &ColorRGBA::g);
+                AddField<ColorRGBA>(ns, "b", &ColorRGBA::b);
+                AddField<ColorRGBA>(ns, "a", &ColorRGBA::a);
                 ns.endClass();
         }
 
@@ -1657,7 +1684,10 @@ void CCodeExec::RegisterRawAPI()
         }
 
         // The root CGameClient instance. Registered AFTER the class so the
-        // userdata picks up the metatable.
+        // userdata picks up the metatable. Only builds with C++ exceptions
+        // (Windows) can report a failure here — with -fno-exceptions (Android)
+        // LuaBridge never throws.
+#if LUABRIDGE_HAS_EXCEPTIONS
         try
         {
                 luabridge::setGlobal(L, GameClient(), "gc");
@@ -1668,6 +1698,9 @@ void CCodeExec::RegisterRawAPI()
                 str_format(aBuf, sizeof(aBuf), "setGlobal gc failed: %s", e.what());
                 Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "code_exec", aBuf);
         }
+#else
+        luabridge::setGlobal(L, GameClient(), "gc");
+#endif
 
         Stage("cl");
         // ===================== IClient namespace (cl) =====================
@@ -1761,26 +1794,26 @@ void CCodeExec::RegisterRawAPI()
         }
         {
                 auto net = luabridge::getGlobalNamespace(L).beginNamespace("net");
-                net.addFunction("get", [this, NetPrep](const std::string &Url, std::optional<int> TimeoutSec) -> std::shared_ptr<IHttpRequest> {
-                        if(!g_Config.m_KxExecSettings || !g_Config.m_KxExecInternet)
-                                throw std::runtime_error("net: internet access is disabled (enable 'Access To The Internet' in Execution Settings)");
+                net.addFunction("get", [this, NetPrep, ExecGate](const std::string &Url, std::optional<int> TimeoutSec) -> std::shared_ptr<IHttpRequest> {
+                        if(!ExecGate(g_Config.m_KxExecSettings && g_Config.m_KxExecInternet, "net: internet access is disabled (enable 'Access To The Internet' in Execution Settings)"))
+                                return nullptr;
                         std::shared_ptr<IHttpRequest> pReq = HttpGet(Url.c_str());
                         NetPrep(pReq, TimeoutSec.value_or(30));
                         Http()->Run(pReq);
                         return pReq;
                 });
-                net.addFunction("post", [this, NetPrep](const std::string &Url, const std::string &Body, std::optional<int> TimeoutSec) -> std::shared_ptr<IHttpRequest> {
-                        if(!g_Config.m_KxExecSettings || !g_Config.m_KxExecInternet)
-                                throw std::runtime_error("net: internet access is disabled (enable 'Access To The Internet' in Execution Settings)");
+                net.addFunction("post", [this, NetPrep, ExecGate](const std::string &Url, const std::string &Body, std::optional<int> TimeoutSec) -> std::shared_ptr<IHttpRequest> {
+                        if(!ExecGate(g_Config.m_KxExecSettings && g_Config.m_KxExecInternet, "net: internet access is disabled (enable 'Access To The Internet' in Execution Settings)"))
+                                return nullptr;
                         std::shared_ptr<IHttpRequest> pReq = HttpGet(Url.c_str());
                         NetPrep(pReq, TimeoutSec.value_or(30));
                         pReq->Post((const unsigned char *)Body.data(), Body.size());
                         Http()->Run(pReq);
                         return pReq;
                 });
-                net.addFunction("post_json", [this, NetPrep, L](const std::string &Url, const std::string &Json, luabridge::LuaRef Headers, std::optional<int> TimeoutSec) -> std::shared_ptr<IHttpRequest> {
-                        if(!g_Config.m_KxExecSettings || !g_Config.m_KxExecInternet)
-                                throw std::runtime_error("net: internet access is disabled (enable 'Access To The Internet' in Execution Settings)");
+                net.addFunction("post_json", [this, NetPrep, ExecGate](const std::string &Url, const std::string &Json, luabridge::LuaRef Headers, std::optional<int> TimeoutSec) -> std::shared_ptr<IHttpRequest> {
+                        if(!ExecGate(g_Config.m_KxExecSettings && g_Config.m_KxExecInternet, "net: internet access is disabled (enable 'Access To The Internet' in Execution Settings)"))
+                                return nullptr;
                         std::shared_ptr<IHttpRequest> pReq = HttpGet(Url.c_str());
                         NetPrep(pReq, TimeoutSec.value_or(30));
                         pReq->PostJson(Json.c_str());
@@ -1924,11 +1957,11 @@ void CCodeExec::RegisterRawAPI()
 
         {
                 luabridge::LuaRef OsTable = luabridge::getGlobal(L, "os");
-                OsTable["execute"] = luabridge::newFunction(L, [RunCommandNoWindow](const std::string &Cmd) -> std::tuple<bool, const char *, int> {
-                        if(!g_Config.m_KxExecSettings || g_Config.m_KxExecSandbox)
-                                throw std::runtime_error("os.execute is denied while Sandbox is enabled");
-                        if(!g_Config.m_KxExecOs)
-                                throw std::runtime_error("os.execute is disabled (enable 'OS Commands' in Execution Settings)");
+                OsTable["execute"] = luabridge::newFunction(L, [RunCommandNoWindow, ExecGate](const std::string &Cmd) -> std::tuple<bool, const char *, int> {
+                        if(!ExecGate(g_Config.m_KxExecSettings && !g_Config.m_KxExecSandbox, "os.execute is denied while Sandbox is enabled"))
+                                return {false, "exit", -1};
+                        if(!ExecGate(g_Config.m_KxExecOs, "os.execute is disabled (enable 'OS Commands' in Execution Settings)"))
+                                return {false, "exit", -1};
                         std::string Output;
                         const int ExitCode = RunCommandNoWindow(ExecShellCommandLine(Cmd), &Output);
                         if(ExitCode < 0)
@@ -1939,11 +1972,11 @@ void CCodeExec::RegisterRawAPI()
 
         {
                 luabridge::LuaRef IoTable = luabridge::getGlobal(L, "io");
-                IoTable["popen"] = luabridge::newFunction(L, [L, RunCommandNoWindow](const std::string &Cmd) -> std::shared_ptr<SPopenJob> {
-                        if(!g_Config.m_KxExecSettings || g_Config.m_KxExecSandbox)
-                                throw std::runtime_error("io.popen is denied while Sandbox is enabled");
-                        if(!g_Config.m_KxExecOs)
-                                throw std::runtime_error("io.popen is disabled (enable 'OS Commands' in Execution Settings)");
+                IoTable["popen"] = luabridge::newFunction(L, [L, RunCommandNoWindow, ExecGate](const std::string &Cmd) -> std::shared_ptr<SPopenJob> {
+                        if(!ExecGate(g_Config.m_KxExecSettings && !g_Config.m_KxExecSandbox, "io.popen is denied while Sandbox is enabled"))
+                                return nullptr;
+                        if(!ExecGate(g_Config.m_KxExecOs, "io.popen is disabled (enable 'OS Commands' in Execution Settings)"))
+                                return nullptr;
                         auto Job = std::make_shared<SPopenJob>();
                         std::string ShellCmd = ExecShellCommandLine(Cmd);
                         std::thread([Job, RunCommandNoWindow, ShellCmd]() {
@@ -2155,6 +2188,7 @@ void CCodeExec::RegisterRawAPI()
         }
 
         // The live CConfig instance. Registered AFTER the class.
+#if LUABRIDGE_HAS_EXCEPTIONS
         try
         {
                 luabridge::setGlobal(L, &g_Config, "config");
@@ -2165,6 +2199,9 @@ void CCodeExec::RegisterRawAPI()
                 str_format(aBuf, sizeof(aBuf), "setGlobal config failed: %s", e.what());
                 Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "code_exec", aBuf);
         }
+#else
+        luabridge::setGlobal(L, &g_Config, "config");
+#endif
 
         Stage("console");
         // ===================== console =====================

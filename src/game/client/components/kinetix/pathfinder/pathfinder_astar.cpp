@@ -388,6 +388,21 @@ static bool PfIsAtFinishPos(const std::vector<vec2> &vFinishes, const vec2 &pos)
 	return false;
 }
 
+// v6.18: TAS dummy preparation needs a unit-exact start position, not just a
+// finish tile. These two wrappers keep the normal Pathfinder behaviour intact
+// and only switch to the exact goal while m_PfUseExactGoal is set.
+bool CBotNet::PfAtGoal(const vec2 &Pos) const
+{
+	if(m_PfUseExactGoal)
+		return distance(Pos, m_PfExactGoal) <= 1.0f;
+	return PfIsAtFinishPos(PfActiveFinishTiles(), Pos);
+}
+
+vec2 CBotNet::PfGoalPos(const std::vector<vec2> &vFinishes, const vec2 &Pos) const
+{
+	return m_PfUseExactGoal ? m_PfExactGoal : PfNearestFinishPos(vFinishes, Pos);
+}
+
 float CBotNet::PfAStarHeuristic(const vec2 &pos, const vec2 &endPos)
 {
 	// Wall-aware flow-field distance (tiles × ~2 ticks) when available,
@@ -610,7 +625,7 @@ if(W > 20.0f)
 	CCollision *pColl = m_PfBaseWorld->Collision();
 	root.Grounded = pColl ? pColl->IsOnGround(root.Core.Pos, CCharacterCore::PhysicalSize()) : false;
 	root.G = 0.0f;
-	root.H = PfAStarHeuristic(root.Core.Pos, PfNearestFinishPos(vFinishes, root.Core.Pos));
+	root.H = PfAStarHeuristic(root.Core.Pos, PfGoalPos(vFinishes,root.Core.Pos));
 	m_PfAHRoot = root.H;
 	m_PfABestH.store(root.H, std::memory_order_relaxed);
 	root.F = root.G + (float)W * root.H;
@@ -629,7 +644,7 @@ if(W > 20.0f)
 		m_PfAOpen.push_back({RootIdx, RootF, RootH});
 	}
 
-	if(PfIsAtFinishPos(vFinishes, root.Core.Pos))
+	if(PfAtGoal(root.Core.Pos))
 		m_PfAGoalIdx = 0;
 	return true;
 }
@@ -684,7 +699,7 @@ if(W > 20.0f)
 	if(!pCurG || *pCurG < cur.G - 0.001f)
 		return 0; // stale — a cheaper path to this state exists
 
-	if(PfIsAtFinishPos(vFinishes, cur.Core.Pos))
+	if(PfAtGoal(cur.Core.Pos))
 	{
 		if(!PfEffortFreezeSupport() && cur.FreezeChainTicks > 0)
 			return 0;
@@ -739,7 +754,7 @@ if(W > 20.0f)
 		child.FreezeTime = endFreezeTime;
 		child.Grounded = endGrounded;
 		child.G = newG;
-		child.H = PfAStarHeuristic(childPos, PfNearestFinishPos(vFinishes, childPos));
+		child.H = PfAStarHeuristic(childPos, PfGoalPos(vFinishes,childPos));
 		if(child.H < m_PfABestH.load(std::memory_order_relaxed))
 			m_PfABestH.store(child.H, std::memory_order_relaxed);
 		child.F = child.G + (float)W * child.H;
@@ -813,7 +828,7 @@ if(W > 20.0f)
 		}
 		PfChunkResult res;
 		PfSimulateChunk(m_PfSimWorld, LocalID, pBot, emptyInputs, RootStartTick + cur.TickOffset, res,
-			m_pForbiddenGrid, PfCustomFinishSimGrid(), false);
+			m_pForbiddenGrid, PfCustomFinishSimGrid(), false, m_PfUseExactGoal, m_PfExactGoal);
 		if(res.died && !res.reachedFinish)
 			return 0;
 		PfAState endCore = cur.Core;
@@ -918,7 +933,7 @@ if(W > 20.0f)
 				continue;
 			PfSimulateHold(m_PfSimWorld, LocalID, pBot, aCands[ci],
 				RootStartTick + cur.TickOffset, Chunk, res,
-				m_pForbiddenGrid, PfCustomFinishSimGrid(), FastSim);
+				m_pForbiddenGrid, PfCustomFinishSimGrid(), FastSim, m_PfUseExactGoal, m_PfExactGoal);
 			if(res.died && !res.reachedFinish)
 				continue;
 			PfAState endCore = cur.Core;
@@ -1217,7 +1232,7 @@ int CBotNet::PfRefineWindowSearch(const PfAState &Start, int StartFreeze, bool S
 	root.FreezeTime = StartFreeze;
 	root.Grounded = StartGrounded;
 	root.G = 0.0f;
-	root.H = PfAStarHeuristic(Start.Pos, PfNearestFinishPos(vFinishes, Start.Pos));
+	root.H = PfAStarHeuristic(Start.Pos, PfGoalPos(vFinishes,Start.Pos));
 	root.F = root.G + root.H; // W = 1: the window replacement is locally optimal
 	root.ParentIdx = -1;
 	root.PrimIdx = -1;
@@ -1265,7 +1280,7 @@ int CBotNet::PfRefineWindowSearch(const PfAState &Start, int StartFreeze, bool S
 
 		if(ToFinish)
 		{
-			if(PfIsAtFinishPos(vFinishes, cur.Core.Pos) && (freezeSupport || cur.FreezeChainTicks == 0) && cur.ForbiddenChainTicks == 0)
+			if(PfAtGoal(cur.Core.Pos) && (freezeSupport || cur.FreezeChainTicks == 0) && cur.ForbiddenChainTicks == 0)
 			{
 				GoalIdx = curIdx;
 				break;
@@ -1343,7 +1358,7 @@ int CBotNet::PfRefineWindowSearch(const PfAState &Start, int StartFreeze, bool S
 			oneInput[0] = aCands[ci];
 			PfSimulateChunk(m_PfSimWorld, LocalID, pBot, oneInput,
 				m_PfSimStartTick + cur.TickOffset, res,
-				m_pForbiddenGrid, PfCustomFinishSimGrid(), FastSim);
+				m_pForbiddenGrid, PfCustomFinishSimGrid(), FastSim, m_PfUseExactGoal, m_PfExactGoal);
 			TickBudget -= pf_max(1, res.ticksSimulated);
 			if(res.died && !res.reachedFinish)
 				continue;
@@ -1372,7 +1387,7 @@ int CBotNet::PfRefineWindowSearch(const PfAState &Start, int StartFreeze, bool S
 			child.FreezeTime = res.endFreezeTime;
 			child.Grounded = endGrounded;
 			child.G = newG;
-			child.H = PfAStarHeuristic(endCore.Pos, PfNearestFinishPos(vFinishes, endCore.Pos));
+			child.H = PfAStarHeuristic(endCore.Pos, PfGoalPos(vFinishes,endCore.Pos));
 			child.F = child.G + child.H;
 			child.ParentIdx = curIdx;
 			child.PrimIdx = aCandCodes[ci];
@@ -1754,7 +1769,7 @@ bool CBotNet::PfEvalSequence(const PfAState &cur, int curFreeze, int tickOffset,
 	vec2 savedPos = pBot->m_Pos;
 	int savedFreeze = pBot->m_FreezeTime;
 	PfSimulateChunk(m_PfSimWorld, LocalID, pBot, inSeq, m_PfSimStartTick + tickOffset, out,
-		m_pForbiddenGrid, PfCustomFinishSimGrid(), FastSim);
+		m_pForbiddenGrid, PfCustomFinishSimGrid(), FastSim, m_PfUseExactGoal, m_PfExactGoal);
 	if((pBot = m_PfSimWorld->GetCharacterById(LocalID)))
 	{
 		pBot->SetCore(savedCore);
@@ -1774,7 +1789,7 @@ float CBotNet::PfSeqScore(const std::vector<vec2> &vFinishes, const PfChunkResul
 		return -1e18f;
 	if(res.reachedFinish)
 		return 1e9f - (float)res.traj.size();
-	return -PfAStarHeuristic(res.endPos, PfNearestFinishPos(vFinishes, res.endPos));
+	return -PfAStarHeuristic(res.endPos, PfGoalPos(vFinishes,res.endPos));
 }
 
 void CBotNet::PfSeqApplyEnd(PfAState &st, const PfChunkResult &res)
@@ -1908,7 +1923,7 @@ void CBotNet::PfRheaWorker()
 				child.FreezeTime = resFF.endFreezeTime;
 				child.Grounded = pColl->IsOnGround(child.Core.Pos, CCharacterCore::PhysicalSize());
 				child.G = parent.G + (float)ft;
-				child.H = PfAStarHeuristic(child.Core.Pos, PfNearestFinishPos(vFinishes, child.Core.Pos));
+				child.H = PfAStarHeuristic(child.Core.Pos, PfGoalPos(vFinishes,child.Core.Pos));
 				child.F = child.G + W * child.H;
 				child.ParentIdx = parentIdx;
 				child.PrimIdx = 0;
@@ -1968,7 +1983,7 @@ void CBotNet::PfRheaWorker()
 				child.FreezeTime = res.endFreezeTime;
 				child.Grounded = endGrounded;
 				child.G = newG;
-				child.H = PfAStarHeuristic(endCore.Pos, PfNearestFinishPos(vFinishes, endCore.Pos));
+				child.H = PfAStarHeuristic(endCore.Pos, PfGoalPos(vFinishes,endCore.Pos));
 				child.F = child.G + W * child.H;
 				child.ParentIdx = parentIdx;
 				child.PrimIdx = aCodes[ci];

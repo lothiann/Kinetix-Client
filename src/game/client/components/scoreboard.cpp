@@ -880,6 +880,10 @@ void CScoreboard::RenderScoreboard(CUIRect Scoreboard, int Team, int CountStart,
                                 }
                                 Player.m_Name.Render(TextRender(), vec2(NameOffset, TextY), NameColor);
 
+                                // v6.20: single Kinetix icon right after the name.
+                                if(GameClient()->m_IRC.IsKinetixClient(pInfo->m_ClientId))
+                                        GameClient()->m_IRC.RenderLogo(NameOffset + Player.m_Name.Width() + FontSize * 0.8f, TextY + FontSize * 0.5f, FontSize, TextColor.a);
+
                                 // ready / watching
                                 if(Client()->IsSixup() && Client()->m_TranslationContext.m_aClients[pInfo->m_ClientId].m_PlayerFlags7 & protocol7::PLAYERFLAG_READY)
                                 {

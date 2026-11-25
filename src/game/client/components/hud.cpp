@@ -624,10 +624,10 @@ void CHud::RenderCursor()
         {
 		// Render local cursor
 		if(GameClient()->m_Tas.IsJoined())
-			CurWeapon = std::max(0, GameClient()->m_Tas.PlaygroundWeapon());
+			CurWeapon = std::max(0, GameClient()->m_Tas.PlaygroundActiveWeapon());
 		else
 			CurWeapon = std::max(0, GameClient()->m_aClients[GameClient()->m_Snap.m_LocalClientId].m_Predicted.m_ActiveWeapon);
-		TargetPos = GameClient()->m_Controls.m_aTargetPos[g_Config.m_ClDummy];
+		TargetPos = GameClient()->m_Controls.m_aTargetPos[GameClient()->m_Tas.IsJoined() ? 0 : g_Config.m_ClDummy];
         }
         else
         {

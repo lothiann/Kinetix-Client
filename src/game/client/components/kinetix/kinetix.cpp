@@ -138,8 +138,29 @@ static void ConDummySwitch(IConsole::IResult *pResult, void *pUserData)
 
 void CBotNet::SmartDummySwitch()
 {
-        if(!g_Config.m_KxSdsEnabled)
-                return;
+	if(!g_Config.m_KxSdsEnabled)
+		return;
+	if(GameClient()->m_Tas.IsJoined())
+	{
+		if(!GameClient()->m_Tas.PgDummyFunctions())
+			return;
+		// TAS dummy slots are local characters, not network connections. Switch
+		// the sandbox slot directly instead of changing cl_dummy (which remains
+		// pinned to connection 0 while the playground owns input).
+		const int Cur = GameClient()->m_Tas.PgActiveDummy();
+		for(int Offset = 1; Offset < GameClient()->m_Tas.PgDummyLimit(); ++Offset)
+		{
+			const int Next = (Cur + Offset) % GameClient()->m_Tas.PgDummyLimit();
+			if(Next == 0 || GameClient()->m_Tas.PgDummyConnected(Next))
+			{
+				GameClient()->m_Tas.SetPgActiveDummy(Next);
+				return;
+			}
+		}
+		return;
+	}
+	if(GameClient()->m_Tas.IsRealPlaying())
+		return;
 
         const int Cur = g_Config.m_ClDummy;
         const int Order = g_Config.m_KxSdsOrder;
@@ -489,14 +510,22 @@ void CBotNet::OnUpdate()
 
         // Laser unfreeze: predict freeze and auto-fire laser to unfreeze self.
         // Runs on the active player's input (not dummies).
-        UpdateLaserUnfreeze();
+        // While TAS stages real dummies, its tab-Pathfinder route inputs own the
+        // dummies; helpers / copy-moves must not rebase the same counters.
+        const bool TasOwnsInput = GameClient()->m_Tas.IsJoined() || GameClient()->m_Tas.IsRealPlaying() ||
+                GameClient()->m_Tas.IsPreparing();
+        if(!TasOwnsInput)
+                UpdateLaserUnfreeze();
 
-        UpdateFunctions();
+        if(!TasOwnsInput)
+                UpdateFunctions();
 
         // v1.56.151: Fly Ride — pilot hooks/hammers nearest dummy, WASD moves anchor.
-        UpdateFlyRide();
-
-        UpdateTripleFly();
+        if(!TasOwnsInput)
+        {
+                UpdateFlyRide();
+                UpdateTripleFly();
+        }
 
         // v1.56.262: Admin Alarm — alert in chat when an RCON admin is present.
         UpdateAdminAlarm();
@@ -563,6 +592,10 @@ void CBotNet::OnUpdate()
         //
         // Solution: skip the entire ProcessDummy loop when no botnet features are
         // active. This makes the default dummy input pipeline byte-identical to DDNet.
+        // The sandbox and a real replay own every input: network dummy bots
+        // (helpers, copy mirror, aled, macros, pathfinder go) must not run.
+        if(TasOwnsInput)
+                return;
         bool anyBotnetFeature = g_Config.m_KxHelpers || g_Config.m_KxCopyMoves || g_Config.m_KxAledEnabled;
         if(!anyBotnetFeature)
         {

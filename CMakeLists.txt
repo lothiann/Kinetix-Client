@@ -2753,6 +2753,8 @@ if(CLIENT)
     components/kinetix/array_shared.h
     components/kinetix/clickgui.cpp
     components/kinetix/clickgui.h
+    components/kinetix/map_exploit.cpp
+    components/kinetix/map_exploit.h
     components/kinetix/code_exec/code_exec.cpp
     components/kinetix/code_exec/code_exec.h
     components/kinetix/code_exec/code_exec_bindings.cpp

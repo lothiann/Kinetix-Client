@@ -55,27 +55,13 @@ void CBotNet::PfClearSearchState()
 // Start a fresh search from the active player's predicted state.
 void CBotNet::PfResetRun()
 {
-	m_PfVPath.clear();
-	m_PfVHookSegs.clear();
-	m_PfChunkCount = 0;
-	m_PfTickCounter = 0;
-
 	CGameClient *pGame = GameClient();
 	if(!pGame || !pGame->m_Snap.m_pLocalInfo)
 	{
 		dbg_msg("pathfinder", "PfResetRun: no game or no local info");
 		return;
 	}
-
-	if(!m_MapGridLoaded)
-		LoadMapGrid();
-	if(!m_MapGridLoaded)
-	{
-		dbg_msg("pathfinder", "PfResetRun: map grid failed to load");
-		return;
-	}
-
-	int LocalID = pGame->m_Snap.m_LocalClientId;
+	const int LocalID = pGame->m_Snap.m_LocalClientId;
 	if(LocalID < 0)
 	{
 		dbg_msg("pathfinder", "PfResetRun: no local client id");
@@ -87,10 +73,49 @@ void CBotNet::PfResetRun()
 		dbg_msg("pathfinder", "PfResetRun: no predicted character");
 		return;
 	}
+	(void)PfResetRunForDummy(pChar->GetCore().m_Pos, LocalID);
+}
+
+// v6.18: the very same tab solver, rooted at an arbitrary client. Used by TAS
+// real-world preparation to walk a real dummy from its current position to the
+// recorded start position. No helpers / Real-Time Pathfinder code involved.
+bool CBotNet::PfResetRunForDummy(vec2 Start, int ClientId)
+{
+	m_PfVPath.clear();
+	m_PfVHookSegs.clear();
+	m_PfChunkCount = 0;
+	m_PfTickCounter = 0;
+
+	CGameClient *pGame = GameClient();
+	if(!pGame || !pGame->m_Snap.m_pLocalInfo)
+	{
+		dbg_msg("pathfinder", "PfResetRunForDummy: no game or no local info");
+		return false;
+	}
+
+	if(!m_MapGridLoaded)
+		LoadMapGrid();
+	if(!m_MapGridLoaded)
+	{
+		dbg_msg("pathfinder", "PfResetRunForDummy: map grid failed to load");
+		return false;
+	}
+
+	if(ClientId < 0)
+	{
+		dbg_msg("pathfinder", "PfResetRunForDummy: no client id");
+		return false;
+	}
+	CCharacter *pChar = pGame->m_PredictedWorld.GetCharacterById(ClientId);
+	if(!pChar)
+	{
+		dbg_msg("pathfinder", "PfResetRunForDummy: no predicted character");
+		return false;
+	}
 
 	const CCharacterCore &Core = pChar->GetCore();
-	m_PfStartPos = Core.m_Pos;
-	m_PfCurPos = Core.m_Pos;
+	m_PfStartPos = Start;
+	m_PfCurPos = Start;
 	m_PfCurVel = Core.m_Vel;
 	m_PfCurHookState = Core.m_HookState;
 	m_PfCurHookPos = Core.m_HookPos;
@@ -105,7 +130,7 @@ void CBotNet::PfResetRun()
 
 	PfClearSearchState();
 
-	m_PfVPath.push_back(Core.m_Pos);
+	m_PfVPath.push_back(Start);
 
 	// Force a flow-field rebuild with the currently active finish sources.
 	if(m_PfFlowField)
@@ -120,7 +145,7 @@ void CBotNet::PfResetRun()
 	if(vFinishes.empty())
 	{
 		dbg_msg("pathfinder", "PfResetRun: no finish tiles (paint custom finish tiles or play a map with finish)");
-		return;
+		return false;
 	}
 
 	const char *pFlowStatus = "unavailable";
@@ -133,7 +158,7 @@ void CBotNet::PfResetRun()
 	}
 
 	dbg_msg("pathfinder", "PfResetRun: start=(%.0f,%.0f) finishes=%d flow=%s",
-		Core.m_Pos.x, Core.m_Pos.y, (int)vFinishes.size(), pFlowStatus);
+		Start.x, Start.y, (int)vFinishes.size(), pFlowStatus);
 
 	// Snapshot the predicted world for the worker thread. The worker never
 	// touches GameClient() — it only reads from this snapshot.
@@ -141,10 +166,11 @@ void CBotNet::PfResetRun()
 		delete m_PfBaseWorld;
 	m_PfBaseWorld = new CGameWorld();
 	m_PfBaseWorld->CopyWorld(&pGame->m_PredictedWorld);
-	m_PfLocalID = LocalID;
+	m_PfLocalID = ClientId;
 
 	PfThreadStart();
 	m_PfAStarted = true;
+	return true;
 }
 
 // kx_pf_paste: copy the found path into the TAS Playground as the current run.

@@ -133,6 +133,122 @@ static bool TripleFlyHookPathClear(CGameClient *pGame, vec2 From, vec2 To, int S
         return pHit->GetCid() == TargetCid;
 }
 
+// v6.18: the sandbox (TAS playground) twins of the two helpers above. The world
+// is passed in explicitly, so the same radius / line-of-sight / predicted hook
+// point logic works on the local playground world.
+static bool TripleFlyHookPathClearIn(CGameWorld *pWorld, vec2 From, vec2 To, int SelfCid, int TargetCid)
+{
+        vec2 NewPos = vec2(0, 0);
+        CCharacter *pHit = pWorld->IntersectCharacter(From, To, CCharacterCore::PhysicalSize() * 0.5f, NewPos,
+                pWorld->GetCharacterById(SelfCid));
+        if(!pHit)
+                return true;
+        return pHit->GetCid() == TargetCid;
+}
+
+static vec2 TripleFlyPredictHookPosIn(CGameWorld *pSrc, int TargetCid, vec2 MyPos)
+{
+        const CTuningParams *pT = pSrc->GlobalTuning();
+        const CCharacter *pTargetNow = pSrc->GetCharacterById(TargetCid);
+        if(!pTargetNow)
+                return MyPos;
+        if(!pT || pT->m_HookFireSpeed <= 1.0f)
+                return pTargetNow->Core()->m_Pos;
+
+        CGameWorld *pPredWorld = new CGameWorld;
+        pPredWorld->CopyWorldIsolated(pSrc);
+
+        vec2 aPositions[MAX_CLIENTS][MAX_PREDICT_TICKS + 1];
+        bool aValid[MAX_CLIENTS] = {};
+        for(int c = 0; c < MAX_CLIENTS; c++)
+        {
+                if(CCharacter *pChar = pPredWorld->GetCharacterById(c))
+                {
+                        aPositions[c][0] = pChar->Core()->m_Pos;
+                        aValid[c] = true;
+                }
+        }
+
+        const int startTick = pPredWorld->GameTick();
+        for(int t = 1; t <= MAX_PREDICT_TICKS; t++)
+        {
+                for(int c = 0; c < MAX_CLIENTS; c++)
+                {
+                        CCharacter *pChar = pPredWorld->GetCharacterById(c);
+                        if(!pChar)
+                                continue;
+                        CNetObj_PlayerInput inp = pChar->Core()->m_Input;
+                        pChar->OnDirectInput(&inp);
+                }
+                pPredWorld->m_GameTick = startTick + t;
+                for(int c = 0; c < MAX_CLIENTS; c++)
+                {
+                        CCharacter *pChar = pPredWorld->GetCharacterById(c);
+                        if(!pChar)
+                                continue;
+                        CNetObj_PlayerInput inp = pChar->Core()->m_Input;
+                        pChar->OnPredictedInput(&inp);
+                }
+                pPredWorld->Tick();
+                for(int c = 0; c < MAX_CLIENTS; c++)
+                {
+                        if(CCharacter *pChar = pPredWorld->GetCharacterById(c))
+                                aPositions[c][t] = pChar->Core()->m_Pos;
+                        else
+                                aValid[c] = false;
+                }
+        }
+
+        vec2 predictedPos = aValid[TargetCid] ? aPositions[TargetCid][0] : pTargetNow->Core()->m_Pos;
+        if(aValid[TargetCid])
+        {
+                bool foundPrediction = false;
+                float prevFlightTime = -1.0f;
+                for(int t = 0; t <= MAX_PREDICT_TICKS; t++)
+                {
+                        float dist = length(aPositions[TargetCid][t] - MyPos);
+                        if(dist < 1.0f)
+                        {
+                                predictedPos = aPositions[TargetCid][t];
+                                foundPrediction = true;
+                                break;
+                        }
+                        const float flightTime = dist / pT->m_HookFireSpeed;
+                        if(flightTime <= (float)t)
+                        {
+                                if(t == 0 || prevFlightTime < 0.0f)
+                                {
+                                        predictedPos = aPositions[TargetCid][t];
+                                }
+                                else
+                                {
+                                        const float prevTick = (float)(t - 1);
+                                        const float numerator = prevFlightTime - prevTick;
+                                        const float denominator = 1.0f - (flightTime - prevFlightTime);
+                                        float u;
+                                        if(denominator > 0.001f)
+                                                u = numerator / denominator;
+                                        else
+                                                u = 0.5f;
+                                        if(u < 0.0f)
+                                                u = 0.0f;
+                                        if(u > 1.0f)
+                                                u = 1.0f;
+                                        predictedPos = mix(aPositions[TargetCid][t - 1], aPositions[TargetCid][t], u);
+                                }
+                                foundPrediction = true;
+                                break;
+                        }
+                        prevFlightTime = flightTime;
+                }
+                if(!foundPrediction)
+                        predictedPos = aPositions[TargetCid][MAX_PREDICT_TICKS];
+        }
+
+        delete pPredWorld;
+        return predictedPos;
+}
+
 void CBotNet::UpdateTripleFly()
 {
         CGameClient *pGame = GameClient();
@@ -362,4 +478,95 @@ void CBotNet::UpdateTripleFly()
         pGame->m_Controls.m_aInputData[actingD] = *pDummy;
         m_TripleFlyWasActive = true;
         m_TripleFlyDummy = actingD;
+}
+
+// v6.18: TAS playground triple fly. The acting dummy is already chosen by the
+// sandbox dummy loop (closest to the active tee); this decides only its hook
+// for the current tick — same radius, line-of-sight, predicted hook point and
+// path-clear checks as UpdateTripleFly, but every world read comes from the
+// sandbox and the result lands on the sandbox tick input.
+bool CBotNet::ApplyPlaygroundTripleFly(CGameWorld &World, int Dummy, int ActorId, int MainId, CNetObj_PlayerInput &Input)
+{
+        if(Dummy < 0 || Dummy >= MAX_DUMMIES)
+                return false;
+        CCharacter *pActor = World.GetCharacterById(ActorId);
+        CCharacter *pMain = World.GetCharacterById(MainId);
+        if(!pActor || !pMain)
+                return false;
+        if(!m_MapGridLoaded)
+                LoadMapGrid();
+        const vec2 actingPos = pActor->Core()->m_Pos;
+        const int targetMode = g_Config.m_KxTripleFlyTargetMode;
+        int targetCid = -1;
+        if(targetMode == 0 || targetMode == 1)
+        {
+                vec2 refPos = actingPos;
+                if(targetMode == 1)
+                        refPos = pMain->Core()->m_Pos + GameClient()->m_Controls.m_aMousePos[0];
+                float bestSq = 1e18f;
+                for(int cid = 0; cid < MAX_CLIENTS; cid++)
+                {
+                        if(cid == ActorId || cid == MainId)
+                                continue;
+                        const CCharacter *pC = World.GetCharacterById(cid);
+                        if(!pC)
+                                continue;
+                        const float dsq = length_squared(pC->Core()->m_Pos - refPos);
+                        if(dsq < bestSq)
+                        {
+                                bestSq = dsq;
+                                targetCid = cid;
+                        }
+                }
+        }
+        else
+        {
+                const char *pIds = g_Config.m_KxTripleFlyTargetIds;
+                while(*pIds)
+                {
+                        while(*pIds && (*pIds == ' ' || *pIds == ',' || *pIds == ';'))
+                                pIds++;
+                        if(!*pIds)
+                                break;
+                        if(*pIds < '0' || *pIds > '9')
+                        {
+                                while(*pIds && *pIds != ' ' && *pIds != ',' && *pIds != ';')
+                                        pIds++;
+                                continue;
+                        }
+                        const int Id = atoi(pIds);
+                        while(*pIds && *pIds != ' ' && *pIds != ',' && *pIds != ';')
+                                pIds++;
+                        if(Id >= 0 && Id < MAX_CLIENTS && World.GetCharacterById(Id))
+                        {
+                                targetCid = Id;
+                                break;
+                        }
+                }
+        }
+        if(targetCid < 0)
+                return false;
+        const vec2 targetPos = World.GetCharacterById(targetCid)->Core()->m_Pos;
+        const float dist = length(targetPos - actingPos);
+        if(dist > (float)g_Config.m_KxTripleFlyTriggerRadius ||
+           (m_MapGridLoaded &&
+            !HasLineOfSightTiles((int)(actingPos.y / 32.0f), (int)(actingPos.x / 32.0f),
+                                 (int)(targetPos.y / 32.0f), (int)(targetPos.x / 32.0f))) ||
+           !TripleFlyHookPathClearIn(&World, actingPos, targetPos, ActorId, targetCid))
+                return false;
+        if(dist > (float)g_Config.m_KxTripleFlyRadius)
+        {
+                const vec2 Aim = TripleFlyPredictHookPosIn(&World, targetCid, actingPos) - actingPos;
+                Input.m_TargetX = (int)Aim.x;
+                Input.m_TargetY = (int)Aim.y;
+                Input.m_Hook = 1;
+                m_PgTripleFlyHooking = true;
+        }
+        else
+        {
+                Input.m_Hook = 0;
+                m_PgTripleFlyHooking = false;
+        }
+        m_PgTripleFlyDummy = Dummy;
+        return true;
 }

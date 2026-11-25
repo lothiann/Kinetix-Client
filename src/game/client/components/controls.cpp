@@ -282,6 +282,10 @@ int CControls::SnapInput(int *pData)
         // rewrite moves the server-side view (see the dist_center incident —
         // it pinned the view around the map origin and tees vanished).
         const bool SpecActive = GameClient()->m_Snap.m_SpecInfo.m_Active;
+        // A real TAS replay owns the sent input: no live input function may
+        // rewrite it (the recorded take is applied last, but the bots must not
+        // run at all — their state and the visible crosshair stay untouched).
+        const bool TasReplay = GameClient()->m_Tas.IsRealPlaying();
 
         // update player state
         if(g_Config.m_KxHideChatBubble)
@@ -423,7 +427,7 @@ int CControls::SnapInput(int *pData)
                 // every Delay ticks (0 = every tick). Runs BEFORE the Fake Aim
                 // willFire prediction below, so the forced shot releases the fake
                 // aim and triggers AimBot on the same tick.
-                if(g_Config.m_KxAutoFire)
+                if(g_Config.m_KxAutoFire && !TasReplay)
                 {
                         static int s_AutoFireCounter = 0;
                         CNetObj_PlayerInput *pAf = &m_aInputData[g_Config.m_ClDummy];
@@ -466,10 +470,13 @@ int CControls::SnapInput(int *pData)
                 if(!m_aInputDirectionLeft[g_Config.m_ClDummy] && m_aInputDirectionRight[g_Config.m_ClDummy])
                         m_aInputData[g_Config.m_ClDummy].m_Direction = 1;
 
-                GameClient()->m_BotNet.ApplyMoonwalk(m_aInputData[g_Config.m_ClDummy], m_aLastData[g_Config.m_ClDummy],
-                        m_aInputDirectionLeft[g_Config.m_ClDummy] != 0, m_aInputDirectionRight[g_Config.m_ClDummy] != 0);
-                m_aInputData[g_Config.m_ClDummy] = GameClient()->m_BotNet.HookRide(m_aInputData[g_Config.m_ClDummy]);
-                m_aInputData[g_Config.m_ClDummy] = GameClient()->m_BotNet.JetRide(m_aInputData[g_Config.m_ClDummy]);
+                if(!TasReplay)
+                {
+                        GameClient()->m_BotNet.ApplyMoonwalk(m_aInputData[g_Config.m_ClDummy], m_aLastData[g_Config.m_ClDummy],
+                                m_aInputDirectionLeft[g_Config.m_ClDummy] != 0, m_aInputDirectionRight[g_Config.m_ClDummy] != 0);
+                        m_aInputData[g_Config.m_ClDummy] = GameClient()->m_BotNet.HookRide(m_aInputData[g_Config.m_ClDummy]);
+                        m_aInputData[g_Config.m_ClDummy] = GameClient()->m_BotNet.JetRide(m_aInputData[g_Config.m_ClDummy]);
+                }
 
                 // v1.56.262: BalanceBot — keep X distance to the nearest matching
                 // player. Overrides the CURRENT dummy's direction EVERY tick (the
@@ -482,7 +489,7 @@ int CControls::SnapInput(int *pData)
                         (GameClient()->m_aClients[BbSelfId].m_FreezeEnd != 0 || GameClient()->m_aClients[BbSelfId].m_LiveFrozen ||
                                 (g_Config.m_KxBbFngFreeze && GameClient()->m_Snap.m_aCharacters[BbSelfId].m_Active &&
                                         GameClient()->m_Snap.m_aCharacters[BbSelfId].m_Cur.m_Weapon == WEAPON_NINJA));
-                if(g_Config.m_KxBalanceBot && GameClient()->m_Snap.m_LocalClientId >= 0 && !BbSelfFrozen)
+                if(g_Config.m_KxBalanceBot && !TasReplay && GameClient()->m_Snap.m_LocalClientId >= 0 && !BbSelfFrozen)
                 {
                         CGameClient *pBb = GameClient();
                         const int BbLocal = pBb->m_Snap.m_LocalClientId;
@@ -906,7 +913,7 @@ int CControls::SnapInput(int *pData)
         // own edits are folded into the Send decision right below, so the
         // chosen escape transmits on this very call. AF evaluates once per
         // predicted tick (its own guard) and skips menu/chat (frozen input).
-        if(m_aInputData[g_Config.m_ClDummy].m_PlayerFlags & PLAYERFLAG_PLAYING)
+        if(!TasReplay && (m_aInputData[g_Config.m_ClDummy].m_PlayerFlags & PLAYERFLAG_PLAYING))
         {
                 CNetObj_PlayerInput InputBeforeAF = m_aInputData[g_Config.m_ClDummy];
                 GameClient()->m_AvoidFreeze.ApplyOverride();
@@ -916,7 +923,7 @@ int CControls::SnapInput(int *pData)
 
         // Quick Stop: brake with the opposite direction while no movement key
         // is held (runs after Avoid, matching the reference pipeline).
-        if(g_Config.m_KxQuickStop)
+        if(g_Config.m_KxQuickStop && !TasReplay)
         {
                 const int QsId = GameClient()->m_aLocalIds[g_Config.m_ClDummy];
                 bool QsGrounded = false;
@@ -938,6 +945,12 @@ int CControls::SnapInput(int *pData)
                         Send = true;
         }
 
+        // v6.20: IRC v2 aim channel — while a byte is queued the input must be
+        // sent every tick, otherwise the sent angle stays constant and the
+        // receiver cannot sample one byte per tick.
+        if(GameClient()->m_IRC.HasPendingAim(g_Config.m_ClDummy))
+                Send = true;
+
         if(!Send)
                 return 0;
 
@@ -954,7 +967,7 @@ int CControls::SnapInput(int *pData)
         // v1.56.151: Fly Ride — pilot input override.
         // Blocks normal WASD (direction/jump) and forces hook state from UpdateFlyRide.
         // Silent aim is already set via m_SilentAimActive (consumed above at line ~543).
-        if(g_Config.m_KxFlyRide)
+        if(g_Config.m_KxFlyRide && !TasReplay)
         {
                 m_aInputData[g_Config.m_ClDummy].m_Direction = GameClient()->m_BotNet.m_FlyRidePilotDir;
                 m_aInputData[g_Config.m_ClDummy].m_Jump = 0; // block W (jump) — W moves anchor instead
@@ -1265,7 +1278,7 @@ int CControls::SnapInput(int *pData)
         // Follow Coordinates (0): replace it with the fake X/Y.
         // Follow Player (1): replace it with the world position of the fake
         // followed player — the spec view "behind" that player.
-        if(g_Config.m_KxSpoofSpectate && GameClient()->m_Snap.m_SpecInfo.m_Active)
+        if(g_Config.m_KxSpoofSpectate && !TasReplay && GameClient()->m_Snap.m_SpecInfo.m_Active)
         {
                 CNetObj_PlayerInput *pSpecSend = (CNetObj_PlayerInput *)pData;
                 if(g_Config.m_KxSpoofSpectateMode == 0)
@@ -1414,6 +1427,30 @@ int CControls::SnapInput(int *pData)
                 }
         }
 
+        // v6.19: IRC v2 aim channel — override the sent direction while a
+        // payload is pending. Applied to every connected dummy, not only the
+        // active slot: V2PumpChannel() runs for all dummies and each keeps its
+        // own pending aim byte.
+        {
+                for(int D = 0; D < MAX_DUMMIES; D++)
+                {
+                        if(D != 0 && !GameClient()->Client()->DummyConnected(D))
+                                continue;
+                        int IrcTx = 0, IrcTy = 0;
+                        GameClient()->m_IRC.ApplyAimOverride(D, &IrcTx, &IrcTy);
+                        if(IrcTx == 0 && IrcTy == 0)
+                                continue;
+                        m_aInputData[D].m_TargetX = IrcTx;
+                        m_aInputData[D].m_TargetY = IrcTy;
+                        if(D == g_Config.m_ClDummy)
+                        {
+                                CNetObj_PlayerInput *pIrcSent = (CNetObj_PlayerInput *)pData;
+                                pIrcSent->m_TargetX = IrcTx;
+                                pIrcSent->m_TargetY = IrcTy;
+                        }
+                }
+        }
+
         return sizeof(m_aInputData[0]);
 }
 
@@ -1502,7 +1539,7 @@ void CControls::OnRender()
                 vec2 DyncamOffsetDelta = GameClient()->m_Camera.m_DyncamTargetCameraOffset - GameClient()->m_Camera.m_aDyncamCurrentCameraOffset[g_Config.m_ClDummy];
                 float Zoom = GameClient()->m_Camera.m_Zoom;
                 // TAS fake world: anchor the cursor to the fake tee, not the real one
-                const vec2 CursorAnchor = (GameClient()->m_Tas.IsJoined() && !GameClient()->m_Tas.IsDead()) ? GameClient()->m_Tas.PlaygroundTeeRenderPos() : GameClient()->m_LocalCharacterPos;
+                const vec2 CursorAnchor = (GameClient()->m_Tas.IsJoined() && !GameClient()->m_Tas.IsDead()) ? GameClient()->m_Tas.PlaygroundActiveTeeRenderPos() : GameClient()->m_LocalCharacterPos;
                 m_aTargetPos[g_Config.m_ClDummy] = CursorAnchor + m_aMousePos[g_Config.m_ClDummy] - DyncamOffsetDelta + DyncamOffsetDelta / Zoom;
         }
         else if(GameClient()->m_Snap.m_SpecInfo.m_Active && GameClient()->m_Snap.m_SpecInfo.m_UsePosition)

@@ -51,6 +51,8 @@ public:
 	void OnReset() override;
 	void OnRender() override;
 	void ApplyOverride();
+	void ApplyPlayground(CGameWorld &World, int LocalId, CNetObj_PlayerInput &Input, vec2 MouseAim);
+	void ResetPlaygroundPlan();
 
 private:
 	class CWorld
@@ -129,6 +131,7 @@ private:
 	// Fire is a live edge counter, not a replayable movement command. Keep the
 	// NSIF tail from resurrecting an already released press.
 	void SynchronizeFireCounter(int Fire);
+	void ReadSettings();
 	std::optional<CNetObj_PlayerInput> Decide(CWorld &World, CNetObj_PlayerInput Input, vec2 MouseAim);
 
 	SBlatantSettings m_Settings;

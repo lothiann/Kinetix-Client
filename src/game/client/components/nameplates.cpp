@@ -354,35 +354,21 @@ protected:
 			return false;
 		m_Color = Data.m_Color;
 
-		const char *pPrefix = nullptr;
-		if(g_Config.m_KxIrcEnabled && g_Config.m_KxIrcNameplateTag)
-		{
-			pPrefix = This.m_IRC.GetClientPrefix(Data.m_ClientId);
-		}
-		bool HasPrefix = (pPrefix != nullptr);
+		const bool IsIrcUser = g_Config.m_KxIrcEnabled && g_Config.m_KxIrcNameplateTag &&
+			This.m_IRC.IsKinetixClient(Data.m_ClientId);
 
-		return m_FontSize != Data.m_FontSize || str_comp(m_aName, Data.m_aName) != 0 || m_IsIrcUser != HasPrefix;
+		return m_FontSize != Data.m_FontSize || str_comp(m_aName, Data.m_aName) != 0 || m_IsIrcUser != IsIrcUser;
 	}
 	void UpdateText(CGameClient &This, const CNamePlateData &Data) override
 	{
 		m_FontSize = Data.m_FontSize;
 		str_copy(m_aName, Data.m_aName, sizeof(m_aName));
 
-		const char *pPrefix = nullptr;
-		if(g_Config.m_KxIrcEnabled && g_Config.m_KxIrcNameplateTag)
-		{
-			pPrefix = This.m_IRC.GetClientPrefix(Data.m_ClientId);
-		}
-		m_IsIrcUser = (pPrefix != nullptr);
-
-		if(pPrefix)
-		{
-			str_format(m_aText, sizeof(m_aText), "[%s] %s", pPrefix, Data.m_aName);
-		}
-		else
-		{
-			str_copy(m_aText, Data.m_aName, sizeof(m_aText));
-		}
+		// v6.20: no textual "[Kinetix]" prefix any more — the logo icon is
+		// drawn next to the name instead (see Render below).
+		m_IsIrcUser = g_Config.m_KxIrcEnabled && g_Config.m_KxIrcNameplateTag &&
+			This.m_IRC.IsKinetixClient(Data.m_ClientId);
+		str_copy(m_aText, Data.m_aName, sizeof(m_aText));
 
 		CTextCursor Cursor;
 		Cursor.m_FontSize = m_FontSize;
@@ -390,8 +376,21 @@ protected:
 	}
 
 public:
-        CNamePlatePartName(CGameClient &This) :
-                CNamePlatePartText(This) {}
+	CNamePlatePartName(CGameClient &This) :
+		CNamePlatePartText(This) {}
+
+	void Render(CGameClient &This, vec2 Pos) const override
+	{
+		CNamePlatePartText::Render(This, Pos);
+		if(!m_Visible || !m_IsIrcUser)
+			return;
+		// The name is the last part of its line, so the icon can extend past the
+		// text without reserving layout space. Growing m_Size in Update() used to
+		// accumulate every frame (the base Update early-returns when nothing
+		// changed) and pushed the name far off-screen.
+		const float IconSize = m_FontSize * 0.9f;
+		This.m_IRC.RenderLogo(Pos.x + Size().x / 2.0f + IconSize * 0.45f, Pos.y, IconSize, m_Color.a);
+	}
 };
 
 class CNamePlatePartClan : public CNamePlatePartText
@@ -960,7 +959,10 @@ void CNamePlates::OnRender()
 	if(Client()->State() != IClient::STATE_ONLINE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
 		return;
 	if(GameClient()->m_Tas.IsJoined())
+	{
+		GameClient()->m_Tas.RenderPlaygroundNamePlates();
 		return;
+	}
 
 	int ShowDirection = g_Config.m_ClShowDirection;
 #if defined(CONF_VIDEORECORDER)

@@ -28,6 +28,7 @@ public:
 	void OnInit() override;
 	void OnRender() override;
 	void OnMapLoad() override;
+	void RefreshLayers();
 
 	virtual CCamera *GetCurCamera();
 

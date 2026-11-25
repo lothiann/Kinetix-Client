@@ -1,15 +1,32 @@
 {
-  "list_updated": "2026-11-07 20:23",
-  "last_supported_version": "v2.0",
+  "list_updated": "2026-11-25 19:32",
+  "last_supported_version": 30,
   "items": [
+    {
+      "file": "2 Days In The Back_01-50_25-11-2026.tas",
+      "map": "2 Days In The Back",
+      "description": "",
+      "author": "LothianN",
+      "version": 30,
+      "dummies": 2,
+      "used": null,
+      "ticks": 17038,
+      "finish_ticks": 16821,
+      "updated": "2026-11-25",
+      "created": "01:50 | 25.11.2026"
+    },
     {
       "file": "example.tas",
       "map": "Test",
       "description": "Minimal example demonstrating the script metadata header.",
       "author": "LothianN",
-      "version": "v2.0",
-      "created": "19:34 | 07.11.2026",
-      "updated": "2026-11-07"
+      "version": 20,
+      "dummies": null,
+      "used": null,
+      "ticks": 6,
+      "finish_ticks": null,
+      "updated": "2026-11-07",
+      "created": "19:34 | 07.11.2026"
     }
   ]
 }

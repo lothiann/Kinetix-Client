@@ -251,6 +251,53 @@ void CBotNet::UpdateLaserUnfreeze()
     s_WasFiring = true;
 }
 
+void CBotNet::ApplyPlaygroundLaserUnfreeze(CGameWorld &Source, int LocalId, CNetObj_PlayerInput &Input, vec2 Mouse)
+{
+	if(!g_Config.m_KxLaserUnfreeze || !(Input.m_PlayerFlags & PLAYERFLAG_PLAYING))
+		return;
+	CCharacter *pLocal = Source.GetCharacterById(LocalId);
+	if(!pLocal || KxLaserFrozen(pLocal) || !pLocal->GetWeaponGot(WEAPON_LASER))
+		return;
+	if(Input.m_Fire & 1)
+		return;
+	CNetObj_PlayerInput Probe = Input;
+	Probe.m_TargetX = (int)Mouse.x;
+	Probe.m_TargetY = (int)Mouse.y;
+	CGameWorld Future;
+	Future.CopyWorldIsolated(&Source);
+	Future.m_WorldConfig.m_PredictWeapons = true;
+	bool WillFreeze = false;
+	for(int Step = 0; Step <= 3 && Future.GetCharacterById(LocalId); ++Step)
+	{
+		KxLaserTick(Future, LocalId, Probe);
+		if(KxLaserFrozen(Future.GetCharacterById(LocalId)))
+		{
+			WillFreeze = Step <= 2;
+			break;
+		}
+	}
+	if(!WillFreeze)
+		return;
+
+	vec2 Aim;
+	SKxBeamResult Result = KxProbeBeam(Source, LocalId, Probe, g_Config.m_KxLaserUnfreezeCurDirTicks);
+	if(Result.m_Found)
+		Aim = vec2(Probe.m_TargetX, Probe.m_TargetY);
+	else
+	{
+		Result = KxSearchUnfreeze(Source, LocalId, Probe, Mouse, g_Config.m_KxLaserUnfreezeTicks,
+			g_Config.m_KxLaserUnfreezeAngles, (float)g_Config.m_KxLaserUnfreezeFov,
+			g_Config.m_KxLaserUnfreezeMostBounces != 0, GameClient()->m_Controls.GetMaxMouseDistance());
+		if(!Result.m_Found)
+			return;
+		Aim = Result.m_Aim;
+	}
+	Input.m_WantedWeapon = WEAPON_LASER + 1;
+	Input.m_TargetX = (int)Aim.x;
+	Input.m_TargetY = (int)Aim.y;
+	Input.m_Fire = ((Input.m_Fire + 1) | 1) & INPUT_STATE_MASK;
+}
+
 // ── Render laser unfreeze path (Show attempt) ───────────────────
 // Draws the successful laser path with 5-second linear fade.
 // Uses trajectory line size + laser rifle inner color from settings.

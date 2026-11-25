@@ -104,6 +104,16 @@ float CPlayers::GetPlayerTargetAngle(
         int ClientId,
         float Intra)
 {
+        // Real TAS playback bypasses CControls::SnapInput and feeds each
+        // connection directly. Render Main's fake aim from its playback
+        // stream even when another dummy is currently controlled.
+        if(ClientId >= 0 && ClientId == GameClient()->m_aLocalIds[0] &&
+                GameClient()->m_Tas.IsRealPlaying() && GameClient()->m_Tas.FakeAimActive())
+        {
+                vec2 TasAim;
+                if(GameClient()->m_Tas.FakeAimOffset(&TasAim) && TasAim != vec2(0.0f, 0.0f))
+                        return angle(TasAim);
+        }
         bool IsDummyId = false;
         int MatchingDummy = -1;
         if(GameClient()->PredictDummy())
@@ -715,6 +725,12 @@ void CPlayers::RenderPlayer(
         const bool Paused = GameClient()->IsWorldPaused() || GameClient()->IsDemoPlaybackPaused();
         bool Local = GameClient()->m_Snap.m_LocalClientId == ClientId;
         bool OtherTeam = GameClient()->IsOtherTeam(ClientId);
+        // The playground has private team/solo state, separate from the
+        // server snapshot. Mirror Solo's normal "others" fading while joined.
+        if(GameClient()->m_Tas.IsJoined() &&
+                ClientId != GameClient()->m_Snap.m_LocalClientId &&
+                GameClient()->m_Tas.PlaygroundSolo())
+                OtherTeam = true;
         float Alpha = (OtherTeam || ClientId < 0) ? g_Config.m_ClShowOthersAlpha / 100.0f : 1.0f;
         if(ClientId == -2) // ghost
                 Alpha = g_Config.m_ClRaceGhostAlpha / 100.0f;

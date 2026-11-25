@@ -5,6 +5,7 @@ enum
 {
 	KXFILEPICK_SCRIPT = 0,
 	KXFILEPICK_TAS = 1,
+	KXFILEPICK_MAP = 2,
 };
 
 bool KxPickFileAsync(int Kind);
@@ -14,5 +15,7 @@ bool KxPickFilePump(int *pKind, char *pPath, int BufSize);
 // Kinetix/TAS or Kinetix/Scripts). nullptr = system default.
 bool KxPickScriptFile(char *pBuf, int BufSize, const char *pInitialDir);
 bool KxPickTasFile(char *pBuf, int BufSize, const char *pInitialDir);
+// v6.18: .map Exploit — pick a .map datafile.
+bool KxPickMapFile(char *pBuf, int BufSize, const char *pInitialDir);
 
 #endif // GAME_CLIENT_COMPONENTS_KINETIX_CODE_EXEC_FILE_DIALOG_H

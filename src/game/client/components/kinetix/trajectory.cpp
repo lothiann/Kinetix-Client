@@ -203,21 +203,18 @@ void CTrajectory::RenderTee()
         if(!pGame)
                 return;
 
+        const bool TasJoined = pGame->m_Tas.IsJoined();
         int LocalClientId = pGame->m_Snap.m_LocalClientId;
-        if(LocalClientId < 0 || !pGame->m_Snap.m_aCharacters[LocalClientId].m_Active)
+        if(!TasJoined && (LocalClientId < 0 || !pGame->m_Snap.m_aCharacters[LocalClientId].m_Active))
                 return;
 
-        CCharacter *pLocalChar = pGame->m_PredictedWorld.GetCharacterById(LocalClientId);
+        CCharacter *pLocalChar = TasJoined ? pGame->m_Tas.PlaygroundCharacter(pGame->m_Tas.PgActiveDummy()) : pGame->m_PredictedWorld.GetCharacterById(LocalClientId);
         if(!pLocalChar)
                 return;
 
-        const bool TasJoined = pGame->m_Tas.IsJoined();
         if(TasJoined)
         {
-                LocalClientId = pGame->m_Tas.PlaygroundLocalId();
-                pLocalChar = pGame->m_Tas.Playground()->GetCharacterById(LocalClientId);
-                if(!pLocalChar)
-                        return;
+                LocalClientId = pGame->m_Tas.PlaygroundActiveId();
         }
 
         int NumTicks = s.m_PredictionTicks;
@@ -228,7 +225,18 @@ void CTrajectory::RenderTee()
         // - Local player: always (if Show is on).
         // - Other players: only if m_ShowForOtherPlayers is on.
         std::vector<int> vPredictIds;
-        vPredictIds.push_back(LocalClientId);
+        int aTasSlots[MAX_CLIENTS] = {};
+        if(TasJoined)
+        {
+                for(int Slot = 0; Slot < pGame->m_Tas.PgDummyLimit(); ++Slot)
+                        if(CCharacter *pTee = pGame->m_Tas.PlaygroundCharacter(Slot))
+                                aTasSlots[pTee->GetCid()] = Slot + 1;
+                for(CEntity *pEnt = pGame->m_Tas.Playground()->FindFirst(CGameWorld::ENTTYPE_CHARACTER); pEnt; pEnt = pEnt->TypeNext())
+                        if(in_range(pEnt->GetId(), MAX_CLIENTS - 1) && aTasSlots[pEnt->GetId()] != 0)
+                                vPredictIds.push_back(pEnt->GetId());
+        }
+        else
+                vPredictIds.push_back(LocalClientId);
         if(s.m_ShowForOtherPlayers && !TasJoined)
         {
                 for(int i = 0; i < MAX_CLIENTS; i++)
@@ -267,7 +275,7 @@ void CTrajectory::RenderTee()
                         if(!keep)
                         {
                                 if(CCharacter *pChar = FutureWorld.GetCharacterById(i))
-                                        FutureWorld.RemoveEntity(pChar);
+                                        delete pChar;
                         }
                 }
         }
@@ -285,10 +293,11 @@ void CTrajectory::RenderTee()
         {
                 int cid = vPredictIds[c];
                 if(cid >= 0 && cid < MAX_CLIENTS)
-                        vPerCharPoints[c].push_back(TasJoined ? pGame->m_Tas.PlaygroundTeeRenderPos() : pGame->m_aClients[cid].m_RenderPos);
+                        vPerCharPoints[c].push_back(TasJoined ? pGame->m_Tas.PlaygroundSlotRenderPos(aTasSlots[cid] - 1) : pGame->m_aClients[cid].m_RenderPos);
         }
 
         // Simulate N ticks.
+        std::vector<CNetObj_PlayerInput> vInputs(vPredictIds.size());
         for(int i = 0; i < NumTicks; i++)
         {
                 int Tick = StartTick + i + 1;
@@ -300,12 +309,13 @@ void CTrajectory::RenderTee()
                         if(!pChar)
                                 continue;
                         CNetObj_PlayerInput FutureInput = pChar->GetCore().m_Input;
-                        if(TasJoined && pGame->m_Tas.Paused() && (pGame->m_Tas.IsRecording() || !g_Config.m_KxTasShowTrajectory))
-                                FutureInput = pGame->m_Controls.m_aInputData[g_Config.m_ClDummy];
+                        if(TasJoined && !pGame->m_Tas.IsPlaying() && pGame->m_Tas.Paused() && aTasSlots[vPredictIds[c]] - 1 == pGame->m_Tas.PgActiveDummy())
+                                FutureInput = pGame->m_Tas.PlaygroundKeyboardInput();
                         else if(g_Config.m_KxTasShowTrajectory && TasJoined && pGame->m_Tas.IsPlaying())
-                                pGame->m_Tas.FutureSavedInput(pGame->m_Tas.PlayIdx() + i, &FutureInput);
-                        else if(g_Config.m_KxTasShowTrajectory && !TasJoined && pGame->m_Tas.IsRealPlaying())
+                                pGame->m_Tas.FutureSavedSlotInput(pGame->m_Tas.PlayIdx() + i, aTasSlots[vPredictIds[c]] - 1, &FutureInput);
+                        else if(g_Config.m_KxTasShowTrajectory && !TasJoined && pGame->m_Tas.IsRealPlaying() && vPredictIds[c] == LocalClientId)
                                 pGame->m_Tas.FutureSavedInput(pGame->m_Tas.RealPlayIdx() + i, &FutureInput);
+                        vInputs[c] = FutureInput;
                         pChar->OnDirectInput(&FutureInput);
                 }
 
@@ -316,14 +326,7 @@ void CTrajectory::RenderTee()
                         CCharacter *pChar = FutureWorld.GetCharacterById(vPredictIds[c]);
                         if(!pChar)
                                 continue;
-                        CNetObj_PlayerInput FutureInput = pChar->GetCore().m_Input;
-                        if(TasJoined && pGame->m_Tas.Paused() && (pGame->m_Tas.IsRecording() || !g_Config.m_KxTasShowTrajectory))
-                                FutureInput = pGame->m_Controls.m_aInputData[g_Config.m_ClDummy];
-                        else if(g_Config.m_KxTasShowTrajectory && TasJoined && pGame->m_Tas.IsPlaying())
-                                pGame->m_Tas.FutureSavedInput(pGame->m_Tas.PlayIdx() + i, &FutureInput);
-                        else if(g_Config.m_KxTasShowTrajectory && !TasJoined && pGame->m_Tas.IsRealPlaying())
-                                pGame->m_Tas.FutureSavedInput(pGame->m_Tas.RealPlayIdx() + i, &FutureInput);
-                        pChar->OnPredictedInput(&FutureInput);
+                        pChar->OnPredictedInput(&vInputs[c]);
                 }
 
                 FutureWorld.Tick();
@@ -411,20 +414,20 @@ void CTrajectory::RenderWeaponPredict(int WeaponType, int ClientId)
                 return;
 
         int LocalClientId = pGame->m_Snap.m_LocalClientId;
+        const bool TasJoined = pGame->m_Tas.IsJoined();
         // v1.56.184: validate ClientId (the player we're predicting for).
         if(ClientId < 0 || ClientId >= MAX_CLIENTS)
                 return;
-        if(!pGame->m_Snap.m_aCharacters[ClientId].m_Active)
+        if(!TasJoined && !pGame->m_Snap.m_aCharacters[ClientId].m_Active)
                 return;
 
-        const bool TasJoined = pGame->m_Tas.IsJoined();
         CCharacter *pChar;
         vec2 MyPos;
         if(TasJoined && ClientId == LocalClientId)
         {
-                ClientId = pGame->m_Tas.PlaygroundLocalId();
-                pChar = pGame->m_Tas.Playground()->GetCharacterById(ClientId);
-                MyPos = pGame->m_Tas.PlaygroundTeeRenderPos();
+                ClientId = pGame->m_Tas.PlaygroundActiveId();
+                pChar = pGame->m_Tas.PlaygroundCharacter(pGame->m_Tas.PgActiveDummy());
+                MyPos = pGame->m_Tas.PlaygroundActiveTeeRenderPos();
         }
         else
         {
@@ -443,8 +446,8 @@ void CTrajectory::RenderWeaponPredict(int WeaponType, int ClientId)
         // Both are aim OFFSETS from the tee in world units (NOT world positions), so the
         // direction is normalize(AimPos). Mirrors aimbot.cpp:388 + CCharacter::FireWeapon.
         vec2 AimPos;
-        if(ClientId == LocalClientId)
-                AimPos = pGame->m_Controls.m_aMousePos[g_Config.m_ClDummy];
+        if(TasJoined || ClientId == LocalClientId)
+                AimPos = pGame->m_Controls.m_aMousePos[TasJoined ? 0 : g_Config.m_ClDummy];
         else
         {
                 CNetObj_PlayerInput input = pChar->GetCore().m_Input;
@@ -620,7 +623,7 @@ void CTrajectory::RenderCurrentProjectiles(int WeaponType)
         }
         const STypeSettings &s = m_aTypes[trajIdx];
 
-        int LocalClientId = pGame->m_Tas.IsJoined() ? pGame->m_Tas.PlaygroundLocalId() : pGame->m_Snap.m_LocalClientId;
+        int LocalClientId = pGame->m_Tas.IsJoined() ? pGame->m_Tas.PlaygroundActiveId() : pGame->m_Snap.m_LocalClientId;
 
         // v1.56.183: collect matching projectiles as (owner, startTick) pairs.
         // When ShowForOtherPlayers is ON, track ALL players' projectiles (not just
@@ -649,7 +652,8 @@ void CTrajectory::RenderCurrentProjectiles(int WeaponType)
         // When SimulatePlayers is OFF, remove characters NOT in the keep set (speed).
         // When ON, keep all characters so projectiles can hit any player.
         bool keepClient[MAX_CLIENTS] = {false};
-        keepClient[LocalClientId] = true;
+        if(LocalClientId >= 0 && LocalClientId < MAX_CLIENTS)
+                keepClient[LocalClientId] = true;
         for(const auto &k : vKeys)
                 if(k.owner >= 0 && k.owner < MAX_CLIENTS)
                         keepClient[k.owner] = true;
@@ -730,13 +734,14 @@ void CTrajectory::RenderCurrentLasers()
 
         const STypeSettings &s = m_aTypes[TRAJ_LASER];
 
-        int LocalClientId = pGame->m_Tas.IsJoined() ? pGame->m_Tas.PlaygroundLocalId() : pGame->m_Snap.m_LocalClientId;
+        int LocalClientId = pGame->m_Tas.IsJoined() ? pGame->m_Tas.PlaygroundActiveId() : pGame->m_Snap.m_LocalClientId;
 
         // v1.56.183: build keep set from matching lasers' owners (do this on the
         // live world before cloning so we know which characters to keep).
         // When ShowForOtherPlayers is ON, track ALL players' lasers.
         bool keepClient[MAX_CLIENTS] = {false};
-        keepClient[LocalClientId] = true;
+        if(LocalClientId >= 0 && LocalClientId < MAX_CLIENTS)
+                keepClient[LocalClientId] = true;
         int matchCount = 0;
         for(CEntity *pEnt = pWorld->FindFirst(CGameWorld::ENTTYPE_LASER); pEnt; pEnt = pEnt->TypeNext())
         {
@@ -858,7 +863,7 @@ void CTrajectory::OnRender()
         // RenderWeaponPredict call (own cloned world + own aim direction).
         {
                 const bool TasJoined = pGame->m_Tas.IsJoined();
-                CCharacter *pLocalChar = TasJoined ? pGame->m_Tas.Playground()->GetCharacterById(pGame->m_Tas.PlaygroundLocalId()) : pGame->m_PredictedWorld.GetCharacterById(LocalClientId);
+                CCharacter *pLocalChar = TasJoined ? pGame->m_Tas.PlaygroundCharacter(pGame->m_Tas.PgActiveDummy()) : pGame->m_PredictedWorld.GetCharacterById(LocalClientId);
                 if(pLocalChar)
                 {
                         int weapon = pLocalChar->GetActiveWeapon();

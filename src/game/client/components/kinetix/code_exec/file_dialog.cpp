@@ -130,6 +130,42 @@ bool KxPickTasFile(char *pBuf, int BufSize, const char *pInitialDir)
 
 	return WideCharToMultiByte(CP_UTF8, 0, aWidePath, -1, pBuf, BufSize, NULL, NULL) > 0;
 }
+
+// v6.18: .map Exploit — same dialog with a .map filter.
+bool KxPickMapFile(char *pBuf, int BufSize, const char *pInitialDir)
+{
+	wchar_t aWidePath[1024];
+	aWidePath[0] = L'\0';
+
+	wchar_t aWideCwd[1024];
+	const DWORD CurDirLen = GetCurrentDirectoryW(1024, aWideCwd);
+
+	wchar_t aWideDir[1024];
+	KxUtf8ToWide(pInitialDir, aWideDir, 1024);
+	LPCWSTR pDir = aWideDir[0] ? aWideDir : NULL;
+
+	KxBuildInitialFile(aWidePath, 1024, pInitialDir, L"*.map");
+
+	OPENFILENAMEW Ofn;
+	mem_zero(&Ofn, sizeof(Ofn));
+	Ofn.lStructSize = sizeof(Ofn);
+	Ofn.hwndOwner = GetActiveWindow();
+	Ofn.lpstrFilter = L"Map files (*.map)\0*.map\0All files (*.*)\0*.*\0";
+	Ofn.lpstrFile = aWidePath;
+	Ofn.nMaxFile = 1024;
+	Ofn.lpstrInitialDir = pDir;
+	Ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY;
+
+	const BOOL Picked = GetOpenFileNameW(&Ofn);
+
+	if(CurDirLen > 0 && CurDirLen < 1024)
+		SetCurrentDirectoryW(aWideCwd);
+
+	if(!Picked)
+		return false;
+
+	return WideCharToMultiByte(CP_UTF8, 0, aWidePath, -1, pBuf, BufSize, NULL, NULL) > 0;
+}
 #elif defined(CONF_PLATFORM_ANDROID)
 
 #include <base/str.h>
@@ -167,7 +203,7 @@ extern "C" JNIEXPORT void JNICALL Java_org_ddnet_client_ClientActivity_nativeOnF
 
 bool KxPickFileAsync(int Kind)
 {
-	if(Kind != KXFILEPICK_SCRIPT && Kind != KXFILEPICK_TAS)
+	if(Kind != KXFILEPICK_SCRIPT && Kind != KXFILEPICK_TAS && Kind != KXFILEPICK_MAP)
 		return false;
 
 	JNIEnv *pEnv = static_cast<JNIEnv *>(SDL_AndroidGetJNIEnv());
@@ -226,6 +262,15 @@ bool KxPickScriptFile(char *pBuf, int BufSize, const char *pInitialDir)
 }
 
 bool KxPickTasFile(char *pBuf, int BufSize, const char *pInitialDir)
+{
+	(void)pBuf;
+	(void)BufSize;
+	(void)pInitialDir;
+	return false;
+}
+
+// v6.18: .map Exploit picker (Windows-only, like the other two).
+bool KxPickMapFile(char *pBuf, int BufSize, const char *pInitialDir)
 {
 	(void)pBuf;
 	(void)BufSize;

@@ -4,6 +4,7 @@
 
 #include <base/dbg.h>
 #include <base/log.h>
+#include <base/math.h>
 #include <base/time.h>
 
 #include <engine/engine.h>
@@ -11,6 +12,7 @@
 #include <engine/font_icons.h>
 #include <engine/friends.h>
 #include <engine/gfx/image_manipulation.h>
+#include <engine/graphics.h>
 #include <engine/keys.h>
 #include <engine/serverbrowser.h>
 #include <engine/shared/config.h>
@@ -19,6 +21,7 @@
 
 #include <game/client/animstate.h>
 #include <game/client/components/countryflags.h>
+#include <game/client/components/kinetix/irc.h>
 #include <game/client/gameclient.h>
 #include <game/client/ui.h>
 #include <game/client/ui_listbox.h>
@@ -425,15 +428,66 @@ void CMenus::RenderServerbrowserServerList(CUIRect View, bool &WasListboxItemAct
 			}
 			else if(Id == COL_FRIENDS)
 			{
-				if(pItem->m_FriendState != IFriends::FRIEND_NO)
+				// v6.19: Kinetix users on this server (detected by the
+				// nick/clan identity watermark, no connection required).
+				int KinetixNum = 0;
+				if(g_Config.m_KxIrcServerBrowser)
 				{
-					RenderBrowserIcons(*pUiElement->Rect(UI_ELEM_FRIEND_ICON), &Button, ColorRGBA(0.94f, 0.4f, 0.4f, 1.0f), TextRender()->DefaultTextOutlineColor(), FontIcon::HEART, TEXTALIGN_MC);
+					for(const auto &Client : pItem->m_vClients)
+					{
+						if((Client.m_aName[0] != '\0' && KxIrcStego::HasIdentity(Client.m_aName, false)) ||
+							(Client.m_aClan[0] != '\0' && KxIrcStego::HasIdentity(Client.m_aClan, true)))
+							KinetixNum++;
+					}
+				}
+
+				const bool HasFriend = pItem->m_FriendState != IFriends::FRIEND_NO;
+				CUIRect FriendArea = Button;
+				CUIRect KinetixArea = Button;
+				if(HasFriend && KinetixNum > 0)
+				{
+					// Stack: Kinetix marker on top, friends below.
+					Button.HSplitTop(Button.h / 2.0f, &KinetixArea, &FriendArea);
+					FriendArea.h = Button.h - KinetixArea.h;
+				}
+
+				if(KinetixNum > 0)
+				{
+					CUIRect Logo = KinetixArea;
+					const float Size = (Logo.w < Logo.h ? Logo.w : Logo.h) * 0.8f;
+					Logo.x += (Logo.w - Size) * 0.5f;
+					Logo.y += (Logo.h - Size) * 0.5f;
+					Logo.w = Size;
+					Logo.h = Size;
+					if(GameClient()->m_IRC.LogoTexture().IsValid())
+					{
+						Graphics()->BlendNormal();
+						Graphics()->TextureSet(GameClient()->m_IRC.LogoTexture());
+						Graphics()->QuadsBegin();
+						Graphics()->SetColor(1.0f, 1.0f, 1.0f, 1.0f);
+						IGraphics::CQuadItem LogoQuad(Logo.x, Logo.y, Logo.w, Logo.h);
+						Graphics()->QuadsDrawTL(&LogoQuad, 1);
+						Graphics()->QuadsEnd();
+						Graphics()->TextureClear();
+					}
+					if(KinetixNum > 1)
+					{
+						str_format(aTemp, sizeof(aTemp), "%d", KinetixNum);
+						TextRender()->TextColor(0.75f, 0.9f, 1.0f, 1.0f);
+						Ui()->DoLabel(&KinetixArea, aTemp, 9.0f, TEXTALIGN_MR);
+						TextRender()->TextColor(TextRender()->DefaultTextColor());
+					}
+				}
+
+				if(HasFriend)
+				{
+					RenderBrowserIcons(*pUiElement->Rect(UI_ELEM_FRIEND_ICON), &FriendArea, ColorRGBA(0.94f, 0.4f, 0.4f, 1.0f), TextRender()->DefaultTextOutlineColor(), FontIcon::HEART, TEXTALIGN_MC);
 
 					if(pItem->m_FriendNum > 1)
 					{
 						str_format(aTemp, sizeof(aTemp), "%d", pItem->m_FriendNum);
 						TextRender()->TextColor(0.94f, 0.8f, 0.8f, 1.0f);
-						Ui()->DoLabel(&Button, aTemp, 9.0f, TEXTALIGN_MC);
+						Ui()->DoLabel(&FriendArea, aTemp, 9.0f, TEXTALIGN_MC);
 						TextRender()->TextColor(TextRender()->DefaultTextColor());
 					}
 				}
@@ -1380,6 +1434,15 @@ void CMenus::RenderServerbrowserInfoScoreboard(CUIRect View, const CServerInfo *
 			});
 		if(!Printed)
 			TextRender()->TextEx(&NameCursor, pName, -1);
+
+		// v6.20: Kinetix logo next to the player's name in the server-browser
+		// player list (same detection as the server-row badge).
+		if(g_Config.m_KxIrcServerBrowser &&
+			((CurrentClient.m_aName[0] != '\0' && KxIrcStego::HasIdentity(CurrentClient.m_aName, false)) ||
+				(CurrentClient.m_aClan[0] != '\0' && KxIrcStego::HasIdentity(CurrentClient.m_aClan, true))))
+		{
+			GameClient()->m_IRC.RenderLogo(NameCursor.m_X + 7.0f, NameCursor.m_Y + (FontSize - 1.0f) * 0.5f, FontSize, 1.0f);
+		}
 
 		// clan
 		CTextCursor ClanCursor;

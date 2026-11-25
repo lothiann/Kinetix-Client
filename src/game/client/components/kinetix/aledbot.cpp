@@ -1538,3 +1538,277 @@ bool CBotNet::ProcessAledBot(CGameClient *pGame, CNetObj_PlayerInput *pInput, in
 		pGame->m_Controls.m_aInputData[Dummy] = *pInput;
 	return true;
 }
+// ── v6.18: TAS playground adapter ─────────────────────────────────────────
+// The same zone/plan machinery, but every world read comes from the sandbox
+// (pSrc) instead of m_PredictedWorld, and the session/plan buffers are separate
+// so the sandbox never consumes or pollutes the network bots' state.
+static bool AledWillFreezeIn(CGameClient *pGame, CGameWorld *pSrc, int Cid, int Ticks)
+{
+	if(Ticks <= 0)
+		return false;
+	CCharacter *pTarget = pSrc->GetCharacterById(Cid);
+	if(!pTarget || pTarget->Core()->m_DeepFrozen || pTarget->Core()->m_LiveFrozen)
+		return false;
+	CGameWorld World;
+	World.CopyWorldIsolated(pSrc);
+	World.m_WorldConfig.m_PredictWeapons = true;
+	World.m_WorldConfig.m_PredictDDRace = true;
+	World.m_WorldConfig.m_PredictFreeze = 1;
+	AledCopyTee(&World, pSrc, Cid);
+	for(int t = 0; t < Ticks; t++)
+	{
+		AledTickWorld(&World, -1, nullptr);
+		CCharacter *pT = World.GetCharacterById(Cid);
+		if(!pT)
+			return false;
+		if(pT->m_FreezeTime > 0 || pT->Core()->m_DeepFrozen)
+			return true;
+		if(AledIsFreezeTile(pGame, pT->GetPos()))
+			return true;
+	}
+	return false;
+}
+
+static bool AledTargetEngagedIn(CGameClient *pGame, CGameWorld *pWorld, int Cid, CCharacter *pChar)
+{
+	if(!pChar || pChar->Core()->m_DeepFrozen || pChar->Core()->m_LiveFrozen)
+		return false;
+	if(pChar->m_FreezeTime > 0)
+		return true;
+	if(AledIsFreezeTile(pGame, pChar->GetPos()))
+		return true;
+	return AledWillFreezeIn(pGame, pWorld, Cid, g_Config.m_KxAledTriggerTicks);
+}
+
+static bool AledBuildPlanIn(CGameClient *pGame, CGameWorld *pSrc, int ActorCid, int TargetCid, const SAledZone *pZone, unsigned long long SkipMask, SAledPlan *pOut)
+{
+	int BestKey = 1 << 30;
+	SAledPlan Best;
+	Best.Num = 0;
+	Best.Policy = -1;
+	Best.Valid = false;
+	for(int Pol = 0; Pol < ALED_POL_COUNT; Pol++)
+	{
+		if(Pol < 64 && ((SkipMask >> Pol) & 1ull))
+			continue;
+		CGameWorld World;
+		World.CopyWorldIsolated(pSrc);
+		World.m_WorldConfig.m_PredictWeapons = true;
+		World.m_WorldConfig.m_PredictDDRace = true;
+		World.m_WorldConfig.m_PredictFreeze = 1;
+		AledCopyTee(&World, pSrc, ActorCid);
+		AledCopyTee(&World, pSrc, TargetCid);
+		{
+			CCharacter *pA0 = World.GetCharacterById(ActorCid);
+			if(!pA0)
+				continue;
+			const vec2 From = pA0->GetPos();
+			const float HookLen = pA0->Core()->m_Tuning.m_HookLength;
+			if(Pol == ALED_POL_CEILING21)
+			{
+				if(!AledHookRayHookable(pGame, From, From + vec2(0.0f, -HookLen)))
+					continue;
+			}
+			else if(Pol >= ALED_POL_HOOK_RAY_FIRST && Pol <= ALED_POL_HOOK_RAY_LAST)
+			{
+				const int Ray = Pol - ALED_POL_HOOK_RAY_FIRST;
+				const float Ang = (-5.0f / 6.0f) * pi + ((float)Ray / 23.0f) * (10.0f / 6.0f) * pi;
+				const vec2 End = From + vec2(cosf(Ang), sinf(Ang)) * HookLen;
+				if(!AledHookRayHookable(pGame, From, End))
+					continue;
+			}
+		}
+		SAledPlan Plan;
+		Plan.Num = 0;
+		Plan.Policy = Pol;
+		Plan.Valid = false;
+		int HitTick = -1;
+		int Jumps = 0;
+		for(int i = 0; i < ALED_PLAN_TICKS; i++)
+		{
+			CCharacter *pA = World.GetCharacterById(ActorCid);
+			CCharacter *pT = World.GetCharacterById(TargetCid);
+			if(!pA || !pT)
+				break;
+			const float Dist = distance(pA->GetPos(), pT->GetPos());
+			if(pT->m_FreezeTime > 0 && !AledIsFreezeTile(pGame, pT->GetPos()) && Dist <= (float)ALED_PRESS_GATE)
+			{
+				if(AledPressWouldWorkIn(pGame, &World, ActorCid, TargetCid, pZone))
+				{
+					SAledStep S;
+					mem_zero(&S, sizeof(S));
+					S.In.m_TargetX = (int)(pT->GetPos().x - pA->GetPos().x);
+					S.In.m_TargetY = (int)(pT->GetPos().y - pA->GetPos().y);
+					S.In.m_WantedWeapon = WEAPON_HAMMER + 1;
+					S.ActorPos = pA->GetPos();
+					S.TargetPos = pT->GetPos();
+					S.Press = true;
+					if(Plan.Num < ALED_BUFFER_MAX)
+						Plan.aSteps[Plan.Num++] = S;
+					HitTick = i;
+					break;
+				}
+			}
+			SAledStep S;
+			mem_zero(&S, sizeof(S));
+			AledPolicyInput(pGame, &World, ActorCid, TargetCid, Pol, i, &S.In);
+			S.ActorPos = pA->GetPos();
+			S.TargetPos = pT->GetPos();
+			S.Press = false;
+			if(S.In.m_Jump)
+				Jumps++;
+			if(Plan.Num < ALED_BUFFER_MAX)
+				Plan.aSteps[Plan.Num++] = S;
+			AledTickWorld(&World, ActorCid, &S.In);
+			pA = World.GetCharacterById(ActorCid);
+			if(pA && (pA->m_FreezeTime > 0 || AledIsFreezeTile(pGame, pA->GetPos())))
+				break;
+		}
+		if(HitTick < 0)
+			continue;
+		const int Key = (HitTick * 100 + Jumps) * 100 + Pol;
+		if(Key < BestKey)
+		{
+			BestKey = Key;
+			Best = Plan;
+			Best.Valid = true;
+		}
+	}
+	if(!Best.Valid)
+		return false;
+	*pOut = Best;
+	return true;
+}
+
+static SAledPlan s_aPgAledPlan[MAX_DUMMIES];
+static unsigned long long s_aPgAledSkipMask[MAX_DUMMIES];
+static SAledSession s_aPgAledSession[MAX_DUMMIES];
+
+static bool AledDecideIn(CGameClient *pGame, CGameWorld *pWorld, int ActorCid, int TargetCid, CNetObj_PlayerInput *pOut, bool *pPress, int Dummy)
+{
+	CCharacter *pActor = pWorld->GetCharacterById(ActorCid);
+	CCharacter *pTarget = pWorld->GetCharacterById(TargetCid);
+	if(!pActor || !pTarget)
+		return false;
+	*pPress = false;
+	if(Dummy < 0 || Dummy >= MAX_DUMMIES)
+		return false;
+	SAledPlan &Buf = s_aPgAledPlan[Dummy];
+	if(pActor->m_FreezeTime > 0 || AledIsFreezeTile(pGame, pActor->GetPos()))
+	{
+		Buf.Valid = false;
+		return false;
+	}
+	SAledSession &Ses = s_aPgAledSession[Dummy];
+	if(Ses.Cur != -2 || Ses.TargetCid != TargetCid)
+	{
+		Ses.Built = false;
+		Buf.Valid = false;
+	}
+	if(!AledTargetEngagedIn(pGame, pWorld, TargetCid, pTarget))
+	{
+		Ses.Built = false;
+		Buf.Valid = false;
+		return false;
+	}
+	if(!Ses.Built)
+	{
+		Ses.Built = true;
+		Ses.Cur = -2;
+		Ses.TargetCid = TargetCid;
+		Ses.ZoneValid = AledBuildZoneIn(pGame, pWorld, ActorCid, TargetCid, g_Config.m_KxAledTicks, &Ses.Zone);
+		Buf.Valid = false;
+	}
+	if(!Ses.ZoneValid)
+		return false;
+	if(Buf.Valid && Buf.TargetCid == TargetCid && Buf.Next < Buf.Num)
+	{
+		const SAledStep &S = Buf.aSteps[Buf.Next];
+		if(distance(pActor->GetPos(), S.ActorPos) < 2.0f &&
+			distance(pTarget->GetPos(), S.TargetPos) < 2.0f)
+		{
+			Buf.Next++;
+			*pOut = S.In;
+			if(S.Press)
+			{
+				*pPress = true;
+				Buf.Valid = false;
+			}
+			return true;
+		}
+		Buf.Valid = false;
+	}
+	SAledPlan Plan;
+	bool Have = AledBuildPlanIn(pGame, pWorld, ActorCid, TargetCid, &Ses.Zone, s_aPgAledSkipMask[Dummy], &Plan);
+	if(!Have && s_aPgAledSkipMask[Dummy])
+	{
+		s_aPgAledSkipMask[Dummy] = 0;
+		Have = AledBuildPlanIn(pGame, pWorld, ActorCid, TargetCid, &Ses.Zone, 0, &Plan);
+	}
+	if(!Have)
+	{
+		Buf.Valid = false;
+		return false;
+	}
+	Buf = Plan;
+	Buf.TargetCid = TargetCid;
+	Buf.Next = 0;
+	const SAledStep &S0 = Buf.aSteps[0];
+	Buf.Next = 1;
+	*pOut = S0.In;
+	if(S0.Press)
+	{
+		*pPress = true;
+		Buf.Valid = false;
+	}
+	return true;
+}
+
+void CBotNet::ResetPlaygroundAled()
+{
+	for(int D = 0; D < MAX_DUMMIES; ++D)
+	{
+		s_aPgAledPlan[D] = SAledPlan{};
+		s_aPgAledSession[D] = SAledSession{};
+		s_aPgAledSkipMask[D] = 0;
+	}
+}
+
+bool CBotNet::ApplyPlaygroundAled(CGameWorld &World, int Dummy, int ActorId, CNetObj_PlayerInput &Input, const CNetObj_PlayerInput &Prev)
+{
+	if(!g_Config.m_KxAledEnabled || Dummy < 0 || Dummy >= MAX_DUMMIES)
+		return false;
+	CCharacter *pActor = World.GetCharacterById(ActorId);
+	if(!pActor || pActor->m_FreezeTime > 0 || AledIsFreezeTile(GameClient(), pActor->GetPos()))
+		return false;
+	int TargetId = -1;
+	float BestSq = 1e18f;
+	for(int i = 0; i < MAX_CLIENTS; i++)
+	{
+		if(i == ActorId)
+			continue;
+		CCharacter *pT = World.GetCharacterById(i);
+		if(!pT || !AledTargetEngagedIn(GameClient(), &World, i, pT))
+			continue;
+		const float dsq = length_squared(pT->GetPos() - pActor->GetPos());
+		if(dsq < BestSq)
+		{
+			BestSq = dsq;
+			TargetId = i;
+		}
+	}
+	if(TargetId < 0)
+		return false;
+	CNetObj_PlayerInput Out{};
+	bool Press = false;
+	if(!AledDecideIn(GameClient(), &World, ActorId, TargetId, &Out, &Press, Dummy))
+		return false;
+	Input.m_Direction = Out.m_Direction;
+	Input.m_Jump = Out.m_Jump;
+	Input.m_Hook = Out.m_Hook;
+	Input.m_TargetX = Out.m_TargetX;
+	Input.m_TargetY = Out.m_TargetY;
+	Input.m_WantedWeapon = Out.m_WantedWeapon;
+	Input.m_Fire = Press ? (((Prev.m_Fire + 1) | 1) & INPUT_STATE_MASK) : ((Prev.m_Fire + 1) & (INPUT_STATE_MASK & ~1));
+	return true;
+}

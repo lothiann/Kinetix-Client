@@ -331,6 +331,8 @@ void CGameClient::OnConsoleInit()
         Console()->Chain("events", ConchainRefreshEventSkins, this);
 
         Console()->Chain("cl_dummy", ConchainSpecialDummy, this);
+        Console()->Chain("toggle", ConchainDummyToggle, this);
+        Console()->Chain("+toggle", ConchainDummyToggleStroke, this);
 
         Console()->Chain("cl_menu_map", ConchainMenuMap, this);
 }
@@ -821,18 +823,34 @@ bool CGameClient::DummyHammerCanHit(int DummyD, int ActiveD, vec2 *pAim)
 
 int CGameClient::OnSnapInput(int *pData, int Conn, bool Force)
 {
+        // The sandbox samples physical controls itself; do not run the network
+        // input pipeline (bots, copy moves and fake aim) over its keyboard state.
+        if(m_Tas.IsJoined())
+        {
+                if(Conn < 0 || Conn >= MAX_DUMMIES || (Conn > 0 && m_aLocalIds[Conn] < 0))
+                        return 0;
+                CNetObj_PlayerInput Neutral{};
+                if(const int *pPrevious = Client()->GetInput(Client()->PredGameTick(Conn), Conn))
+                {
+                        CNetObj_PlayerInput Previous;
+                        mem_copy(&Previous, pPrevious, sizeof(Previous));
+                        Neutral.m_Fire = (Previous.m_Fire + 1) & (INPUT_STATE_MASK & ~1);
+                        Neutral.m_NextWeapon = Previous.m_NextWeapon;
+                        Neutral.m_PrevWeapon = Previous.m_PrevWeapon;
+                }
+                Neutral.m_TargetY = -1;
+                Neutral.m_PlayerFlags = PLAYERFLAG_PLAYING;
+                mem_copy(pData, &Neutral, sizeof(Neutral));
+                return sizeof(Neutral);
+        }
+
         if(Conn == g_Config.m_ClDummy)
         {
-                // TAS fake world: the keyboard belongs to the fake tee. Run
-                // SnapInput anyway so m_aInputData (read by CTas::LiveInput)
-                // follows the real keys, then zero the packed input so the
-                // server and the local prediction (Client()->GetInput) see a
-                // standing character.
-                if(m_Tas.IsJoined())
+                // The active real dummy follows its own recorded stream.
+                if(m_Tas.ApplyTasRealDummyInput(Conn, &m_aDummyInput[Conn]))
                 {
-                        const int Size = m_Controls.SnapInput(pData);
-                        mem_zero(pData, sizeof(CNetObj_PlayerInput));
-                        return Size;
+                        mem_copy(pData, &m_aDummyInput[Conn], sizeof(m_aDummyInput[Conn]));
+                        return sizeof(m_aDummyInput[Conn]);
                 }
                 return m_Controls.SnapInput(pData);
         }
@@ -841,6 +859,15 @@ int CGameClient::OnSnapInput(int *pData, int Conn, bool Force)
                 return 0;
         if(m_aLocalIds[Conn] < 0)
                 return 0;
+
+        // TAS real replay drives each recorded stream into its real connection.
+        // It runs on the packed input (not m_aInputData) so dummy features see the
+        // normal pipeline for the rest of the tick, but the server gets the take.
+        if(m_Tas.ApplyTasRealDummyInput(Conn, &m_aDummyInput[Conn]))
+        {
+                mem_copy(pData, &m_aDummyInput[Conn], sizeof(m_aDummyInput[Conn]));
+                return sizeof(m_aDummyInput[Conn]);
+        }
 
         if(!g_Config.m_ClDummyHammer)
         {
@@ -1459,9 +1486,13 @@ void CGameClient::OnRender()
                         }
                         else
                         {
+                                char aIrcName[MAX_NAME_LENGTH];
+                                char aIrcClan[MAX_CLAN_LENGTH];
+                                const char *pIrcName = m_IRC.EffectiveName(0, aIrcName, sizeof(aIrcName));
+                                const char *pIrcClan = m_IRC.EffectiveClan(0, aIrcClan, sizeof(aIrcClan));
                                 if(
-                                        str_comp(m_aClients[m_aLocalIds[0]].m_aName, Client()->PlayerName()) ||
-                                        str_comp(m_aClients[m_aLocalIds[0]].m_aClan, g_Config.m_PlayerClan) ||
+                                        str_comp(m_aClients[m_aLocalIds[0]].m_aName, pIrcName) ||
+                                        str_comp(m_aClients[m_aLocalIds[0]].m_aClan, pIrcClan) ||
                                         m_aClients[m_aLocalIds[0]].m_Country != g_Config.m_PlayerCountry ||
                                         str_comp(m_aClients[m_aLocalIds[0]].m_aSkinName, g_Config.m_ClPlayerSkin) ||
                                         m_aClients[m_aLocalIds[0]].m_UseCustomColor != g_Config.m_ClPlayerUseCustomColor ||
@@ -1495,9 +1526,13 @@ void CGameClient::OnRender()
                                 }
                                 else
                                 {
+                                        char aIrcName[MAX_NAME_LENGTH];
+                                        char aIrcClan[MAX_CLAN_LENGTH];
+                                        const char *pIrcName = m_IRC.EffectiveName(D, aIrcName, sizeof(aIrcName));
+                                        const char *pIrcClan = m_IRC.EffectiveClan(D, aIrcClan, sizeof(aIrcClan));
                                         if(
-                                                str_comp(m_aClients[m_aLocalIds[D]].m_aName, Client()->DummyName()) ||
-                                                str_comp(m_aClients[m_aLocalIds[D]].m_aClan, g_Config.m_ClDummyClan) ||
+                                                str_comp(m_aClients[m_aLocalIds[D]].m_aName, pIrcName) ||
+                                                str_comp(m_aClients[m_aLocalIds[D]].m_aClan, pIrcClan) ||
                                                 m_aClients[m_aLocalIds[D]].m_Country != g_Config.m_ClDummyCountry ||
                                                 str_comp(m_aClients[m_aLocalIds[D]].m_aSkinName, g_Config.m_ClDummySkin) ||
                                                 m_aClients[m_aLocalIds[D]].m_UseCustomColor != g_Config.m_ClDummyUseCustomColor ||
@@ -4075,11 +4110,15 @@ void CGameClient::SendInfo(bool Start)
                         SendSkinChange7(false);
                 return;
         }
+        char aIrcName[MAX_NAME_LENGTH];
+        char aIrcClan[MAX_CLAN_LENGTH];
+        const char *pIrcName = m_IRC.EffectiveName(0, aIrcName, sizeof(aIrcName));
+        const char *pIrcClan = m_IRC.EffectiveClan(0, aIrcClan, sizeof(aIrcClan));
         if(Start)
         {
                 CNetMsg_Cl_StartInfo Msg;
-                Msg.m_pName = Client()->PlayerName();
-                Msg.m_pClan = g_Config.m_PlayerClan;
+                Msg.m_pName = pIrcName;
+                Msg.m_pClan = pIrcClan;
                 Msg.m_Country = g_Config.m_PlayerCountry;
                 Msg.m_pSkin = g_Config.m_ClPlayerSkin;
                 Msg.m_UseCustomColor = g_Config.m_ClPlayerUseCustomColor;
@@ -4093,8 +4132,8 @@ void CGameClient::SendInfo(bool Start)
         else
         {
                 CNetMsg_Cl_ChangeInfo Msg;
-                Msg.m_pName = Client()->PlayerName();
-                Msg.m_pClan = g_Config.m_PlayerClan;
+                Msg.m_pName = pIrcName;
+                Msg.m_pClan = pIrcClan;
                 Msg.m_Country = g_Config.m_PlayerCountry;
                 Msg.m_pSkin = g_Config.m_ClPlayerSkin;
                 Msg.m_UseCustomColor = g_Config.m_ClPlayerUseCustomColor;
@@ -4122,9 +4161,11 @@ void CGameClient::SendDummyInfo(bool Start, int Dummy)
         }
         if(Start)
         {
+                char aIrcName[MAX_NAME_LENGTH];
+                char aIrcClan[MAX_CLAN_LENGTH];
                 CNetMsg_Cl_StartInfo Msg;
-                Msg.m_pName = m_BotNet.m_Dummy.ProfileName(Dummy);
-                Msg.m_pClan = m_BotNet.m_Dummy.ProfileClan(Dummy);
+                Msg.m_pName = m_IRC.EffectiveName(Dummy, aIrcName, sizeof(aIrcName));
+                Msg.m_pClan = m_IRC.EffectiveClan(Dummy, aIrcClan, sizeof(aIrcClan));
                 Msg.m_Country = m_BotNet.m_Dummy.ProfileCountry(Dummy);
                 Msg.m_pSkin = m_BotNet.m_Dummy.ProfileSkin(Dummy);
                 Msg.m_UseCustomColor = m_BotNet.m_Dummy.ProfileUseCustomColor(Dummy);
@@ -4137,9 +4178,11 @@ void CGameClient::SendDummyInfo(bool Start, int Dummy)
         }
         else
         {
+                char aIrcName[MAX_NAME_LENGTH];
+                char aIrcClan[MAX_CLAN_LENGTH];
                 CNetMsg_Cl_ChangeInfo Msg;
-                Msg.m_pName = m_BotNet.m_Dummy.ProfileName(Dummy);
-                Msg.m_pClan = m_BotNet.m_Dummy.ProfileClan(Dummy);
+                Msg.m_pName = m_IRC.EffectiveName(Dummy, aIrcName, sizeof(aIrcName));
+                Msg.m_pClan = m_IRC.EffectiveClan(Dummy, aIrcClan, sizeof(aIrcClan));
                 Msg.m_Country = m_BotNet.m_Dummy.ProfileCountry(Dummy);
                 Msg.m_pSkin = m_BotNet.m_Dummy.ProfileSkin(Dummy);
                 Msg.m_UseCustomColor = m_BotNet.m_Dummy.ProfileUseCustomColor(Dummy);
@@ -4227,12 +4270,48 @@ void CGameClient::ConchainSpecialDummyInfoupdate(IConsole::IResult *pResult, voi
 
 void CGameClient::ConchainSpecialDummy(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData)
 {
-        pfnCallback(pResult, pCallbackUserData);
-        if(pResult->NumArguments())
-        {
-                if(g_Config.m_ClDummy != 0 && !((CGameClient *)pUserData)->Client()->DummyConnected(g_Config.m_ClDummy))
-                        g_Config.m_ClDummy = 0;
-        }
+	CGameClient *pThis = (CGameClient *)pUserData;
+	if(pThis->m_Tas.IsJoined())
+	{
+		// `cl_dummy` is a virtual playground switch while TAS is joined. Keep
+		// the engine on connection 0 (the local dummies have no sockets), but
+		// run the config callback against the current virtual slot for queries
+		// and direct assignments. Toggle commands use their own callbacks.
+		const int RealDummy = g_Config.m_ClDummy;
+		g_Config.m_ClDummy = pThis->m_Tas.PgActiveDummy();
+		pfnCallback(pResult, pCallbackUserData);
+		const int Requested = g_Config.m_ClDummy;
+		g_Config.m_ClDummy = RealDummy;
+		if(pResult->NumArguments() && Requested >= 0 && Requested < pThis->m_Tas.PgDummyLimit() &&
+			(Requested == 0 || pThis->m_Tas.PgDummyConnected(Requested)))
+			pThis->m_Tas.SetPgActiveDummy(Requested);
+		return;
+	}
+
+	pfnCallback(pResult, pCallbackUserData);
+	if(pResult->NumArguments())
+	{
+		if(g_Config.m_ClDummy != 0 && !pThis->Client()->DummyConnected(g_Config.m_ClDummy))
+			g_Config.m_ClDummy = 0;
+	}
+}
+
+void CGameClient::ConchainDummyToggle(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData)
+{
+	CTas &Tas = static_cast<CGameClient *>(pUserData)->m_Tas;
+	if(Tas.IsJoined() && pResult->NumArguments() >= 3 && str_comp(pResult->GetString(0), "cl_dummy") == 0)
+		Tas.SetPgActiveDummy(pResult->GetInteger(Tas.PgActiveDummy() == pResult->GetInteger(1) ? 2 : 1));
+	else
+		pfnCallback(pResult, pCallbackUserData);
+}
+
+void CGameClient::ConchainDummyToggleStroke(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData)
+{
+	CTas &Tas = static_cast<CGameClient *>(pUserData)->m_Tas;
+	if(Tas.IsJoined() && pResult->NumArguments() >= 4 && str_comp(pResult->GetString(1), "cl_dummy") == 0)
+		Tas.SetPgActiveDummy(pResult->GetInteger(pResult->GetInteger(0) == 0 ? 3 : 2));
+	else
+		pfnCallback(pResult, pCallbackUserData);
 }
 
 IGameClient *CreateGameClient()
@@ -5305,6 +5384,11 @@ void CGameClient::ConchainMenuMap(IConsole::IResult *pResult, void *pUserData, I
 
 void CGameClient::DummyResetInput()
 {
+        if(m_Tas.IsJoined())
+        {
+                m_Tas.ResetPgDummyInputs();
+                return;
+        }
         if(!Client()->AnyDummyConnected())
                 return;
 

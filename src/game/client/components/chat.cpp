@@ -47,6 +47,7 @@ void CChat::CLine::Reset(CChat &This)
         m_Time = 0;
         m_aText[0] = '\0';
         m_aName[0] = '\0';
+        m_KinetixLogoX = -1.0f;
         m_Friend = false;
         m_TimesRepeated = 0;
         m_pManagedTeeRenderInfo = nullptr;
@@ -145,6 +146,7 @@ void CChat::Reset()
 	m_pHistoryEntry = nullptr;
 	m_PendingChatCounter = 0;
 	m_LastChatSend = 0;
+	m_LastChatSendChars = 0;
 	m_CurrentLine = 0;
 	m_IsInputCensored = false;
 	m_EditingNewLine = true;
@@ -1066,6 +1068,9 @@ void CChat::OnPrepareLines(float y)
                         if(Line.m_TimesRepeated > 0)
                                 TextRender()->TextEx(&MeasureCursor, aCount);
 
+                        if(Line.m_ClientId >= 0 && Line.m_aName[0] != '\0' && g_Config.m_KxIrcEnabled && GameClient()->m_IRC.IsKinetixClient(Line.m_ClientId))
+                                MeasureCursor.m_X += FontSize * 0.8f + 4.0f;
+
                         if(Line.m_ClientId >= 0 && Line.m_aName[0] != '\0')
                         {
                                 TextRender()->TextEx(&MeasureCursor, ": ");
@@ -1080,6 +1085,15 @@ void CChat::OnPrepareLines(float y)
                         }
 
                         TextRender()->TextEx(&AppendCursor, pText);
+
+                        // v6.20: gray IRC suffix appended after the original text.
+                        if(Line.m_ClientId >= 0 && g_Config.m_KxIrcEnabled && g_Config.m_KxIrcVersion == 1)
+                        {
+                                char aIrcSuffix[MAX_CHAT_LENGTH];
+                                GameClient()->m_IRC.DecodeChatSuffix(Line.m_aText, aIrcSuffix, sizeof(aIrcSuffix));
+                                if(aIrcSuffix[0])
+                                        TextRender()->TextEx(&AppendCursor, aIrcSuffix);
+                        }
 
                         Line.m_aYOffset[OffsetType] = AppendCursor.Height() + RealMsgPaddingY;
                 }
@@ -1145,6 +1159,20 @@ void CChat::OnPrepareLines(float y)
                         TextRender()->CreateOrAppendTextContainer(Line.m_TextContainerIndex, &LineCursor, aCount);
                 }
 
+                // v6.20: the Kinetix icon sits between the name and the colon.
+                // The cursor must be advanced over it, otherwise the colon and
+                // the whole message are drawn on top of the icon.
+                Line.m_KinetixLogoX = -1.0f;
+                if(Line.m_ClientId >= 0 && Line.m_aName[0] != '\0' && g_Config.m_KxIrcEnabled && GameClient()->m_IRC.IsKinetixClient(Line.m_ClientId))
+                {
+                        const float IconSize = FontSize * 0.8f;
+                        const float GapLeft = 2.0f;
+                        const float GapRight = 2.0f;
+                        Line.m_KinetixLogoX = LineCursor.m_X + GapLeft + IconSize * 0.5f;
+                        LineCursor.m_X += GapLeft + IconSize + GapRight;
+                        LineCursor.m_LongestLineWidth += GapLeft + IconSize + GapRight;
+                }
+
                 if(Line.m_ClientId >= 0 && Line.m_aName[0] != '\0')
                 {
                         TextRender()->TextColor(NameColor);
@@ -1176,6 +1204,19 @@ void CChat::OnPrepareLines(float y)
 
                 TextRender()->CreateOrAppendTextContainer(Line.m_TextContainerIndex, &AppendCursor, pText);
 
+                // v6.20: gray IRC suffix after the original line text.
+                if(Line.m_ClientId >= 0 && g_Config.m_KxIrcEnabled && g_Config.m_KxIrcVersion == 1)
+                {
+                        char aIrcSuffix[MAX_CHAT_LENGTH];
+                        GameClient()->m_IRC.DecodeChatSuffix(Line.m_aText, aIrcSuffix, sizeof(aIrcSuffix));
+                        if(aIrcSuffix[0])
+                        {
+                                TextRender()->TextColor(0.6f, 0.6f, 0.6f, Color.a);
+                                TextRender()->CreateOrAppendTextContainer(Line.m_TextContainerIndex, &AppendCursor, aIrcSuffix);
+                                TextRender()->TextColor(Color);
+                        }
+                }
+
 		if(!g_Config.m_ClChatOld && (Line.m_aText[0] != '\0' || Line.m_aName[0] != '\0'))
 		{
 			float FullWidth = RealMsgPaddingX * 1.5f;
@@ -1205,7 +1246,7 @@ void CChat::OnRender()
                 return;
 
         // send pending chat messages
-        if(m_PendingChatCounter > 0 && m_LastChatSend + time_freq() < time())
+        if(m_PendingChatCounter > 0 && ChatCooldownElapsed())
         {
                 CHistoryEntry *pEntry = m_History.Last();
                 for(int i = m_PendingChatCounter - 1; pEntry; --i, pEntry = m_History.Prev(pEntry))
@@ -1362,6 +1403,14 @@ void CChat::OnRender()
                         const ColorRGBA TextColor = TextRender()->DefaultTextColor().WithMultipliedAlpha(Blend);
                         const ColorRGBA TextOutlineColor = TextRender()->DefaultTextOutlineColor().WithMultipliedAlpha(Blend);
                         TextRender()->RenderTextContainer(Line.m_TextContainerIndex, TextColor, TextOutlineColor, 0, (y + RealMsgPaddingY / 2.0f) - Line.m_TextYOffset);
+
+                        // v6.20: Kinetix icon between the sender name and the
+                        // colon. The X position is recorded while the text
+                        // container is built (OnPrepareLines), so it accounts
+                        // for the tee gutter, the client-id prefix, the ♥ and
+                        // the repeat counter automatically.
+                        if(Line.m_KinetixLogoX >= 0.0f)
+                                GameClient()->m_IRC.RenderLogo(Line.m_KinetixLogoX, y + RealMsgPaddingY / 2.0f + FontSize() * 0.5f, FontSize() * 0.8f, Blend);
                 }
         }
 }
@@ -1388,6 +1437,19 @@ void CChat::EnsureCoherentWidth() const
 
 // ----- send functions -----
 
+// v6.21: the server counts UTF-8 characters (str_utf8_decode) when it applies
+// its chat spam protection.
+static int ChatLineLength(const char *pLine)
+{
+	int Chars = 0;
+	for(const char *p = pLine; p && *p; ++p)
+	{
+		if(((unsigned char)*p & 0xC0) != 0x80)
+			Chars++;
+	}
+	return Chars;
+}
+
 void CChat::SendChat(int Team, const char *pLine)
 {
 	// v6.2: TAS playground virtual chat — everything except whispers stays in
@@ -1397,22 +1459,20 @@ void CChat::SendChat(int Team, const char *pLine)
 	{
 		CTas &Tas = GameClient()->m_Tas;
 		m_LastChatSend = time();
+		m_LastChatSendChars = 0;
 		if(pLine[0] == '/')
 		{
 			char aMsg[256];
-			if(Tas.PgChatHandleCommand(pLine, aMsg, sizeof(aMsg)) && aMsg[0])
+			if(Tas.PgChatHandleCommand(pLine, aMsg, sizeof(aMsg), Team) && aMsg[0])
 			{
-				m_TasVirtualAdd = true;
-				AddLine(CLIENT_MSG, Team, aMsg);
-				m_TasVirtualAdd = false;
+				TasAddVirtualLine(CLIENT_MSG, Team, aMsg);
 			}
 			return;
 		}
 		const int LocalId = GameClient()->m_Snap.m_LocalClientId;
 		Tas.PgChatAddLine(LocalId, Team, "", pLine);
-		m_TasVirtualAdd = true;
-		AddLine(LocalId, Team, pLine);
-		m_TasVirtualAdd = false;
+		Tas.RecordPgChatLine(LocalId, Team, pLine);
+		TasAddVirtualLine(LocalId, Team, pLine);
 		return;
 	}
 
@@ -1422,12 +1482,19 @@ void CChat::SendChat(int Team, const char *pLine)
 
         m_LastChatSend = time();
 
+        // v6.19: IRC v2 — append the hidden zero-width payload (identity and/or
+        // a queued IRC message) to user chat lines.
+        char aIrcLine[MAX_CHAT_LENGTH];
+        const char *pSendLine = GameClient()->m_IRC.EncodeChatLine(pLine, aIrcLine, sizeof(aIrcLine), g_Config.m_ClDummy);
+        // Commands only obey the plain one-second chat delay.
+        m_LastChatSendChars = pSendLine[0] == '/' ? 0 : ChatLineLength(pSendLine);
+
         if(GameClient()->Client()->IsSixup())
         {
                 protocol7::CNetMsg_Cl_Say Msg7;
                 Msg7.m_Mode = Team == 1 ? protocol7::CHAT_TEAM : protocol7::CHAT_ALL;
                 Msg7.m_Target = -1;
-                Msg7.m_pMessage = pLine;
+                Msg7.m_pMessage = pSendLine;
                 Client()->SendPackMsgActive(&Msg7, MSGFLAG_VITAL, true);
                 return;
         }
@@ -1435,8 +1502,12 @@ void CChat::SendChat(int Team, const char *pLine)
 	// send chat message
 	CNetMsg_Cl_Say Msg;
 	Msg.m_Team = Team;
-	Msg.m_pMessage = pLine;
+	Msg.m_pMessage = pSendLine;
 	Client()->SendPackMsgActive(&Msg, MSGFLAG_VITAL);
+
+	// v6.19: IRC v1 — mirror user chat into the legacy emote channel.
+	if(g_Config.m_KxIrcEnabled && g_Config.m_KxIrcVersion == 0 && g_Config.m_KxIrcEncodeChat && pLine[0] != '/')
+		GameClient()->m_IRC.SendIRC(pLine);
 }
 
 // v6.2: swaps the visible chat buffer to/from the playground one. The buffer
@@ -1503,6 +1574,31 @@ void CChat::TasSetVirtual(bool On)
 	}
 }
 
+void CChat::TasAddVirtualLine(int ClientId, int Team, const char *pLine)
+{
+	if(!m_TasVirtual)
+		return;
+	const bool WasAddingVirtual = m_TasVirtualAdd;
+	m_TasVirtualAdd = true;
+	AddLine(ClientId, Team, pLine);
+	m_TasVirtualAdd = WasAddingVirtual;
+}
+
+void CChat::TasRefreshVirtualLines()
+{
+	if(!m_TasVirtual)
+		return;
+	for(int i = 0; i < MAX_LINES; ++i)
+		if(m_aLines[i].m_Initialized)
+			m_aLines[i].Reset(*this);
+	m_CurrentLine = 0;
+	const bool WasAddingVirtual = m_TasVirtualAdd;
+	m_TasVirtualAdd = true;
+	for(const CTas::SPgChatLine &Line : GameClient()->m_Tas.PgChatLines())
+		AddLine(Line.m_ClientId, Line.m_Team, Line.m_aText);
+	m_TasVirtualAdd = WasAddingVirtual;
+}
+
 void CChat::SendChatFrom(int Dummy, int Team, const char *pLine)
 {
 	// don't send empty messages
@@ -1513,13 +1609,18 @@ void CChat::SendChatFrom(int Dummy, int Team, const char *pLine)
 
 	m_LastChatSend = time();
 
+	// v6.19: IRC v2 hidden payload for explicit-dummy chat.
+	char aIrcLine[MAX_CHAT_LENGTH];
+	const char *pSendLine = GameClient()->m_IRC.EncodeChatLine(pLine, aIrcLine, sizeof(aIrcLine), Dummy);
+	m_LastChatSendChars = pSendLine[0] == '/' ? 0 : ChatLineLength(pSendLine);
+
 	const int Conn = Dummy == 0 ? IClient::CONN_MAIN : IClient::CONN_DUMMY_START + Dummy - 1;
 	if(GameClient()->Client()->IsSixup())
 	{
 		protocol7::CNetMsg_Cl_Say Msg7;
 		Msg7.m_Mode = Team == 1 ? protocol7::CHAT_TEAM : protocol7::CHAT_ALL;
 		Msg7.m_Target = -1;
-		Msg7.m_pMessage = pLine;
+		Msg7.m_pMessage = pSendLine;
 		Client()->SendPackMsg(Conn, &Msg7, MSGFLAG_VITAL, true);
 		return;
 	}
@@ -1527,8 +1628,20 @@ void CChat::SendChatFrom(int Dummy, int Team, const char *pLine)
 	// send chat message
 	CNetMsg_Cl_Say Msg;
 	Msg.m_Team = Team;
-	Msg.m_pMessage = pLine;
+	Msg.m_pMessage = pSendLine;
 	Client()->SendPackMsg(Conn, &Msg, MSGFLAG_VITAL);
+}
+
+bool CChat::ChatCooldownElapsed() const
+{
+	// The server allows one chat message per (31 + Length) / 32 seconds
+	// (gamecontext.cpp, OnSayNetMessage). A line carrying an IRC payload is long,
+	// so waiting only one second makes the server drop the next line together
+	// with the payload.
+	int64_t Cooldown = (int64_t)((31 + m_LastChatSendChars) / 32) * time_freq();
+	if(Cooldown < time_freq())
+		Cooldown = time_freq();
+	return m_LastChatSend + Cooldown < time();
 }
 
 void CChat::SendChatQueued(const char *pLine)
@@ -1538,7 +1651,8 @@ void CChat::SendChatQueued(const char *pLine)
 
         bool AddEntry = false;
 
-        if(m_LastChatSend + time_freq() < time())
+        // Commands are not rate limited by the server's chat protection.
+        if(pLine[0] == '/' || ChatCooldownElapsed())
         {
                 SendChat(m_Mode == MODE_ALL ? 0 : 1, pLine);
                 AddEntry = true;

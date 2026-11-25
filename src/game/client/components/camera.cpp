@@ -417,7 +417,7 @@ void CCamera::OnRender()
                 !GameClient()->m_Tas.IsSpec() &&
                 !GameClient()->m_Snap.m_SpecInfo.m_Active)
         {
-                m_Center = GameClient()->m_Tas.PlaygroundTeeRenderPos() + m_aDyncamCurrentCameraOffset[g_Config.m_ClDummy];
+                m_Center = GameClient()->m_Tas.PlaygroundActiveTeeRenderPos() + m_aDyncamCurrentCameraOffset[0];
         }
 
         m_PrevCenter = m_Center;

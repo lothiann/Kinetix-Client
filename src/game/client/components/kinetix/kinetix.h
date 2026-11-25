@@ -556,6 +556,11 @@ public:
 	int m_PfUiBestTotal = 0;
         std::vector<CNetObj_PlayerInput> m_PfFullInputs;
         size_t m_PfFullInputsIdx;
+        // v6.18: TAS dummy preparation borrows the tab Pathfinder and gives it
+        // a ±1-unit exact goal. Normal Pathfinder runs leave this disabled and
+        // keep the original half-tile finish test.
+        bool m_PfUseExactGoal = false;
+        vec2 m_PfExactGoal = vec2(0.0f, 0.0f);
 
         // v1.57: Threaded pathfinder — A* search runs in a background thread.
         // m_PfBaseWorld = pristine snapshot of PredictedWorld (taken in PfResetRun
@@ -783,9 +788,15 @@ public:
         void UpdatePathfinder();            // called from OnUpdate; runs one chunk if RUNNING
         void RenderPathfinderPath();        // called from OnRender; draws m_PfVPath like RenderPackage
         void PfResetRun();                  // clear vPath + sim state (start fresh from active player)
+        bool PfResetRunForDummy(vec2 Start, int ClientId); // same tab solver from an arbitrary dummy start (false = failed to start)
+        bool PfAtGoal(const vec2 &Pos) const;              // exact (±1 unit) or normal tile goal test
+        vec2 PfGoalPos(const std::vector<vec2> &vFinishes, const vec2 &Pos) const;
         void PfClearSearchState();          // BUG4 v1.56.165: release A*/RHEA buffers (safe from any state)
         void PfPasteToTas();                // kx_pf_paste: paste the found path into TAS Playground
         void UpdateLaserUnfreeze();         // called from OnUpdate; predictive laser self-unfreeze
+        void ApplyPlaygroundLaserUnfreeze(CGameWorld &World, int LocalId, CNetObj_PlayerInput &Input, vec2 Mouse);
+        bool ApplyPlaygroundAled(CGameWorld &World, int Dummy, int ActorId, CNetObj_PlayerInput &Input, const CNetObj_PlayerInput &Prev);
+        void ResetPlaygroundAled();
         void RenderLaserUnfreezePath();     // called from OnRender; draws successful laser path with fade
         void UpdateFakeAim();               // called from OnUpdate; fake aim for fun
         // v1.56.151: Fly Ride — pilot (active dummy) hooks/hammers nearest dummy.
@@ -804,6 +815,11 @@ public:
         bool m_TripleFlyWasActive = false;
         int m_TripleFlyDummy = -1;
         bool m_TripleFlyHooking = false;
+        // v6.18: TAS playground triple fly state — the acting dummy holds a hook
+        // on the sandbox target; the sandbox keeps its own dummy/hooking pair.
+        int m_PgTripleFlyDummy = -1;
+        bool m_PgTripleFlyHooking = false;
+        bool ApplyPlaygroundTripleFly(CGameWorld &World, int Dummy, int ActorId, int MainId, CNetObj_PlayerInput &Input);
 
         // Laser unfreeze path storage (for Show attempt rendering)
         std::vector<vec2> m_LaserUnfreezePath;

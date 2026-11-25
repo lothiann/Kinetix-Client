@@ -412,7 +412,7 @@ static inline bool PfLineTouchesForbidden(const unsigned char *pForbiddenGrid, i
 static inline void PfSimulateChunk(CGameWorld *pWorld, int PredictedCharId, CCharacter *pBot,
                             const std::vector<CNetObj_PlayerInput> &inputs, int StartTick,
                             PfChunkResult &out, const unsigned char *pForbiddenGrid, const unsigned char *pCustomFinishGrid,
-                            bool FastSim = false)
+                            bool FastSim = false, bool UseExactGoal = false, vec2 ExactGoal = vec2(0.0f, 0.0f))
 {
         // FastSim: the 1-tick A* expansion discards inputs/traj/hookSegs, so
         // skip recording them entirely (saves a vector copy + per-tick
@@ -483,22 +483,32 @@ static inline void PfSimulateChunk(CGameWorld *pWorld, int PredictedCharId, CCha
                 if(pBot->m_FreezeTime > 0)
                         out.freezeTicks++;
 
-                int tc = round_to_int(core.m_Pos.x / 32.0f);
-                int tr = round_to_int(core.m_Pos.y / 32.0f);
-                if(!out.died && tc >= 0 && tr >= 0 && tc < collW && tr < collH)
+                // v6.18: TAS dummy preparation uses a ±1 unit goal so the
+                // replay starts at the EXACT recorded position.
+                if(!out.died && UseExactGoal)
                 {
-                        int MapIndex = tr * collW + tc;
-                        if(pCustomFinishGrid)
+                        if(distance(core.m_Pos, ExactGoal) <= 1.0f)
+                                out.reachedFinish = true;
+                }
+                else if(!out.died)
+                {
+                        int tc = round_to_int(core.m_Pos.x / 32.0f);
+                        int tr = round_to_int(core.m_Pos.y / 32.0f);
+                        if(tc >= 0 && tr >= 0 && tc < collW && tr < collH)
                         {
-                                if(pCustomFinishGrid[MapIndex])
-                                        out.reachedFinish = true;
-                        }
-                        else if(pColl)
-                        {
-                                int Tile = pColl->GetTileIndex(MapIndex);
-                                int FTile = pColl->GetFrontTileIndex(MapIndex);
-                                if(Tile == TILE_FINISH || FTile == TILE_FINISH)
-                                        out.reachedFinish = true;
+                                int MapIndex = tr * collW + tc;
+                                if(pCustomFinishGrid)
+                                {
+                                        if(pCustomFinishGrid[MapIndex])
+                                                out.reachedFinish = true;
+                                }
+                                else if(pColl)
+                                {
+                                        int Tile = pColl->GetTileIndex(MapIndex);
+                                        int FTile = pColl->GetFrontTileIndex(MapIndex);
+                                        if(Tile == TILE_FINISH || FTile == TILE_FINISH)
+                                                out.reachedFinish = true;
+                                }
                         }
                 }
                 if(out.died || out.reachedFinish)
@@ -535,7 +545,7 @@ static inline void PfSimulateChunk(CGameWorld *pWorld, int PredictedCharId, CCha
 static inline void PfSimulateHold(CGameWorld *pWorld, int PredictedCharId, CCharacter *pBot,
                           const CNetObj_PlayerInput &Input, int StartTick, int MaxTicks,
                           PfChunkResult &out, const unsigned char *pForbiddenGrid, const unsigned char *pCustomFinishGrid,
-                          bool FastSim)
+                          bool FastSim, bool UseExactGoal = false, vec2 ExactGoal = vec2(0.0f, 0.0f))
 {
         if(!FastSim)
         {
@@ -595,22 +605,32 @@ static inline void PfSimulateHold(CGameWorld *pWorld, int PredictedCharId, CChar
                 if(pBot->m_FreezeTime > 0)
                         out.freezeTicks++;
 
-                int tc = round_to_int(core.m_Pos.x / 32.0f);
-                int tr = round_to_int(core.m_Pos.y / 32.0f);
-                if(!out.died && tc >= 0 && tr >= 0 && tc < collW && tr < collH)
+                // v6.18: TAS dummy preparation uses a ±1 unit goal so the
+                // replay starts at the EXACT recorded position.
+                if(!out.died && UseExactGoal)
                 {
-                        int MapIndex = tr * collW + tc;
-                        if(pCustomFinishGrid)
+                        if(distance(core.m_Pos, ExactGoal) <= 1.0f)
+                                out.reachedFinish = true;
+                }
+                else if(!out.died)
+                {
+                        int tc = round_to_int(core.m_Pos.x / 32.0f);
+                        int tr = round_to_int(core.m_Pos.y / 32.0f);
+                        if(tc >= 0 && tr >= 0 && tc < collW && tr < collH)
                         {
-                                if(pCustomFinishGrid[MapIndex])
-                                        out.reachedFinish = true;
-                        }
-                        else if(pColl)
-                        {
-                                int Tile = pColl->GetTileIndex(MapIndex);
-                                int FTile = pColl->GetFrontTileIndex(MapIndex);
-                                if(Tile == TILE_FINISH || FTile == TILE_FINISH)
-                                        out.reachedFinish = true;
+                                int MapIndex = tr * collW + tc;
+                                if(pCustomFinishGrid)
+                                {
+                                        if(pCustomFinishGrid[MapIndex])
+                                                out.reachedFinish = true;
+                                }
+                                else if(pColl)
+                                {
+                                        int Tile = pColl->GetTileIndex(MapIndex);
+                                        int FTile = pColl->GetFrontTileIndex(MapIndex);
+                                        if(Tile == TILE_FINISH || FTile == TILE_FINISH)
+                                                out.reachedFinish = true;
+                                }
                         }
                 }
 

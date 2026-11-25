@@ -7,6 +7,7 @@
 #include "message.h"
 
 #include <base/hash.h>
+#include <base/net.h>
 
 #include <engine/client/enums.h>
 #include <engine/friends.h>
@@ -271,6 +272,10 @@ public:
         // input
         virtual int *GetInput(int Tick, int Conn = 0) const = 0;
         virtual void ClearInput(int Conn) = 0;
+        // v6.18: Kinetix network diagnostics (ClickGUI → Network).
+        virtual NETSTATS KxNetStats() const = 0;
+        virtual void KxInputAckStats(int *pSent, int *pAcked) const = 0;
+        virtual int KxSnapshotCount() const = 0;
 
         // remote console
         virtual void RconAuth(const char *pUsername, const char *pPassword, int Conn) = 0;

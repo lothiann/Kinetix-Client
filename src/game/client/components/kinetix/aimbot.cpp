@@ -556,6 +556,8 @@ void CAimBot::OnUpdate()
 	// via m_SilentAimActive is applied to m_TargetX/Y in SnapInput.
 	// v1.56.255: per-weapon settings persistence (pull once / push every tick).
 	SyncSavedSettings();
+	if(GameClient()->m_Tas.IsJoined() || GameClient()->m_Tas.IsRealPlaying())
+		return;
 	if(g_Config.m_KxAimBot)
                 UpdateAimBot();
         if(g_Config.m_KxTriggerBot)
@@ -2281,6 +2283,736 @@ void CAimBot::RenderRadius(const SWeaponSettings &Settings, const vec2 &MyPos, c
 // in FindTarget — one CopyWorld + pre-roll of MAX_PREDICT_TICKS ticks builds a
 // positions[MAX_CLIENTS][MAX_PREDICT_TICKS+1] table, then linear tick-scan with
 // sub-tick interpolation (linear interp of flightTime between adjacent ticks).
+
+// v6.18: TAS playground adapters. The sandbox world is the single source of
+// truth: targets, blocking, freeze and teams come from it, prediction copies
+// it, and every aim/fire/hook edit lands on the local tick input (and on the
+// sandbox crosshair when the weapon is not Silent). The network silent channel
+// and the real client's bot state are never touched.
+void CAimBot::ResetPlayground()
+{
+	m_PgTriggerFireState = STriggerChannelState{};
+	for(auto &State : m_PgTriggerHookStates)
+		State = STriggerChannelState{};
+	m_PgSmoothPos = vec2(0, 0);
+	m_PgSmoothInit = false;
+	m_PgSilentSmoothPos = vec2(0, 0);
+	m_PgSilentSmoothInit = false;
+	m_PgPrevHook = false;
+	m_PgSilentActive = false;
+	m_PgSilentOffset = vec2(0, 0);
+	m_PgLastTick = -1;
+}
+
+bool CAimBot::PgPassesFilters(CGameWorld &World, int ClientId, int LocalId, const SWeaponSettings &Settings) const
+{
+	const CCharacter *pChar = World.GetCharacterById(ClientId);
+	if(!pChar)
+		return false;
+	const int MyTeam = World.Teams()->Team(LocalId);
+	const int Team = World.Teams()->Team(ClientId);
+	if(Settings.m_TeamFilter == 1 && Team != MyTeam)
+		return false;
+	if(Settings.m_TeamFilter == 2 && Team == MyTeam)
+		return false;
+	if(Settings.m_TeamFilter == 3 && Team != TEAM_BLUE)
+		return false;
+	if(Settings.m_TeamFilter == 4 && Team != TEAM_RED)
+		return false;
+	// Dummy filter: the sandbox dummy pool is the local equivalent of the
+	// network local ids. Spawned tees are not dummies.
+	bool IsDummy = false;
+	const CTas &Tas = GameClient()->m_Tas;
+	for(int D = 1; D < Tas.PgDummyLimit(); ++D)
+	{
+		if(Tas.PlaygroundCharacter(D) == World.GetCharacterById(ClientId))
+		{
+			IsDummy = true;
+			break;
+		}
+	}
+	if(Settings.m_DummyFilter == 1 && IsDummy)
+		return false;
+	if(Settings.m_DummyFilter == 2 && !IsDummy)
+		return false;
+	if(Settings.m_TargetsFilter != 0)
+	{
+		bool Found = false;
+		bool AnyValid = false;
+		const char *pIds = Settings.m_aTargetsFilter;
+		while(*pIds)
+		{
+			while(*pIds && (*pIds == ' ' || *pIds == ',' || *pIds == ';'))
+				pIds++;
+			if(!*pIds)
+				break;
+			if(*pIds >= '0' && *pIds <= '9')
+			{
+				const int Id = atoi(pIds);
+				if(Id >= 0 && Id < MAX_CLIENTS && World.GetCharacterById(Id))
+				{
+					AnyValid = true;
+					if(Id == ClientId)
+						Found = true;
+				}
+			}
+			while(*pIds && *pIds != ' ' && *pIds != ',' && *pIds != ';')
+				pIds++;
+		}
+		if(Settings.m_TargetsFilter == 1 && AnyValid && !Found)
+			return false;
+		if(Settings.m_TargetsFilter == 2 && AnyValid && Found)
+			return false;
+	}
+	bool IsFrozen = pChar->m_FreezeTime > 0 || pChar->Core()->m_DeepFrozen;
+	if(Settings.m_FngFreeze && pChar->GetActiveWeapon() == WEAPON_NINJA)
+		IsFrozen = true;
+	if(Settings.m_FreezeFilter == 1 && !IsFrozen)
+		return false;
+	if(Settings.m_FreezeFilter == 2 && IsFrozen)
+		return false;
+	return true;
+}
+
+bool CAimBot::PgLineBlocked(CGameWorld &World, int LocalId, int TargetId, const vec2 &From, const vec2 &To) const
+{
+	const float BlockRSq = CCharacterCore::PhysicalSize() * CCharacterCore::PhysicalSize();
+	const vec2 Dir = To - From;
+	const float LenSq = length_squared(Dir);
+	if(LenSq < 0.0001f)
+		return false;
+	for(int i = 0; i < MAX_CLIENTS; i++)
+	{
+		if(i == LocalId || i == TargetId)
+			continue;
+		const CCharacter *pChar = World.GetCharacterById(i);
+		if(!pChar)
+			continue;
+		const float t = std::clamp(dot(pChar->Core()->m_Pos - From, Dir) / LenSq, 0.0f, 1.0f);
+		if(length_squared(From + Dir * t - pChar->Core()->m_Pos) < BlockRSq)
+			return true;
+	}
+	return false;
+}
+
+bool CAimBot::PgHookAimOnEntity(CGameWorld &World, int LocalId, const vec2 &MyPos, const vec2 &AimDir) const
+{
+	CCollision *pCol = GameClient()->Collision();
+	if(!pCol)
+		return false;
+	const vec2 PlayerRayEnd = MyPos + AimDir * GetWeaponRadius(6);
+	vec2 PlayerHitPos;
+	const int PlayerHit = pCol->IntersectLineTeleHook(MyPos, PlayerRayEnd, &PlayerHitPos, nullptr);
+	const vec2 Stop = (PlayerHit != 0) ? PlayerHitPos : PlayerRayEnd;
+	if(AimBotHookSettings(0).m_Enabled)
+	{
+		const vec2 Seg = Stop - MyPos;
+		const float SegLenSq = length_squared(Seg);
+		const float GrabR = CCharacterCore::PhysicalSize() + 2.0f;
+		const float GrabSq = GrabR * GrabR;
+		for(int i = 0; i < MAX_CLIENTS; i++)
+		{
+			if(i == LocalId)
+				continue;
+			const CCharacter *pChar = World.GetCharacterById(i);
+			if(!pChar)
+				continue;
+			const vec2 Pos = pChar->Core()->m_Pos;
+			float t = 0.0f;
+			if(SegLenSq > 0.0001f)
+				t = std::clamp(dot(Pos - MyPos, Seg) / SegLenSq, 0.0f, 1.0f);
+			if(length_squared((MyPos + Seg * t) - Pos) < GrabSq)
+				return true;
+		}
+	}
+	vec2 HitPos;
+	const int Hit = pCol->IntersectLineTeleHook(MyPos, MyPos + AimDir * HOOK_TILE_REACH, &HitPos, nullptr);
+	if(Hit == 0)
+		return false;
+	const int Mode = KxEntityModeFromTile(Hit);
+	return Mode >= 1 && Mode <= NUM_HOOK_ENTITIES && AimBotHookSettings(Mode).m_Enabled;
+}
+
+int CAimBot::PgFindTarget(CGameWorld &World, const SWeaponSettings &Settings, int Weapon, int LocalId, const vec2 &MyPos, const vec2 &AimDir, const vec2 &AimPos, vec2 &outAimPoint, int EntityMode)
+{
+	m_FoundEntityTarget = false;
+	if(EntityMode != 0)
+		return FindEntityTarget(Settings, MyPos, AimDir, AimPos, outAimPoint, EntityMode);
+	const float MyAngle = atan2f(AimDir.y, AimDir.x);
+	const float HalfFovRad = (Settings.m_Fov * 0.5f) * (pi / 180.0f);
+	constexpr float HB_HITBOX = CCharacterCore::PhysicalSize();
+
+	// Real Predict against the sandbox world: same pre-roll as the network
+	// FindTarget, but every tee is fed its own local input.
+	CGameWorld *pPredWorld = nullptr;
+	vec2 PredPositions[MAX_CLIENTS][MAX_PREDICT_TICKS + 1];
+	bool PredValid[MAX_CLIENTS] = {};
+	float ProjSpeed = 0.0f;
+	bool ProjSpeedPerTick = false;
+	bool PredictActive = false;
+	if(Settings.m_Predict)
+	{
+		const CTuningParams *pT = World.GlobalTuning();
+		switch(Weapon)
+		{
+		case WEAPON_GUN: ProjSpeed = pT->m_GunSpeed; ProjSpeedPerTick = false; break;
+		case WEAPON_GRENADE: ProjSpeed = pT->m_GrenadeSpeed; ProjSpeedPerTick = false; break;
+		case 6: ProjSpeed = pT->m_HookFireSpeed; ProjSpeedPerTick = true; break;
+		default: break;
+		}
+		if(ProjSpeed > 1.0f)
+			PredictActive = true;
+	}
+	if(PredictActive)
+	{
+		pPredWorld = new CGameWorld;
+		pPredWorld->CopyWorldIsolated(&World);
+		for(int c = 0; c < MAX_CLIENTS; c++)
+		{
+			if(CCharacter *pChar = pPredWorld->GetCharacterById(c))
+			{
+				PredPositions[c][0] = pChar->Core()->m_Pos;
+				PredValid[c] = true;
+			}
+		}
+		const int StartTick = pPredWorld->GameTick();
+		for(int t = 1; t <= MAX_PREDICT_TICKS; t++)
+		{
+			for(int c = 0; c < MAX_CLIENTS; c++)
+			{
+				CCharacter *pChar = pPredWorld->GetCharacterById(c);
+				if(!pChar)
+					continue;
+				CNetObj_PlayerInput Inp = pChar->Core()->m_Input;
+				pChar->OnDirectInput(&Inp);
+			}
+			pPredWorld->m_GameTick = StartTick + t;
+			for(int c = 0; c < MAX_CLIENTS; c++)
+			{
+				CCharacter *pChar = pPredWorld->GetCharacterById(c);
+				if(!pChar)
+					continue;
+				CNetObj_PlayerInput Inp = pChar->Core()->m_Input;
+				pChar->OnPredictedInput(&Inp);
+			}
+			pPredWorld->Tick();
+			for(int c = 0; c < MAX_CLIENTS; c++)
+			{
+				if(CCharacter *pChar = pPredWorld->GetCharacterById(c))
+					PredPositions[c][t] = pChar->Core()->m_Pos;
+				else
+					PredValid[c] = false;
+			}
+		}
+	}
+	const auto PredJitAim = [&](int TargetIdx, const vec2 &SeedCenter, const vec2 &JOff) -> vec2 {
+		vec2 Cand = SeedCenter + JOff;
+		for(int Iter = 0; Iter < 3; Iter++)
+		{
+			float T = length(Cand - MyPos);
+			T = ProjSpeedPerTick ? T / ProjSpeed : T * (float)SERVER_TICK_SPEED / ProjSpeed;
+			T = std::clamp(T, 0.0f, (float)MAX_PREDICT_TICKS);
+			const int t = (int)T;
+			const int tNext = (t < MAX_PREDICT_TICKS) ? t + 1 : t;
+			const vec2 NewCand = mix(PredPositions[TargetIdx][t], PredPositions[TargetIdx][tNext], T - (float)t) + JOff;
+			if(length(NewCand - Cand) < 0.5f)
+				return NewCand;
+			Cand = NewCand;
+		}
+		return Cand;
+	};
+
+	int BestTarget = -1;
+	float BestScore = 1e18f;
+	vec2 BestAimPoint = vec2(0, 0);
+	for(int i = 0; i < MAX_CLIENTS; i++)
+	{
+		if(i == LocalId || !PgPassesFilters(World, i, LocalId, Settings))
+			continue;
+		vec2 TargetCenter = World.GetCharacterById(i)->Core()->m_Pos;
+		if(PredictActive && PredValid[i])
+		{
+			vec2 PredictedPos = PredPositions[i][0];
+			bool Found = false;
+			float PrevFlightTime = -1.0f;
+			for(int t = 0; t <= MAX_PREDICT_TICKS; t++)
+			{
+				const float Dist = length(PredPositions[i][t] - MyPos);
+				if(Dist < 1.0f)
+				{
+					PredictedPos = PredPositions[i][t];
+					Found = true;
+					break;
+				}
+				const float FlightTime = ProjSpeedPerTick ? Dist / ProjSpeed : Dist * (float)SERVER_TICK_SPEED / ProjSpeed;
+				if(FlightTime <= (float)t)
+				{
+					if(t == 0 || PrevFlightTime < 0.0f)
+						PredictedPos = PredPositions[i][t];
+					else
+					{
+						const float Denominator = 1.0f - (FlightTime - PrevFlightTime);
+						const float u = std::clamp(Denominator > 0.001f ? (PrevFlightTime - (float)(t - 1)) / Denominator : 0.5f, 0.0f, 1.0f);
+						PredictedPos = mix(PredPositions[i][t - 1], PredPositions[i][t], u);
+					}
+					Found = true;
+					break;
+				}
+				PrevFlightTime = FlightTime;
+			}
+			if(!Found)
+				PredictedPos = PredPositions[i][MAX_PREDICT_TICKS];
+			TargetCenter = PredictedPos;
+		}
+		const bool CharBlocked = Settings.m_Rules != 0 && PgLineBlocked(World, LocalId, i, MyPos, TargetCenter);
+		const float hbR = HB_HITBOX - 1.0f;
+		const float hbDistToMe = distance(MyPos, TargetCenter);
+		const float hbToMeAngle = atan2f(MyPos.y - TargetCenter.y, MyPos.x - TargetCenter.x);
+		float hbArc = pi;
+		if(hbDistToMe > hbR)
+			hbArc = acosf(hbR / hbDistToMe);
+		const int hbSamples = std::clamp((int)(hbR * 4.0f * hbArc), 1, 384);
+		vec2 hbPoints[384];
+		for(int k = 0; k < hbSamples; k++)
+		{
+			const float a = hbToMeAngle - hbArc + ((k + 0.5f) * 2.0f * hbArc) / (float)hbSamples;
+			hbPoints[k] = TargetCenter + vec2(cosf(a), sinf(a)) * hbR;
+		}
+		const bool hbCenterVisible = (Settings.m_Rules != 1 || IsVisible(MyPos, TargetCenter)) && !CharBlocked;
+		float BestSampleScore = 1e18f;
+		bool AnyPass = false;
+		vec2 SampleAimPoint = TargetCenter;
+		for(int s = 0; s < hbSamples; s++)
+		{
+			const vec2 sp = hbPoints[s];
+			const vec2 ToSample = sp - MyPos;
+			const float Dist = length(ToSample);
+			if(Dist > Settings.m_Radius || Dist < 1.0f)
+				continue;
+			const vec2 Dir = normalize(ToSample);
+			const float SampleAngle = atan2f(Dir.y, Dir.x);
+			const float AngleDiff = fabsf(atan2f(sinf(MyAngle - SampleAngle), cosf(MyAngle - SampleAngle)));
+			if(AngleDiff > HalfFovRad)
+				continue;
+			bool Visible = false;
+			if(Settings.m_Rules == 0)
+				Visible = true;
+			else if(Settings.m_Rules == 1)
+				Visible = hbCenterVisible;
+			else
+				Visible = IsVisible(MyPos, sp) && !PgLineBlocked(World, LocalId, i, MyPos, sp);
+			if(!Visible)
+				continue;
+			float Score;
+			if(Settings.m_Priority == 0)
+				Score = AngleDiff;
+			else if(Settings.m_Priority == 1)
+				Score = length(AimPos - sp);
+			else
+				Score = Dist;
+			if(Score < BestSampleScore)
+			{
+				BestSampleScore = Score;
+				AnyPass = true;
+				SampleAimPoint = TargetCenter;
+			}
+		}
+		if(!AnyPass || BestSampleScore >= BestScore)
+			continue;
+		BestScore = BestSampleScore;
+		BestTarget = i;
+		BestAimPoint = SampleAimPoint;
+		if(Settings.m_Jitter > 0.0f)
+		{
+			const float JitScale = Settings.m_Jitter / 100.0f;
+			const vec2 BaseAim = BestAimPoint;
+			for(int Attempt = 0; Attempt < 4; Attempt++)
+			{
+				const float JAng = ((float)rand() / (float)RAND_MAX) * pi * 2.0f;
+				const float JMag = ((float)rand() / (float)RAND_MAX) * hbR * JitScale;
+				const vec2 JOff = vec2(cosf(JAng), sinf(JAng)) * JMag;
+				vec2 Cand = BaseAim + JOff;
+				if(PredictActive && PredValid[i])
+					Cand = PredJitAim(i, TargetCenter, JOff);
+				if(Settings.m_Rules == 0 || (IsVisible(MyPos, Cand) && !PgLineBlocked(World, LocalId, i, MyPos, Cand)))
+				{
+					BestAimPoint = Cand;
+					break;
+				}
+				if(Attempt == 3)
+					BestAimPoint = BaseAim;
+			}
+		}
+	}
+	if(pPredWorld)
+		delete pPredWorld;
+	outAimPoint = BestAimPoint;
+	return BestTarget;
+}
+
+void CAimBot::PgApplyAim(const SWeaponSettings &Settings, const vec2 &MyPos, const vec2 &AimPoint, CNetObj_PlayerInput &Input, vec2 &Mouse, int Tick)
+{
+	const vec2 AimOffset = AimPoint - MyPos;
+	if(Settings.m_AimMode == 3)
+	{
+		float Speed = std::max(Settings.m_SmoothSpeed, 0.1f);
+		const bool NewTick = (m_PgLastTick != Tick);
+		m_PgLastTick = Tick;
+		vec2 Cur;
+		if(Settings.m_Silent)
+		{
+			if(!m_PgSilentSmoothInit)
+			{
+				m_PgSilentSmoothPos = Mouse;
+				m_PgSilentSmoothInit = true;
+			}
+			Cur = m_PgSilentSmoothPos;
+		}
+		else
+		{
+			if(!m_PgSmoothInit)
+			{
+				m_PgSmoothPos = Mouse;
+				m_PgSmoothInit = true;
+			}
+			Cur = m_PgSmoothPos;
+		}
+		if(NewTick)
+		{
+			const float Dist = length(AimOffset - Cur);
+			if(Dist <= Speed)
+				Cur = AimOffset;
+			else if(Settings.m_SmoothCenterSnap && length(Cur) > 0.5f && length(AimOffset) > 0.5f)
+			{
+				const float a0 = atan2f(Cur.y, Cur.x);
+				const float a1 = atan2f(AimOffset.y, AimOffset.x);
+				float dA = atan2f(sinf(a1 - a0), cosf(a1 - a0));
+				const float MaxRot = Speed / std::max(length(Cur), 1.0f);
+				dA = std::clamp(dA, -MaxRot, MaxRot);
+				float Len = length(Cur);
+				Len += std::clamp(length(AimOffset) - Len, -Speed, Speed);
+				Cur = vec2(cosf(a0 + dA), sinf(a0 + dA)) * Len;
+			}
+			else
+				Cur = Cur + normalize(AimOffset - Cur) * Speed;
+			if(Settings.m_Silent)
+				m_PgSilentSmoothPos = Cur;
+			else
+			{
+				m_PgSmoothPos = Cur;
+				Mouse = Cur;
+			}
+		}
+		Input.m_TargetX = (int)Cur.x;
+		Input.m_TargetY = (int)Cur.y;
+		if(Settings.m_Silent)
+		{
+			m_PgSilentActive = true;
+			m_PgSilentOffset = Cur;
+		}
+		return;
+	}
+	m_PgSmoothInit = false;
+	m_PgSilentSmoothInit = false;
+	if(Settings.m_Silent || Settings.m_AimMode == 0)
+	{
+		// Silent and Edge never move the sandbox crosshair: the correction
+		// lives only in this tick's input (Edge is exactly one tick by construction).
+		Input.m_TargetX = (int)AimOffset.x;
+		Input.m_TargetY = (int)AimOffset.y;
+		if(Settings.m_Silent)
+		{
+			m_PgSilentActive = true;
+			m_PgSilentOffset = AimOffset;
+		}
+		return;
+	}
+	Mouse = AimOffset;
+	Input.m_TargetX = (int)AimOffset.x;
+	Input.m_TargetY = (int)AimOffset.y;
+}
+
+void CAimBot::PgTriggerChannel(CGameWorld &World, const SWeaponSettings &s, int Weapon, bool HookChannel, int LocalId, const vec2 &MyPos, vec2 AimDir, vec2 AimPos, int HeldWeapon, bool WeFrozen, int EntityMode, STriggerChannelState &State, CNetObj_PlayerInput &Input, vec2 &Mouse)
+{
+	if(s.m_OffWhileFreeze && (WeFrozen || (s.m_FngFreeze && HeldWeapon == WEAPON_NINJA)))
+		return;
+	if(s.m_UseSilentChannelAB && m_PgSilentActive && length(m_PgSilentOffset) > 0.001f)
+	{
+		AimPos = m_PgSilentOffset;
+		AimDir = normalize(AimPos);
+	}
+	vec2 AimPt;
+	const int Target = PgFindTarget(World, s, Weapon, LocalId, MyPos, AimDir, AimPos, AimPt, EntityMode);
+	const bool TargetInZone = Target >= 0;
+	if(TargetInZone && s.m_RandomLatency > 0)
+	{
+		if(State.m_LatencyCounter <= 0)
+			State.m_LatencyCounter = rand() % (s.m_RandomLatency + 1);
+		if(State.m_LatencyCounter > 0)
+		{
+			State.m_LatencyCounter--;
+			State.m_WasActive = true;
+			return;
+		}
+	}
+	bool AimOnFire = false;
+	if(HookChannel && TargetInZone)
+	{
+		const SWeaponSettings &Ab = AimBotHookSettings(EntityMode);
+		if(Ab.m_Enabled && !(Ab.m_OffWhileFreeze && (WeFrozen || (Ab.m_FngFreeze && HeldWeapon == WEAPON_NINJA))) &&
+			!PgHookAimOnEntity(World, LocalId, MyPos, AimDir))
+			AimOnFire = true;
+	}
+	const int CurTick = World.GameTick();
+	if(State.m_ReleaseTick >= 0 && CurTick >= State.m_ReleaseTick)
+	{
+		if(!HookChannel)
+			Input.m_Fire = (Input.m_Fire + 1) & (INPUT_STATE_MASK & ~1);
+		else
+			Input.m_Hook = 0;
+		State.m_ReleaseTick = -1;
+	}
+	if(TargetInZone)
+	{
+		if(s.m_TriggerMode == 0)
+		{
+			if(!State.m_WasActive)
+			{
+				if(!HookChannel)
+					Input.m_Fire = ((Input.m_Fire + 1) | 1) & INPUT_STATE_MASK;
+				else
+				{
+					if(AimOnFire)
+						PgApplyAim(AimBotHookSettings(EntityMode), MyPos, AimPt, Input, Mouse, CurTick);
+					Input.m_Hook = 1;
+				}
+				State.m_ReleaseTick = CurTick + 1;
+			}
+		}
+		else if(s.m_TriggerMode == 1)
+		{
+			if(!HookChannel)
+				Input.m_Fire |= 1;
+			else
+			{
+				if(AimOnFire)
+					PgApplyAim(AimBotHookSettings(EntityMode), MyPos, AimPt, Input, Mouse, CurTick);
+				Input.m_Hook = 1;
+			}
+		}
+		else
+		{
+			if(!HookChannel)
+				Input.m_Fire = ((Input.m_Fire + 1) | 1) & INPUT_STATE_MASK;
+			else if(Input.m_Hook == 0)
+			{
+				if(AimOnFire)
+					PgApplyAim(AimBotHookSettings(EntityMode), MyPos, AimPt, Input, Mouse, CurTick);
+				Input.m_Hook = 1;
+			}
+			else
+				Input.m_Hook = 0;
+		}
+		State.m_WasActive = true;
+	}
+	else
+	{
+		if(s.m_TriggerMode != 0 && State.m_WasActive)
+		{
+			if(!HookChannel)
+				Input.m_Fire = (Input.m_Fire + 1) & (INPUT_STATE_MASK & ~1);
+			else
+				Input.m_Hook = 0;
+		}
+		State.m_WasActive = false;
+		State.m_LatencyCounter = 0;
+	}
+}
+
+void CAimBot::ApplyPlayground(CGameWorld &World, int LocalId, CNetObj_PlayerInput &Input, vec2 &Mouse)
+{
+	SyncSavedSettings();
+	m_PgSilentActive = false;
+	CCharacter *pChar = World.GetCharacterById(LocalId);
+	if(!pChar)
+		return;
+	const int Weapon = pChar->GetActiveWeapon();
+	const vec2 MyPos = pChar->Core()->m_Pos;
+	vec2 AimPos = Mouse;
+	vec2 AimDir = normalize(AimPos);
+	if(length(AimDir) < 0.001f)
+		AimDir = vec2(1, 0);
+	const bool WeFrozen = pChar->m_FreezeTime > 0 || pChar->Core()->m_DeepFrozen;
+	const int Tick = World.GameTick();
+
+	if(g_Config.m_KxAimBot)
+	{
+		// Auto Switch Weapon (held weapon has no target in its zone).
+		bool CurHasTarget = false;
+		if(Weapon >= 0 && Weapon < NUM_WEAPONS_AIM - 1 && m_AimBotWeapons[Weapon].m_Enabled)
+		{
+			vec2 CurPt;
+			CurHasTarget = PgFindTarget(World, m_AimBotWeapons[Weapon], Weapon, LocalId, MyPos, AimDir, AimPos, CurPt, 0) >= 0;
+		}
+		if(!CurHasTarget)
+		{
+			int BestWeapon = -1;
+			float BestDistSq = 0.0f;
+			for(int w = 0; w < NUM_WEAPONS_AIM - 1; w++)
+			{
+				if(!m_AimBotWeapons[w].m_Enabled || !m_AimBotWeapons[w].m_AutoSwitchWeapon)
+					continue;
+				if(m_AimBotWeapons[w].m_OffWhileFreeze && (WeFrozen || (m_AimBotWeapons[w].m_FngFreeze && Weapon == WEAPON_NINJA)))
+					continue;
+				vec2 Pt;
+				const int t = PgFindTarget(World, m_AimBotWeapons[w], w, LocalId, MyPos, AimDir, AimPos, Pt, 0);
+				if(t < 0)
+					continue;
+				const float DistSq = length_squared(World.GetCharacterById(t)->Core()->m_Pos - MyPos);
+				if(BestWeapon < 0 || DistSq < BestDistSq)
+				{
+					BestWeapon = w;
+					BestDistSq = DistSq;
+				}
+			}
+			if(BestWeapon >= 0)
+				Input.m_WantedWeapon = BestWeapon + 1;
+		}
+		// Edge/Trigger aim modes fire on the shot the engine will produce this
+		// tick — one isolated sandbox tick, same recipe as the network path.
+		bool WillFire = false;
+		if(Weapon >= 0 && Weapon < NUM_WEAPONS_AIM - 1 && m_AimBotWeapons[Weapon].m_Enabled &&
+			(m_AimBotWeapons[Weapon].m_AimMode == 0 || m_AimBotWeapons[Weapon].m_AimMode == 1))
+		{
+			const int TickBefore = pChar->GetAttackTick();
+			CGameWorld Future;
+			Future.CopyWorldIsolated(&World);
+			if(CCharacter *pFuture = Future.GetCharacterById(LocalId))
+			{
+				CNetObj_PlayerInput FutureInput = Input;
+				pFuture->OnDirectInput(&FutureInput);
+				Future.m_GameTick = Future.GameTick() + 1;
+				pFuture->OnPredictedInput(&FutureInput);
+				Future.Tick();
+				if(CCharacter *pAfter = Future.GetCharacterById(LocalId))
+					WillFire = pAfter->GetAttackTick() != TickBefore;
+			}
+		}
+		bool SmoothSilentApplied = false;
+		if(Weapon >= 0 && Weapon < NUM_WEAPONS_AIM - 1 && m_AimBotWeapons[Weapon].m_Enabled)
+		{
+			const SWeaponSettings &s = m_AimBotWeapons[Weapon];
+			const bool FreezePaused = s.m_OffWhileFreeze && (WeFrozen || (s.m_FngFreeze && Weapon == WEAPON_NINJA));
+			const bool Trigger = (s.m_AimMode >= 2) ? true : WillFire;
+			if(Trigger && !FreezePaused)
+			{
+				vec2 AimPt;
+				const int t = PgFindTarget(World, s, Weapon, LocalId, MyPos, AimDir, AimPos, AimPt, 0);
+				if(t >= 0)
+				{
+					PgApplyAim(s, MyPos, AimPt, Input, Mouse, Tick);
+					if(s.m_AimMode == 3 && s.m_Silent)
+						SmoothSilentApplied = true;
+				}
+			}
+		}
+		bool AnyHookChannel = false;
+		for(int EntityMode = 0; EntityMode <= NUM_HOOK_ENTITIES && !AnyHookChannel; EntityMode++)
+			AnyHookChannel = AimBotHookSettings(EntityMode).m_Enabled;
+		const bool Hook = Input.m_Hook != 0;
+		if(AnyHookChannel && !PgHookAimOnEntity(World, LocalId, MyPos, AimDir))
+		{
+			const float MyAngle = atan2f(AimDir.y, AimDir.x);
+			int BestChannel = -1;
+			int BestTarget = -1;
+			float BestAngle = 1e18f;
+			vec2 BestPt = vec2(0, 0);
+			for(int EntityMode = 0; EntityMode <= NUM_HOOK_ENTITIES; EntityMode++)
+			{
+				const SWeaponSettings &s = AimBotHookSettings(EntityMode);
+				if(!s.m_Enabled)
+					continue;
+				if(s.m_OffWhileFreeze && (WeFrozen || (s.m_FngFreeze && Weapon == WEAPON_NINJA)))
+					continue;
+				const bool Trigger = (s.m_AimMode >= 2) ? true : (Hook && !m_PgPrevHook);
+				if(!Trigger)
+					continue;
+				vec2 AimPt;
+				const int t = PgFindTarget(World, s, 6, LocalId, MyPos, AimDir, AimPos, AimPt, EntityMode);
+				if(t < 0)
+					continue;
+				const vec2 ToAim = AimPt - MyPos;
+				if(length_squared(ToAim) < 0.0001f)
+					continue;
+				const float Ang = fabsf(atan2f(sinf(MyAngle - atan2f(ToAim.y, ToAim.x)), cosf(MyAngle - atan2f(ToAim.y, ToAim.x))));
+				if(BestChannel < 0 || Ang < BestAngle)
+				{
+					BestChannel = EntityMode;
+					BestTarget = t;
+					BestAngle = Ang;
+					BestPt = AimPt;
+				}
+			}
+			if(BestChannel >= 0)
+			{
+				const SWeaponSettings &s = AimBotHookSettings(BestChannel);
+				PgApplyAim(s, MyPos, BestPt, Input, Mouse, Tick);
+				if(s.m_AimMode == 3 && s.m_Silent)
+					SmoothSilentApplied = true;
+			}
+		}
+		if(!SmoothSilentApplied)
+			m_PgSilentSmoothInit = false;
+		m_PgPrevHook = Hook;
+	}
+	if(g_Config.m_KxTriggerBot)
+	{
+		bool CurHasTarget = false;
+		if(Weapon >= 0 && Weapon < NUM_WEAPONS_TRIGGER - 1 && m_TriggerBotWeapons[Weapon].m_Enabled)
+		{
+			vec2 CurPt;
+			CurHasTarget = PgFindTarget(World, m_TriggerBotWeapons[Weapon], Weapon, LocalId, MyPos, AimDir, AimPos, CurPt, 0) >= 0;
+		}
+		if(!CurHasTarget)
+		{
+			int BestWeapon = -1;
+			float BestDistSq = 0.0f;
+			for(int w = 0; w < NUM_WEAPONS_TRIGGER - 1; w++)
+			{
+				if(!m_TriggerBotWeapons[w].m_Enabled || !m_TriggerBotWeapons[w].m_AutoSwitchWeapon)
+					continue;
+				if(m_TriggerBotWeapons[w].m_OffWhileFreeze && (WeFrozen || (m_TriggerBotWeapons[w].m_FngFreeze && Weapon == WEAPON_NINJA)))
+					continue;
+				vec2 Pt;
+				const int t = PgFindTarget(World, m_TriggerBotWeapons[w], w, LocalId, MyPos, AimDir, AimPos, Pt, 0);
+				if(t < 0)
+					continue;
+				const float DistSq = m_FoundEntityTarget ? length_squared(Pt - MyPos) : length_squared(World.GetCharacterById(t)->Core()->m_Pos - MyPos);
+				if(BestWeapon < 0 || DistSq < BestDistSq)
+				{
+					BestWeapon = w;
+					BestDistSq = DistSq;
+				}
+			}
+			if(BestWeapon >= 0)
+				Input.m_WantedWeapon = BestWeapon + 1;
+		}
+		// Refresh the aim direction after the AimBot may have moved it.
+		AimPos = Mouse;
+		AimDir = normalize(AimPos);
+		if(length(AimDir) < 0.001f)
+			AimDir = vec2(1, 0);
+		if(Weapon >= 0 && Weapon < NUM_WEAPONS_TRIGGER - 1 && m_TriggerBotWeapons[Weapon].m_Enabled)
+			PgTriggerChannel(World, m_TriggerBotWeapons[Weapon], Weapon, false, LocalId, MyPos, AimDir, AimPos, Weapon, WeFrozen, 0, m_PgTriggerFireState, Input, Mouse);
+		for(int EntityMode = 0; EntityMode <= NUM_HOOK_ENTITIES; EntityMode++)
+		{
+			const SWeaponSettings &s = TriggerBotHookSettings(EntityMode);
+			if(!s.m_Enabled)
+				continue;
+			PgTriggerChannel(World, s, 6, true, LocalId, MyPos, AimDir, AimPos, Weapon, WeFrozen, EntityMode, m_PgTriggerHookStates[EntityMode], Input, Mouse);
+		}
+	}
+}
 
 void CAimBot::ConAimBot(IConsole::IResult *pResult, void *pUserData)
 {

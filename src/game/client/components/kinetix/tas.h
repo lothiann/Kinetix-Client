@@ -17,8 +17,8 @@
 //   by Record/Play Stop.
 //   m_vRecord — record memory: input + resulting state per tick. Cleared on
 //   each new Record start.
-//   m_vSaved — separate saved memory: a copy of m_vRecord made on Record
-//   Stop. Play replays from this.
+//   m_vSaved — the saved take. Stopping Record transfers m_vRecord here, so
+//   the same tick buffer is never retained twice.
 //
 // Stored per tick: tick number, full input (direction/jump/fire/hook/aim/...),
 // the character core (pos/vel/all hook stats/weapons/ninja/jumped), freeze
@@ -33,8 +33,11 @@
 
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <vector>
 
+#include <engine/external/lz4/lz4.h>
+#include <engine/client/enums.h>
 #include <engine/shared/config.h>
 
 #include <generated/protocol.h>
@@ -47,6 +50,8 @@
 #include <game/client/render.h>
 
 #include <algorithm>
+#include <climits>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <string>
@@ -77,6 +82,92 @@ struct CLaserState
 
 struct SSpawnedEntSnapshot;
 
+struct STasDummyState
+{
+	int m_Slot;
+	int m_Id;
+	CCharacterCore m_Core;
+	CCharacterFullState m_Character;
+};
+
+// Large, byte-copyable arrays in old playground snapshots are kept as LZ4
+// blocks. Recent snapshots stay expanded; old data is expanded on demand.
+template<typename T>
+class CTasHistoryList
+{
+public:
+	using iterator = typename std::vector<T>::iterator;
+	using const_iterator = typename std::vector<T>::const_iterator;
+
+	void push_back(const T &Item)
+	{
+		Expand();
+		m_vItems.push_back(Item);
+		m_Count = m_vItems.size();
+	}
+	void clear()
+	{
+		std::vector<T>().swap(m_vItems);
+		std::vector<char>().swap(m_vCompressed);
+		m_Count = 0;
+		m_Compressed = false;
+	}
+	bool empty() const { return m_Count == 0; }
+	size_t size() const { return m_Count; }
+	iterator begin() { Expand(); return m_vItems.begin(); }
+	iterator end() { Expand(); return m_vItems.end(); }
+	const_iterator begin() const { Expand(); return m_vItems.begin(); }
+	const_iterator end() const { Expand(); return m_vItems.end(); }
+	const std::vector<T> &Items() const { Expand(); return m_vItems; }
+	void Compress()
+	{
+		static_assert(std::is_trivially_copyable<T>::value, "history list elements must be byte-copyable");
+		if(m_Compressed || m_Count == 0 || m_Count * sizeof(T) < 128 ||
+			m_Count * sizeof(T) > (size_t)INT_MAX)
+			return;
+		const int RawSize = (int)(m_Count * sizeof(T));
+		std::vector<char> vCompressed((size_t)LZ4_compressBound(RawSize));
+		const int CompressedSize = LZ4_compress_default((const char *)m_vItems.data(),
+			vCompressed.data(), RawSize, (int)vCompressed.size());
+		if(CompressedSize <= 0 || CompressedSize >= RawSize)
+			return;
+		vCompressed.resize((size_t)CompressedSize);
+		m_vCompressed = std::move(vCompressed);
+		std::vector<T>().swap(m_vItems);
+		m_Compressed = true;
+	}
+	size_t MemoryBytes() const
+	{
+		return m_Compressed ? m_vCompressed.capacity() : m_vItems.capacity() * sizeof(T);
+	}
+	size_t UncompressedBytes() const { return m_Count * sizeof(T); }
+
+private:
+	void Expand() const
+	{
+		if(!m_Compressed)
+			return;
+		const size_t RawSize = m_Count * sizeof(T);
+		if(RawSize > (size_t)INT_MAX || m_vCompressed.size() > (size_t)INT_MAX)
+			return;
+		m_vItems.resize(m_Count);
+		const int Result = LZ4_decompress_safe(m_vCompressed.data(), (char *)m_vItems.data(),
+			(int)m_vCompressed.size(), (int)RawSize);
+		if(Result != (int)RawSize)
+		{
+			std::vector<T>().swap(m_vItems);
+			m_Count = 0;
+		}
+		std::vector<char>().swap(m_vCompressed);
+		m_Compressed = false;
+	}
+
+	mutable std::vector<T> m_vItems;
+	mutable std::vector<char> m_vCompressed;
+	mutable size_t m_Count = 0;
+	mutable bool m_Compressed = false;
+};
+
 // Complete physics state of the playground at one tick.
 struct CTasState
 {
@@ -89,17 +180,77 @@ struct CTasState
 	int FreezeTime = 0;
 	int ReloadTimer = 0;
 	int AttackTick = 0;
+	int aFinishTicks[MAX_DUMMIES] = {};
+	int UsedFlags = 0;
+	float Tps = 50.0f;
+	bool Paused = false;
 	// Latest direct input of the step that produced this state — the press
 	// baseline (fire/weapon-switch counters) for the tick that follows.
 	CNetObj_PlayerInput LatestInput{};
+	int AutoFireCounter = 0;
 	vec2 PrevPos = vec2(0.0f, 0.0f);
 	vec2 PrevPrevPos = vec2(0.0f, 0.0f);
-	std::vector<CProjectileData> vProjectiles;
-	std::vector<CLaserState> vLasers;
-	std::vector<CPickupState> vPickups;
+	CTasHistoryList<CProjectileData> vProjectiles;
+	CTasHistoryList<CLaserState> vLasers;
+	CTasHistoryList<CPickupState> vPickups;
 	// v6.3: state of every Spawner-owned entity at this tick (tees, spawner
 	// projectiles and spawner lasers), so Rewind moves them back too.
 	std::vector<SSpawnedEntSnapshot> vSpawnedEnts;
+	std::vector<STasDummyState> vDummies;
+	CTasHistoryList<int> vCharacterOrder;
+	void CompressHistoryPayload();
+	size_t PayloadMemoryBytes() const;
+	size_t PayloadUncompressedBytes() const;
+};
+
+struct STasDummyFrame
+{
+	int m_Slot;
+	CNetObj_PlayerInput m_Input;
+	vec2 m_Pos;
+};
+
+struct STasDummyHookFrame
+{
+	int m_Slot;
+	int m_HookState;
+	vec2 m_HookPos;
+};
+
+struct STasStartLoadout
+{
+	int m_Slot;
+	int m_Weapon;
+	int m_WeaponMask;
+	CNetObj_PlayerInput m_PreviousInput;
+	vec2 m_Pos;
+	vec2 m_Vel;
+};
+
+// v6.18: one real-world dummy being staged before TAS playback. The route is
+// produced by the TAB Pathfinder (BFS reachability + A* at kx_pf_effort=0),
+// never by helpers / Real-Time Pathfinder. Dummies without a BFS route are
+// only waited for and reported through the ClickGUI warning label.
+struct STasPrepDummy
+{
+	int m_Slot = 0;                 // real-world dummy connection slot
+	int m_RecordedSlot = 0;         // slot inside the take (Auto Sync mapping)
+	int m_ClientId = -1;            // m_aLocalIds[m_Slot]
+	vec2 m_Target = vec2(0.0f, 0.0f);
+	bool m_Route = false;
+	bool m_RouteFailed = false;
+	bool m_Done = false;
+	bool m_RouteRequested = false;
+	int m_StableTicks = 0;
+	int m_Timeout = 0;
+	// Result received from the tab Pathfinder worker.
+	std::vector<CNetObj_PlayerInput> m_Inputs;
+	size_t m_InputIdx = 0;
+	int m_Fire = 0;
+	int m_NextWeapon = 0;
+	int m_PrevWeapon = 0;
+	std::vector<vec2> m_Path;
+	std::vector<std::pair<vec2, vec2>> m_Hooks;
 };
 
 // One recorded tick: input used + physics state after the tick.
@@ -107,6 +258,11 @@ struct CTasTick
 {
 	int Tick = 0;
 	CNetObj_PlayerInput Input{};
+	// Cached compatibility input for single-dummy/legacy playback. Compact
+	// native V3 stores dummy inputs once, in the per-tick dummy list.
+	CNetObj_PlayerInput DummyInput{};
+	std::vector<STasDummyFrame> vDummyInputs;
+	std::vector<STasDummyHookFrame> vDummyHooks;
 	CCharacterCore Core;
 	int FreezeTime = 0;
 	std::vector<CProjectileData> vProjectiles;
@@ -146,7 +302,7 @@ enum
 // in tas.cpp by a static_assert there).
 enum
 {
-	TAS_SPAWNER_TILE_COUNT = 39,
+	TAS_SPAWNER_TILE_COUNT = 61,
 };
 
 // Everything the Spawner panel can configure. The ClickGUI rows write into
@@ -219,6 +375,41 @@ struct STasSpawnerRecord
 	STasSpawnerSettings m_Settings{};
 };
 
+struct STasSpawnerEvent
+{
+	int m_Type = 0; // 0 spawn, 1 kill at position, 2 kill group
+	unsigned m_Order = 0; // Shared timeline sequence, including other event kinds.
+	STasSpawnerRecord m_Record;
+};
+
+enum
+{
+	TAS_TIMELINE_EVENT_CHAT_COMMAND = 0,
+	TAS_TIMELINE_EVENT_RCON_COMMAND,
+	TAS_TIMELINE_EVENT_CHAT_LINE,
+	TAS_TIMELINE_EVENT_PRACTICE,
+	TAS_TIMELINE_EVENT_TUNING,
+};
+
+static constexpr int TAS_TIMELINE_MAX_TUNING_PARAMS = 64;
+
+struct STasTimelineEvent
+{
+	int m_Type = TAS_TIMELINE_EVENT_CHAT_COMMAND;
+	int m_Tick = 0;
+	unsigned m_Order = 0;
+	int m_ActiveDummy = 0;
+	int m_Team = 0;
+	int m_ClientId = -1;
+	bool m_HasCursor = false;
+	vec2 m_Cursor = vec2(0.0f, 0.0f);
+	bool m_Value = false;
+	int m_TuningZone = -1;
+	int m_TuningCount = 0;
+	int m_aTuningValues[TAS_TIMELINE_MAX_TUNING_PARAMS] = {};
+	char m_aText[512] = "";
+};
+
 // v6.3: one Spawner-owned entity inside a rewind snapshot. Tees need their
 // full core + freeze/prev-pos state; spawner projectiles and lasers carry
 // their own data so the exact trajectory/beam is restored.
@@ -233,6 +424,7 @@ struct SSpawnedEntSnapshot
 	STasSpawnerSettings m_Settings{};
 	// Tee.
 	CCharacterCore Core{};
+	bool m_NetCoreOnly = false;
 	int FreezeTime = 0;
 	int ReloadTimer = 0;
 	int AttackTick = 0;
@@ -248,6 +440,12 @@ class CTas : public CComponent
 {
 public:
 	int Sizeof() const override { return sizeof(*this); }
+	enum
+	{
+		TAS_USED_SPAWNER = 1 << 0,
+		TAS_USED_RCON = 1 << 1,
+		TAS_USED_PRACTICE = 1 << 2,
+	};
 	void OnConsoleInit() override;
 	void OnReset() override;
 	void OnUpdate() override;
@@ -271,6 +469,12 @@ public:
 	bool FakeAimActive() const { return FakeAimEnabled() && (m_Playing || m_RealPlaying); }
 	// Rendered aim offset for the current playback position; false = inactive.
 	bool FakeAimOffset(vec2 *pOffset);
+	void RenderPlaygroundNamePlates();
+	// TAS release version is stored as two digits: 30 = v3.0. This is
+	// independent of the KXT binary layout version used by the parser, which
+	// follows the major digit.
+	static constexpr int NATIVE_FILE_VERSION = 30;
+	static constexpr int NATIVE_FILE_FORMAT_VERSION = NATIVE_FILE_VERSION / 10;
 
 	// Auto Rewind/Forward (Record-mode convenience): when the fake tee hits a
 	// configured tile, jump back/ahead by a fixed tick count. Per-tile mode
@@ -305,6 +509,8 @@ public:
 	int SavedCount() const { return (int)m_vSaved.size(); }
 	int PlayIdx() const { return m_PlayIdx; }
 	bool FutureSavedInput(int Idx, CNetObj_PlayerInput *pOut) const;
+	bool FutureSavedDummyInput(int Idx, CNetObj_PlayerInput *pOut) const;
+	bool FutureSavedSlotInput(int Idx, int Slot, CNetObj_PlayerInput *pOut) const;
 	bool IsDead();
 	vec2 PlaygroundTeePos();
 	int PlaygroundWeapon();
@@ -318,15 +524,48 @@ public:
 	// Playground access for the Trajectory Tee prediction inside the playground.
 	CGameWorld *Playground() { return &m_Playground; }
 	int PlaygroundLocalId() const { return m_LocalId; }
+	int PlaygroundActiveId() const;
+	CCharacter *PlaygroundCharacter(int Slot);
+	const CCharacter *PlaygroundCharacter(int Slot) const;
+	vec2 PlaygroundSlotPos(int Slot) const;
+	vec2 PlaygroundActiveTeeRenderPos();
+	vec2 PlaygroundSlotRenderPos(int Slot);
+	CNetObj_PlayerInput PlaygroundKeyboardInput();
+	int PlaygroundActiveWeapon() const;
+	// v6.18: playground-local dummy pool. These dummies are simulated CCharacter
+	// entities inside the TAS sandbox; they never open a connection to the server.
+	void SetPgDummyLimit(int Limit);
+	int PgDummyLimit() const { return m_PgDummyLimit; }
+	void TogglePgDummy(int D);
+	bool PgDummyConnected(int D) const { return D >= 1 && D < MAX_DUMMIES && m_aPgDummyConnected[D]; }
+	void SetPgActiveDummy(int D);
+	void ResetPgDummyInputs();
+	int PgActiveDummy() const { return m_PgActiveDummy; }
+	bool PgDummyFunctions() const
+	{
+		return PgFunctionsAllowed() && (g_Config.m_KxTasDummyFunctions ||
+			g_Config.m_ClDummyCopyMoves || g_Config.m_ClDummyControl || g_Config.m_ClDummyHammer);
+	}
+	CNetObj_PlayerInput PgDummyInput(int D) const { return m_aPgDummyInputs[D >= 0 && D < MAX_DUMMIES ? D : 0]; }
 	// HUD data from the fake tee: the full core + a snapshot-style character
 	// (active weapon, ammo, position) for the HUD while in the playground.
 	bool PlaygroundHudState(CCharacterCore *pCore, CNetObj_Character *pPlayer);
+	bool PlaygroundSolo() const;
 
 	// Real-world execution (Play outside the playground): the saved inputs
 	// are fed to the real player through CControls::SnapInput.
 	bool IsRealPlaying() const { return m_RealPlaying; }
 	int RealPlayIdx() const { return m_RealIdx; }
+	// v6.18: real-world playback can be held in a "Preparation" state while
+	// the real dummies are walked to their recorded start positions.
+	bool IsPreparing() const { return m_RealPreparing; }
+	const char *PreparationWarning() const { return m_aPreparationWarning; }
+	void CancelPreparation();
 	bool ApplyTasRealInput(CNetObj_PlayerInput *pInput);
+	// v6.18: replay the second (dummy) stream onto dummy slot 1.
+	bool ApplyTasRealDummyInput(int Conn, CNetObj_PlayerInput *pInput);
+	// v6.18: feed the tab Pathfinder's recorded inputs to a staging dummy.
+	bool ApplyTasPreparationInput(int Conn, CNetObj_PlayerInput *pInput);
 
 	// Buttons.
 	void JoinLeavePlayground();
@@ -343,15 +582,49 @@ public:
 	const char *PickedDescription() const { return m_aPickedDescription; }
 	const char *PickedAuthor() const { return m_aPickedAuthor; }
 	const char *PickedCreated() const { return m_aPickedCreated; }
+	const char *TakeCreated() const { return m_TakeFromFile ? m_aPickedCreated : m_aRecordCreated; }
 	// v6.17: .tas binary format version read from the loaded file header
 	// (0 = no file). The GUI shows it in the File section.
 	int PickedVersion() const { return m_PickedVersion; }
+	const char *PickedVersionCode() const { return m_aPickedVersionCode; }
+	// v6.18: 0 = native Kinetix .tas, 1 = OpenClient/KRX replay.
+	int PickedFormat() const { return m_PickedFormat; }
+	int TakeTickCount() const { return (int)(m_Recording ? m_vRecord.size() : m_vSaved.size()); }
+	int TakeDummyCount() const;
+	int TakeUsedFlags() const
+	{
+		if(m_TakeFromFile && !m_HasTakePgStart)
+			return m_PickedUsedFlags;
+		const CTasState &Start = m_Recording ? m_RecordStart : m_SavedStart;
+		int Flags = (m_vTakeSpawner.empty() && m_vTakeSpawnerEvents.empty() && Start.vSpawnedEnts.empty() ? 0 : TAS_USED_SPAWNER) |
+			(m_vTakeRcon.empty() ? 0 : TAS_USED_RCON) |
+			(m_TakePgPractice || m_TakePgInvincible || m_TakePgSuper || m_TakePgPaused || m_TakePgSpec ? TAS_USED_PRACTICE : 0);
+		if(!m_TakeFromFile)
+			Flags |= m_UsedFlags & TAS_USED_PRACTICE;
+		for(const STasTimelineEvent &Event : m_vTakeTimelineEvents)
+		{
+			if(Event.m_Type == TAS_TIMELINE_EVENT_RCON_COMMAND)
+				Flags |= TAS_USED_RCON;
+			if(Event.m_Type == TAS_TIMELINE_EVENT_PRACTICE ||
+				((Event.m_Type == TAS_TIMELINE_EVENT_CHAT_COMMAND || Event.m_Type == TAS_TIMELINE_EVENT_RCON_COMMAND) && Event.m_Value))
+				Flags |= TAS_USED_PRACTICE;
+		}
+		if(!m_vTakeSpawnerEvents.empty())
+			Flags |= TAS_USED_SPAWNER;
+		return Flags;
+	}
+	int TakeFinishTicks() const;
+	size_t PlaygroundMemoryBytes(bool Uncompressed) const;
 	void PickFile(const char *pPath);
 	void UnpickFile();
 	// v6.12: parses a .tas image from memory (GitHub Load) without touching
 	// the disk; m_aPickedPath stays empty and the take is loaded into the
 	// buffer. Returns false on any parse error.
 	bool LoadTakeMem(const void *pData, unsigned Len);
+	// v6.18: OpenClient/KRX replay format — plain JSON or LE32 length + zlib
+	// compressed JSON. Fills the same take buffer + File metadata; no dummy
+	// frames are played back yet (the TAS playground has a single tee).
+	bool LoadKrxTakeMem(const void *pData, unsigned Len);
 	void SaveTake(const char *pMap, const char *pDescription, const char *pAuthor);
 
 	// --- GitHub TAS repository (storage/tas in the client repo) ---
@@ -365,6 +638,11 @@ public:
 		std::string m_Description;
 		std::string m_Author;
 		std::string m_Version; // display form, e.g. "v2.0"
+		std::string m_Dummies;
+		std::string m_Used;
+		std::string m_Ticks;
+		std::string m_FinishTicks;
+		std::string m_Updated;
 		std::string m_Created;
 	};
 	enum EGitHubState
@@ -445,7 +723,8 @@ public:
 	void PgChatClear() { m_vPgChat.clear(); }
 	// Handles a "/command" typed in the playground chat. Returns true when the
 	// command was consumed here (pOut receives an optional status line).
-	bool PgChatHandleCommand(const char *pLine, char *pOut, int OutSize);
+	bool PgChatHandleCommand(const char *pLine, char *pOut, int OutSize, int Team = 0);
+	void RecordPgChatLine(int ClientId, int Team, const char *pText);
 	// Executes a line in the virtual rcon (practice commands like telecursor).
 	// It never echoes the command itself — callers that do not print the line
 	// (the rcon console command, the ClickGUI field) use PgRconEcho first.
@@ -481,11 +760,29 @@ public:
 private:
 	void JoinPlayground();
 	void LeavePlayground();
+	// v6.18: playground-local dummy tees are created/destroyed with the sandbox.
+	void SyncPgDummies();
+	void DestroyPgDummies();
+	// v6.18: local-world dummy functions (copy moves, dummy control, hammer
+	// fly, triple fly, AledBot). Operates only on the sandbox tick input.
+	void PgDummyFunctionsInput(int D, CNetObj_PlayerInput &Input, const CNetObj_PlayerInput &Prev, const CNetObj_PlayerInput &MainEff, const CNetObj_PlayerInput &MainPrev, bool bKeyboardActive = false);
+	bool PgDummyHammerCanHit(int D, int TargetSlot, vec2 *pAim);
+	void ResetPgSlotInput(int Slot);
+	// Copy Moves Latency on the sandbox tick: ring buffer of the active tee's
+	// effective input, read back with a per-dummy delay.
+	static constexpr int PG_INPUT_HISTORY = 2048;
+	CNetObj_PlayerInput m_aPgInputHistory[PG_INPUT_HISTORY] = {};
+	int m_PgInputHistoryNext = 0;
+	int m_PgInputHistoryCount = 0;
+	void PgRecordInputHistory(const CNetObj_PlayerInput &Input);
+	bool PgDelayedInput(int DelayTicks, CNetObj_PlayerInput *pOut) const;
 	CNetObj_PlayerInput LiveInput();
 	CTasState CaptureState();
 	void RestoreState(const CTasState &State);
-	void StepWorld(const CNetObj_PlayerInput &Input);
-	void DoStep(const CNetObj_PlayerInput &Input);
+	bool PgFunctionsAllowed() const { return m_Joined && m_Mode == 1 && !m_Playing && !m_PgPaused && !m_PgSpec; }
+	CNetObj_PlayerInput StepWorld(const CNetObj_PlayerInput &Input, const CTasTick *pPlayback);
+	void DoStep(const CNetObj_PlayerInput &Input, const CTasTick *pPlayback = nullptr);
+	void BuildPlaygroundRenderState(CCharacter *pChar, const CCharacterCore *pPrevCore, vec2 Aim, CNetObj_Character &Prev, CNetObj_Character &Cur);
 	void AdvanceOne();
 	void TrimHistory();
 	void RebaseCounters();
@@ -494,8 +791,24 @@ private:
 	void RefreshAutoTileFlags();
 	float RenderIntraAlpha() const;
 	void RenderVisuals();
+	// Real-world playback preparation (dummies → recorded start positions).
+	// Routes come exclusively from the TAB Pathfinder (BFS + A*, Very Low).
+	bool CollectPreparationTargets();
+	bool RealDummyPos(int Slot, vec2 *pPos) const;
+	void StartRealPlay();
+	void BeginRealPlayback();
+	void UpdatePreparation();
+	void RefreshPreparationWarning();
+	bool RequestPreparationRoute(STasPrepDummy &Target, vec2 From);
+	void CollectPreparationRoute(STasPrepDummy &Target);
+	bool TryBfsReachability(vec2 From, vec2 To);
+	void SaveTabPathfinderState();
+	void RestoreTabPathfinder();
+	void ResetPreparationPaths();
 	bool LoadTakeFile(const char *pPath);
+	bool LoadCompactTake(const unsigned char *pData, size_t Size);
 	bool WriteTakeFile(const char *pPath, const char *pMap, const char *pName, const char *pAuthor, const char *pCreated);
+	bool WriteKrxTakeFile(const char *pPath, const char *pMap, const char *pDescription, const char *pAuthor, const char *pCreated);
 
 	// Playground command core (shared by the virtual chat and the virtual rcon).
 	// Returns true when the command was understood; vOut receives the status
@@ -509,6 +822,12 @@ private:
 	bool SpawnerSpawnAt(const STasSpawnerSettings &Settings, vec2 Pos, int Tick, bool Record);
 	bool SpawnerSpawnEntity(const STasSpawnerSettings &Settings, vec2 Pos, int Tick, bool Record);
 	bool SpawnerSpawnTile(const STasSpawnerSettings &Settings, vec2 Pos, int Tick, bool Record);
+	void SpawnerRestoreTakeTiles(int Tick);
+	void ApplyTakeSpawnerEvent(const STasSpawnerEvent &Event);
+	void ApplyTakeTimelineEvents(int Tick);
+	void ApplyTakeTimelineEvent(const STasTimelineEvent &Event, bool Rebuilding);
+	void RebuildTakeTimelineState(int Tick);
+	void RecordTakeTuningChanges(const CTuningParams *pBefore, bool WasDirty);
 	void SpawnerClearLive();
 	// Leaving the playground destroys the world, but the Spawner state (settings,
 	// spawned objects, tiles, loop) must survive it: detach the entities without
@@ -531,6 +850,8 @@ private:
 	// any community skin) and the custom body/feet colors; falls back to the
 	// local player's look.
 	CTeeRenderInfo SpawnerTeeRenderInfo(const STasSpawnerSettings &S);
+	// Render info of a playground-local dummy: real Kinetix dummy%d_* config.
+	CTeeRenderInfo PgDummyTeeRenderInfo(int D);
 
 	struct SSpawnedEnt
 	{
@@ -621,9 +942,39 @@ private:
 	// Virtual rcon backlog ("> line" + command echoes), shown in the remote
 	// console while Virtual RCON is ON.
 	std::vector<std::string> m_vPgRcon;
+	std::vector<STasSpawnerRecord> m_vTakeSpawner;
+	std::vector<STasSpawnerEvent> m_vTakeSpawnerEvents;
+	std::vector<STasTimelineEvent> m_vTakeTimelineEvents;
+	unsigned m_TasTimelineNextOrder = 0;
+	std::vector<SPgChatLine> m_vTakeChat;
+	std::vector<std::string> m_vTakeRcon;
+	bool m_TakePgPractice = false;
+	bool m_TakePgInvincible = false;
+	bool m_TakePgSuper = false;
+	bool m_TakePgPaused = false;
+	bool m_TakePgSpec = false;
+	bool m_TakePgTuningDirty = false;
+	bool m_HasTakePgStart = false;
+	CTuningParams m_aTakePgTuning[TuneZone::NUM];
+	bool m_ExecutingPgCommand = false;
+	bool m_ApplyingTakeTimelineEvent = false;
+	bool m_RebuildingTakeTimelineState = false;
+	bool m_UseTakeTimelineCursor = false;
+	vec2 m_TakeTimelineCursor = vec2(0.0f, 0.0f);
 
 	CGameWorld m_Playground;
 	bool m_Joined = false;
+	// v6.18: playground-local dummies — no real client connections are created.
+	int m_PgDummyLimit = 8;
+	int m_PgActiveDummy = 0;
+	int m_PgSavedClDummy = 0;
+	bool m_aPgDummyConnected[MAX_DUMMIES] = {};
+	class CCharacter *m_apPgDummies[MAX_DUMMIES] = {};
+	int m_aPgDummyIds[MAX_DUMMIES] = {};
+	CNetObj_PlayerInput m_aPgDummyInputs[MAX_DUMMIES] = {};
+	CNetObj_PlayerInput m_PgLastKeyboardInput{};
+	CNetObj_PlayerInput m_aPgPendingSwitchInput[MAX_DUMMIES] = {};
+	bool m_aPgPendingSwitchInputActive[MAX_DUMMIES] = {};
 	int m_LocalId = -1;
 	int m_PlaygroundTick = 0;
 
@@ -636,6 +987,7 @@ private:
 	// Record memory (cleared on each Record start) + saved memory.
 	std::vector<CTasTick> m_vRecord;
 	std::vector<CTasTick> m_vSaved;
+	int m_UsedFlags = 0;
 
 	// World state at the moment Record started; Play restores it so the
 	// recorded inputs replay from exactly the state they were recorded in.
@@ -655,6 +1007,8 @@ private:
 	float m_TickAccum = 0.0f;
 	float m_LastPredClock = -1.0f; // last smooth prediction clock (PredGameTick + intra) used for stepping
 	CNetObj_PlayerInput m_LastInput{};
+	int m_PgAutoFireCounter = 0;
+	int m_aFinishTicks[MAX_DUMMIES] = {};
 
 	// Rewind rebasing of the global client counters (fire / weapon switch):
 	// clicks undone by a rewind stay baked into m_aInputData, so LiveInput
@@ -674,21 +1028,58 @@ private:
 	bool m_AutoRfWasTele = false;
 	bool m_AutoRfWasDead = false;
 
+	// Real-world preparation: staging real dummies at the recorded start
+	// positions before the replay is allowed to run.
+	bool m_RealPreparing = false;
+	std::vector<STasPrepDummy> m_vRealPrepTargets;
+	// Parsed-from-file dummy positions at tick 0, independent of loadout data
+	// (KRX .tas stores them per frame, not in a start-loadout block).
+	std::vector<std::pair<int, vec2>> m_vTasRecordedDummyStarts;
+	std::vector<std::vector<vec2>> m_vRealPrepPaths;
+	char m_aPreparationWarning[192] = {};
+	int m_PrepTicks = 0;
+	int m_PrepRouteIdx = 0;
+	bool m_PrepDriving = false;
+	// Tab Pathfinder state borrowed for the duration of the preparation.
+	// The concrete snapshot type is private to tas.cpp; shared_ptr<void> keeps
+	// the header independent of CBotNet's large Pathfinder structures.
+	std::shared_ptr<void> m_pSavedPfState;
+	bool m_PfBorrowed = false;
+	// Auto Sync: real connection → recorded slot; identity unless remapped.
+	int m_aRealToRecordedSlot[MAX_DUMMIES] = {};
+	bool m_AutoSyncFailed = false;
+	// A dummy with no BFS route / no tab A* result is skipped when deciding
+	// that Preparation is finished — the replay still starts with the others.
+	bool m_PrepRouteFailed = false;
+	int m_PrepFailedDummy = 0;
+
 	// Real-world execution state: replay position + the running fire
 	// counter (rebased onto the live one so the press/release parity edges
 	// reproduce exactly).
 	bool m_RealPlaying = false;
 	int m_RealIdx = 0;
 	int m_RealFire = 0;
+	int m_RealNextWeapon = 0;
+	int m_RealPrevWeapon = 0;
+	int m_aRealDummyFire[MAX_DUMMIES] = {};
+	int m_aRealDummyNextWeapon[MAX_DUMMIES] = {};
+	int m_aRealDummyPrevWeapon[MAX_DUMMIES] = {};
+	int m_aRealDummyIdx[MAX_DUMMIES] = {};
 
 	bool m_FilePicked = false;
+	std::vector<STasStartLoadout> m_vFileStartLoadouts;
 	bool m_TakeFromFile = false;
 	char m_aPickedPath[512] = {};
 	char m_aPickedMap[128] = {};
 	char m_aPickedDescription[128] = {};
 	char m_aPickedAuthor[128] = {};
 	char m_aPickedCreated[64] = {};
+	char m_aRecordCreated[64] = {};
 	int m_PickedVersion = 0; // v6.17: .tas binary format version of the loaded file (0 = none)
+	char m_aPickedVersionCode[16] = "00";
+	int m_PickedFormat = 0; // v6.18: format of the loaded file (0 = Kinetix, 1 = KRX)
+	int m_PickedUsedFlags = 0;
+	int m_PickedFinishTicks = -1;
 
 	// GitHub TAS repository state
 	int m_GitHubState = GITHUB_IDLE;

@@ -450,7 +450,15 @@ MACRO_CONFIG_INT(KxFakeAimShowForMe, kx_fake_aim_show_for_me, 0, 0, 1, CFGFLAG_C
 MACRO_CONFIG_INT(KxFakeAimJitter, kx_fake_aim_jitter, 20, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Fake Aim Chaos mode: jitter strength — max random offset (in world units) added to the real aim")
 MACRO_CONFIG_INT(KxFakeAimDistCenter, kx_fake_aim_dist_center, 0, 0, 500, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "Fake Aim: distance from center — rescale the aim sent to the server to exactly this distance from (0,0), preserving direction (0 = off). Applies to the real player aim, the laser unfreeze aim channel and all Fake Aim modes")
 MACRO_CONFIG_INT(KxTasRecord, kx_tas_record, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_INSENSITIVE, "TAS: record state (0=off, 1=recording, toggles)")
+// v6.18: output/UI format of TAS files. 0 = native Kinetix (.tas), 1 = KRX
+// (OpenClient) replay JSON. The dropdown follows the format of a picked file.
+MACRO_CONFIG_INT(KxTasFormat, kx_tas_format, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "TAS save format (0=Kinetix, 1=KRX)")
+// v6.18: subtick input send buffer. 0 = send every input immediately,
+// 1/2/3 = coalesce inputs for ~8/16/32 ms before flushing to the server.
+MACRO_CONFIG_INT(KxNetworkBuffer, kx_network_buffer, 0, 0, 3, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Network input buffer (0=None, 1=Minimal, 2=Medium, 3=Max)")
 MACRO_CONFIG_INT(KxTasPause, kx_tas_pause, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_INSENSITIVE, "TAS: pause state (0=running, 1=paused, toggles)")
+MACRO_CONFIG_INT(KxTasDummyFunctions, kx_tas_dummy_functions, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "TAS: enable dummy functions in the playground while in Record mode")
+MACRO_CONFIG_INT(KxTasBotFunctions, kx_tas_bot_functions, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "TAS: enable player input functions for Main in the playground while in Record mode")
 MACRO_CONFIG_INT(KxTasAutoRf, kx_tas_auto_rf, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "TAS Auto RF: master toggle (Record mode only)")
 MACRO_CONFIG_INT(KxTasAutoRfFMode, kx_tas_auto_rf_f_mode, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "TAS Auto RF Freeze: 0=Rewind 1=Forward")
 MACRO_CONFIG_INT(KxTasAutoRfFTicks, kx_tas_auto_rf_f_ticks, 0, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "TAS Auto RF Freeze: action ticks (0=off)")
@@ -458,6 +466,8 @@ MACRO_CONFIG_INT(KxTasAutoRfTMode, kx_tas_auto_rf_t_mode, 0, 0, 1, CFGFLAG_CLIEN
 MACRO_CONFIG_INT(KxTasAutoRfTTicks, kx_tas_auto_rf_t_ticks, 0, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "TAS Auto RF Teleport: action ticks (0=off)")
 MACRO_CONFIG_INT(KxTasAutoRfDMode, kx_tas_auto_rf_d_mode, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "TAS Auto RF Death: 0=Rewind 1=Forward")
 MACRO_CONFIG_INT(KxTasAutoRfDTicks, kx_tas_auto_rf_d_ticks, 0, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "TAS Auto RF Death: action ticks (0=off)")
+MACRO_CONFIG_INT(KxTasAutoSyncDummies, kx_tas_auto_sync_dummies, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "TAS: map real dummies to the take's dummies by nearest start position at playback")
+MACRO_CONFIG_INT(KxTasAutoPathfindDummies, kx_tas_auto_pathfind_dummies, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "TAS: walk real dummies to the take's start positions before playback (Pathfinder Very Low)")
 MACRO_CONFIG_INT(KxTasFakeAim, kx_tas_fake_aim, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "TAS Fake Aim: mask the rendered aim of the replaying tee")
 MACRO_CONFIG_INT(KxTasFakeAimMode, kx_tas_fake_aim_mode, 0, 0, 5, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "TAS Fake Aim mode: 0=Real 1=Smooth 2=Random 3=Robot 4=Spin 5=Lag")
 MACRO_CONFIG_INT(KxTasShowPath, kx_tas_show_path, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE | CFGFLAG_INSENSITIVE, "TAS Visuals: draw the saved path polyline")
@@ -652,10 +662,19 @@ MACRO_CONFIG_INT(KxRtPfShowPrevPath, kx_rt_pf_show_prev_path, 1, 0, 1, CFGFLAG_C
 MACRO_CONFIG_INT(KxRtPfShowSpeed, kx_rt_pf_show_speed, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "RT Pathfinder visuals: speed gradient (affects Path and Previous Path)")
 MACRO_CONFIG_INT(KxRtPfDrawStartEndPos, kx_rt_pf_draw_start_end_pos, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "RT Pathfinder visuals: draw the start and the end position of the path")
 
-// IRC (emote-based communication)
-MACRO_CONFIG_INT(KxIrcEnabled, kx_irc_enabled, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Enable IRC emote communication and decoding")
-MACRO_CONFIG_INT(KxIrcRevealJoin, kx_irc_reveal_join, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Send handshake on join to reveal yourself as IRC user")
-MACRO_CONFIG_INT(KxIrcNameplateTag, kx_irc_nameplate_tag, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Show client tag in player nameplates if IRC user detected")
+// IRC (client-to-client messaging)
+// v6.19: IRC v2 — zero-width steganography in nick/clan/chat, improved emote
+// framing and an aim-based fast channel. kx_irc_version selects the protocol
+// (0 = legacy v1, 1 = v2). The reveal/encode dropdowns only pick which channel
+// THIS client SENDS with; every channel is always decoded on receive.
+MACRO_CONFIG_INT(KxIrcEnabled, kx_irc_enabled, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Enable IRC and decoding (master switch)")
+MACRO_CONFIG_INT(KxIrcVersion, kx_irc_version, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "IRC protocol version (0 = v1 legacy, 1 = v2)")
+MACRO_CONFIG_INT(KxIrcRevealMethod, kx_irc_reveal_method, 1, 0, 5, CFGFLAG_CLIENT | CFGFLAG_SAVE, "IRC v2: how this client reveals itself (0 None, 1 Nickname/Clan, 2 Chat, 3 /w Chat, 4 Emote, 5 Inputs)")
+MACRO_CONFIG_INT(KxIrcEncodeMethod, kx_irc_encode_method, 1, 0, 4, CFGFLAG_CLIENT | CFGFLAG_SAVE, "IRC v2: how this client sends messages (0 None, 1 Chat, 2 /w Chat, 3 Emote, 4 Inputs)")
+MACRO_CONFIG_INT(KxIrcNameplateTag, kx_irc_nameplate_tag, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Draw the Kinetix icon next to detected Kinetix users' nameplates")
+MACRO_CONFIG_INT(KxIrcServerBrowser, kx_irc_server_browser, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Show the Kinetix icon in the server browser (server row and player list)")
+MACRO_CONFIG_INT(KxIrcRevealJoin, kx_irc_reveal_join, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "IRC v1: send handshake on join to reveal yourself as IRC user")
+MACRO_CONFIG_INT(KxIrcEncodeChat, kx_irc_encode_chat, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "IRC v1: also encode chat messages sent from the chat box")
 
 // start menu
 MACRO_CONFIG_INT(ClShowStartMenuImages, cl_show_start_menu_images, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Show start menu images")
@@ -1294,6 +1313,9 @@ MACRO_CONFIG_INT(KxUiPanelOpacity, kx_ui_panel_opacity, 100, 0, 100, CFGFLAG_CLI
 MACRO_CONFIG_INT(KxUiRainbow, kx_ui_rainbow, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ClickGUI: rainbow accent color animation")
 MACRO_CONFIG_INT(KxUiRainbowSpeed, kx_ui_rainbow_speed, 10, 1, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ClickGUI: rainbow speed x10 (1-100 = 0.1-10.0)")
 MACRO_CONFIG_INT(KxUiBlackout, kx_ui_blackout, 30, 0, 100, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ClickGUI: background blackout percent (0-100)")
+// v6.18: preset ClickGUI themes. 0 = Custom (the Main/Panel colors below are
+// used); any other value renders a built-in palette WITHOUT touching those cvars.
+MACRO_CONFIG_INT(KxUiTheme, kx_ui_theme, 0, 0, 15, CFGFLAG_CLIENT | CFGFLAG_SAVE, "ClickGUI theme (0 = Custom, see ClickGUI Theme dropdown)")
 
 // v1.56.260: Visuals panel — world rainbow + hide particles.
 // v1.56.275: per-feature Color (hex RGB) + Opacity (0-100) + Rainbow anim

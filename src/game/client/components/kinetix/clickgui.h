@@ -61,6 +61,12 @@ public:
         // color) and whether the Reset half is visible (position modified).
         void ArrayEditorChildState(const char *pSection, const char *pContainerName, bool &EditorActive, bool &ResetVisible);
 
+        // v6.18: .map Exploit (Functions -> Exploits). ClickGUI-local state only.
+        void OpenMapExploitPicker();
+        void OnMapExploitPicked(const char *pPath);
+        void MapExploitUnpick();
+        void MapExploitInject();
+
 
 private:
         // Animation state: 0.0 = fully closed, 1.0 = fully open.

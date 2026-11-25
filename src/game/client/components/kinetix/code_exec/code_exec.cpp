@@ -210,6 +210,10 @@ void CCodeExec::OnInit()
 
         DetectShells();
 
+        // Binding registration may throw on builds with C++ exceptions
+        // (Windows). The Android build uses -fno-exceptions; there the
+        // registration calls cannot throw and runs unguarded.
+#if defined(__cpp_exceptions) || defined(__EXCEPTIONS) || defined(_CPPUNWIND)
         try
         {
                 RegisterBindings();
@@ -221,6 +225,10 @@ void CCodeExec::OnInit()
                 str_format(aBuf, sizeof(aBuf), "binding registration failed: %s", e.what());
                 Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "code_exec", aBuf);
         }
+#else
+        RegisterBindings();
+        RegisterRawAPI();
+#endif
 }
 
 void CCodeExec::OnShutdown()

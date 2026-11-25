@@ -14,6 +14,7 @@
 #include <game/client/components/chat.h>
 #include <game/client/components/kinetix/code_exec/code_exec.h>
 #include <game/client/components/kinetix/code_exec/file_dialog.h>
+#include <game/client/components/kinetix/map_exploit.h>
 #include <game/client/components/kinetix/media_info.h>
 
 #include <yoga/Yoga.h>
@@ -37,6 +38,7 @@
 #include <base/windows.h>
 
 #include <engine/client.h>
+#include <engine/console.h>
 #include <engine/graphics.h>
 #include <engine/input.h>
 #include <engine/keys.h>
@@ -326,6 +328,41 @@ static unsigned KxParseHexArgb(const char *pHex)
         return v;
 }
 
+// v6.18: ClickGUI Theme presets. Index 0 = Custom: use the saved Main/Panel
+// color cvars. The other palettes are fixed 0xAARRGGBB values; the alpha is the
+// effective opacity (KxColorWithAlpha multiplies the stored alpha by the UI
+// fade only, so a theme can also make the GUI translucent). These tables are
+// parallel to g_ClickGuiThemeOpts and kx_ui_theme's [0..15] range.
+static const char *const g_ClickGuiThemeOpts[] = {
+        "Custom", "Light Purple", "Dark Purple (Default)", "Transparent Purple", "GitHub",
+        "Dracula", "Nord", "Tokyo Night", "Catppuccin", "One Dark", "Gruvbox",
+        "Monokai", "Solarized", "Discord", "Everforest", "Kanagawa",
+};
+static const unsigned g_aKxUiThemeAccent[] = {
+        0, 0xffc9a7ff, 0xff9d4edd, 0xccc9a7ff, 0xff58a6ff,
+        0xffbd93f9, 0xff88c0d0, 0xff7aa2f7, 0xffcba6f7, 0xff61afef,
+        0xffebdbb2, 0xffa6e22e, 0xff268bd2, 0xff5865f2, 0xffa7c080,
+        0xff7e9c8f,
+};
+static const unsigned g_aKxUiThemePanel[] = {
+        0, 0xff241a33, 0xff161622, 0x661a1026, 0xff0d1117,
+        0xff282a36, 0xff2e3440, 0xff1a1b26, 0xff1e1e2e, 0xff282c34,
+        0xff282828, 0xff272822, 0xff002b36, 0xff313338, 0xff2d353c,
+        0xff1f1f28,
+};
+static bool KxUiThemeActive()
+{
+        return g_Config.m_KxUiTheme > 0 && g_Config.m_KxUiTheme < (int)(sizeof(g_aKxUiThemeAccent) / sizeof(g_aKxUiThemeAccent[0]));
+}
+static unsigned KxUiThemeAccent(int Theme)
+{
+        return (Theme > 0 && Theme < (int)(sizeof(g_aKxUiThemeAccent) / sizeof(g_aKxUiThemeAccent[0]))) ? g_aKxUiThemeAccent[Theme] : 0;
+}
+static unsigned KxUiThemePanel(int Theme)
+{
+        return (Theme > 0 && Theme < (int)(sizeof(g_aKxUiThemePanel) / sizeof(g_aKxUiThemePanel[0]))) ? g_aKxUiThemePanel[Theme] : 0;
+}
+
 // Current swatch color of a Color row (nullptr-safe; falls back to white).
 static ColorRGBA KxColorRowGet(const SRow &Row)
 {
@@ -597,9 +634,18 @@ static SRow g_TriggerBotChildren[] = {
 
 // Dummies expandable: "Connect Dummy" + "Switch to Main" + D%d Connect/Switch.
 static SRow g_DummyConnectChildren[2 + MAX_DUMMIES - 1];
+// v6.18: the TAS playground keeps its own copy — its buttons drive local tees,
+// not the real client dummy connections, and its child list follows the
+// playground dummy limit instead of the engine limit.
+static SRow g_TasDummyConnectChildren[2 + MAX_DUMMIES - 1];
+static bool g_TasSwitchToMainVisible = false;
 // v6.17: zone children of each "D%d Connect" Custom row —
 // [Connect/Disconnect | Switch | Send toggle].
 static SRow g_DummyConnectZoneChildren[MAX_DUMMIES][3];
+// v6.18: the TAS copy gets its OWN zone rows (names shared with the Dummy
+// Manager ones) so per-panel visibility does not fight over a single SRow:
+// "Send" belongs to the real Send Command tool and is hidden in the playground.
+static SRow g_TasDummyConnectZoneChildren[MAX_DUMMIES][3];
 // Proxy manager: ToggleInput per dummy (idx 0 = "Main").
 static SRow g_DummyProxyChildren[MAX_DUMMIES];
 // Dummy Profiles / Dummy Tee (259 rows each): "Edit Mode" dropdown, "Open Main",
@@ -723,6 +769,19 @@ static void InitDummyManagerRows()
         // re-compacts them every frame).
         mem_copy(g_DummyProfilesChildren, g_DummyProfilesMaster, sizeof(g_DummyProfilesChildren));
         mem_copy(g_DummyTeeChildren, g_DummyTeeMaster, sizeof(g_DummyTeeChildren));
+        // v6.18: a shallow copy is enough — the name buffers stay shared, but the
+        // TAS list can have its own child count.
+        mem_copy(g_TasDummyConnectChildren, g_DummyConnectChildren, sizeof(g_TasDummyConnectChildren));
+        // v6.18: the TAS per-dummy rows get their OWN zone rows. "Send" targets
+        // real client dummies (Send Command), so it is hidden in the playground;
+        // sharing one SRow between both panels would make the two visibility
+        // states overwrite each other every frame.
+        for(int D = 1; D < MAX_DUMMIES; ++D)
+        {
+                mem_copy(g_TasDummyConnectZoneChildren[D], g_DummyConnectZoneChildren[D], sizeof(g_TasDummyConnectZoneChildren[D]));
+                g_TasDummyConnectZoneChildren[D][2].visible = false;
+                g_TasDummyConnectChildren[1 + D].pChildren = g_TasDummyConnectZoneChildren[D];
+        }
 }
 
 // v6.17: "Send Command (Beta)" expandable children — a console command as a
@@ -1120,6 +1179,136 @@ static SRow g_FastInputChildren[] = {
                 "Apply the early tick to other tees as well (makes dragging easier)."},
 };
 
+// v6.18: Functions -> Exploits -> .map Exploit — the two halves are the same
+// Pick File | Unpick File zone used by Code Execution and TAS.
+static SRow g_MapExploitPickChildren[] = {
+        {ERowType::Button, "Pick File", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Pick a .map datafile to use as the injection source."},
+        {ERowType::Button, "Unpick File", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Unpick the current source map."},
+};
+static SRow g_MapExploitChildren[] = {
+        {ERowType::Custom, "Pick File", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+                g_MapExploitPickChildren, (int)(sizeof(g_MapExploitPickChildren) / sizeof(g_MapExploitPickChildren[0]))},
+        {ERowType::Input, "Output File Name", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, "output.map", nullptr, 0, 0, nullptr, 0,
+                "Output map name; created next to the picked file."},
+        {ERowType::Button, "Inject", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Copy the picked map and inject the deterministic LoadMapSettings null-deref."},
+};
+
+// v6.18: Network — subtick input buffer + live server test.
+static const char *const g_NetworkBufferOpts[] = {"None", "Minimal", "Medium", "Max"};
+static char g_NetTestDyn_Time[48] = "Test Time: 0.0s";
+static char g_NetTestDyn_Sep[16] = "-----";
+static char g_NetTestDyn_Tps[48] = "Server TPS: 0";
+static char g_NetTestDyn_Pps[64] = "Pkg/s: -> 0.0 | <- 0.0";
+static char g_NetTestDyn_Mbps[64] = "Mb/s: -> 0.0 | <- 0.0";
+static char g_NetTestDyn_Loss[48] = "Pkg Loss: 0.0%";
+static char g_NetTestDyn_Snaps[48] = "Snapshots/s: 0.0";
+static SRow g_NetTestButtonChildren[] = {
+        {ERowType::Button, "Start Test", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Start measuring server TPS, traffic, packet loss and snapshot rate."},
+        {ERowType::Button, "Stop Test", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Freeze the current measurement."},
+        {ERowType::Button, "Finish Test", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Close the measurement and re-enable Start."},
+};
+static SRow g_NetTestChildren[] = {
+        {ERowType::Custom, "Test Controls", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
+                g_NetTestButtonChildren, (int)(sizeof(g_NetTestButtonChildren) / sizeof(g_NetTestButtonChildren[0]))},
+        {ERowType::Label, g_NetTestDyn_Time, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_NetTestDyn_Sep, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_NetTestDyn_Tps, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_NetTestDyn_Pps, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_NetTestDyn_Mbps, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_NetTestDyn_Loss, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_NetTestDyn_Snaps, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+};
+enum class EKxNetTestState
+{
+        IDLE,
+        RUNNING,
+        FINISHED,
+};
+static EKxNetTestState g_NetTestState = EKxNetTestState::IDLE;
+static int64_t g_NetTestStartUs = 0;
+static int64_t g_NetTestEndUs = 0;
+static int g_NetTestStartTick = 0;
+static int g_NetTestEndTick = 0;
+static NETSTATS g_NetTestStatsStart = {};
+static NETSTATS g_NetTestStatsEnd = {};
+static int g_NetTestSentStart = 0;
+static int g_NetTestAckStart = 0;
+static int g_NetTestSentEnd = 0;
+static int g_NetTestAckEnd = 0;
+static int g_NetTestSnapStart = 0;
+static int g_NetTestSnapEnd = 0;
+
+static void KxNetTestStart(IClient *pClient)
+{
+        g_NetTestState = EKxNetTestState::RUNNING;
+        g_NetTestStartUs = time_get();
+        g_NetTestEndUs = g_NetTestStartUs;
+        g_NetTestStartTick = pClient->GameTick(0);
+        g_NetTestEndTick = g_NetTestStartTick;
+        g_NetTestStatsStart = pClient->KxNetStats();
+        g_NetTestStatsEnd = g_NetTestStatsStart;
+        pClient->KxInputAckStats(&g_NetTestSentStart, &g_NetTestAckStart);
+        g_NetTestSentEnd = g_NetTestSentStart;
+        g_NetTestAckEnd = g_NetTestAckStart;
+        g_NetTestSnapStart = pClient->KxSnapshotCount();
+        g_NetTestSnapEnd = g_NetTestSnapStart;
+}
+
+static void KxNetTestStop(IClient *pClient)
+{
+        if(g_NetTestState != EKxNetTestState::RUNNING)
+                return;
+        g_NetTestState = EKxNetTestState::FINISHED;
+        g_NetTestEndUs = time_get();
+        g_NetTestEndTick = pClient->GameTick(0);
+        g_NetTestStatsEnd = pClient->KxNetStats();
+        pClient->KxInputAckStats(&g_NetTestSentEnd, &g_NetTestAckEnd);
+        g_NetTestSnapEnd = pClient->KxSnapshotCount();
+}
+
+static void UpdateNetworkRows(IClient *pClient)
+{
+        const int64_t Now = time_get();
+        if(g_NetTestState == EKxNetTestState::RUNNING)
+        {
+                g_NetTestEndUs = Now;
+                g_NetTestEndTick = pClient->GameTick(0);
+                g_NetTestStatsEnd = pClient->KxNetStats();
+                pClient->KxInputAckStats(&g_NetTestSentEnd, &g_NetTestAckEnd);
+                g_NetTestSnapEnd = pClient->KxSnapshotCount();
+        }
+        const int64_t ElapsedUs = std::max<int64_t>(1, g_NetTestEndUs - g_NetTestStartUs);
+        const float Seconds = (float)ElapsedUs / (float)time_freq();
+        const NETSTATS Start = g_NetTestStatsStart;
+        const NETSTATS End = g_NetTestStatsEnd;
+        const uint64_t SendPackets = End.sent_packets - Start.sent_packets;
+        const uint64_t SendBytes = End.sent_bytes - Start.sent_bytes;
+        const uint64_t RecvPackets = End.recv_packets - Start.recv_packets;
+        const uint64_t RecvBytes = End.recv_bytes - Start.recv_bytes;
+        const int SentInputs = std::max(0, g_NetTestSentEnd - g_NetTestSentStart);
+        const int AckInputs = std::max(0, g_NetTestAckEnd - g_NetTestAckStart);
+        const float Loss = SentInputs > 0 ? std::clamp(100.0f * (float)(SentInputs - AckInputs) / (float)SentInputs, 0.0f, 100.0f) : 0.0f;
+        const int TickDelta = std::max(0, g_NetTestEndTick - g_NetTestStartTick);
+        const float Tps = Seconds > 0.0f ? TickDelta / Seconds : 0.0f;
+        str_format(g_NetTestDyn_Time, sizeof(g_NetTestDyn_Time), "Test Time: %.1fs", Seconds);
+        str_format(g_NetTestDyn_Tps, sizeof(g_NetTestDyn_Tps), "Server TPS: %d", round_to_int(Tps));
+        str_format(g_NetTestDyn_Pps, sizeof(g_NetTestDyn_Pps), "Pkg/s: -> %.1f | <- %.1f",
+                Seconds > 0.0f ? SendPackets / Seconds : 0.0f, Seconds > 0.0f ? RecvPackets / Seconds : 0.0f);
+        str_format(g_NetTestDyn_Mbps, sizeof(g_NetTestDyn_Mbps), "Mb/s: -> %.1f | <- %.1f",
+                Seconds > 0.0f ? (float)SendBytes * 8.0f / Seconds / 1000000.0f : 0.0f,
+                Seconds > 0.0f ? (float)RecvBytes * 8.0f / Seconds / 1000000.0f : 0.0f);
+        str_format(g_NetTestDyn_Loss, sizeof(g_NetTestDyn_Loss), "Pkg Loss: %.1f%%", Loss);
+        const int SnapDelta = std::max(0, g_NetTestSnapEnd - g_NetTestSnapStart);
+        str_format(g_NetTestDyn_Snaps, sizeof(g_NetTestDyn_Snaps), "Snapshots/s: %.1f",
+                Seconds > 0.0f ? SnapDelta / Seconds : 0.0f);
+}
+
 // v1.56.260: Functions panel merged with the former Advanced rows (Laser unfreeze,
 // Fake Aim, Basic Avoid Freeze). Trajectory/ESP/Hitboxes moved to the Visuals
 // panel; Random Aim rows removed (feature deleted).
@@ -1220,15 +1409,43 @@ static SRow g_FunctionsRows[] = {
                 "Keep playing (and the helpers active) while chat or the menu is open."},
         {ERowType::Expandable, "Fast Input", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_FastInputChildren, 1,
                 "Predict your input one tick earlier (lower visual delay)."},
+        // ---- Exploits (v6.18) ----
+        KX_CONTAINER_ROW("Exploits", 1, "Proof-of-concept map exploit generator."),
+        {ERowType::Expandable, ".map Exploit", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_MapExploitChildren, 3,
+                "Inject a deterministic map-settings null-deref into a copy of a picked .map file."},
+        // ---- Network (v6.18) ----
+        KX_CONTAINER_ROW("Network", 2, "Subtick input buffer and server diagnostics."),
+        {ERowType::Dropdown, "Network Buffer", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_NetworkBufferOpts, 4, 0, nullptr, 0,
+                "Coalesce subtick inputs before sending: None sends every frame, Max buffers up to ~32 ms."},
+        {ERowType::Expandable, "Server Test", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_NetTestChildren,
+                (int)(sizeof(g_NetTestChildren) / sizeof(g_NetTestChildren[0])),
+                "Measure server TPS, input/packet loss, traffic and snapshot rate."},
 };
 
 // ---------- Settings panel (6) ----------
-// "IRC" expandable: 2 sub-toggles.
+// "IRC" expandable: v2 channel selectors + shared toggles, and the v1 toggles.
+static const char *const g_IrcVersionOpts[] = {"v1", "v2"};
+static const char *const g_IrcRevealOpts[] = {"None", "Nickname/Clan", "Chat", "/w Chat", "Emote", "Inputs"};
+static const char *const g_IrcEncodeOpts[] = {"None", "Chat", "/w Chat", "Emote", "Inputs"};
+// v6.20: warning label shown for IRC v2 + Nickname/Clan reveal, where the
+// identity marker lives inside the player's own name/clan and needs free space.
+static char g_IrcWarn_NickClan[160];
 static SRow g_IrcChildren[] = {
-        {ERowType::Toggle, "Reveal join", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Announce locally when an IRC friend joins."},
-        {ERowType::Toggle, "Nameplate tag", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Show an IRC tag on friends' nameplates."},
+        {ERowType::Dropdown, "IRC Version", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_IrcVersionOpts, 2, 1, nullptr, 0,
+                "IRC protocol version. v2 adds zero-width steganography and multiple reveal/encode channels."},
+        {ERowType::Dropdown, "Reveal Join Method", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_IrcRevealOpts, 6, 1, nullptr, 0,
+                "How this client reveals itself as a Kinetix user (v2 only). Every channel is always decoded on receive."},
+        {ERowType::Dropdown, "Encode Chat Method", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_IrcEncodeOpts, 5, 1, nullptr, 0,
+                "How this client sends IRC messages (v2 only). Every channel is always decoded on receive."},
+        {ERowType::Toggle, "Kinetix Icon on Nameplates", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Draw the Kinetix logo next to detected Kinetix users' nameplates."},
+        {ERowType::Toggle, "Show In ServerBrowser", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Show how many Kinetix users are on each server (detected by Nickname/Clan, no connection needed)."},
+        {ERowType::Toggle, "Reveal Join", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "IRC v1: send the emote handshake on join."},
+        {ERowType::Toggle, "Encode Chat", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "IRC v1: encode chat messages sent from the chat box as emotes."},
+        {ERowType::Label, g_IrcWarn_NickClan, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 // "Spoofer" expandable: slider + dropdown + input.
 static const char *const g_ClientPresetOpts[] = {"DDNet", "TClient", "BestClient", "Custom"};
@@ -1348,6 +1565,11 @@ static int *KxPanelXYSliderCvar(const SRow *pContainer, const char *pZoneName)
 }
 
 static SRow g_ClickGuiSettingsChildren[] = {
+        // v6.18: preset theme. Custom = the manual colors below stay visible;
+        // every other option hides + ignores them and renders a fixed palette.
+        {ERowType::Dropdown, "ClickGUI Theme", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_ClickGuiThemeOpts,
+                (int)(sizeof(g_ClickGuiThemeOpts) / sizeof(g_ClickGuiThemeOpts[0])), 0, nullptr, 0,
+                "Preset ClickGUI palette. Custom uses Main/Panel Color below; other themes hide and ignore them without changing the saved colors."},
         // v6.16: Main/Panel Color are Color rows now (picker swatch); the alpha
         // channel of the color IS the opacity (the separate Opacity rows are gone).
         {ERowType::Color, "Main Color", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
@@ -1388,7 +1610,7 @@ static SRow g_DiscordRpcChildren[] = {
 static SRow g_SettingsRows[] = {
         // ---- Visual Settings ----
         KX_CONTAINER_ROW("Visual Settings", 2, "GUI and line visuals."),
-        {ERowType::Expandable, "ClickGUI Settings", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ClickGuiSettingsChildren, 17, "Master switch: off = built-in default look."},
+        {ERowType::Expandable, "ClickGUI Settings", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_ClickGuiSettingsChildren, (int)(sizeof(g_ClickGuiSettingsChildren) / sizeof(g_ClickGuiSettingsChildren[0])), "Master switch: off = built-in default look."},
         {ERowType::Expandable, "Line Rendering", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_LineRenderingChildren, 8,
                 "Global line-render settings shared by all features."},
         // ---- Spoof ----
@@ -1402,8 +1624,8 @@ static SRow g_SettingsRows[] = {
                 "Spoof spectate coordinates / follow target."},
         // ---- Misc ----
         KX_CONTAINER_ROW("Misc", 3, "Other settings."),
-        {ERowType::Expandable, "IRC", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_IrcChildren, 2,
-                "IRC friend join / nameplate options."},
+        {ERowType::Expandable, "IRC", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_IrcChildren, 8,
+                "IRC client-to-client messaging. v2 hides nick/clan/chat payloads in zero-width characters."},
         {ERowType::Toggle, "Auto Verify", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Visit the verification site so DDOS protected servers accept you."},
         {ERowType::Expandable, "Discord RPC", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_DiscordRpcChildren, 2,
@@ -1903,10 +2125,16 @@ static char g_TasGitHubDyn_Supported[96];
 static char g_TasGitHubDyn_ItemsHdr[16] = "TASes:";
 static char g_TasGitHubDyn_Sep[] = "----------";
 static const int GITHUB_TAS_MAX_ITEMS = 32;
+static char g_aGitHubTasFile[GITHUB_TAS_MAX_ITEMS][256];
 static char g_aGitHubTasMap[GITHUB_TAS_MAX_ITEMS][96];
 static char g_aGitHubTasDesc[GITHUB_TAS_MAX_ITEMS][160];
 static char g_aGitHubTasAuthor[GITHUB_TAS_MAX_ITEMS][96];
 static char g_aGitHubTasVersion[GITHUB_TAS_MAX_ITEMS][64];
+static char g_aGitHubTasDummies[GITHUB_TAS_MAX_ITEMS][64];
+static char g_aGitHubTasUsed[GITHUB_TAS_MAX_ITEMS][160];
+static char g_aGitHubTasTicks[GITHUB_TAS_MAX_ITEMS][64];
+static char g_aGitHubTasFinishTicks[GITHUB_TAS_MAX_ITEMS][64];
+static char g_aGitHubTasUpdated[GITHUB_TAS_MAX_ITEMS][64];
 static char g_aGitHubTasCreated[GITHUB_TAS_MAX_ITEMS][64];
 static char g_aGitHubTasLoadBtn[GITHUB_TAS_MAX_ITEMS][16];
 static std::vector<SRow> g_vGitHubTasChildren;
@@ -1998,15 +2226,31 @@ static SRow g_CodeExecRows[] = {
 // Dynamic labels are rewritten every frame by UpdateTasRows().
 static char g_TasDyn_Action[32] = "Play";
 static char g_TasDyn_Join[40] = "Join Playground";
+// v6.18: preparation warning (wrong dummy positions / BFS failures). Red label,
+// visible only while a real-world playback preparation reports a problem.
+static char g_TasWarn_Dummies[192] = "";
 // v6.17: Info section labels (the old combined status label is gone).
-static char g_TasDyn_PlayTicks[48] = "";  // "Playground Ticks: N"
-static char g_TasDyn_RecTicks[48] = "";   // "Record Ticks: N"
-static char g_TasDyn_CurVersion[32] = ""; // "TAS Version: vN.0" — the client's format
-static char g_TasDyn_FileVersion[32] = ""; // "TAS Version: vN.0" — the loaded file's format
-static char g_TasDyn_SaveCreated[64] = "";
+static char g_TasDyn_Created[96] = "";
+static char g_TasDyn_TasVersion[32] = "";
+static char g_TasDyn_Dummies[32] = "";
+static char g_TasDyn_Used[96] = "";
+static char g_TasDyn_Ticks[64] = "";
+static char g_TasDyn_FinishTicks[64] = "";
+static char g_TasDyn_PlaygroundTicks[48] = "";
+static char g_TasDyn_Memory[64] = "";
+static bool g_TasInfoHasCreated = false;
+static bool g_TasInfoHasUsed = false;
+static bool g_TasInfoHasTicks = false;
+static bool g_TasInfoHasFinishTicks = false;
+static bool g_TasInfoHasPlayground = false;
 static bool g_TasFileHasBuffer = false;
 static bool g_TasFilePicked = false;
+// v6.18: .map Exploit — ClickGUI-local state, no config variables.
+static bool g_MapExploitPicked = false;
+static char g_aMapExploitSrc[1024] = {};
         static const char *const g_TasModeOpts[] = {"Play", "Record"};
+        // v6.18: TAS file format. KRX = OpenClient replay JSON (main + dummy).
+        static const char *const g_TasFormatOpts[] = {"Kinetix", "KRX"};
         // TAS Fake Aim: rendered-aim modes for playback (visible in Play mode).
         static const char *const g_TasFakeAimModeOpts[] = {"Real", "Smooth", "Random", "Robot", "Spin", "Lag"};
         static SRow g_TasFakeAimChildren[] = {
@@ -2240,21 +2484,24 @@ static SRow g_TasRows[] = {
                 "Play a recorded TAS or record a new one."},
         {ERowType::Custom, g_TasDyn_Action, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
                 g_TasActionChildren, (int)(sizeof(g_TasActionChildren) / sizeof(g_TasActionChildren[0]))},
+        {ERowType::Label, g_TasWarn_Dummies, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Dummy preparation problems found while getting the real dummies to their recorded start positions."},
         // ---- File ----
-        KX_CONTAINER_ROW("File", 6, "Loaded file metadata and saving."),
+        KX_CONTAINER_ROW("File", 5, "TAS format and file metadata."),
+        {ERowType::Dropdown, "Format", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_TasFormatOpts, 2, 0, nullptr, 0,
+                "Output format of Save. Following a picked file switches this automatically; KRX replays store only Author and Description in the File section."},
         {ERowType::Input, "Map", nullptr, false, false, true, 0, 0, 0, 0, nullptr, "", "map...", nullptr, 0, 0, nullptr, 0,
                 "Map name saved with the TAS."},
         {ERowType::Input, "Description", nullptr, false, false, true, 0, 0, 0, 0, nullptr, "", "description...", nullptr, 0, 0, nullptr, 0,
                 "TAS description."},
         {ERowType::Input, "Author", nullptr, false, false, true, 0, 0, 0, 0, nullptr, "", "author...", nullptr, 0, 0, nullptr, 0,
                 "TAS author."},
-        {ERowType::Label, g_TasDyn_SaveCreated, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Label, g_TasDyn_FileVersion, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                ".tas binary format version of the loaded file."},
         {ERowType::Button, "Save", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Save the recorded TAS to a file."},
         // ---- Playground ----
-        KX_CONTAINER_ROW("Playground", 5, "Playground controls."),
+        // v6.18: the dummy control rows are shared with the Dummy Manager —
+        // same limit slider, same connect/switch list. Record mode only.
+        KX_CONTAINER_ROW("Playground", 7, "Playground controls and dummy connections."),
         {ERowType::Custom, g_TasDyn_Join, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
                 g_TasJoinChildren, (int)(sizeof(g_TasJoinChildren) / sizeof(g_TasJoinChildren[0]))},
         // v6.17: TPS | Pause — a child-bearing Custom row: the slider zone
@@ -2264,26 +2511,45 @@ static SRow g_TasRows[] = {
                 g_TasTpsChildren, (int)(sizeof(g_TasTpsChildren) / sizeof(g_TasTpsChildren[0]))},
         {ERowType::Expandable, "Playground Settings", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TasPgChildren, TAS_PG_ROW_COUNT,
                 "Virtual RCON, virtual chat and practice inside the playground."},
+        // v6.18: the TAS dummy pool is local to the playground. Slider +
+        // visual expandable, identical names to Dummy Manager. Visible only
+        // in Record mode, see TasRowVisible.
+        {ERowType::Slider, "Dummies", nullptr, false, false, true, 1.0f, (float)MAX_DUMMIES, 1.0f, 8.0f, "", nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Number of playground dummy slots (including Main)."},
+        {ERowType::Expandable, "Dummies", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TasDummyConnectChildren, 2 + MAX_DUMMIES - 1,
+                "Connect / disconnect and switch control of playground dummies."},
         {ERowType::Expandable, "Spawner", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TasSpawnerChildren, TAS_SPAWN_ROW_COUNT,
                 "Spawn entities and tiles in the TAS playground."},
         {ERowType::Custom, "Rewind", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0,
                 g_TasRewindChildren, (int)(sizeof(g_TasRewindChildren) / sizeof(g_TasRewindChildren[0]))},
         // ---- Play ----
-        KX_CONTAINER_ROW("Play", 1, "Playback-only settings."),
+        KX_CONTAINER_ROW("Play", 3, "Playback-only settings."),
         {ERowType::Expandable, "Fake Aim", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TasFakeAimChildren, 1,
                 "Spoof the rendered aim during playback."},
+        {ERowType::Toggle, "Auto Sync Dummies", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Before real-world playback, connect the real dummy connections used by the take."},
+        {ERowType::Toggle, "Auto Pathfind Dummies", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Before real-world playback, walk real dummies to their recorded start positions (Pathfinder Very Low). Dummies without a BFS route are skipped and waited for like the others."},
         // ---- Record ----
-        KX_CONTAINER_ROW("Record", 1, "Recording-only settings."),
+        KX_CONTAINER_ROW("Record", 3, "Recording-only settings."),
         {ERowType::Expandable, "Auto Rewind/Forward", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TasAutoRfChildren, 3,
                 "Auto rewind/forward on freeze/teleport/death tiles."},
+        {ERowType::Toggle, "Dummy Functions", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Allow enabled dummy functions in the playground."},
+        {ERowType::Toggle, "Bot Functions", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Allow enabled player input functions for Main only."},
         {ERowType::Expandable, "Visuals", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_TasVisualsChildren, 5,
                 "TAS visualization toggles."},
         // ---- Info ----
-        KX_CONTAINER_ROW("Info", 3, "Live TAS counters and format version."),
-        {ERowType::Label, g_TasDyn_PlayTicks, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Label, g_TasDyn_RecTicks, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
-        {ERowType::Label, g_TasDyn_CurVersion, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
-                "Version of the .tas file format used by this client."},
+        KX_CONTAINER_ROW("Info", 8, "TAS metadata and timing."),
+        {ERowType::Label, g_TasDyn_Created, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_TasDyn_TasVersion, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_TasDyn_Dummies, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_TasDyn_Used, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_TasDyn_Ticks, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_TasDyn_FinishTicks, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_TasDyn_PlaygroundTicks, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
+        {ERowType::Label, g_TasDyn_Memory, nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0},
 };
 
 // ---------- Real-Time Pathfinder panel (9, v1.56.280) ----------
@@ -2959,13 +3225,19 @@ static bool TasRowVisible(const SRow *pRows, int rowCount, int idx)
         if(idx < 0 || idx >= rowCount)
                 return false;
         const SRow &row = pRows[idx];
-        if(str_comp(row.pName, "Fake Aim") == 0)
+        if(str_comp(row.pName, "Fake Aim") == 0 || str_comp(row.pName, "Auto Sync Dummies") == 0 ||
+                str_comp(row.pName, "Auto Pathfind Dummies") == 0)
         {
                 for(int i = 0; i < rowCount; ++i)
                         if(str_comp(pRows[i].pName, "Mode") == 0)
                                 return pRows[i].valueIdx == 0;
         }
-        if(str_comp(row.pName, "Auto Rewind/Forward") == 0)
+        // v6.18: the warning label only exists while something is actually
+        // wrong (position mismatch, missing dummy, BFS failure).
+        if(row.pName == g_TasWarn_Dummies)
+                return g_TasWarn_Dummies[0] != '\0';
+        if(str_comp(row.pName, "Auto Rewind/Forward") == 0 ||
+                str_comp(row.pName, "Dummy Functions") == 0 || str_comp(row.pName, "Bot Functions") == 0)
         {
                 for(int i = 0; i < rowCount; ++i)
                         if(str_comp(pRows[i].pName, "Mode") == 0)
@@ -2978,13 +3250,30 @@ static bool TasRowVisible(const SRow *pRows, int rowCount, int idx)
                         if(str_comp(pRows[i].pName, "Mode") == 0)
                                 return pRows[i].valueIdx == 1;
         }
-        if(row.pName == g_TasDyn_SaveCreated)
-                return g_TasFileHasBuffer;
-        // v6.17: the loaded file's format version — same rule as the metadata.
-        if(row.pName == g_TasDyn_FileVersion)
+        // v6.18: dummies are a Record-mode tool in the TAS panel.
+        if(str_comp(row.pName, "Dummies") == 0)
+        {
+                for(int i = 0; i < rowCount; ++i)
+                        if(str_comp(pRows[i].pName, "Mode") == 0)
+                                return pRows[i].valueIdx == 1;
+        }
+        // File controls are only useful once a take exists.
+        if(str_comp(row.pName, "Format") == 0)
                 return g_TasFileHasBuffer;
         if(str_comp(row.pName, "Map") == 0 || str_comp(row.pName, "Description") == 0 ||
                 str_comp(row.pName, "Author") == 0 || str_comp(row.pName, "Save") == 0)
+                return g_TasFileHasBuffer;
+        if(row.pName == g_TasDyn_Created)
+                return g_TasInfoHasCreated;
+        if(row.pName == g_TasDyn_Used)
+                return g_TasInfoHasUsed;
+        if(row.pName == g_TasDyn_Ticks)
+                return g_TasInfoHasTicks;
+        if(row.pName == g_TasDyn_FinishTicks)
+                return g_TasInfoHasFinishTicks;
+        if(row.pName == g_TasDyn_PlaygroundTicks || row.pName == g_TasDyn_Memory)
+                return g_TasInfoHasPlayground;
+        if(row.pName == g_TasDyn_TasVersion || row.pName == g_TasDyn_Dummies)
                 return g_TasFileHasBuffer;
         // v6.17: a container whose members are ALL hidden hides itself
         // (e.g. "Play" — its only member Fake Aim is hidden in Record mode).
@@ -3225,12 +3514,36 @@ static bool ArrayPlayerChildVisible(const SRow *pChildren, int childCount, int i
 // have no conditional visibility left (search keeps everything).
 static bool ClickGuiSettingsChildVisible(const SRow *pChildren, int childCount, int idx)
 {
-        return idx >= 0 && idx < childCount;
+        if(idx < 0 || idx >= childCount)
+                return false;
+        // v6.18: a preset theme owns the palette — the manual color rows are
+        // hidden (and therefore cannot be clicked or edited) while it is active.
+        if(KxUiThemeActive())
+        {
+                const char *pName = pChildren[idx].pName;
+                if(str_comp(pName, "Main Color") == 0 || str_comp(pName, "Rainbow Main Color") == 0 ||
+                        str_comp(pName, "Panel Color") == 0 || str_comp(pName, "Speed") == 0)
+                        return false;
+        }
+        return true;
+}
+
+// v6.18: .map Exploit children — Pick File is always visible; the output name,
+// Inject and Unpick only appear once a source map is picked.
+static bool MapExploitChildVisible(const SRow &row, int c)
+{
+        if(c < 0 || c >= row.childCount)
+                return false;
+        if(str_comp(row.pChildren[c].pName, "Pick File") == 0)
+                return true;
+        return g_MapExploitPicked;
 }
 
 // Unified child-visibility dispatcher for the TAS panel's expandables.
 static bool TasRowChildrenVisible(const SRow &row, int c)
 {
+        if(str_comp(row.pName, ".map Exploit") == 0)
+                return MapExploitChildVisible(row, c);
         if(str_comp(row.pName, "ArrayList") == 0)
                 return ArrayListChildVisible(row.pChildren, row.childCount, c);
         if(str_comp(row.pName, "ArrayInfo") == 0)
@@ -3766,7 +4079,13 @@ static bool DummiesChildVisible(const SRow *pChildren, int childCount, int idx)
         if(!row.pName)
                 return true;
         if(str_comp(row.pName, "Switch to Main") == 0)
-                return g_Config.m_ClDummy != 0; // visible only when on a dummy
+        {
+                // v6.18: GameClient() is not reachable from this static helper.
+                // UpdateTasRows mirrors the sandbox's active slot into this flag.
+                return pChildren == g_TasDummyConnectChildren
+                        ? g_TasSwitchToMainVisible
+                        : g_Config.m_ClDummy != 0;
+        }
         return true;
 }
 
@@ -3876,6 +4195,28 @@ static bool HelpersChildVisible(const SRow *pChildren, int childCount, int idx)
                 return !pChildren[0].on;
         if(str_comp(row.pName, "Rescue IDs") == 0 || str_comp(row.pName, "Unrescue IDs") == 0)
                 return pChildren[4].on;
+        return true;
+}
+// v6.19: IRC — the v2 channel selectors only make sense in v2, the v1 toggles
+// only in v1. Always-visible rows: version, nameplate tag, server browser.
+static bool IrcChildVisible(const SRow *pChildren, int childCount, int idx)
+{
+        if(idx < 0 || idx >= childCount)
+                return false;
+        const SRow &row = pChildren[idx];
+        if(row.pName == g_IrcWarn_NickClan)
+        {
+                const bool Warn = g_Config.m_KxIrcEnabled && g_Config.m_KxIrcVersion == 1 && g_Config.m_KxIrcRevealMethod == 1;
+                if(Warn)
+                        str_copy(g_IrcWarn_NickClan, "Warning: Nickname/Clan reveal stores the marker in your name/clan — keep at least 1 free character.", sizeof(g_IrcWarn_NickClan));
+                else
+                        g_IrcWarn_NickClan[0] = '\0';
+                return Warn;
+        }
+        if(str_comp(row.pName, "Reveal Join Method") == 0 || str_comp(row.pName, "Encode Chat Method") == 0)
+                return g_Config.m_KxIrcVersion == 1;
+        if(str_comp(row.pName, "Reveal Join") == 0 || str_comp(row.pName, "Encode Chat") == 0)
+                return g_Config.m_KxIrcVersion == 0;
         return true;
 }
 // v1.56.104: ESP — "X"/"Y" visible only when Mode = 1 (Screen coordinates).
@@ -4370,8 +4711,12 @@ static constexpr float OFFSCREEN_MARGIN = 100.0f;
 
 // v6.2: "visual" expandables have no checkbox — clicking them only expands or
 // collapses (they are pure containers, not on/off switches).
-static bool IsVisualExpandableName(const char *pName)
+static bool IsVisualExpandableName(const char *pName, const SPanel *pPanel = nullptr)
 {
+        // v6.18: only the TAS copy is a pure container; Dummy Manager keeps its
+        // historical toggle checkbox on the same row name.
+        if(str_comp(pName, "Dummies") == 0)
+                return pPanel && str_comp(pPanel->pTitle, "TAS") == 0;
         return str_comp(pName, "Visuals") == 0 ||
                 str_comp(pName, "Line Rendering") == 0 ||
                 str_comp(pName, "TAS") == 0 ||
@@ -4384,7 +4729,8 @@ static bool IsVisualExpandableName(const char *pName)
                 str_comp(pName, "Client") == 0 || // v6.15: Info panel
                 str_comp(pName, "Kinetix") == 0 || // v6.15: Info panel
                 str_comp(pName, "Tunnel") == 0 || // v6.17: Pathfinder — restored visual expandable
-                str_comp(pName, "Send Command (Beta)") == 0; // v6.17: Dummy Manager — command tool
+                str_comp(pName, "Send Command (Beta)") == 0 || // v6.17: Dummy Manager — command tool
+                str_comp(pName, ".map Exploit") == 0; // v6.18: Functions -> Exploits
 }
 
 static float RowHeight(ERowType t)
@@ -4549,6 +4895,31 @@ static bool CustomChildStyle(IClient *pClient, CClickGui &Gui, CBotNet &BN, CTas
         Col = Green;
         pLabel = Child.pName;
 
+        // v6.18: Server Test — Start (green), Stop (red), Finish (orange).
+        if(str_comp(Container.pName, "Test Controls") == 0 ||
+                (pSection && str_comp(pSection, "Server Test") == 0))
+        {
+                if(str_comp(Child.pName, "Start Test") == 0)
+                {
+                        Accent = false;
+                        Child.visible = g_NetTestState == EKxNetTestState::IDLE;
+                        Col = Green;
+                }
+                else if(str_comp(Child.pName, "Stop Test") == 0)
+                {
+                        Accent = false;
+                        Child.visible = g_NetTestState == EKxNetTestState::RUNNING;
+                        Col = Red;
+                }
+                else if(str_comp(Child.pName, "Finish Test") == 0)
+                {
+                        Accent = false;
+                        Child.visible = g_NetTestState == EKxNetTestState::FINISHED;
+                        Col = Orange;
+                }
+                return true;
+        }
+
         // Pathfinder tab — Pathfinding (IDLE/RUNNING/FINISHED) + Paste + Spectate.
         if(str_comp(Container.pName, "Pathfinding") == 0)
         {
@@ -4612,10 +4983,11 @@ static bool CustomChildStyle(IClient *pClient, CClickGui &Gui, CBotNet &BN, CTas
                 pLabel = editorActive ? "Exit Editor" : Container.pName;
                 return true;
         }
-        // Pick File | Unpick File — TAS panel and Code Execution panel.
+        // Pick File | Unpick File — TAS panel, Code Execution panel, .map Exploit.
         if(str_comp(Container.pName, "Pick File") == 0)
         {
-                const bool Loaded = str_comp(pPanel, "TAS") == 0 ? g_TasFilePicked : g_ExecLoaded;
+                const bool Loaded = str_comp(pPanel, "TAS") == 0 ? g_TasFilePicked
+                        : str_comp(pPanel, "Functions") == 0 ? g_MapExploitPicked : g_ExecLoaded;
                 if(str_comp(Child.pName, "Unpick File") == 0)
                 {
                         Accent = false;
@@ -4638,7 +5010,10 @@ static bool CustomChildStyle(IClient *pClient, CClickGui &Gui, CBotNet &BN, CTas
                         return true;
                 }
                 Accent = false;
-                Col = (Tas.IsPlaying() || Tas.IsRealPlaying() || Tas.IsRecording()) ? Red : Green;
+                // v6.18: Preparation is a distinct yellow state — the real
+                // dummies are still being walked to their start positions.
+                Col = Tas.IsPreparing() ? Orange :
+                        ((Tas.IsPlaying() || Tas.IsRealPlaying() || Tas.IsRecording()) ? Red : Green);
                 pLabel = Container.pName;
                 return true;
         }
@@ -4699,8 +5074,11 @@ static bool CustomChildStyle(IClient *pClient, CClickGui &Gui, CBotNet &BN, CTas
         if(DummyMgrParseD(Container.pName) >= 1)
         {
                 const int D = DummyMgrParseD(Container.pName);
-                const bool Connected = pClient->DummyConnected(D);
-                const bool Connecting = pClient->DummyConnecting(D);
+                // v6.18: the TAS panel lists the same rows but its buttons drive
+                // the playground-local dummy pool, never the real client slots.
+                const bool TasPanel = pPanel && str_comp(pPanel, "TAS") == 0;
+                const bool Connected = TasPanel ? Tas.PgDummyConnected(D) : pClient->DummyConnected(D);
+                const bool Connecting = !TasPanel && pClient->DummyConnecting(D);
                 if(str_comp(Child.pName, "Switch") == 0)
                 {
                         if(!Connected)
@@ -5284,6 +5662,29 @@ void CClickGui::UpdateDummyManagerRows()
                 str_comp(g_Panels[NUM_PANELS - 2].pRows[m_DragSliderRow].pName, "Dummies") == 0);
         if(!DraggingLimit)
                 g_DummyMgrRows[DUMMYMGR_ROW_LIMIT].value = (float)g_DummyLimit;
+        // v6.18: the TAS slider controls the playground-local dummy pool. It is
+        // independent from the engine's real connection limit.
+        // The child list is a byte-for-byte mirror of the Dummy Manager one —
+        // same rows, same order, contiguous D1..D<limit-1>; only the limit
+        // source differs (playground pool instead of the engine connection cap).
+        for(int p = 0; p < NUM_PANELS; ++p)
+        {
+                if(str_comp(g_Panels[p].pTitle, "TAS") != 0)
+                        continue;
+                const int TasLimit = std::clamp(GameClient()->m_Tas.PgDummyLimit(), 1, (int)MAX_DUMMIES);
+                for(int r = 0; r < g_Panels[p].rowCount; ++r)
+                {
+                        SRow &Row = g_Panels[p].pRows[r];
+                        if(Row.type == ERowType::Slider && str_comp(Row.pName, "Dummies") == 0)
+                        {
+                                const bool DraggingTasLimit = (m_DragSliderPanel == p && m_DragSliderRow == r && m_DragSliderChild < 0);
+                                if(!DraggingTasLimit)
+                                        Row.value = (float)TasLimit;
+                        }
+                        else if(Row.type == ERowType::Expandable && str_comp(Row.pName, "Dummies") == 0)
+                                Row.childCount = 2 + (TasLimit - 1);
+                }
+        }
 
         // Proxy ToggleInput rows <- per-slot profile proxy state.
         for(int D = 0; D < MAX_DUMMIES; ++D)
@@ -5472,6 +5873,18 @@ static int InfoCountFilesCb(const char *pName, int IsDir, int DirType, void *pUs
 
 void CClickGui::UpdateInfoRows()
 {
+        // v6.18: mirror the persisted Network Buffer cvar into its dropdown.
+        for(SPanel &Panel : g_Panels)
+        {
+                if(str_comp(Panel.pTitle, "Functions") != 0)
+                        continue;
+                for(int r = 0; r < Panel.rowCount; ++r)
+                {
+                        SRow &Row = Panel.pRows[r];
+                        if(str_comp(Row.pName, "Network Buffer") == 0)
+                                Row.valueIdx = g_Config.m_KxNetworkBuffer;
+                }
+        }
         // Update rolling average FPS via EMA (smoothing factor 0.05 ~ 1s window at 60fps).
         const float dt = Client()->RenderFrameTime();
         if(dt > 0.0f)
@@ -6125,6 +6538,11 @@ void CClickGui::UpdateTasRows()
 
 	// Push UI -> engine (the panel owns TPS / Pause / Mode).
 	CTas &Tas = GameClient()->m_Tas;
+	// v6.18: the TAS list is the Dummy Manager list (shallow-copied once by
+	// InitDummyManagerRows) with the playground limit as its child count — no
+	// per-frame filtering/rebuilding here, so both panels list identical dummies.
+	InitDummyManagerRows();
+	g_TasSwitchToMainVisible = Tas.PgActiveDummy() != 0;
 
 	// Spawner rows -> engine settings (and dynamic labels back into the rows).
 	SyncTasSpawnerRows(Tas);
@@ -6141,12 +6559,15 @@ void CClickGui::UpdateTasRows()
 		for(int r = 0; r < pPanel->rowCount; ++r)
 		{
 			SRow &Row = pPanel->pRows[r];
-				if(str_comp(Row.pName, "Auto Rewind/Forward") == 0)
-				{
-					// v6.2: enabling the master toggle no longer pops the
-					// expandable open — expanding stays a separate action.
-					Row.on = Tas.AutoRfEnabled();
-					for(int c = 0; c < Row.childCount; ++c)
+			// v6.18: restore the persisted file format on startup.
+			if(str_comp(Row.pName, "Format") == 0)
+				Row.valueIdx = g_Config.m_KxTasFormat;
+			else if(str_comp(Row.pName, "Auto Rewind/Forward") == 0)
+			{
+				// v6.2: enabling the master toggle no longer pops the
+				// expandable open — expanding stays a separate action.
+				Row.on = Tas.AutoRfEnabled();
+				for(int c = 0; c < Row.childCount; ++c)
 				{
 					SRow &Child = Row.pChildren[c];
 					if(str_comp(Child.pName, "Mode") == 0)
@@ -6158,10 +6579,10 @@ void CClickGui::UpdateTasRows()
 					}
 				}
 			}
-				else if(str_comp(Row.pName, "Fake Aim") == 0)
-				{
-					Row.on = Tas.FakeAimEnabled();
-					if(Row.pChildren)
+			else if(str_comp(Row.pName, "Fake Aim") == 0)
+			{
+				Row.on = Tas.FakeAimEnabled();
+				if(Row.pChildren)
 					for(int c = 0; c < Row.childCount; ++c)
 						if(str_comp(Row.pChildren[c].pName, "Mode") == 0)
 							Row.pChildren[c].valueIdx = Tas.FakeAimMode();
@@ -6202,8 +6623,20 @@ void CClickGui::UpdateTasRows()
                                         Child.on = Tas.Paused();
                         }
                 }
+			// v6.18: picking a KRX file rewrites the cvar; mirror it back into
+			// the dropdown so the UI never shows the previous format.
+			else if(str_comp(Row.pName, "Format") == 0)
+				Row.valueIdx = g_Config.m_KxTasFormat;
 			else if(str_comp(Row.pName, "Mode") == 0)
 				Tas.SetMode(Row.valueIdx);
+			else if(str_comp(Row.pName, "Dummy Functions") == 0)
+				Row.on = g_Config.m_KxTasDummyFunctions != 0;
+			else if(str_comp(Row.pName, "Bot Functions") == 0)
+				Row.on = g_Config.m_KxTasBotFunctions != 0;
+			else if(str_comp(Row.pName, "Auto Sync Dummies") == 0)
+				Row.on = g_Config.m_KxTasAutoSyncDummies != 0;
+			else if(str_comp(Row.pName, "Auto Pathfind Dummies") == 0)
+				Row.on = g_Config.m_KxTasAutoPathfindDummies != 0;
 			else if(str_comp(Row.pName, "Fake Aim") == 0)
 			{
 				Tas.SetFakeAimEnabled(Row.on);
@@ -6266,22 +6699,84 @@ void CClickGui::UpdateTasRows()
         // Pull engine -> UI (dynamic button labels + status line).
         if(Tas.Mode() == 1)
                 str_copy(g_TasDyn_Action, Tas.IsRecording() ? "Stop" : "Record", sizeof(g_TasDyn_Action));
+        else if(Tas.IsPreparing())
+                str_copy(g_TasDyn_Action, "Preparation", sizeof(g_TasDyn_Action));
         else
                 str_copy(g_TasDyn_Action, (Tas.IsPlaying() || Tas.IsRealPlaying()) ? "Stop" : "Play", sizeof(g_TasDyn_Action));
         str_copy(g_TasDyn_Join, Tas.IsJoined() ? "Leave Playground" : "Join Playground", sizeof(g_TasDyn_Join));
+        str_copy(g_TasWarn_Dummies, Tas.PreparationWarning(), sizeof(g_TasWarn_Dummies));
 
-	// v6.17: Info section labels — ticks + the current and loaded-file .tas
-	// format versions (the old combined status line is gone).
-	str_format(g_TasDyn_PlayTicks, sizeof(g_TasDyn_PlayTicks), "Playground Ticks: %d", Tas.PlaygroundTick());
-	str_format(g_TasDyn_RecTicks, sizeof(g_TasDyn_RecTicks), "Record Ticks: %d", Tas.RecordCount());
-	str_copy(g_TasDyn_CurVersion, "TAS Version: v2.0", sizeof(g_TasDyn_CurVersion));
-	str_format(g_TasDyn_FileVersion, sizeof(g_TasDyn_FileVersion), "TAS Version: v%d.0", Tas.PickedVersion());
-
-	g_TasFileHasBuffer = (Tas.IsRecording() ? Tas.RecordCount() > 0 : Tas.SavedCount() > 0);
+	g_TasFileHasBuffer = Tas.TakeTickCount() > 0;
 	g_TasFilePicked = Tas.FilePicked();
-	char aNowCreated[64];
-	str_timestamp_format(aNowCreated, sizeof(aNowCreated), "%H:%M | %d.%m.%Y");
-	str_format(g_TasDyn_SaveCreated, sizeof(g_TasDyn_SaveCreated), "Created: %s", aNowCreated);
+	const int TakeTicks = Tas.TakeTickCount();
+	const int TickSpeed = std::max(1, Client()->GameTickSpeed());
+	const int FinishTicks = Tas.TakeFinishTicks();
+	const int UsedFlags = Tas.TakeUsedFlags();
+	const int PlaygroundTicks = Tas.HistoryCount();
+	g_TasInfoHasCreated = g_TasFileHasBuffer && Tas.TakeCreated()[0] != '\0';
+	if(g_TasInfoHasCreated)
+		str_format(g_TasDyn_Created, sizeof(g_TasDyn_Created), "Created: %s", Tas.TakeCreated());
+	else
+		g_TasDyn_Created[0] = '\0';
+
+	if(Tas.FilePicked())
+	{
+		const char *pVersion = Tas.PickedVersionCode();
+		str_format(g_TasDyn_TasVersion, sizeof(g_TasDyn_TasVersion), "TAS Version: v%c.%s", pVersion[0], pVersion + 1);
+	}
+	else
+		str_format(g_TasDyn_TasVersion, sizeof(g_TasDyn_TasVersion), "TAS Version: v%d.%d",
+			CTas::NATIVE_FILE_VERSION / 10, CTas::NATIVE_FILE_VERSION % 10);
+	str_format(g_TasDyn_Dummies, sizeof(g_TasDyn_Dummies), "Dummies: %d", Tas.TakeDummyCount());
+	str_format(g_TasDyn_Ticks, sizeof(g_TasDyn_Ticks), "Ticks: %d | %.1fs",
+		TakeTicks, (double)TakeTicks / TickSpeed);
+	g_TasInfoHasTicks = TakeTicks > 0;
+	g_TasInfoHasFinishTicks = FinishTicks > 0;
+	if(g_TasInfoHasFinishTicks)
+		str_format(g_TasDyn_FinishTicks, sizeof(g_TasDyn_FinishTicks), "Finish Ticks: %d | %.1fs",
+			FinishTicks, (double)FinishTicks / TickSpeed);
+	else
+		g_TasDyn_FinishTicks[0] = '\0';
+
+	char aUsed[80] = "";
+	const char *pSeparator = "";
+	if(UsedFlags & CTas::TAS_USED_SPAWNER)
+	{
+		str_append(aUsed, "Spawner", sizeof(aUsed));
+		pSeparator = ", ";
+	}
+	if(UsedFlags & CTas::TAS_USED_RCON)
+	{
+		str_append(aUsed, pSeparator, sizeof(aUsed));
+		str_append(aUsed, "RCON", sizeof(aUsed));
+		pSeparator = ", ";
+	}
+	if(UsedFlags & CTas::TAS_USED_PRACTICE)
+	{
+		str_append(aUsed, pSeparator, sizeof(aUsed));
+		str_append(aUsed, "Practice", sizeof(aUsed));
+	}
+	g_TasInfoHasUsed = g_TasFileHasBuffer && aUsed[0] != '\0';
+	if(g_TasInfoHasUsed)
+		str_format(g_TasDyn_Used, sizeof(g_TasDyn_Used), "Used: %s", aUsed);
+	else
+		g_TasDyn_Used[0] = '\0';
+
+	g_TasInfoHasPlayground = !Tas.FilePicked() && PlaygroundTicks > 0;
+	if(g_TasInfoHasPlayground)
+	{
+		str_format(g_TasDyn_PlaygroundTicks, sizeof(g_TasDyn_PlaygroundTicks),
+			"Playground Ticks: %d", PlaygroundTicks);
+		const double MemoryMB = (double)Tas.PlaygroundMemoryBytes(false) / (1024.0 * 1024.0);
+		const double RawMemoryMB = (double)Tas.PlaygroundMemoryBytes(true) / (1024.0 * 1024.0);
+		str_format(g_TasDyn_Memory, sizeof(g_TasDyn_Memory),
+			"Memory: %.1fMB | %.1fMB", MemoryMB, RawMemoryMB);
+	}
+	else
+	{
+		g_TasDyn_PlaygroundTicks[0] = '\0';
+		g_TasDyn_Memory[0] = '\0';
+	}
 
 	// ---- GitHub TASes ----
 	Tas.GitHubUpdateJobs();
@@ -6334,17 +6829,29 @@ void CClickGui::UpdateTasRows()
 		for(int i = 0; i < TasBuildCount; i++)
 		{
 			const CTas::SGitHubTas &Item = Tas.GitHubItems()[i];
+			str_format(g_aGitHubTasFile[i], sizeof(g_aGitHubTasFile[i]), "File: %s", Item.m_File.c_str());
 			str_format(g_aGitHubTasMap[i], sizeof(g_aGitHubTasMap[i]), "Map: %s", Item.m_Map.c_str());
 			str_format(g_aGitHubTasDesc[i], sizeof(g_aGitHubTasDesc[i]), "Description: %s", Item.m_Description.c_str());
 			str_format(g_aGitHubTasAuthor[i], sizeof(g_aGitHubTasAuthor[i]), "Author: %s", Item.m_Author.c_str());
 			str_format(g_aGitHubTasVersion[i], sizeof(g_aGitHubTasVersion[i]), "TAS Version: %s", Item.m_Version.c_str());
+			str_format(g_aGitHubTasDummies[i], sizeof(g_aGitHubTasDummies[i]), "Dummies: %s", Item.m_Dummies.c_str());
+			str_format(g_aGitHubTasUsed[i], sizeof(g_aGitHubTasUsed[i]), "Used: %s", Item.m_Used.c_str());
+			str_format(g_aGitHubTasTicks[i], sizeof(g_aGitHubTasTicks[i]), "Ticks: %s", Item.m_Ticks.c_str());
+			str_format(g_aGitHubTasFinishTicks[i], sizeof(g_aGitHubTasFinishTicks[i]), "Finish Ticks: %s", Item.m_FinishTicks.c_str());
+			str_format(g_aGitHubTasUpdated[i], sizeof(g_aGitHubTasUpdated[i]), "Updated: %s", Item.m_Updated.c_str());
 			str_format(g_aGitHubTasCreated[i], sizeof(g_aGitHubTasCreated[i]), "Created: %s", Item.m_Created.c_str());
 			str_copy(g_aGitHubTasLoadBtn[i], "Load", sizeof(g_aGitHubTasLoadBtn[i]));
 			AddLabel(g_TasGitHubDyn_Sep);
+			AddLabel(g_aGitHubTasFile[i]);
 			AddLabel(g_aGitHubTasMap[i]);
 			AddLabel(g_aGitHubTasDesc[i]);
 			AddLabel(g_aGitHubTasAuthor[i]);
 			AddLabel(g_aGitHubTasVersion[i]);
+			AddLabel(g_aGitHubTasDummies[i]);
+			AddLabel(g_aGitHubTasUsed[i]);
+			AddLabel(g_aGitHubTasTicks[i]);
+			AddLabel(g_aGitHubTasFinishTicks[i]);
+			AddLabel(g_aGitHubTasUpdated[i]);
 			AddLabel(g_aGitHubTasCreated[i]);
 			AddButton(g_aGitHubTasLoadBtn[i]);
 			// v6.17: the Load|Download halves are plain zone children
@@ -6408,6 +6915,98 @@ void CClickGui::UpdateTasRows()
 		}
 		Tas.GitHubClearLoadDone();
 	}
+}
+
+void CClickGui::OpenMapExploitPicker()
+{
+        if(KxPickFileAsync(KXFILEPICK_MAP))
+                return;
+#if defined(CONF_FAMILY_WINDOWS)
+        char aPath[1024];
+        if(KxPickMapFile(aPath, sizeof(aPath), nullptr))
+                OnMapExploitPicked(aPath);
+#endif
+}
+
+void CClickGui::OnMapExploitPicked(const char *pPath)
+{
+        str_copy(g_aMapExploitSrc, pPath, sizeof(g_aMapExploitSrc));
+        g_MapExploitPicked = true;
+
+        // Auto-fill the output name with the source file name (no path, extension kept).
+        const char *pName = fs_filename(g_aMapExploitSrc);
+        if(pName)
+        {
+                for(SRow &R : g_MapExploitChildren)
+                {
+                        if(str_comp(R.pName, "Output File Name") == 0)
+                        {
+                                str_copy(R.m_aInputBuf, pName, sizeof(R.m_aInputBuf));
+                                R.m_InputInitialized = true;
+                                break;
+                        }
+                }
+        }
+
+        char aBuf[1200];
+        str_format(aBuf, sizeof(aBuf), "Map Exploit: picked '%s'", g_aMapExploitSrc);
+        Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "MapExploit", aBuf);
+}
+
+void CClickGui::MapExploitUnpick()
+{
+        g_MapExploitPicked = false;
+        g_aMapExploitSrc[0] = '\0';
+        for(SRow &R : g_MapExploitChildren)
+        {
+                if(str_comp(R.pName, "Output File Name") == 0)
+                {
+                        R.m_aInputBuf[0] = '\0';
+                        R.m_InputInitialized = true;
+                        break;
+                }
+        }
+        Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "MapExploit", "Map Exploit: unpicked source map");
+}
+
+void CClickGui::MapExploitInject()
+{
+        if(!g_MapExploitPicked || !g_aMapExploitSrc[0])
+        {
+                Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "MapExploit", "Map Exploit: no source map picked");
+                return;
+        }
+
+        const char *pOutName = "";
+        bool InputFound = false;
+        for(SRow &R : g_MapExploitChildren)
+        {
+                if(str_comp(R.pName, "Output File Name") == 0)
+                {
+                        pOutName = R.m_aInputBuf;
+                        InputFound = true;
+                        break;
+                }
+        }
+        if(!InputFound || !pOutName[0])
+        {
+                Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "MapExploit", "Map Exploit: output file name is empty");
+                return;
+        }
+
+        char aOutPath[1200];
+        char aErr[512];
+        if(!KxMapExploitInject(Storage(), g_aMapExploitSrc, pOutName, aOutPath, sizeof(aOutPath), aErr, sizeof(aErr)))
+        {
+                char aBuf[2048];
+                str_format(aBuf, sizeof(aBuf), "Map Exploit: injection failed — %s", aErr);
+                Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "MapExploit", aBuf);
+                return;
+        }
+
+        char aBuf[2400];
+        str_format(aBuf, sizeof(aBuf), "Map Exploit: wrote '%s'", aOutPath);
+        Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "MapExploit", aBuf);
 }
 
 void CClickGui::OpenScriptPicker()
@@ -7003,6 +7602,7 @@ void CClickGui::OnRender()
 	{
 		static bool s_Init = false;
 		static bool s_Off = false;
+		static bool s_ThemeActive = false; // v6.18: preset palette owns the colors
 			if(!s_Init)
 			{
 				s_Init = true;
@@ -7052,11 +7652,26 @@ void CClickGui::OnRender()
 			m_BgBlackout = 30;
 			s_Off = true;
 		}
+		else if(KxUiThemeActive())
+		{
+			// v6.18: a preset palette drives the colors directly. The saved
+			// Main/Panel color, opacity and rainbow cvars are left UNTOUCHED, so
+			// switching back to Custom restores exactly what the user had.
+			m_AccentColorRGBA = KxUiThemeAccent(g_Config.m_KxUiTheme);
+			m_SavedAccentColorRGBA = m_AccentColorRGBA;
+			m_PanelBgRGBA = KxUiThemePanel(g_Config.m_KxUiTheme);
+			m_MainOpacity = 1.0f;
+			m_PanelOpacity = 1.0f;
+			m_RainbowEnabled = false;
+			m_BgBlackout = g_Config.m_KxUiBlackout;
+			s_Off = false;
+			s_ThemeActive = true;
+		}
 		else
 		{
-			if(s_Off)
+			if(s_Off || s_ThemeActive)
 			{
-				// master turned back on — restore the saved state from config.
+				// master/theme turned back on — restore the saved state from config.
 				unsigned hex = 0;
 				bool MainAlphaParsed = false;
 				bool PanelAlphaParsed = false;
@@ -7090,6 +7705,7 @@ void CClickGui::OnRender()
 				m_RainbowSpeed = g_Config.m_KxUiRainbowSpeed / 10.0f;
 				m_BgBlackout = g_Config.m_KxUiBlackout;
 				s_Off = false;
+				s_ThemeActive = false;
 			}
 			// v6.16: the color cvars carry ARGB now (alpha = opacity). While the
 			// color picker is open on a color row, do NOT push — the picker writes
@@ -7185,6 +7801,10 @@ void CClickGui::OnRender()
                 else if(PickKind == KXFILEPICK_SCRIPT)
                 {
                         OnScriptPicked(aPickPath, false);
+                }
+                else if(PickKind == KXFILEPICK_MAP)
+                {
+                        OnMapExploitPicked(aPickPath);
                 }
         }
 
@@ -7393,7 +8013,7 @@ void CClickGui::OnRender()
                                                                 continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c)))
+if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "IRC") == 0 && !IrcChildVisible(row.pChildren, row.childCount, c)))
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c) || (str_comp(row.pName, "Spoof Spectate") == 0 && !SpoofSpectateChildVisible(row.pChildren, row.childCount, c)))
         continue;
@@ -7477,10 +8097,20 @@ if((str_comp(row.pName, "Smart Dummy Switch") == 0 && !BindsChildVisible(row.pCh
                                         else if(str_comp(child.pName, "Radius") == 0 && str_comp(row.pName, "Auto Triple Fly") == 0)
                                                 child.value = (float)g_Config.m_KxTripleFlyRadius;
                                         // Settings → IRC children
-                                        else if(str_comp(child.pName, "Reveal join") == 0)
-                                                child.on = g_Config.m_KxIrcRevealJoin != 0;
-                                        else if(str_comp(child.pName, "Nameplate tag") == 0)
+                                        else if(str_comp(child.pName, "IRC Version") == 0)
+                                                child.valueIdx = g_Config.m_KxIrcVersion;
+                                        else if(str_comp(child.pName, "Reveal Join Method") == 0)
+                                                child.valueIdx = g_Config.m_KxIrcRevealMethod;
+                                        else if(str_comp(child.pName, "Encode Chat Method") == 0)
+                                                child.valueIdx = g_Config.m_KxIrcEncodeMethod;
+                                        else if(str_comp(child.pName, "Kinetix Icon on Nameplates") == 0)
                                                 child.on = g_Config.m_KxIrcNameplateTag != 0;
+                                        else if(str_comp(child.pName, "Show In ServerBrowser") == 0)
+                                                child.on = g_Config.m_KxIrcServerBrowser != 0;
+                                        else if(str_comp(child.pName, "Reveal Join") == 0)
+                                                child.on = g_Config.m_KxIrcRevealJoin != 0;
+                                        else if(str_comp(child.pName, "Encode Chat") == 0)
+                                                child.on = g_Config.m_KxIrcEncodeChat != 0;
                                         // v1.56.112: Line rendering sync moved to dedicated block below
                                         // (per-component, reads g_Config.m_KxLineComponent every frame).
                                         // v1.56.178: Trajectory children now sync from CTrajectory per-type settings.
@@ -8364,32 +8994,28 @@ if((str_comp(row.pName, "Smart Dummy Switch") == 0 && !BindsChildVisible(row.pCh
                                 // header named "Dummies" (no children to sync).
                                 else if(row.type == ERowType::Expandable && str_comp(row.pName, "Dummies") == 0)
                                 {
+                                        const bool TasPanel = str_comp(g_Panels[p].pTitle, "TAS") == 0;
+                                        CTas *pTas = &GameClient()->m_Tas;
                                         // Update button labels + visibility dynamically.
                                         for(int c = 0; c < row.childCount; ++c)
                                         {
                                                 SRow &ch = row.pChildren[c];
                                                 if(str_comp(ch.pName, "Connect Dummy") == 0)
                                                 {
-                                                        // Label depends on connection state.
-                                                        ch.on = GameClient()->Client()->AnyDummyConnected();
+                                                        ch.on = TasPanel ? pTas->PgDummyConnected(1) : GameClient()->Client()->AnyDummyConnected();
                                                 }
                                                 else if(str_comp(ch.pName, "Switch to Main") == 0)
                                                 {
-                                                        // Hide if already on main (g_Config.m_ClDummy == 0).
-                                                        ch.on = (g_Config.m_ClDummy != 0);
+                                                        ch.on = TasPanel ? (pTas->PgActiveDummy() != 0) : (g_Config.m_ClDummy != 0);
                                                 }
                                                 else if(ch.type != ERowType::Custom && ch.pName && ch.pName[0] == 'D' && DummyMgrParseD(ch.pName) >= 1)
                                                 {
                                                         const int d = DummyMgrParseD(ch.pName);
                                                         if(strstr(ch.pName, "Connect"))
-                                                                ch.on = GameClient()->Client()->DummyConnected(d);
+                                                                ch.on = TasPanel ? pTas->PgDummyConnected(d) : GameClient()->Client()->DummyConnected(d);
                                                         else if(strstr(ch.pName, "Switch"))
-                                                                ch.on = (g_Config.m_ClDummy == d);
+                                                                ch.on = TasPanel ? (pTas->PgActiveDummy() == d) : (g_Config.m_ClDummy == d);
                                                 }
-                                                // v6.17: Custom (Connect|Switch|Send) — the zone
-                                                // children carry the state: Switch highlights
-                                                // while the dummy is the main anchor, Send
-                                                // mirrors m_aDummySendEnabled.
                                                 else if(ch.type == ERowType::Custom && ch.pName && ch.pName[0] == 'D')
                                                 {
                                                         const int d = DummyMgrParseD(ch.pName);
@@ -8399,8 +9025,10 @@ if((str_comp(row.pName, "Smart Dummy Switch") == 0 && !BindsChildVisible(row.pCh
                                                                 {
                                                                         SRow &Zone = ch.pChildren[z];
                                                                         if(str_comp(Zone.pName, "Switch") == 0)
-                                                                                Zone.on = (g_Config.m_ClDummy == d);
-                                                                        else if(str_comp(Zone.pName, "Send") == 0)
+                                                                                Zone.on = TasPanel ? (pTas->PgActiveDummy() == d) : (g_Config.m_ClDummy == d);
+                                                                        else if(str_comp(Zone.pName, "Connect") == 0)
+                                                                                Zone.on = TasPanel ? pTas->PgDummyConnected(d) : GameClient()->Client()->DummyConnected(d);
+                                                                        else if(str_comp(Zone.pName, "Send") == 0 && !TasPanel)
                                                                                 Zone.on = m_aDummySendEnabled[d];
                                                                 }
                                                         }
@@ -8426,6 +9054,17 @@ if((str_comp(row.pName, "Smart Dummy Switch") == 0 && !BindsChildVisible(row.pCh
                                 {
                                         SRow &child = row.pChildren[c];
                                         const bool Dragging = (m_DragSliderPanel == p && m_DragSliderRow == r && m_DragSliderChild == c);
+                                        // v6.18: a preset theme owns these rows — never push
+                                        // their runtime state back into the saved cvars.
+                                        if(KxUiThemeActive() &&
+                                           (str_comp(child.pName, "Main Color") == 0 ||
+                                            str_comp(child.pName, "Rainbow Main Color") == 0 ||
+                                            str_comp(child.pName, "Panel Color") == 0 ||
+                                            str_comp(child.pName, "Speed") == 0))
+                                                continue;
+                                        // v6.18: preset theme dropdown mirrors its cvar.
+                                        if(str_comp(child.pName, "ClickGUI Theme") == 0)
+                                                child.valueIdx = g_Config.m_KxUiTheme;
                                         // v6.16: Main/Panel Color are Color rows bound to the
                                         // hex config strings (alpha = opacity). While the picker
                                         // is open on the row, sync pulls config→runtime (the
@@ -9554,6 +10193,7 @@ if((str_comp(row.pName, "Smart Dummy Switch") == 0 && !BindsChildVisible(row.pCh
         UpdatePathfinderLabels();
         UpdateCodeExecRows();
         UpdateTasRows();
+        UpdateNetworkRows(Client()); // v6.18: server test labels
         UpdateDummyManagerRows(); // v1.56.282: Dummy Manager panel sync
 
         // v1.56.77: rainbow color rotation. When enabled, overwrite m_AccentColorRGBA
@@ -10126,7 +10766,12 @@ if((str_comp(row.pName, "Smart Dummy Switch") == 0 && !BindsChildVisible(row.pCh
                                 g_Config.m_KxRtPfBudgetMs = (int)pTarget->value;
                         // v1.56.282: Dummy Manager — live dummy limit while dragging.
                         else if(str_comp(pTarget->pName, "Dummies") == 0)
-                                Client()->SetDummyLimit((int)pTarget->value);
+                        {
+                                if(str_comp(panel.pTitle, "TAS") == 0)
+                                        GameClient()->m_Tas.SetPgDummyLimit((int)pTarget->value);
+                                else
+                                        Client()->SetDummyLimit((int)pTarget->value);
+                        }
                         // v1.56.83: AimBot/TriggerBot per-weapon sliders (disambiguate by parent expandable)
                         else if(m_DragSliderChild >= 0 && m_DragSliderPanel >= 0)
                         {
@@ -11184,7 +11829,7 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 // Visual expandables (Visuals) cannot be
                                 // toggled off — only expand/collapse. Click on name = expand toggle.
                                 const bool isVisualExpandable = (pTarget->type == ERowType::Expandable) &&
-                                        IsVisualExpandableName(pTarget->pName);
+                                        IsVisualExpandableName(pTarget->pName, &panel);
                                          // v1.56.281: Future Limit is a master toggle now (click dispatch below).
                                 // Click on check area or name area → toggle on/off (or expand for visual).
                                 const float toggleEndX = rx + rw - (pTarget->type == ERowType::Expandable ? ARROW_W + 4.0f : (pTarget->type == ERowType::ToggleDropdown ? DROPDOWN_W + 4.0f : 0.0f));
@@ -11749,6 +12394,20 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 return;
                                         }
                                 }
+                                // v6.18: Network → Server Test controls.
+                                else if(pTarget->type == ERowType::Button && str_comp(panel.pTitle, "Functions") == 0 &&
+                                        (str_comp(pTarget->pName, "Start Test") == 0 ||
+                                         str_comp(pTarget->pName, "Stop Test") == 0 ||
+                                         str_comp(pTarget->pName, "Finish Test") == 0))
+                                {
+                                        if(str_comp(pTarget->pName, "Start Test") == 0)
+                                                KxNetTestStart(Client());
+                                        else if(str_comp(pTarget->pName, "Stop Test") == 0)
+                                                KxNetTestStop(Client());
+                                        else
+                                                g_NetTestState = EKxNetTestState::IDLE;
+                                        return;
+                                }
                                 else if(str_comp(pTarget->pName, "Save") == 0 && pTarget->type == ERowType::Button)
                                 {
                                         const char *pMap = "";
@@ -11764,6 +12423,26 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                         pAuthor = R.m_aInputBuf;
                                         }
                                         GameClient()->m_Tas.SaveTake(pMap, pDescription, pAuthor);
+                                }
+                                // v6.18: .map Exploit (Functions panel).
+                                else if(str_comp(row.pName, ".map Exploit") == 0 && str_comp(panel.pTitle, "Functions") == 0 &&
+                                        outChild >= 0 && pTarget->pChildren == nullptr)
+                                {
+                                        if(str_comp(pTarget->pName, "Pick File") == 0)
+                                        {
+                                                OpenMapExploitPicker();
+                                                return;
+                                        }
+                                        if(str_comp(pTarget->pName, "Unpick File") == 0)
+                                        {
+                                                MapExploitUnpick();
+                                                return;
+                                        }
+                                        if(str_comp(pTarget->pName, "Inject") == 0)
+                                        {
+                                                MapExploitInject();
+                                                return;
+                                        }
                                 }
                                 else if(row.type == ERowType::Custom && outChild >= 0 && str_comp(row.pName, "Pick File") == 0 &&
                                         str_comp(panel.pTitle, "Code Execution (Lua)") == 0)
@@ -11886,6 +12565,15 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                 // v1.56.90: Dummies Button (Connect Dummy, Switch to Main)
                                 else if(str_comp(row.pName, "Dummies") == 0 && pTarget->type == ERowType::Button && outSubChild < 0)
                                 {
+                                        const bool TasPanel = str_comp(panel.pTitle, "TAS") == 0;
+                                        if(TasPanel)
+                                        {
+                                                if(str_comp(pTarget->pName, "Connect Dummy") == 0)
+                                                        GameClient()->m_Tas.TogglePgDummy(1);
+                                                else if(str_comp(pTarget->pName, "Switch to Main") == 0)
+                                                        GameClient()->m_Tas.SetPgActiveDummy(0);
+                                                return;
+                                        }
                                         if(str_comp(pTarget->pName, "Connect Dummy") == 0)
                                         {
                                                 if(GameClient()->Client()->AnyDummyConnected())
@@ -11901,15 +12589,22 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                                 g_Config.m_ClDummy = 0;
                                 }
                                 // v1.56.90: Dummies Custom (Connect|Switch|Send).
-                                // v6.17: the zones are plain children now — dispatch by
-                                // the child's name; the dummy index comes from the
-                                // container's "D%d ..." name.
+                                // v6.18: in the TAS panel these are sandbox-local.
                                 else if(str_comp(row.pName, "Dummies") == 0 && pTarget->type == ERowType::Button && outSubChild >= 0)
                                 {
+                                        const bool TasPanel = str_comp(panel.pTitle, "TAS") == 0;
                                         const SRow &Container = row.pChildren[outChild];
                                         const int d = DummyMgrParseD(Container.pName);
                                         if(d < 1)
                                                 return;
+                                        if(TasPanel)
+                                        {
+                                                if(str_comp(pTarget->pName, "Switch") == 0)
+                                                        GameClient()->m_Tas.SetPgActiveDummy(d);
+                                                else
+                                                        GameClient()->m_Tas.TogglePgDummy(d);
+                                                return;
+                                        }
                                         if(str_comp(pTarget->pName, "Switch") == 0)
                                         {
                                                 if(g_Config.m_ClDummy != d)
@@ -12090,9 +12785,15 @@ void CClickGui::HandleMouseDown(vec2 mousePos)
                                         else if(str_comp(pTarget->pName, "Panel Rainbow Step") == 0)
                                                 g_Config.m_KxArrayAgentPanelRainbowStep = (int)(pTarget->value + 0.5f);
                                 }
-                                // v1.56.282: Dummy Manager — "Dummies" slider sets the runtime dummy limit.
+                                // v6.18: TAS has its own sandbox dummy limit; Dummy Manager
+                                // keeps controlling the real client connection limit.
                                 else if(str_comp(pTarget->pName, "Dummies") == 0)
-                                        Client()->SetDummyLimit((int)pTarget->value);
+                                {
+                                        if(str_comp(panel.pTitle, "TAS") == 0)
+                                                GameClient()->m_Tas.SetPgDummyLimit((int)pTarget->value);
+                                        else
+                                                Client()->SetDummyLimit((int)pTarget->value);
+                                }
                                 else if(str_comp(pTarget->pName, "Latency (ms)") == 0 && str_comp(row.pName, "Custom latency") == 0)
                                         g_Config.m_KxDummyHammerLatencyMs = (int)pTarget->value;
                                 else if(str_comp(pTarget->pName, "Latency (ms)") == 0 && str_comp(row.pName, "Copy Moves Latency") == 0)
@@ -12437,7 +13138,15 @@ bool CClickGui::HandleToggleTail(void *pTargetV, void *pRowV, void *pPanelV)
                 }
         }
         // v1.56.83: AimBot/TriggerBot expandable master toggles
-        if(str_comp(pTarget->pName, "AimBot") == 0)
+        if(str_comp(pTarget->pName, "Dummy Functions") == 0)
+                g_Config.m_KxTasDummyFunctions = pTarget->on;
+        else if(str_comp(pTarget->pName, "Bot Functions") == 0)
+                g_Config.m_KxTasBotFunctions = pTarget->on;
+        else if(str_comp(pTarget->pName, "Auto Sync Dummies") == 0)
+                g_Config.m_KxTasAutoSyncDummies = pTarget->on;
+        else if(str_comp(pTarget->pName, "Auto Pathfind Dummies") == 0)
+                g_Config.m_KxTasAutoPathfindDummies = pTarget->on;
+        else if(str_comp(pTarget->pName, "AimBot") == 0)
                 g_Config.m_KxAimBot = pTarget->on;
         else if(str_comp(pTarget->pName, "TriggerBot") == 0)
                 g_Config.m_KxTriggerBot = pTarget->on;
@@ -12592,10 +13301,14 @@ bool CClickGui::HandleToggleTail(void *pTargetV, void *pRowV, void *pPanelV)
         else if(str_comp(pTarget->pName, "Filter: Weapon") == 0)
                 g_Config.m_KxDummyCopyMovesFilterWeapon = pTarget->on ? 1 : 0;
         // Settings → IRC children
-        else if(str_comp(pTarget->pName, "Reveal join") == 0)
-                g_Config.m_KxIrcRevealJoin = pTarget->on ? 1 : 0;
-        else if(str_comp(pTarget->pName, "Nameplate tag") == 0)
+        else if(str_comp(pTarget->pName, "Kinetix Icon on Nameplates") == 0)
                 g_Config.m_KxIrcNameplateTag = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Show In ServerBrowser") == 0)
+                g_Config.m_KxIrcServerBrowser = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Reveal Join") == 0)
+                g_Config.m_KxIrcRevealJoin = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Encode Chat") == 0)
+                g_Config.m_KxIrcEncodeChat = pTarget->on ? 1 : 0;
         // Advanced → Laser unfreeze children
         else if(str_comp(pTarget->pName, "Auto laser") == 0)
                 g_Config.m_KxLaserUnfreezeAuto = pTarget->on ? 1 : 0;
@@ -12945,7 +13658,15 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                                 if(PointInRect(mousePos, ddX, itemY, popupW, itemH - 2.0f))
                                 {
                                         target.valueIdx = o;
-                                        if(str_comp(target.pName, "Aim mode") == 0)
+                                        // v6.18: ClickGUI Theme preset (0 = Custom).
+                                        if(str_comp(target.pName, "ClickGUI Theme") == 0)
+                                                g_Config.m_KxUiTheme = o;
+                                        // v6.18: TAS output format selector.
+                                        else if(str_comp(target.pName, "Format") == 0 && str_comp(panel.pTitle, "TAS") == 0)
+                                                g_Config.m_KxTasFormat = o;
+                                        else if(str_comp(target.pName, "Network Buffer") == 0 && str_comp(panel.pTitle, "Functions") == 0)
+                                                g_Config.m_KxNetworkBuffer = o;
+                                        else if(str_comp(target.pName, "Aim mode") == 0)
                                                 g_Config.m_KxDummyCopyAimMode = o;
                                         else if(str_comp(target.pName, "Dummy mode") == 0)
                                                 g_Config.m_KxTripleFlyDummyMode = o;
@@ -13048,7 +13769,7 @@ bool CClickGui::HandleDropdownClick(vec2 mousePos)
                                                                 continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c)))
+if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "IRC") == 0 && !IrcChildVisible(row.pChildren, row.childCount, c)))
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c) || (str_comp(row.pName, "Spoof Spectate") == 0 && !SpoofSpectateChildVisible(row.pChildren, row.childCount, c)))
         continue;
@@ -13101,7 +13822,12 @@ if((str_comp(row.pName, "Smart Dummy Switch") == 0 && !BindsChildVisible(row.pCh
                                                 if(PointInRect(mousePos, ddX, itemY, DROPDOWN_W, itemH - 2.0f))
                                                 {
                                                         target.valueIdx = o;
-                                                        if(str_comp(target.pName, "Aim mode") == 0)
+                                                        // v6.18: the theme row is a child of
+                                                        // ClickGUI Settings, so it is handled
+                                                        // by the child dropdown dispatcher.
+                                                        if(str_comp(target.pName, "ClickGUI Theme") == 0)
+                                                                g_Config.m_KxUiTheme = o;
+                                                        else if(str_comp(target.pName, "Aim mode") == 0)
                                                                 g_Config.m_KxDummyCopyAimMode = o;
                                                         else if(str_comp(target.pName, "Dummy mode") == 0)
                                                                 g_Config.m_KxTripleFlyDummyMode = o;
@@ -13162,6 +13888,13 @@ if((str_comp(row.pName, "Smart Dummy Switch") == 0 && !BindsChildVisible(row.pCh
                                                                 g_Config.m_KxAledClanmate = o;
                                                         else if(str_comp(target.pName, "Targets") == 0 && str_comp(row.pName, "AledBot") == 0)
                                                                 g_Config.m_KxAledTargetsMode = o;
+                                                        // Settings → IRC channel selectors.
+                                                        else if(str_comp(target.pName, "IRC Version") == 0)
+                                                                g_Config.m_KxIrcVersion = o;
+                                                        else if(str_comp(target.pName, "Reveal Join Method") == 0)
+                                                                g_Config.m_KxIrcRevealMethod = o;
+                                                        else if(str_comp(target.pName, "Encode Chat Method") == 0)
+                                                                g_Config.m_KxIrcEncodeMethod = o;
                                                         // v1.56.273: Spoof Spectate mode.
                                                         else if(str_comp(target.pName, "Mode") == 0 && str_comp(row.pName, "Spoof Spectate") == 0)
                                                                 g_Config.m_KxSpoofSpectateMode = o;
@@ -14044,7 +14777,7 @@ if(!SearchKeepsRow(row))
                                                                 continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c)))
+if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "IRC") == 0 && !IrcChildVisible(row.pChildren, row.childCount, c)))
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c) || (str_comp(row.pName, "Spoof Spectate") == 0 && !SpoofSpectateChildVisible(row.pChildren, row.childCount, c)))
         continue;
@@ -14481,7 +15214,7 @@ bool CClickGui::HitTestRow(vec2 mousePos, int panelIdx, int &outRow, int &outChi
                                                                 continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c)))
+if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "IRC") == 0 && !IrcChildVisible(row.pChildren, row.childCount, c)))
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c) || (str_comp(row.pName, "Spoof Spectate") == 0 && !SpoofSpectateChildVisible(row.pChildren, row.childCount, c)))
         continue;
@@ -14994,7 +15727,7 @@ void CClickGui::RenderPanel(int panelIdx, vec2 pos, float alpha)
                                                                 continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c)))
+if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "IRC") == 0 && !IrcChildVisible(row.pChildren, row.childCount, c)))
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c) || (str_comp(row.pName, "Spoof Spectate") == 0 && !SpoofSpectateChildVisible(row.pChildren, row.childCount, c)))
         continue;
@@ -15102,7 +15835,7 @@ if((str_comp(row.pName, "Smart Dummy Switch") == 0 && !BindsChildVisible(row.pCh
                                                                 continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c)))
+if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "IRC") == 0 && !IrcChildVisible(row.pChildren, row.childCount, c)))
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c) || (str_comp(row.pName, "Spoof Spectate") == 0 && !SpoofSpectateChildVisible(row.pChildren, row.childCount, c)))
         continue;
@@ -15208,7 +15941,7 @@ if((str_comp(row.pName, "Smart Dummy Switch") == 0 && !BindsChildVisible(row.pCh
                                                                 continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c)))
+if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "IRC") == 0 && !IrcChildVisible(row.pChildren, row.childCount, c)))
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c) || (str_comp(row.pName, "Spoof Spectate") == 0 && !SpoofSpectateChildVisible(row.pChildren, row.childCount, c)))
         continue;
@@ -16164,7 +16897,7 @@ if((str_comp(row.pName, "Smart Dummy Switch") == 0 && !BindsChildVisible(row.pCh
                         // [✕ or empty] [name] [▶ or ▼]
                         // v6.2: visual expandables (Spawner, Visuals, ...) have no
                         // checkbox — the row only opens/closes.
-                        const bool VisualRow = IsVisualExpandableName(row.pName);
+                        const bool VisualRow = IsVisualExpandableName(row.pName, &panel);
                         if(!VisualRow)
                         {
                                 DrawRoundedRect(rx + 1.0f, ry + 3.0f, CHECK_W, CHECK_W, 3.0f,
@@ -16192,6 +16925,9 @@ if((str_comp(row.pName, "Smart Dummy Switch") == 0 && !BindsChildVisible(row.pCh
                         // Pathfinding button: green (IDLE) / red (RUNNING) / orange (FINISHED).
                         ColorRGBA btnCol = KxColorWithAlpha(m_AccentColorRGBA, alpha * m_MainOpacity); // default purple
                         const char *pLabel = row.pName;
+                        // v6.18: .map Exploit Inject — always green.
+                        if(str_comp(row.pName, "Inject") == 0)
+                                btnCol = ColorRGBA(0xff3da35a, true).WithAlpha(alpha); // green
                         if(str_comp(row.pName, "Pathfinding") == 0)
                         {
                                 CBotNet &BN = GameClient()->m_BotNet;
@@ -16307,7 +17043,8 @@ if((str_comp(row.pName, "Smart Dummy Switch") == 0 && !BindsChildVisible(row.pCh
                         // Script Warnings labels render in red (identified by their
                         // label buffer pointers, same way buttons match their text).
                         const bool WarnLabel = row.pName == g_ExecWarn_Header || row.pName == g_ExecWarn_Internet ||
-                                row.pName == g_ExecWarn_Os || row.pName == g_ExecWarn_Files || row.pName == g_ExecWarn_Version;
+                                row.pName == g_ExecWarn_Os || row.pName == g_ExecWarn_Files || row.pName == g_ExecWarn_Version ||
+                                row.pName == g_IrcWarn_NickClan || row.pName == g_TasWarn_Dummies;
                         // v6.15: Info panel — the client icon spans the first two
                         // rows (Kinetix / DDNet); their text is indented past it.
                         const bool InfoIcon = str_comp(panel.pTitle, "Info") == 0 &&
@@ -16439,7 +17176,7 @@ if((str_comp(row.pName, "Smart Dummy Switch") == 0 && !BindsChildVisible(row.pCh
                                                                 continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c)))
+if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "IRC") == 0 && !IrcChildVisible(row.pChildren, row.childCount, c)))
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c) || (str_comp(row.pName, "Spoof Spectate") == 0 && !SpoofSpectateChildVisible(row.pChildren, row.childCount, c)))
         continue;
@@ -16492,7 +17229,7 @@ if((str_comp(row.pName, "Smart Dummy Switch") == 0 && !BindsChildVisible(row.pCh
                                 if(str_comp(row.pName, "AimBot") == 0 && !AimBotChildVisible(row.pChildren, row.childCount, c)) continue;
                                 if(str_comp(row.pName, "TriggerBot") == 0 && !TriggerBotChildVisible(row.pChildren, row.childCount, c)) continue;
                                 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c)) continue;
-                                if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c))) continue;
+                                if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "IRC") == 0 && !IrcChildVisible(row.pChildren, row.childCount, c))) continue;
                                 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c) || (str_comp(row.pName, "Spoof Spectate") == 0 && !SpoofSpectateChildVisible(row.pChildren, row.childCount, c))) continue;
                                 if(str_comp(row.pName, "Avoid Freeze") == 0 && !AfChildVisible(row.pChildren, row.childCount, c)) continue;
                                 if(str_comp(row.pName, "Trajectory") == 0 && !TrajectoryChildVisible(row.pChildren, row.childCount, c)) continue;
@@ -16544,7 +17281,7 @@ if((str_comp(row.pName, "Smart Dummy Switch") == 0 && !BindsChildVisible(row.pCh
                                                                 continue;
 if(str_comp(row.pName, "Dummies") == 0 && !DummiesChildVisible(row.pChildren, row.childCount, c))
         continue;
-if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c)))
+if(((str_comp(row.pName, "ESP") == 0 || str_comp(row.pName, "Hitboxes") == 0) && !EspChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "Helpers") == 0 && !HelpersChildVisible(row.pChildren, row.childCount, c)) || (str_comp(row.pName, "IRC") == 0 && !IrcChildVisible(row.pChildren, row.childCount, c)))
         continue;
 if(str_comp(row.pName, "Spoofer") == 0 && !SpooferChildVisible(row.pChildren, row.childCount, c) || (str_comp(row.pName, "Spoof Spectate") == 0 && !SpoofSpectateChildVisible(row.pChildren, row.childCount, c)))
         continue;
@@ -16917,6 +17654,9 @@ if((str_comp(row.pName, "Smart Dummy Switch") == 0 && !BindsChildVisible(row.pCh
                                         // v1.56.90: Button child — colored rect with centered label (Dummies).
                                         ColorRGBA btnCol = KxColorWithAlpha(m_AccentColorRGBA, alpha * m_MainOpacity);
                                         const char *pLabel = child.pName;
+                                        // v6.18: Inject — always green.
+                                        if(str_comp(child.pName, "Inject") == 0)
+                                                btnCol = ColorRGBA(0xff3da35a, true).WithAlpha(alpha); // green
                                         // v1.56.90: "Connect Dummy" label changes based on connection state.
                                         if(str_comp(child.pName, "Connect Dummy") == 0)
                                         {
@@ -17051,10 +17791,13 @@ if((str_comp(row.pName, "Smart Dummy Switch") == 0 && !BindsChildVisible(row.pCh
                 // v6.17: group ended on this row — stroke the white outline
                 // (also covers members that are not expandables).
                 ContGroupClose(bodyX, r >= ContEndIdx);
-        }
+		}
 
-                Graphics()->ClipDisable();
-        } // end if(!collapsed)
+		// A container at the end of a panel may have trailing members hidden by
+		// TasRowVisible, so no row iteration reaches the normal close path.
+		ContGroupClose(bodyX, true);
+		Graphics()->ClipDisable();
+		} // end if(!collapsed)
 
         // v1.56.72: do NOT free bodyRoot here — the Yoga tree is now cached in
         // m_aLayoutCache[panelIdx].pRoot and reused across frames. It is freed

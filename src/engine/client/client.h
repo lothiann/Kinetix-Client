@@ -182,6 +182,20 @@ class CClient : public IClient, public CDemoPlayer::IListener
                 int64_t m_Time;
         } m_aInputs[MAX_DUMMIES][200];
 
+        // v6.18: Kinetix subtick input buffer (active connection only).
+        struct KxBufferedInput
+        {
+                int m_aData[MAX_INPUT_SIZE] = {};
+                int m_Size = 0;
+                int m_Tick = -1;
+                int64_t m_PredictedTime = 0;
+                int64_t m_PredictionMargin = 0;
+                int64_t m_Time = 0;
+        } m_KxInputBuffer[MAX_DUMMIES];
+        int64_t m_aKxNextInputSend[MAX_DUMMIES] = {};
+        int m_KxInputSent = 0;
+        int m_KxInputAcked = 0;
+
         int m_aCurrentInput[MAX_DUMMIES] = {};
         int m_LastDummy = 0;
         bool m_aDummySendConnInfo[MAX_DUMMIES] = {};
@@ -335,6 +349,9 @@ public:
         // TODO: OPT: do this a lot smarter!
         int *GetInput(int Tick, int Conn) const override;
         void ClearInput(int Conn);
+        NETSTATS KxNetStats() const override;
+        void KxInputAckStats(int *pSent, int *pAcked) const override;
+        int KxSnapshotCount() const override;
 
         const char *LatestVersion() const override;
 

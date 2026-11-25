@@ -48,6 +48,11 @@ void CMapLayers::OnMapLoad()
 	m_MapRenderer.Load(m_Type, m_pLayers, m_pImages, &m_EnvEvaluator, ProgressBarCallback);
 }
 
+void CMapLayers::RefreshLayers()
+{
+	m_MapRenderer.Load(m_Type, m_pLayers, m_pImages, &m_EnvEvaluator, std::nullopt);
+}
+
 void CMapLayers::OnRender()
 {
 	if(m_OnlineOnly && Client()->State() != IClient::STATE_ONLINE && Client()->State() != IClient::STATE_DEMOPLAYBACK)

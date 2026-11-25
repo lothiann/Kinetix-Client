@@ -76,7 +76,7 @@ void CAvoidFreeze::CWorld::CopyFrom(const CGameWorld &Source, int LocalId, CGame
 	// the copied world config.
 	m_World.m_WorldConfig.m_KxAfNoDeathContact = true;
 	m_World.m_WorldConfig.m_KxAfExplosionTuning = true;
-	m_World.m_WorldConfig.m_KxAfExplosionStrength = pGame ? pGame->m_aTuning[g_Config.m_ClDummy].m_ExplosionStrength : 6.0f;
+	m_World.m_WorldConfig.m_KxAfExplosionStrength = Source.GlobalTuning() ? Source.GlobalTuning()->m_ExplosionStrength : 6.0f;
 }
 
 void CAvoidFreeze::CWorld::Tick(const CNetObj_PlayerInput &Input)
@@ -605,8 +605,45 @@ void CAvoidFreeze::OnReset()
 	m_LastInputChangeTime = 0.0;
 }
 
+void CAvoidFreeze::ApplyPlayground(CGameWorld &Source, int LocalId, CNetObj_PlayerInput &Input, vec2 MouseAim)
+{
+	if(!g_Config.m_KxAvoidFreeze || !(Input.m_PlayerFlags & PLAYERFLAG_PLAYING))
+		return;
+	if(m_LastSlot != -2 || m_LastClientId != LocalId)
+	{
+		m_vLastPlan.clear();
+		m_TrackPoint.reset();
+		m_AssistPoint.reset();
+		m_AutoAimPoint.reset();
+	}
+	m_LastSlot = -2;
+	m_LastClientId = LocalId;
+	ReadSettings();
+	CWorld World;
+	World.CopyFrom(Source, LocalId, GameClient(), m_Settings.m_PlayerPrediction);
+	if(!World.Valid())
+		return;
+	World.m_AvoidFreeze = m_Settings.m_AvoidFreeze;
+	World.m_AvoidTeleport = m_Settings.m_AvoidTeleport;
+	World.m_AvoidDeath = m_Settings.m_AvoidDeath;
+	SynchronizeFireCounter(Input.m_Fire);
+	if(auto Decision = Decide(World, Input, MouseAim))
+		Input = *Decision;
+}
+
+void CAvoidFreeze::ResetPlaygroundPlan()
+{
+	m_vLastPlan.clear();
+	m_TrackPoint.reset();
+	m_AssistPoint.reset();
+	m_AutoAimPoint.reset();
+	m_LastSlot = -1;
+}
+
 void CAvoidFreeze::OnRender()
 {
+	if(GameClient()->m_Tas.IsJoined())
+		return;
 	if(!g_Config.m_KxAvoidFreeze)
 		return;
 	CGameClient *pGame = GameClient();
@@ -688,30 +725,7 @@ void CAvoidFreeze::ApplyOverride()
 	if(InputChanged)
 		m_LastInputChangeTime = (double)time_get() / (double)time_freq();
 
-	m_Settings.m_AvoidFreeze = g_Config.m_KxAfAvoidFreeze != 0;
-	m_Settings.m_AvoidTeleport = g_Config.m_KxAfAvoidTeleport != 0;
-	m_Settings.m_AvoidDeath = g_Config.m_KxAfAvoidDeath != 0;
-	m_Settings.m_Unfreeze = g_Config.m_KxAfUnfreeze != 0;
-	m_Settings.m_UnfreezeTicks = g_Config.m_KxAfUnfreezeTicks;
-	m_Settings.m_Nsif = g_Config.m_KxAfNsif != 0;
-	m_Settings.m_PlayerPrediction = g_Config.m_KxAfPlayerPrediction != 0;
-	m_Settings.m_AfkProtectionMs = g_Config.m_KxAfAfkProtection;
-	m_Settings.m_CheckTicks = g_Config.m_KxAfCheckTicks;
-	m_Settings.m_KickTicks = g_Config.m_KxAfKickTicks;
-	m_Settings.m_Hook = g_Config.m_KxAfHook != 0;
-	m_Settings.m_Fire = g_Config.m_KxAfFire != 0;
-	m_Settings.m_Direction = g_Config.m_KxAfDirection != 0;
-	m_Settings.m_Jump = g_Config.m_KxAfJump != 0;
-	m_Settings.m_Aim = g_Config.m_KxAfAim != 0;
-	m_Settings.m_Angles = g_Config.m_KxAfAngles;
-	m_Settings.m_Fov = g_Config.m_KxAfFov;
-	m_Settings.m_Silent = g_Config.m_KxAfSilent != 0;
-	m_Settings.m_AutoAim = g_Config.m_KxAfAutoAim != 0;
-	m_Settings.m_AimAssist = g_Config.m_KxAfAimAssist != 0;
-	m_Settings.m_TrackPoint = g_Config.m_KxAfTrackPoint != 0;
-	m_Settings.m_SafeTracking = g_Config.m_KxAfSafeTracking != 0;
-	m_Settings.m_DrawTrackPoint = g_Config.m_KxAfDrawTrackPoint != 0;
-	m_Settings.m_DrawAim = g_Config.m_KxAfDrawAim != 0;
+	ReadSettings();
 
 	if(m_Settings.m_AfkProtectionMs > 0 && m_LastInputChangeTime > 0.0 &&
 		((double)time_get() / (double)time_freq() - m_LastInputChangeTime) * 1000.0 > (double)m_Settings.m_AfkProtectionMs)
@@ -771,4 +785,33 @@ void CAvoidFreeze::ApplyOverride()
 		if(!m_Settings.m_Silent && (Decision->m_TargetX != RawTargetX || Decision->m_TargetY != RawTargetY))
 			pGame->m_Controls.m_aMousePos[Slot] = vec2((float)Decision->m_TargetX, (float)Decision->m_TargetY);
 	}
+}
+
+void CAvoidFreeze::ReadSettings()
+{
+	m_Settings.m_AvoidFreeze = g_Config.m_KxAfAvoidFreeze != 0;
+	m_Settings.m_AvoidTeleport = g_Config.m_KxAfAvoidTeleport != 0;
+	m_Settings.m_AvoidDeath = g_Config.m_KxAfAvoidDeath != 0;
+	m_Settings.m_Unfreeze = g_Config.m_KxAfUnfreeze != 0;
+	m_Settings.m_UnfreezeTicks = g_Config.m_KxAfUnfreezeTicks;
+	m_Settings.m_Nsif = g_Config.m_KxAfNsif != 0;
+	m_Settings.m_PlayerPrediction = g_Config.m_KxAfPlayerPrediction != 0;
+	m_Settings.m_AfkProtectionMs = g_Config.m_KxAfAfkProtection;
+	m_Settings.m_CheckTicks = g_Config.m_KxAfCheckTicks;
+	m_Settings.m_KickTicks = g_Config.m_KxAfKickTicks;
+	m_Settings.m_Hook = g_Config.m_KxAfHook != 0;
+	m_Settings.m_Fire = g_Config.m_KxAfFire != 0;
+	m_Settings.m_Direction = g_Config.m_KxAfDirection != 0;
+	m_Settings.m_Jump = g_Config.m_KxAfJump != 0;
+	m_Settings.m_Aim = g_Config.m_KxAfAim != 0;
+	m_Settings.m_Angles = g_Config.m_KxAfAngles;
+	m_Settings.m_Fov = g_Config.m_KxAfFov;
+	m_Settings.m_Silent = g_Config.m_KxAfSilent != 0;
+	m_Settings.m_AutoAim = g_Config.m_KxAfAutoAim != 0;
+	m_Settings.m_AimAssist = g_Config.m_KxAfAimAssist != 0;
+	m_Settings.m_TrackPoint = g_Config.m_KxAfTrackPoint != 0;
+	m_Settings.m_SafeTracking = g_Config.m_KxAfSafeTracking != 0;
+	m_Settings.m_DrawTrackPoint = g_Config.m_KxAfDrawTrackPoint != 0;
+	m_Settings.m_DrawAim = g_Config.m_KxAfDrawAim != 0;
+
 }

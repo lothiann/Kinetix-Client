@@ -6,6 +6,9 @@
 #include <game/client/component.h>
 #include <game/gamecore.h>
 
+// v6.18: the TAS playground adapters take the sandbox world explicitly.
+class CGameWorld;
+
 class CAimBot : public CComponent
 {
 public:
@@ -115,6 +118,12 @@ public:
         const SWeaponSettings &TriggerBotHookSettings(int Entity) const;
 
         float GetWeaponRadius(int Weapon) const;
+        // v6.18: TAS playground — the same per-weapon AimBot/TriggerBot settings
+        // applied to the LOCAL sandbox world and the local tick input. Never
+        // touches the network input, the silent channel or the live crosshair
+        // state of the real client.
+        void ApplyPlayground(CGameWorld &World, int LocalId, CNetObj_PlayerInput &Input, vec2 &Mouse);
+        void ResetPlayground();
         // v1.56.297: real reach for hooking TILES — the last FULL hook step.
         // The engine walks the hook in hook_fire_speed steps from the launch
         // offset PhysicalSize()*1.5 and clamps the last step to hook_length,
@@ -145,6 +154,25 @@ private:
         };
         STriggerChannelState m_TriggerBotFireState;
         STriggerChannelState m_TriggerBotHookStates[NUM_HOOK_ENTITIES + 1];
+
+        // v6.18: separate playground state — the sandbox must never consume or
+        // pollute the network bots' edge/latency/smooth state.
+        STriggerChannelState m_PgTriggerFireState;
+        STriggerChannelState m_PgTriggerHookStates[NUM_HOOK_ENTITIES + 1];
+        vec2 m_PgSmoothPos = vec2(0, 0);
+        bool m_PgSmoothInit = false;
+        vec2 m_PgSilentSmoothPos = vec2(0, 0);
+        bool m_PgSilentSmoothInit = false;
+        bool m_PgPrevHook = false;
+        bool m_PgSilentActive = false;
+        vec2 m_PgSilentOffset = vec2(0, 0);
+        int m_PgLastTick = -1;
+        int PgFindTarget(CGameWorld &World, const SWeaponSettings &Settings, int Weapon, int LocalId, const vec2 &MyPos, const vec2 &AimDir, const vec2 &AimPos, vec2 &outAimPoint, int EntityMode);
+        bool PgPassesFilters(CGameWorld &World, int ClientId, int LocalId, const SWeaponSettings &Settings) const;
+        bool PgLineBlocked(CGameWorld &World, int LocalId, int TargetId, const vec2 &From, const vec2 &To) const;
+        bool PgHookAimOnEntity(CGameWorld &World, int LocalId, const vec2 &MyPos, const vec2 &AimDir) const;
+        void PgApplyAim(const SWeaponSettings &Settings, const vec2 &MyPos, const vec2 &AimPoint, CNetObj_PlayerInput &Input, vec2 &Mouse, int Tick);
+        void PgTriggerChannel(CGameWorld &World, const SWeaponSettings &s, int Weapon, bool HookChannel, int LocalId, const vec2 &MyPos, vec2 AimDir, vec2 AimPos, int HeldWeapon, bool WeFrozen, int EntityMode, STriggerChannelState &State, CNetObj_PlayerInput &Input, vec2 &Mouse);
 
         void Update();
         void UpdateAimBot();
