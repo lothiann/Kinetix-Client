@@ -80,6 +80,16 @@ scripts/build.bat clean      clean only (-c, --clean)
 
 `rebuild` is required when the order of fields in `.h` files changes (Windows/VS build only — see the Android note below).
 
+## Source release archive
+
+When the user asks to generate/package the sources (for example, **«Сгенерируй сурсы»** or **«Помести сурсы в .zip»**), run `powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/sources.ps1` from the repository root. It creates an up-to-date `src.zip` in the repository root; if an older archive exists, it is moved to the Windows Recycle Bin before the new one is installed.
+
+The archive contains the repository files and directories except:
+
+- Directories named `.git`, `.opencode`, `.zcode`, `.vs`, `__pycache__`, or `out`, and directories matching `build-android-*`.
+- The root `src.zip` archive itself.
+- Files with Windows Git Bash device-artifact names (`nul`, `con`, `prn`, `aux`, `clock$`, `com1`–`com9`, or `lpt1`–`lpt9`, optionally with extensions).
+
 ### Android
 
 The Android build uses `scripts/android/cmake_android.sh` and does **not** use the Visual Studio / Ninja setup above. The APK is signed with the debug keystore and written to `build-android-release`.
