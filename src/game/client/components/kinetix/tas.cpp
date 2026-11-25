@@ -8615,6 +8615,28 @@ void CTas::SaveTake(const char *pMap, const char *pDescription, const char *pAut
 static const char *const s_pGitHubTasRawBase =
 	"https://raw.githubusercontent.com/lothiann/Kinetix-Client/master/storage/tas/";
 
+static std::string EncodeGitHubTasPath(const std::string &Path)
+{
+	static const char HEX[] = "0123456789ABCDEF";
+	std::string Encoded;
+	Encoded.reserve(Path.size());
+	for(unsigned char c : Path)
+	{
+		const bool Unreserved = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+					(c >= '0' && c <= '9') || c == '-' || c == '_' ||
+					c == '.' || c == '~' || c == '/';
+		if(Unreserved)
+			Encoded.push_back((char)c);
+		else
+		{
+			Encoded.push_back('%');
+			Encoded.push_back(HEX[c >> 4]);
+			Encoded.push_back(HEX[c & 0x0F]);
+		}
+	}
+	return Encoded;
+}
+
 static std::shared_ptr<IHttpRequest> GitHubTasRequest(const char *pUrl)
 {
 	std::shared_ptr<IHttpRequest> pReq = HttpGet(pUrl);
@@ -8643,7 +8665,7 @@ void CTas::GitHubLoadItem(int Idx, bool Select)
 	m_aGitHubLoadError[0] = '\0';
 	m_GitHubLoadSelect = Select;
 	m_GitHubLoadTarget = m_vGitHubItems[Idx].m_File;
-	const std::string Url = std::string(s_pGitHubTasRawBase) + m_GitHubLoadTarget;
+	const std::string Url = std::string(s_pGitHubTasRawBase) + EncodeGitHubTasPath(m_GitHubLoadTarget);
 	m_pGitHubLoadJob = GitHubTasRequest(Url.c_str());
 	Http()->Run(m_pGitHubLoadJob);
 	m_GitHubLoadState = GITHUB_LOAD_LOADING;
@@ -8674,7 +8696,13 @@ void CTas::GitHubUpdateJobs()
 
 void CTas::GitHubFinishList(IHttpRequest *pReq)
 {
-	if(pReq->State() != EHttpState::DONE || pReq->StatusCode() != 200)
+	if(pReq->State() != EHttpState::DONE)
+	{
+		m_GitHubState = GITHUB_ERROR;
+		str_copy(m_aGitHubError, "download failed (request error)", sizeof(m_aGitHubError));
+		return;
+	}
+	if(pReq->StatusCode() != 200)
 	{
 		m_GitHubState = GITHUB_ERROR;
 		str_format(m_aGitHubError, sizeof(m_aGitHubError), "download failed (HTTP %d)", pReq->StatusCode());
@@ -8757,7 +8785,13 @@ void CTas::GitHubFinishList(IHttpRequest *pReq)
 
 void CTas::GitHubFinishLoad(IHttpRequest *pReq)
 {
-	if(pReq->State() != EHttpState::DONE || pReq->StatusCode() != 200)
+	if(pReq->State() != EHttpState::DONE)
+	{
+		m_GitHubLoadState = GITHUB_LOAD_ERROR;
+		str_copy(m_aGitHubLoadError, "download failed (request error)", sizeof(m_aGitHubLoadError));
+		return;
+	}
+	if(pReq->StatusCode() != 200)
 	{
 		m_GitHubLoadState = GITHUB_LOAD_ERROR;
 		str_format(m_aGitHubLoadError, sizeof(m_aGitHubLoadError), "download failed (HTTP %d)", pReq->StatusCode());

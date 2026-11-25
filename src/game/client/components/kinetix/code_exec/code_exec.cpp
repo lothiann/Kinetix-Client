@@ -704,7 +704,13 @@ void CCodeExec::GitHubUpdateJobs()
 
 void CCodeExec::GitHubFinishList(IHttpRequest *pReq)
 {
-        if(pReq->State() != EHttpState::DONE || pReq->StatusCode() != 200)
+        if(pReq->State() != EHttpState::DONE)
+        {
+                m_GitHubState = GITHUB_ERROR;
+                str_copy(m_aGitHubError, "download failed (request error)", sizeof(m_aGitHubError));
+                return;
+        }
+        if(pReq->StatusCode() != 200)
         {
                 m_GitHubState = GITHUB_ERROR;
                 str_format(m_aGitHubError, sizeof(m_aGitHubError), "download failed (HTTP %d)", pReq->StatusCode());
@@ -766,7 +772,13 @@ void CCodeExec::GitHubFinishList(IHttpRequest *pReq)
 
 void CCodeExec::GitHubFinishLoad(IHttpRequest *pReq)
 {
-        if(pReq->State() != EHttpState::DONE || pReq->StatusCode() != 200)
+        if(pReq->State() != EHttpState::DONE)
+        {
+                m_GitHubLoadState = GITHUB_LOAD_ERROR;
+                str_copy(m_aGitHubLoadError, "download failed (request error)", sizeof(m_aGitHubLoadError));
+                return;
+        }
+        if(pReq->StatusCode() != 200)
         {
                 m_GitHubLoadState = GITHUB_LOAD_ERROR;
                 str_format(m_aGitHubLoadError, sizeof(m_aGitHubLoadError), "download failed (HTTP %d)", pReq->StatusCode());
