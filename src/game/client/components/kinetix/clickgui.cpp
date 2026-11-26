@@ -1437,6 +1437,8 @@ static SRow g_IrcChildren[] = {
                 "How this client reveals itself as a Kinetix user (v2 only). Every channel is always decoded on receive."},
         {ERowType::Dropdown, "Encode Chat Method", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, g_IrcEncodeOpts, 5, 1, nullptr, 0,
                 "How this client sends IRC messages (v2 only). Every channel is always decoded on receive."},
+        {ERowType::Toggle, "Visible Payload", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
+                "Append IRC Chat payload as visible Unicode text instead of hiding it."},
         {ERowType::Toggle, "Kinetix Icon on Nameplates", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Draw the Kinetix logo next to detected Kinetix users' nameplates."},
         {ERowType::Toggle, "Show In ServerBrowser", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
@@ -1624,7 +1626,7 @@ static SRow g_SettingsRows[] = {
                 "Spoof spectate coordinates / follow target."},
         // ---- Misc ----
         KX_CONTAINER_ROW("Misc", 3, "Other settings."),
-        {ERowType::Expandable, "IRC", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_IrcChildren, 8,
+        {ERowType::Expandable, "IRC", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, g_IrcChildren, 9,
                 "IRC client-to-client messaging. v2 hides nick/clan/chat payloads in zero-width characters."},
         {ERowType::Toggle, "Auto Verify", nullptr, false, false, true, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, 0, nullptr, 0,
                 "Visit the verification site so DDOS protected servers accept you."},
@@ -4215,6 +4217,8 @@ static bool IrcChildVisible(const SRow *pChildren, int childCount, int idx)
         }
         if(str_comp(row.pName, "Reveal Join Method") == 0 || str_comp(row.pName, "Encode Chat Method") == 0)
                 return g_Config.m_KxIrcVersion == 1;
+        if(str_comp(row.pName, "Visible Payload") == 0)
+                return g_Config.m_KxIrcVersion == 1 && g_Config.m_KxIrcEncodeMethod == 1;
         if(str_comp(row.pName, "Reveal Join") == 0 || str_comp(row.pName, "Encode Chat") == 0)
                 return g_Config.m_KxIrcVersion == 0;
         return true;
@@ -8103,6 +8107,8 @@ if((str_comp(row.pName, "Smart Dummy Switch") == 0 && !BindsChildVisible(row.pCh
                                                 child.valueIdx = g_Config.m_KxIrcRevealMethod;
                                         else if(str_comp(child.pName, "Encode Chat Method") == 0)
                                                 child.valueIdx = g_Config.m_KxIrcEncodeMethod;
+                                        else if(str_comp(child.pName, "Visible Payload") == 0)
+                                                child.on = g_Config.m_KxIrcVisiblePayload != 0;
                                         else if(str_comp(child.pName, "Kinetix Icon on Nameplates") == 0)
                                                 child.on = g_Config.m_KxIrcNameplateTag != 0;
                                         else if(str_comp(child.pName, "Show In ServerBrowser") == 0)
@@ -13309,6 +13315,8 @@ bool CClickGui::HandleToggleTail(void *pTargetV, void *pRowV, void *pPanelV)
                 g_Config.m_KxIrcRevealJoin = pTarget->on ? 1 : 0;
         else if(str_comp(pTarget->pName, "Encode Chat") == 0)
                 g_Config.m_KxIrcEncodeChat = pTarget->on ? 1 : 0;
+        else if(str_comp(pTarget->pName, "Visible Payload") == 0)
+                g_Config.m_KxIrcVisiblePayload = pTarget->on ? 1 : 0;
         // Advanced → Laser unfreeze children
         else if(str_comp(pTarget->pName, "Auto laser") == 0)
                 g_Config.m_KxLaserUnfreezeAuto = pTarget->on ? 1 : 0;

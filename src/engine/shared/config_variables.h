@@ -671,6 +671,7 @@ MACRO_CONFIG_INT(KxIrcEnabled, kx_irc_enabled, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG
 MACRO_CONFIG_INT(KxIrcVersion, kx_irc_version, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "IRC protocol version (0 = v1 legacy, 1 = v2)")
 MACRO_CONFIG_INT(KxIrcRevealMethod, kx_irc_reveal_method, 1, 0, 5, CFGFLAG_CLIENT | CFGFLAG_SAVE, "IRC v2: how this client reveals itself (0 None, 1 Nickname/Clan, 2 Chat, 3 /w Chat, 4 Emote, 5 Inputs)")
 MACRO_CONFIG_INT(KxIrcEncodeMethod, kx_irc_encode_method, 1, 0, 4, CFGFLAG_CLIENT | CFGFLAG_SAVE, "IRC v2: how this client sends messages (0 None, 1 Chat, 2 /w Chat, 3 Emote, 4 Inputs)")
+MACRO_CONFIG_INT(KxIrcVisiblePayload, kx_irc_visible_payload, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "IRC v2 Chat: append payload as visible Unicode text")
 MACRO_CONFIG_INT(KxIrcNameplateTag, kx_irc_nameplate_tag, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Draw the Kinetix icon next to detected Kinetix users' nameplates")
 MACRO_CONFIG_INT(KxIrcServerBrowser, kx_irc_server_browser, 1, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Show the Kinetix icon in the server browser (server row and player list)")
 MACRO_CONFIG_INT(KxIrcRevealJoin, kx_irc_reveal_join, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "IRC v1: send handshake on join to reveal yourself as IRC user")

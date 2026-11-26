@@ -46,6 +46,7 @@ void CChat::CLine::Reset(CChat &This)
         m_Initialized = false;
         m_Time = 0;
         m_aText[0] = '\0';
+        m_aIrcSuffix[0] = '\0';
         m_aName[0] = '\0';
         m_KinetixLogoX = -1.0f;
         m_Friend = false;
@@ -579,7 +580,13 @@ void CChat::OnMessage(int MsgType, void *pRawMsg)
 			AddLine(pMsg->m_ClientId, pMsg->m_Team, pMsg->m_pMessage);
 		*/
 
-                AddLine(pMsg->m_ClientId, pMsg->m_Team, pMsg->m_pMessage);
+                char aMessage[MAX_CHAT_LENGTH];
+                char aIrcSuffix[MAX_CHAT_LENGTH * 2];
+                str_copy(aMessage, pMsg->m_pMessage);
+                aIrcSuffix[0] = '\0';
+                if(g_Config.m_KxIrcEnabled && g_Config.m_KxIrcVersion == 1 && pMsg->m_ClientId >= 0 && pMsg->m_Team <= 1)
+                        GameClient()->m_IRC.V2ProcessChat2(pMsg->m_ClientId, pMsg->m_Team, aMessage, sizeof(aMessage), aIrcSuffix, sizeof(aIrcSuffix));
+                AddLine(pMsg->m_ClientId, pMsg->m_Team, aMessage, aIrcSuffix);
 
                 if(Client()->State() != IClient::STATE_DEMOPLAYBACK &&
                         pMsg->m_ClientId == SERVER_MSG)
@@ -670,7 +677,7 @@ void CChat::StoreSave(const char *pText)
         io_close(File);
 }
 
-void CChat::AddLine(int ClientId, int Team, const char *pLine)
+void CChat::AddLine(int ClientId, int Team, const char *pLine, const char *pIrcSuffix)
 {
 	// v6.2: while the playground chat is shown, real-world lines are parked in
 	// the saved buffer (they reappear when the playground is left).
@@ -684,6 +691,7 @@ void CChat::AddLine(int ClientId, int Team, const char *pLine)
 		Saved.m_ClientId = ClientId;
 		Saved.m_Team = Team;
 		str_copy(Saved.m_aText, pLine);
+		str_copy(Saved.m_aIrcSuffix, pIrcSuffix);
 		m_vTasSaved.push_back(Saved);
 		return;
 	}
@@ -786,6 +794,7 @@ void CChat::AddLine(int ClientId, int Team, const char *pLine)
                 PreviousLine.m_TeamNumber == Team &&
                 PreviousLine.m_ClientId == ClientId &&
                 str_comp(PreviousLine.m_aText, pLine) == 0 &&
+                str_comp(PreviousLine.m_aIrcSuffix, pIrcSuffix) == 0 &&
                 PreviousLine.m_CustomColor == CustomColor)
         {
                 PreviousLine.m_TimesRepeated++;
@@ -847,6 +856,7 @@ void CChat::AddLine(int ClientId, int Team, const char *pLine)
         CurrentLine.m_Highlighted = Highlighted;
 
         str_copy(CurrentLine.m_aText, pLine);
+        str_copy(CurrentLine.m_aIrcSuffix, pIrcSuffix);
 
         if(CurrentLine.m_ClientId == SERVER_MSG)
         {
@@ -1089,8 +1099,9 @@ void CChat::OnPrepareLines(float y)
                         // v6.20: gray IRC suffix appended after the original text.
                         if(Line.m_ClientId >= 0 && g_Config.m_KxIrcEnabled && g_Config.m_KxIrcVersion == 1)
                         {
-                                char aIrcSuffix[MAX_CHAT_LENGTH];
+                                char aIrcSuffix[MAX_CHAT_LENGTH * 2];
                                 GameClient()->m_IRC.DecodeChatSuffix(Line.m_aText, aIrcSuffix, sizeof(aIrcSuffix));
+                                str_append(aIrcSuffix, Line.m_aIrcSuffix);
                                 if(aIrcSuffix[0])
                                         TextRender()->TextEx(&AppendCursor, aIrcSuffix);
                         }
@@ -1207,8 +1218,9 @@ void CChat::OnPrepareLines(float y)
                 // v6.20: gray IRC suffix after the original line text.
                 if(Line.m_ClientId >= 0 && g_Config.m_KxIrcEnabled && g_Config.m_KxIrcVersion == 1)
                 {
-                        char aIrcSuffix[MAX_CHAT_LENGTH];
+                        char aIrcSuffix[MAX_CHAT_LENGTH * 2];
                         GameClient()->m_IRC.DecodeChatSuffix(Line.m_aText, aIrcSuffix, sizeof(aIrcSuffix));
+                        str_append(aIrcSuffix, Line.m_aIrcSuffix);
                         if(aIrcSuffix[0])
                         {
                                 TextRender()->TextColor(0.6f, 0.6f, 0.6f, Color.a);
@@ -1249,9 +1261,12 @@ void CChat::OnRender()
         if(m_PendingChatCounter > 0 && ChatCooldownElapsed())
         {
                 CHistoryEntry *pEntry = m_History.Last();
-                for(int i = m_PendingChatCounter - 1; pEntry; --i, pEntry = m_History.Prev(pEntry))
+		int PendingIndex = 0;
+                for(; pEntry; pEntry = m_History.Prev(pEntry))
                 {
-                        if(i == 0)
+			if(pEntry->m_Team < 0)
+				continue;
+			if(++PendingIndex == m_PendingChatCounter)
                         {
                                 SendChat(pEntry->m_Team, pEntry->m_aText);
                                 break;
@@ -1533,6 +1548,7 @@ void CChat::TasSetVirtual(bool On)
 			Saved.m_ClientId = Line.m_ClientId;
 			Saved.m_Team = Line.m_Team;
 			str_copy(Saved.m_aText, Line.m_aText);
+			str_copy(Saved.m_aIrcSuffix, Line.m_aIrcSuffix);
 			vSorted.emplace_back(Line.m_Time, Saved);
 		}
 		std::sort(vSorted.begin(), vSorted.end(),
@@ -1569,7 +1585,7 @@ void CChat::TasSetVirtual(bool On)
 		ClearVisible();
 		m_TasVirtual = false;
 		for(const STasSavedLine &Line : m_vTasSaved)
-			AddLine(Line.m_ClientId, Line.m_Team, Line.m_aText);
+			AddLine(Line.m_ClientId, Line.m_Team, Line.m_aText, Line.m_aIrcSuffix);
 		m_vTasSaved.clear();
 	}
 }
@@ -1664,12 +1680,17 @@ void CChat::SendChatQueued(const char *pLine)
         }
 
 	if(AddEntry)
-	{
-		const int Length = str_length(pLine);
-		CHistoryEntry *pEntry = m_History.Allocate(sizeof(CHistoryEntry) + Length);
-		pEntry->m_Team = m_Mode == MODE_ALL ? 0 : 1;
-		str_copy(pEntry->m_aText, pLine, Length + 1);
-	}
+		AddHistoryEntry(pLine, m_Mode == MODE_ALL ? 0 : 1);
+}
+
+void CChat::AddHistoryEntry(const char *pLine, int Team)
+{
+	if(!pLine || pLine[0] == '\0')
+		return;
+	const int Length = str_length(pLine);
+	CHistoryEntry *pEntry = m_History.Allocate(sizeof(CHistoryEntry) + Length);
+	pEntry->m_Team = Team;
+	str_copy(pEntry->m_aText, pLine, Length + 1);
 }
 
 int CChat::GetRecentLines(CChatLineInfo *pLines, int MaxLines) const

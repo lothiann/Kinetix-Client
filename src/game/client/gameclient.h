@@ -743,6 +743,7 @@ public:
 	bool GotWantedSkin7(int Dummy);
 	void SendInfo(bool Start);
 	void SendDummyInfo(bool Start, int Dummy = 1) override;
+	void RequestInfoUpdate(int Dummy);
 	void SendKill() const;
 	void SendReadyChange7(); // NOLINT(readability-make-member-function-const)
 

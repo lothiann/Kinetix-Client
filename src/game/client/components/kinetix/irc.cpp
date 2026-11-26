@@ -7,9 +7,13 @@
 #include <base/math.h>
 #include <base/str.h>
 #include <base/time.h>
+#include <zlib.h>
 #include <algorithm>
+#include <cctype>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
+#include <utility>
 
 // Local client name to identify which configuration sequence to send
 const char *LOCAL_CLIENT_NAME = "DMC";
@@ -589,6 +593,519 @@ const std::string DICTIONARY_V2[256] = {
 	"зо", "ча", "че", "чи", "ша", "ше", "ши", "ще", "ьно", "тья", "ье", "ья"
 };
 
+namespace
+{
+	unsigned Chat2Crc32(const unsigned char *pData, size_t Size)
+	{
+		return (unsigned)::crc32(0, pData, (uInt)Size);
+	}
+
+	void Chat2PutBe32(std::vector<unsigned char> &vOut, unsigned Value)
+	{
+		vOut.push_back((Value >> 24) & 0xff);
+		vOut.push_back((Value >> 16) & 0xff);
+		vOut.push_back((Value >> 8) & 0xff);
+		vOut.push_back(Value & 0xff);
+	}
+
+	unsigned Chat2ReadBe32(const unsigned char *pData)
+	{
+		return ((unsigned)pData[0] << 24) | ((unsigned)pData[1] << 16) | ((unsigned)pData[2] << 8) | pData[3];
+	}
+
+	bool Chat2Deflate(const std::string &Text, std::vector<unsigned char> &vOut)
+	{
+		z_stream Stream{};
+		if(deflateInit2(&Stream, 9, Z_DEFLATED, -15, 8, Z_DEFAULT_STRATEGY) != Z_OK)
+			return false;
+		vOut.resize(256);
+		Stream.next_in = (Bytef *)Text.data();
+		Stream.avail_in = (uInt)Text.size();
+		Stream.next_out = vOut.data();
+		Stream.avail_out = (uInt)vOut.size();
+		const int Result = deflate(&Stream, Z_FINISH);
+		const bool Ok = Result == Z_STREAM_END && Stream.avail_in == 0 && Stream.total_out <= 255;
+		if(Ok)
+			vOut.resize(Stream.total_out);
+		else
+			vOut.clear();
+		deflateEnd(&Stream);
+		return Ok;
+	}
+
+	const std::vector<int> &Chat2UnicodeAlphabet()
+	{
+		static const std::vector<int> s_vAlphabet = [] {
+			std::vector<int> v;
+			v.reserve(0x110000);
+			for(int C = 0; C <= 0x10ffff; ++C)
+			{
+				const bool SpaceOrInvisible = C <= 0x20 || (C >= 0x7f && C <= 0xa0) ||
+					(C >= 0xfdd0 && C <= 0xfdef) || (C & 0xffff) == 0xfffe || (C & 0xffff) == 0xffff ||
+					C == 0x00ad || C == 0x034f || C == 0x061c ||
+					(C >= 0x115f && C <= 0x1160) || (C >= 0x17b4 && C <= 0x17b5) ||
+					(C >= 0x1680 && C <= 0x1680) || (C >= 0x180b && C <= 0x180f) ||
+					(C >= 0x0300 && C <= 0x036f) || (C >= 0x0483 && C <= 0x0489) ||
+					(C >= 0x0591 && C <= 0x05bd) || C == 0x05bf || (C >= 0x05c1 && C <= 0x05c2) ||
+					(C >= 0x0610 && C <= 0x061a) || (C >= 0x064b && C <= 0x065f) ||
+					(C >= 0x0670 && C <= 0x0670) || (C >= 0x06d6 && C <= 0x06ed) ||
+					(C >= 0x0900 && C <= 0x0903) || (C >= 0x093a && C <= 0x094f) ||
+					(C >= 0x1ab0 && C <= 0x1aff) || (C >= 0x1dc0 && C <= 0x1dff) ||
+					(C >= 0x20d0 && C <= 0x20ff) || (C >= 0xfe20 && C <= 0xfe2f) ||
+					(C >= 0x2000 && C <= 0x200f) || (C >= 0x2028 && C <= 0x202f) ||
+					(C >= 0x205f && C <= 0x206f) || C == 0x2800 || C == 0x3000 || C == 0x3164 ||
+					(C >= 0xfe00 && C <= 0xfe0f) || C == 0xfeff || C == 0xffa0 ||
+					(C >= 0xfff9 && C <= 0xfffb) || (C >= 0xd800 && C <= 0xdfff) ||
+					(C >= 0x1bca0 && C <= 0x1bca3) || (C >= 0x1d173 && C <= 0x1d17a) ||
+					(C >= 0xe0000 && C <= 0xe0fff);
+				if(!SpaceOrInvisible)
+					v.push_back(C);
+			}
+			return v;
+		}();
+		return s_vAlphabet;
+	}
+
+	void Chat2AppendUtf8(std::string &Out, int Codepoint)
+	{
+		char aUtf8[4];
+		const int Length = str_utf8_encode(aUtf8, Codepoint);
+		Out.append(aUtf8, Length);
+	}
+
+	bool Chat2EncodeUnicode(const std::vector<unsigned char> &vData, std::string &Out)
+	{
+		if(vData.empty() || vData.size() > 255)
+			return false;
+		const std::vector<int> &vAlphabet = Chat2UnicodeAlphabet();
+		const uint64_t Base = vAlphabet.size();
+		std::vector<unsigned char> vPadded;
+		vPadded.reserve(vData.size() + 4);
+		vPadded.push_back((unsigned char)vData.size());
+		vPadded.insert(vPadded.end(), vData.begin(), vData.end());
+		while(vPadded.size() % 4)
+			vPadded.push_back(0);
+		Out.clear();
+		for(size_t i = 0; i < vPadded.size(); i += 4)
+		{
+			uint64_t Value = ((uint64_t)vPadded[i] << 24) | ((uint64_t)vPadded[i + 1] << 16) |
+				((uint64_t)vPadded[i + 2] << 8) | vPadded[i + 3];
+			if(Value >= Base * Base)
+				return false;
+			Chat2AppendUtf8(Out, vAlphabet[Value / Base]);
+			Chat2AppendUtf8(Out, vAlphabet[Value % Base]);
+		}
+		return true;
+	}
+
+	bool Chat2DecodeUnicode(const std::string &Text, std::vector<unsigned char> &vData)
+	{
+		if(Text.empty() || Text.size() > 2048 || !str_utf8_check(Text.c_str()))
+			return false;
+		const std::vector<int> &vAlphabet = Chat2UnicodeAlphabet();
+		const uint64_t Base = vAlphabet.size();
+		std::vector<unsigned char> vDecoded;
+		size_t Pos = 0;
+		while(Pos < Text.size())
+		{
+			const char *pHigh = Text.c_str() + Pos;
+			const int High = str_utf8_decode(&pHigh);
+			if(High < 0 || pHigh == Text.c_str() + Pos)
+				return false;
+			Pos = pHigh - Text.c_str();
+			const char *pLow = Text.c_str() + Pos;
+			const int Low = str_utf8_decode(&pLow);
+			if(Low < 0 || pLow == Text.c_str() + Pos)
+				return false;
+			Pos = pLow - Text.c_str();
+			auto HighIt = std::lower_bound(vAlphabet.begin(), vAlphabet.end(), High);
+			auto LowIt = std::lower_bound(vAlphabet.begin(), vAlphabet.end(), Low);
+			if(HighIt == vAlphabet.end() || *HighIt != High || LowIt == vAlphabet.end() || *LowIt != Low)
+				return false;
+			const uint64_t Value = (uint64_t)(HighIt - vAlphabet.begin()) * Base + (LowIt - vAlphabet.begin());
+			if(Value > 0xffffffffULL)
+				return false;
+			vDecoded.push_back((Value >> 24) & 0xff);
+			vDecoded.push_back((Value >> 16) & 0xff);
+			vDecoded.push_back((Value >> 8) & 0xff);
+			vDecoded.push_back(Value & 0xff);
+		}
+		if(vDecoded.empty() || vDecoded[0] == 0 || vDecoded[0] > vDecoded.size() - 1)
+			return false;
+		const size_t Length = vDecoded[0];
+		for(size_t i = Length + 1; i < vDecoded.size(); ++i)
+			if(vDecoded[i] != 0)
+				return false;
+		vData.assign(vDecoded.begin() + 1, vDecoded.begin() + 1 + Length);
+		return true;
+	}
+
+	const unsigned char CHAT2_ZW[][3] = {
+		{0xcd, 0x8f, 0}, // U+034F
+		{0xe2, 0x81, 0xaa}, {0xe2, 0x81, 0xab}, {0xe2, 0x81, 0xac},
+		{0xe2, 0x81, 0xad}, {0xe2, 0x81, 0xae}, {0xe2, 0x81, 0xaf},
+		{0xef, 0xb8, 0x80}, {0xef, 0xb8, 0x81}, {0xef, 0xb8, 0x82},
+		{0xef, 0xb8, 0x83}, {0xef, 0xb8, 0x84}, {0xef, 0xb8, 0x85},
+		{0xef, 0xb8, 0x86}, {0xef, 0xb8, 0x87}, {0xef, 0xb8, 0x88},
+		{0xef, 0xb8, 0x89}, {0xef, 0xb8, 0x8a}, {0xef, 0xb8, 0x8b},
+		{0xef, 0xb8, 0x8c}, {0xef, 0xb8, 0x8d}, {0xef, 0xb8, 0x8e},
+		{0xef, 0xb8, 0x8f}, {0xef, 0xbf, 0xba},
+	};
+
+	constexpr unsigned char CHAT2_HOMOGLYPH_MAGIC = 0xc2;
+	// Hybrid block: magic, frame byte count, carrier bit count (BE16), then
+	// the remaining frame bits packed MSB-first. Carrier bits occupy existing
+	// Cyrillic lookalikes and decode back to their original codepoints.
+	struct SChat2Homoglyph
+	{
+		int m_Source;
+		int m_Alternate;
+	};
+	constexpr SChat2Homoglyph CHAT2_HOMOGLYPHS[] = {
+		{0x0410, 0x0391}, {0x0412, 0x0392}, {0x0415, 0x0395}, {0x041a, 0x039a},
+		{0x041c, 0x039c}, {0x041d, 0x0397}, {0x041e, 0x039f}, {0x0420, 0x03a1},
+		{0x0422, 0x03a4}, {0x0425, 0x03a7}, {0x0430, 0x03b1}, {0x0435, 0x03b5},
+		{0x043e, 0x03bf}, {0x0440, 0x03c1}, {0x0441, 0x03f2}, {0x0445, 0x03c7},
+	};
+
+	int Chat2HomoglyphSource(int Codepoint)
+	{
+		for(size_t i = 0; i < sizeof(CHAT2_HOMOGLYPHS) / sizeof(CHAT2_HOMOGLYPHS[0]); ++i)
+			if(CHAT2_HOMOGLYPHS[i].m_Source == Codepoint)
+				return (int)i;
+		return -1;
+	}
+
+	int Chat2HomoglyphAlternate(int Codepoint)
+	{
+		for(size_t i = 0; i < sizeof(CHAT2_HOMOGLYPHS) / sizeof(CHAT2_HOMOGLYPHS[0]); ++i)
+			if(CHAT2_HOMOGLYPHS[i].m_Alternate == Codepoint)
+				return (int)i;
+		return -1;
+	}
+
+	bool Chat2PackInvisible(const std::vector<unsigned char> &vData, std::string &Out)
+	{
+		if(vData.empty() || vData.size() > 255)
+			return false;
+		Out = "\xef\xbf\xb9";
+		for(unsigned char Byte : vData)
+		{
+			const int aDigits[2] = {Byte / 24, Byte % 24};
+			for(int Digit : aDigits)
+			{
+				const int Length = Digit == 0 ? 2 : 3;
+				Out.append((const char *)CHAT2_ZW[Digit], Length);
+			}
+		}
+		Out += "\xef\xbf\xbb";
+		return true;
+	}
+
+	bool Chat2UnpackInvisible(const std::string &Text, std::vector<unsigned char> &vData)
+	{
+		if(Text.size() < 9 || Text.compare(0, 3, "\xef\xbf\xb9") != 0 || Text.compare(Text.size() - 3, 3, "\xef\xbf\xbb") != 0)
+			return false;
+		vData.clear();
+		size_t Pos = 3;
+		while(Pos < Text.size() - 3)
+		{
+			int aDigits[2] = {-1, -1};
+			for(int d = 0; d < 2; ++d)
+			{
+				for(int i = 0; i < 24; ++i)
+				{
+					const int Length = i == 0 ? 2 : 3;
+					if(Pos + Length <= Text.size() - 3 && memcmp(Text.data() + Pos, CHAT2_ZW[i], Length) == 0)
+					{
+						aDigits[d] = i;
+						Pos += Length;
+						break;
+					}
+				}
+				if(aDigits[d] < 0)
+					return false;
+			}
+			const int Value = aDigits[0] * 24 + aDigits[1];
+			if(Value > 255)
+				return false;
+			vData.push_back((unsigned char)Value);
+		}
+		return !vData.empty();
+	}
+
+	int Chat2SafeInsertPosition(const std::string &Text);
+
+	bool Chat2PackHomoglyphHybrid(const std::vector<unsigned char> &vFrame, const std::string &Visible, std::string &Out)
+	{
+		if(vFrame.empty() || vFrame.size() > 255 || !str_utf8_check(Visible.c_str()))
+			return false;
+
+		const unsigned TotalBits = (unsigned)vFrame.size() * 8;
+		unsigned CarrierBits = 0;
+		for(size_t Pos = 0; Pos < Visible.size();)
+		{
+			const char *pChar = Visible.c_str() + Pos;
+			const int Codepoint = str_utf8_decode(&pChar);
+			if(Codepoint < 0 || pChar <= Visible.c_str() + Pos)
+				return false;
+			// These codepoints mark 1-bits on receive; reject source text that
+			// already contains one so carrier positions remain unambiguous.
+			if(Chat2HomoglyphAlternate(Codepoint) >= 0)
+				return false;
+			if(Chat2HomoglyphSource(Codepoint) >= 0 && CarrierBits < TotalBits)
+				++CarrierBits;
+			Pos = pChar - Visible.c_str();
+		}
+		if(CarrierBits == 0)
+			return false;
+
+		const unsigned RemainingBits = TotalBits - CarrierBits;
+		std::vector<unsigned char> vHybrid = {
+			CHAT2_HOMOGLYPH_MAGIC,
+			(unsigned char)vFrame.size(),
+			(unsigned char)(CarrierBits >> 8),
+			(unsigned char)CarrierBits,
+		};
+		std::vector<unsigned char> vTail((RemainingBits + 7) / 8, 0);
+		for(unsigned i = 0; i < RemainingBits; ++i)
+		{
+			const unsigned SourceBit = CarrierBits + i;
+			const unsigned Bit = (vFrame[SourceBit / 8] >> (7 - SourceBit % 8)) & 1;
+			vTail[i / 8] |= (unsigned char)(Bit << (7 - i % 8));
+		}
+		vHybrid.insert(vHybrid.end(), vTail.begin(), vTail.end());
+		std::string Hidden;
+		if(!Chat2PackInvisible(vHybrid, Hidden))
+			return false;
+
+		std::string Transformed;
+		unsigned CarrierIndex = 0;
+		for(size_t Pos = 0; Pos < Visible.size();)
+		{
+			const char *pChar = Visible.c_str() + Pos;
+			const int Codepoint = str_utf8_decode(&pChar);
+			if(Codepoint < 0 || pChar <= Visible.c_str() + Pos)
+				return false;
+			const size_t ByteLength = pChar - (Visible.c_str() + Pos);
+			const int SourceIndex = Chat2HomoglyphSource(Codepoint);
+			if(SourceIndex >= 0 && CarrierIndex < CarrierBits)
+			{
+				const unsigned Bit = (vFrame[CarrierIndex / 8] >> (7 - CarrierIndex % 8)) & 1;
+				++CarrierIndex;
+				Chat2AppendUtf8(Transformed, Bit ? CHAT2_HOMOGLYPHS[SourceIndex].m_Alternate : Codepoint);
+			}
+			else
+				Transformed.append(Visible, Pos, ByteLength);
+			Pos += ByteLength;
+		}
+
+		const int InsertAt = Chat2SafeInsertPosition(Transformed);
+		if(InsertAt < 0)
+			return false;
+		Out.assign(Transformed, 0, InsertAt);
+		Out += Hidden;
+		Out.append(Transformed, InsertAt, std::string::npos);
+		return true;
+	}
+
+	bool Chat2UnpackHomoglyphHybrid(const std::vector<unsigned char> &vHybrid, const std::string &Text, size_t HiddenBegin, size_t HiddenEnd, std::vector<unsigned char> &vFrame, std::string &RestoredText)
+	{
+		if(vHybrid.size() < 4 || vHybrid[0] != CHAT2_HOMOGLYPH_MAGIC || vHybrid[1] == 0 ||
+			HiddenBegin > HiddenEnd || HiddenEnd > Text.size())
+			return false;
+		const unsigned FrameBytes = vHybrid[1];
+		const unsigned TotalBits = FrameBytes * 8;
+		const unsigned CarrierBits = ((unsigned)vHybrid[2] << 8) | vHybrid[3];
+		if(CarrierBits == 0 || CarrierBits > TotalBits)
+			return false;
+		const unsigned RemainingBits = TotalBits - CarrierBits;
+		const size_t TailBytes = (RemainingBits + 7) / 8;
+		if(vHybrid.size() != 4 + TailBytes)
+			return false;
+		if(RemainingBits % 8 && TailBytes &&
+			(vHybrid.back() & ((1u << (8 - RemainingBits % 8)) - 1)) != 0)
+			return false;
+
+		std::string Body = Text;
+		Body.erase(HiddenBegin, HiddenEnd - HiddenBegin);
+		std::vector<unsigned char> vBits;
+		vBits.reserve(TotalBits);
+		RestoredText.clear();
+		unsigned SeenCarriers = 0;
+		for(size_t Pos = 0; Pos < Body.size();)
+		{
+			const char *pChar = Body.c_str() + Pos;
+			const int Codepoint = str_utf8_decode(&pChar);
+			if(Codepoint < 0 || pChar <= Body.c_str() + Pos)
+				return false;
+			const size_t ByteLength = pChar - (Body.c_str() + Pos);
+			const int SourceIndex = Chat2HomoglyphSource(Codepoint);
+			const int AlternateIndex = Chat2HomoglyphAlternate(Codepoint);
+			if(SeenCarriers < CarrierBits && (SourceIndex >= 0 || AlternateIndex >= 0))
+			{
+				const int PairIndex = SourceIndex >= 0 ? SourceIndex : AlternateIndex;
+				vBits.push_back(AlternateIndex >= 0 ? 1 : 0);
+				++SeenCarriers;
+				Chat2AppendUtf8(RestoredText, CHAT2_HOMOGLYPHS[PairIndex].m_Source);
+			}
+			else
+				RestoredText.append(Body, Pos, ByteLength);
+			Pos += ByteLength;
+		}
+		if(SeenCarriers != CarrierBits)
+			return false;
+		for(unsigned i = 0; i < RemainingBits; ++i)
+			vBits.push_back((vHybrid[4 + i / 8] >> (7 - i % 8)) & 1);
+		vFrame.assign(FrameBytes, 0);
+		for(unsigned i = 0; i < TotalBits; ++i)
+			vFrame[i / 8] |= (unsigned char)(vBits[i] << (7 - i % 8));
+		return true;
+	}
+
+	int Chat2SafeInsertPosition(const std::string &Text)
+	{
+		// Prefer inserting at an existing word boundary. There must be visible,
+		// non-whitespace text on both sides so 0.7's two-sided trimming cannot
+		// remove the payload.
+		std::vector<std::pair<size_t, int>> vCodepoints;
+		for(size_t Pos = 0; Pos < Text.size();)
+		{
+			const char *pChar = Text.c_str() + Pos;
+			const int Codepoint = str_utf8_decode(&pChar);
+			if(Codepoint < 0 || pChar <= Text.c_str() + Pos)
+				return -1;
+			vCodepoints.emplace_back(Pos, Codepoint);
+			Pos = pChar - Text.c_str();
+		}
+		auto IsWord = [](int Codepoint) {
+			return !str_utf8_isspace(Codepoint);
+		};
+		for(size_t i = 1; i < vCodepoints.size(); ++i)
+		{
+			const int Previous = vCodepoints[i - 1].second;
+			const int Current = vCodepoints[i].second;
+			if(IsWord(Previous) && IsWord(Current))
+				return (int)vCodepoints[i].first;
+		}
+		return -1;
+	}
+
+	bool Chat2EncodeNumSeq(const std::string &Text, std::vector<unsigned char> &vOut)
+	{
+		std::vector<int> vValues;
+		size_t Pos = 0;
+		while(Pos < Text.size())
+		{
+			const size_t Start = Pos;
+			bool Negative = false;
+			if(Text[Pos] == '-')
+			{
+				Negative = true;
+				++Pos;
+			}
+			if(Pos >= Text.size() || Text[Pos] < '0' || Text[Pos] > '9' ||
+				(Text[Pos] == '0' && Pos + 1 < Text.size() && Text[Pos + 1] >= '0' && Text[Pos + 1] <= '9'))
+				return false;
+			int64_t Value = 0;
+			while(Pos < Text.size() && Text[Pos] >= '0' && Text[Pos] <= '9')
+			{
+				Value = Value * 10 + Text[Pos++] - '0';
+				if(Value > (int64_t)INT32_MAX + (Negative ? 1 : 0))
+					return false;
+			}
+			if(Negative)
+				Value = -Value;
+			if(Negative && Value == 0)
+				return false;
+			vValues.push_back((int)Value);
+			if(Pos == Text.size())
+				break;
+			if(Text[Pos++] != ' ' || Pos == Text.size() || Text[Pos] == ' ')
+				return false;
+			if(Start == Pos)
+				return false;
+		}
+		if(vValues.size() < 3 || vValues.size() > 255)
+			return false;
+		const int64_t Step = (int64_t)vValues[1] - vValues[0];
+		for(size_t i = 2; i < vValues.size(); ++i)
+			if((int64_t)vValues[i] - vValues[i - 1] != Step)
+				return false;
+		auto Put = [&vOut](uint32_t Value) {
+			do
+			{
+				unsigned char Byte = Value & 0x7f;
+				Value >>= 7;
+				if(Value)
+					Byte |= 0x80;
+				vOut.push_back(Byte);
+			} while(Value);
+		};
+		auto ZigZag = [](int64_t Value) -> uint32_t {
+			return Value < 0 ? (uint32_t)(-Value * 2 - 1) : (uint32_t)(Value * 2);
+		};
+		vOut.clear();
+		vOut.push_back((unsigned char)vValues.size());
+		Put(ZigZag(vValues[0]));
+		if(Step != 1)
+			Put(ZigZag(Step));
+		return vOut.size() < Text.size();
+	}
+
+	bool Chat2DecodeData(int Codec, const std::vector<unsigned char> &vData, std::string &Text)
+	{
+		Text.clear();
+		if(vData.empty() || vData.size() > 255)
+			return false;
+		if(Codec == 0)
+			Text.assign(vData.begin(), vData.end());
+		else if(Codec == 1)
+		{
+			z_stream Stream{};
+			if(inflateInit2(&Stream, -15) != Z_OK)
+				return false;
+			Text.resize(256);
+			Stream.next_in = (Bytef *)vData.data();
+			Stream.avail_in = (uInt)vData.size();
+			Stream.next_out = (Bytef *)Text.data();
+			Stream.avail_out = (uInt)Text.size();
+			const int Result = inflate(&Stream, Z_FINISH);
+			const bool Ok = Result == Z_STREAM_END && Stream.avail_in == 0 && Stream.total_out > 0 && Stream.total_out <= 255;
+			if(Ok)
+				Text.resize(Stream.total_out);
+			else
+				Text.clear();
+			inflateEnd(&Stream);
+			if(!Ok)
+				return false;
+		}
+		else if(Codec == 4)
+		{
+			static constexpr char s_aDigits[] = "0123456789 +-.,"; // 15 symbols
+			for(size_t i = 0; i < vData.size(); ++i)
+			{
+				const int Hi = vData[i] >> 4;
+				const int Lo = vData[i] & 0xf;
+				if(Hi >= 15 || (Lo >= 15 && i + 1 != vData.size()))
+					return false;
+				Text.push_back(s_aDigits[Hi]);
+				if(Lo < 15)
+					Text.push_back(s_aDigits[Lo]);
+			}
+		}
+		else
+			return false;
+
+		if(Text.empty() || Text.size() > 255 || !str_utf8_check(Text.c_str()))
+			return false;
+		for(unsigned char c : Text)
+			if(c < 0x20 || c == 0x7f)
+				return false;
+		return true;
+	}
+}
+
 // Helper class to write individual bits into 4-bit emotes (nibbles)
 class EmoteBitWriter {
 	std::vector<int>& m_Output;
@@ -682,6 +1199,7 @@ void CIRC::OnReset()
 		m_aV2AimTargetY[d] = 0;
 		m_aV2AimActive[d] = false;
 		m_aV2ChatQueue[d].clear();
+		m_aV2Chat2Queue[d].clear();
 	}
 	m_LastRevealJoin = g_Config.m_KxIrcEnabled != 0;
 	m_V2SuppressEncode = false;
@@ -704,6 +1222,7 @@ void CIRC::OnReset()
 		m_aV2Asm[i].m_Next = 0;
 		m_aV2Asm[i].m_LastTime = 0;
 		m_aV2Asm[i].m_vNibbles.clear();
+		m_aV2Chat2Asm[i] = SV2Chat2Assembly{};
 	}
 }
 
@@ -830,6 +1349,7 @@ void CIRC::SendIRC(const char *pText)
 		return;
 	if(g_Config.m_KxIrcVersion == 1)
 	{
+		GameClient()->m_Chat.AddHistoryEntry(pText, -1);
 		V2QueueMessage(g_Config.m_ClDummy, pText);
 		char aBuf[300];
 		str_format(aBuf, sizeof(aBuf), "[IRC] -> %s", pText);
@@ -926,11 +1446,44 @@ void CIRC::OnRender()
 	if(Client()->State() != IClient::STATE_ONLINE)
 		return;
 
+	// The desired IRC watermark changes when IRC is toggled or a tee enters
+	// the finish area. Re-arm the regular info check when the snapshot differs.
+	if(!GameClient()->Client()->IsSixup())
+	{
+		for(int d = 0; d < MAX_DUMMIES; ++d)
+		{
+			if((d != 0 && !Client()->DummyConnected(d)) || GameClient()->m_aLocalIds[d] < 0)
+				continue;
+			char aName[MAX_NAME_LENGTH];
+			char aClan[MAX_CLAN_LENGTH];
+			const char *pName = EffectiveName(d, aName, sizeof(aName));
+			const char *pClan = EffectiveClan(d, aClan, sizeof(aClan));
+			const auto &Info = GameClient()->m_aClients[GameClient()->m_aLocalIds[d]];
+			if(str_comp(Info.m_aName, pName) || str_comp(Info.m_aClan, pClan))
+				GameClient()->RequestInfoUpdate(d);
+		}
+	}
+
 	if(g_Config.m_KxIrcVersion == 1)
 	{
-		UpdateV2();
+		if(g_Config.m_KxIrcEnabled)
+			UpdateV2();
+		else
+		{
+			for(int d = 0; d < MAX_DUMMIES; ++d)
+			{
+				for(int c = 0; c < 3; ++c)
+					m_aV2Bits[d][c].clear();
+				m_aV2ChatQueue[d].clear();
+				m_aV2Chat2Queue[d].clear();
+				m_aV2AimActive[d] = false;
+			}
+		}
 		return;
 	}
+
+	for(int d = 0; d < MAX_DUMMIES; ++d)
+		m_aV2Chat2Queue[d].clear();
 
 	// Handle reveal join toggle / sending handshake
 	if(g_Config.m_KxIrcEnabled && g_Config.m_KxIrcRevealJoin)
@@ -1110,6 +1663,7 @@ void CIRC::OnStateChange(int NewState, int OldState)
 			m_aV2Detected[i] = false;
 			m_aV2Asm[i].m_Active = false;
 			m_aV2Asm[i].m_vNibbles.clear();
+			m_aV2Chat2Asm[i] = SV2Chat2Assembly{};
 		}
 
 		// Reset per-dummy state
@@ -1127,6 +1681,7 @@ void CIRC::OnStateChange(int NewState, int OldState)
 			m_aV2AimTargetY[d] = 0;
 			m_aV2AimActive[d] = false;
 			m_aV2ChatQueue[d].clear();
+			m_aV2Chat2Queue[d].clear();
 		}
 
 		// v6.19: announce ourselves right after joining.
@@ -1165,6 +1720,7 @@ void CIRC::OnStateChange(int NewState, int OldState)
 			m_aV2Detected[i] = false;
 			m_aV2Asm[i].m_Active = false;
 			m_aV2Asm[i].m_vNibbles.clear();
+			m_aV2Chat2Asm[i] = SV2Chat2Assembly{};
 		}
 		for(int d = 0; d < MAX_DUMMIES; ++d)
 		{
@@ -1180,6 +1736,7 @@ void CIRC::OnStateChange(int NewState, int OldState)
 			m_aV2AimTargetY[d] = 0;
 			m_aV2AimActive[d] = false;
 			m_aV2ChatQueue[d].clear();
+			m_aV2Chat2Queue[d].clear();
 		}
 	}
 }
@@ -1418,6 +1975,17 @@ void CIRC::V2QueueMessage(int Dummy, const char *pText)
 	const int Method = g_Config.m_KxIrcEncodeMethod;
 	if(Method == 0)
 		return;
+
+	if(Method == 1)
+	{
+		std::vector<SV2Chat2Outbound> &Queue = m_aV2Chat2Queue[Dummy];
+		if(Queue.size() >= 16)
+			return;
+		SV2Chat2Outbound Message;
+		Message.m_Text = pText;
+		Queue.push_back(Message);
+		return;
+	}
 
 	// v6.21: compress once, then split into as many frames as the channel needs.
 	const std::vector<int> vNibbles = EncodeStringToEmotes(pText, DICTIONARY_V2);
@@ -1733,6 +2301,217 @@ void CIRC::OnV2Chat(int ClientId, const char *pMessage)
 		V2DeliverFrame(ClientId, Frame, false);
 }
 
+bool CIRC::V2ProcessChat2(int ClientId, int Team, char *pMessage, int MessageSize, char *pSuffix, int SuffixSize)
+{
+	if(!pMessage || MessageSize <= 0 || !pSuffix || SuffixSize <= 0 || ClientId < 0 || ClientId >= MAX_CLIENTS)
+		return false;
+	pSuffix[0] = '\0';
+	std::vector<unsigned char> Wire;
+	std::string Visible(pMessage);
+	size_t StripBegin = std::string::npos;
+	size_t StripEnd = std::string::npos;
+
+	const size_t Separator = Visible.rfind(" | ");
+	if(Separator != std::string::npos)
+	{
+		const std::string Encoded = Visible.substr(Separator + 3);
+		if(Chat2DecodeUnicode(Encoded, Wire))
+		{
+			StripBegin = Separator;
+			StripEnd = Visible.size();
+		}
+	}
+	if(Wire.empty())
+	{
+		const std::string Start = "\xef\xbf\xb9";
+		const std::string End = "\xef\xbf\xbb";
+		const size_t Begin = Visible.find(Start);
+		if(Begin != std::string::npos)
+		{
+			const size_t Close = Visible.find(End, Begin + Start.size());
+			if(Close != std::string::npos)
+			{
+				StripEnd = Close + End.size();
+				if(Chat2UnpackInvisible(Visible.substr(Begin, StripEnd - Begin), Wire))
+					StripBegin = Begin;
+				else
+					StripEnd = std::string::npos;
+			}
+		}
+	}
+	if(Wire.empty() || StripBegin == std::string::npos)
+		return false;
+
+	if((unsigned char)Wire[0] == CHAT2_HOMOGLYPH_MAGIC)
+	{
+		std::vector<unsigned char> vFrame;
+		std::string RestoredText;
+		if(!Chat2UnpackHomoglyphHybrid(Wire, Visible, StripBegin, StripEnd, vFrame, RestoredText))
+			return false;
+		Wire.swap(vFrame);
+		Visible.swap(RestoredText);
+		StripBegin = 0;
+		StripEnd = 0;
+	}
+
+	std::vector<unsigned char> vFrame(Wire);
+	if(vFrame.size() < 6 || (vFrame[0] & 0xf0) != 0xa0 || (vFrame[0] & 7) > 4)
+		return false;
+	const unsigned FrameCrc = Chat2ReadBe32(vFrame.data() + vFrame.size() - 4);
+	if(Chat2Crc32(vFrame.data(), vFrame.size() - 4) != FrameCrc)
+		return false;
+
+	const int Codec = vFrame[0] & 7;
+	std::vector<unsigned char> vCompressed;
+	bool Complete = false;
+	int PartNumber = 0;
+	int PayloadBytesSent = 0;
+	int PayloadBytesTotal = 0;
+	if((vFrame[0] & 8) == 0)
+	{
+		vCompressed.assign(vFrame.begin() + 1, vFrame.end() - 4);
+		Complete = true;
+		PartNumber = 1;
+		PayloadBytesSent = PayloadBytesTotal = (int)vCompressed.size();
+	}
+	else
+	{
+		if(vFrame.size() < 12)
+			return false;
+		const unsigned MessageCrc = Chat2ReadBe32(vFrame.data() + 1);
+		const int Total = vFrame[5];
+		const int Offset = vFrame[6];
+		const int ChunkSize = (int)vFrame.size() - 11;
+		if(Total <= 0 || ChunkSize <= 0 || Offset + ChunkSize > Total || ChunkSize >= Total)
+			return false;
+
+		SV2Chat2Assembly &Asm = m_aV2Chat2Asm[ClientId];
+		const int64_t Now = time_get();
+		if(Asm.m_Active && Now > Asm.m_LastTime + time_freq() * 60)
+			Asm = SV2Chat2Assembly{};
+		if(Offset == 0)
+		{
+			Asm = SV2Chat2Assembly{};
+			Asm.m_Active = true;
+			Asm.m_Team = Team;
+			Asm.m_Codec = Codec;
+			Asm.m_Total = Total;
+			Asm.m_MessageCrc = MessageCrc;
+		}
+		if(!Asm.m_Active || Asm.m_Team != Team || Asm.m_Codec != Codec || Asm.m_Total != Total ||
+			Asm.m_MessageCrc != MessageCrc || Asm.m_Next != Offset)
+		{
+			Asm = SV2Chat2Assembly{};
+			return false;
+		}
+		Asm.m_vData.insert(Asm.m_vData.end(), vFrame.begin() + 7, vFrame.end() - 4);
+		Asm.m_Next += ChunkSize;
+		Asm.m_LastTime = Now;
+		++Asm.m_Part;
+		PartNumber = Asm.m_Part;
+		PayloadBytesSent = Asm.m_Next;
+		PayloadBytesTotal = Asm.m_Total;
+		char aPartLog[192];
+		str_format(aPartLog, sizeof(aPartLog), "Part %d received from %s (%d/%d bytes)", Asm.m_Part,
+			GameClient()->m_aClients[ClientId].m_aName, Asm.m_Next, Asm.m_Total);
+		Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "IRC", aPartLog);
+		if(Asm.m_Next == Total)
+		{
+			std::vector<unsigned char> vCheck(1, (unsigned char)(0xa0 | Codec));
+			vCheck.insert(vCheck.end(), Asm.m_vData.begin(), Asm.m_vData.end());
+			if(Chat2Crc32(vCheck.data(), vCheck.size()) != MessageCrc)
+			{
+				Asm = SV2Chat2Assembly{};
+				return false;
+			}
+			vCompressed.swap(Asm.m_vData);
+			Asm = SV2Chat2Assembly{};
+			Complete = true;
+		}
+	}
+
+	std::string Decoded;
+	if(Complete)
+	{
+		if(Codec == 2)
+		{
+			if(vCompressed.size() < 2 || vCompressed[0] == 0)
+				return false;
+			std::vector<int> vNibbles;
+			for(size_t i = 1; i < vCompressed.size(); ++i)
+			{
+				vNibbles.push_back(vCompressed[i] >> 4);
+				vNibbles.push_back(vCompressed[i] & 0xf);
+			}
+			Decoded = DecodeEmotesToString(vNibbles, DICTIONARY_V2);
+			if(Decoded.size() < vCompressed[0])
+				return false;
+			Decoded.resize(vCompressed[0]);
+		}
+		else if(Codec == 3)
+		{
+			if(vCompressed.size() < 2 || vCompressed[0] < 3)
+				return false;
+			size_t Pos = 1;
+			auto ReadUleb = [&vCompressed, &Pos](uint32_t &Value) {
+				Value = 0;
+				for(int i = 0; i < 5 && Pos < vCompressed.size(); ++i)
+				{
+					const unsigned char Byte = vCompressed[Pos++];
+					if(i == 4 && (Byte & 0xf0))
+						return false;
+					Value |= (uint32_t)(Byte & 0x7f) << (7 * i);
+					if(!(Byte & 0x80))
+						return true;
+				}
+				return false;
+			};
+			uint32_t EncodedStart = 0, EncodedStep = 2;
+			if(!ReadUleb(EncodedStart) || (Pos < vCompressed.size() && !ReadUleb(EncodedStep)) || Pos != vCompressed.size())
+				return false;
+			const int64_t Start = (EncodedStart & 1) ? -(int64_t)(EncodedStart / 2) - 1 : EncodedStart / 2;
+			const int64_t Step = (EncodedStep & 1) ? -(int64_t)(EncodedStep / 2) - 1 : EncodedStep / 2;
+			for(int i = 0; i < vCompressed[0]; ++i)
+			{
+				const int64_t Value = Start + Step * i;
+				if(Value < INT32_MIN || Value > INT32_MAX)
+					return false;
+				char aNumber[16];
+				str_format(aNumber, sizeof(aNumber), "%s%d", i ? " " : "", (int)Value);
+				Decoded += aNumber;
+			}
+		}
+		else if(!Chat2DecodeData(Codec, vCompressed, Decoded))
+			return false;
+		if(Decoded.empty() || Decoded.size() > 255 || !str_utf8_check(Decoded.c_str()))
+			return false;
+		for(unsigned char c : Decoded)
+			if(c < 0x20 || c == 0x7f)
+				return false;
+		V2Mark(ClientId);
+		char aSuccessLog[512];
+		str_format(aSuccessLog, sizeof(aSuccessLog), "Message received from %s: %s",
+			GameClient()->m_aClients[ClientId].m_aName, Decoded.c_str());
+		Console()->Print(IConsole::OUTPUT_LEVEL_STANDARD, "IRC", aSuccessLog);
+		char aDecodedSuffix[MAX_CHAT_LENGTH * 2];
+		str_format(aDecodedSuffix, sizeof(aDecodedSuffix), " (%s)", Decoded.c_str());
+		str_copy(pSuffix, aDecodedSuffix, SuffixSize);
+	}
+	else if(IsOwnClient(ClientId) && PartNumber > 0)
+	{
+		char aPartSuffix[MAX_CHAT_LENGTH + 4];
+		str_format(aPartSuffix, sizeof(aPartSuffix), " (Part %d: %d/%d payload bytes sent, %d remaining)",
+			PartNumber, PayloadBytesSent, PayloadBytesTotal, PayloadBytesTotal - PayloadBytesSent);
+		str_copy(pSuffix, aPartSuffix, SuffixSize);
+	}
+
+	Visible.erase(StripBegin, StripEnd - StripBegin);
+	if((int)Visible.size() + 1 > MessageSize)
+		return false;
+	str_copy(pMessage, Visible.c_str(), MessageSize);
+	return true;
+}
+
 void CIRC::OnV2Emote(int ClientId, int Emoticon)
 {
 	if(ClientId < 0 || ClientId >= MAX_CLIENTS)
@@ -1755,7 +2534,10 @@ void CIRC::UpdateV2()
 	for(int d = 0; d < MAX_DUMMIES; ++d)
 	{
 		if(d != 0 && !Client()->DummyConnected(d))
+		{
+			m_aV2Chat2Queue[d].clear();
 			continue;
+		}
 
 		V2PumpChannel(d, KX_V2_CH_EMOTE);
 		V2PumpChannel(d, KX_V2_CH_AIM);
@@ -1866,6 +2648,160 @@ const char *CIRC::EncodeChatLine(const char *pLine, char *pOut, int OutSize, int
 		Dummy = 0;
 
 	const int Method = g_Config.m_KxIrcEncodeMethod;
+	if(Method == 1 && !m_aV2Chat2Queue[Dummy].empty())
+	{
+		std::vector<SV2Chat2Outbound> &Queue = m_aV2Chat2Queue[Dummy];
+
+		SV2Chat2Outbound &Message = Queue.front();
+		if(Message.m_Codec < 0)
+		{
+			if(Message.m_Text.empty() || Message.m_Text.size() > 255 || !str_utf8_check(Message.m_Text.c_str()))
+			{
+				Queue.erase(Queue.begin());
+				return pOut;
+			}
+			for(unsigned char c : Message.m_Text)
+			{
+				if(c < 0x20 || c == 0x7f)
+				{
+					Queue.erase(Queue.begin());
+					return pOut;
+				}
+			}
+			std::vector<std::pair<int, std::vector<unsigned char>>> vCandidates;
+			vCandidates.emplace_back(0, std::vector<unsigned char>(Message.m_Text.begin(), Message.m_Text.end()));
+
+			std::vector<unsigned char> vDeflate;
+			if(Chat2Deflate(Message.m_Text, vDeflate))
+				vCandidates.emplace_back(1, std::move(vDeflate));
+
+			const std::vector<int> vNibbles = EncodeStringToEmotes(Message.m_Text, DICTIONARY_V2);
+			if(!vNibbles.empty())
+			{
+				std::vector<unsigned char> vDict(1, (unsigned char)Message.m_Text.size());
+				for(size_t i = 0; i < vNibbles.size(); i += 2)
+					vDict.push_back((unsigned char)(((vNibbles[i] & 0xf) << 4) | (i + 1 < vNibbles.size() ? (vNibbles[i + 1] & 0xf) : 0)));
+				if(vDict.size() <= 255)
+					vCandidates.emplace_back(2, std::move(vDict));
+			}
+
+			std::vector<unsigned char> vNumSeq;
+			if(Chat2EncodeNumSeq(Message.m_Text, vNumSeq) && vNumSeq.size() <= 255)
+				vCandidates.emplace_back(3, std::move(vNumSeq));
+
+			static constexpr char s_aDigits[] = "0123456789 +-.,"; // 15 symbols; 0xF is reserved for padding.
+			std::vector<unsigned char> vPackedDigits;
+			bool DigitsOnly = !Message.m_Text.empty();
+			for(size_t i = 0; i < Message.m_Text.size(); i += 2)
+			{
+				const char *pHigh = strchr(s_aDigits, Message.m_Text[i]);
+				const char *pLow = i + 1 < Message.m_Text.size() ? strchr(s_aDigits, Message.m_Text[i + 1]) : nullptr;
+				if(!pHigh || (i + 1 < Message.m_Text.size() && !pLow))
+				{
+					DigitsOnly = false;
+					break;
+				}
+				vPackedDigits.push_back((unsigned char)(((pHigh - s_aDigits) << 4) | (pLow ? pLow - s_aDigits : 0xf)));
+			}
+			if(DigitsOnly && vPackedDigits.size() <= 255)
+				vCandidates.emplace_back(4, std::move(vPackedDigits));
+
+			if(vCandidates.empty())
+			{
+				Queue.erase(Queue.begin());
+				return pOut;
+			}
+			auto Best = std::min_element(vCandidates.begin(), vCandidates.end(), [](const auto &A, const auto &B) {
+				return A.second.size() < B.second.size() || (A.second.size() == B.second.size() && A.first < B.first);
+			});
+			Message.m_Codec = Best->first;
+			Message.m_vData = std::move(Best->second);
+			std::vector<unsigned char> vMessage;
+			vMessage.push_back((unsigned char)(0xa0 | Message.m_Codec));
+			vMessage.insert(vMessage.end(), Message.m_vData.begin(), Message.m_vData.end());
+			Message.m_MessageCrc = Chat2Crc32(vMessage.data(), vMessage.size());
+		}
+
+		std::string Visible;
+		std::vector<SZwEntry> vOldMarkers;
+		SplitText(pLine, Visible, vOldMarkers);
+		if(Visible.empty())
+			return pOut;
+		const int MaxBytes = std::min(OutSize - 1, MAX_CHAT_LENGTH - 1);
+		const bool VisiblePayload = g_Config.m_KxIrcVisiblePayload != 0;
+		const int InsertAt = Chat2SafeInsertPosition(Visible);
+		const int Remaining = (int)Message.m_vData.size() - Message.m_Offset;
+		if(Remaining <= 0)
+		{
+			Queue.erase(Queue.begin());
+			return pOut;
+		}
+
+		for(int Chunk = Remaining; Chunk > 0; --Chunk)
+		{
+			const bool Fragment = Message.m_Offset != 0 || Chunk < Remaining;
+			std::vector<unsigned char> vFrame;
+			if(!Fragment)
+			{
+				vFrame.push_back((unsigned char)(0xa0 | Message.m_Codec));
+				vFrame.insert(vFrame.end(), Message.m_vData.begin(), Message.m_vData.end());
+				Chat2PutBe32(vFrame, Chat2Crc32(vFrame.data(), vFrame.size()));
+			}
+			else
+			{
+				vFrame.push_back((unsigned char)(0xa8 | Message.m_Codec));
+				Chat2PutBe32(vFrame, Message.m_MessageCrc);
+				vFrame.push_back((unsigned char)Message.m_vData.size());
+				vFrame.push_back((unsigned char)Message.m_Offset);
+				vFrame.insert(vFrame.end(), Message.m_vData.begin() + Message.m_Offset, Message.m_vData.begin() + Message.m_Offset + Chunk);
+				Chat2PutBe32(vFrame, Chat2Crc32(vFrame.data(), vFrame.size()));
+			}
+
+			std::string Payload;
+			if(VisiblePayload)
+			{
+				std::string Encoded;
+				if(!Chat2EncodeUnicode(vFrame, Encoded))
+					continue;
+				Payload = " | " + Encoded;
+			}
+			else if(!Chat2PackInvisible(vFrame, Payload))
+				continue;
+
+			std::string Out;
+			if(VisiblePayload)
+				Out = Visible + Payload;
+			else
+			{
+				if(InsertAt < 0)
+					continue;
+				Out.append(Visible, 0, InsertAt);
+				Out += Payload;
+				Out.append(Visible, InsertAt, std::string::npos);
+				std::string Hybrid;
+				if(Chat2PackHomoglyphHybrid(vFrame, Visible, Hybrid) &&
+					Hybrid.size() < Out.size() && (int)Hybrid.size() + 1 <= OutSize &&
+					(int)Hybrid.size() <= MaxBytes && CountUtf8Chars(Hybrid) < MAX_CHAT_LENGTH)
+					Out.swap(Hybrid);
+			}
+			if((int)Out.size() + 1 > OutSize || (int)Out.size() > MaxBytes || CountUtf8Chars(Out) >= MAX_CHAT_LENGTH)
+				continue;
+
+			str_copy(pOut, Out.c_str(), OutSize);
+			if(Fragment)
+			{
+				Message.m_Offset += Chunk;
+				if(Message.m_Offset >= (int)Message.m_vData.size())
+					Queue.erase(Queue.begin());
+			}
+			else
+				Queue.erase(Queue.begin());
+			return pOut;
+		}
+		return pOut;
+	}
+	m_aV2Chat2Queue[Dummy].clear();
+
 	if(Method != 1)
 	{
 		// Side channels carry the line themselves; the visible chat line

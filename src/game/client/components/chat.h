@@ -48,6 +48,7 @@ class CChat : public CComponent
 		int m_NameColor;
 		char m_aName[64];
 		char m_aText[MAX_CHAT_LENGTH];
+		char m_aIrcSuffix[MAX_CHAT_LENGTH * 2] = "";
 		bool m_Friend;
 		bool m_Highlighted;
 		std::optional<ColorRGBA> m_CustomColor;
@@ -79,6 +80,7 @@ class CChat : public CComponent
 		int m_ClientId = -1;
 		int m_Team = 0;
 		char m_aText[MAX_CHAT_LENGTH] = "";
+		char m_aIrcSuffix[MAX_CHAT_LENGTH * 2] = "";
 	};
 	std::vector<STasSavedLine> m_vTasSaved;
 
@@ -189,7 +191,8 @@ public:
 	static constexpr float MESSAGE_TEE_PADDING_RIGHT = 0.5f;
 
 	bool IsActive() const { return m_Mode != MODE_NONE; }
-	void AddLine(int ClientId, int Team, const char *pLine);
+	void AddLine(int ClientId, int Team, const char *pLine, const char *pIrcSuffix = "");
+	void AddHistoryEntry(const char *pLine, int Team);
 	void EnableMode(int Team);
 	void DisableMode();
 	void RegisterCommand(const char *pName, const char *pParams, const char *pHelpText);

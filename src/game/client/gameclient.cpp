@@ -4146,6 +4146,13 @@ void CGameClient::SendInfo(bool Start)
         }
 }
 
+void CGameClient::RequestInfoUpdate(int Dummy)
+{
+	if(Dummy < 0 || Dummy >= MAX_DUMMIES || m_aCheckInfo[Dummy] >= 0)
+		return;
+	m_aCheckInfo[Dummy] = 0;
+}
+
 void CGameClient::SendDummyInfo(bool Start, int Dummy)
 {
         if(Dummy < 1 || Dummy >= MAX_DUMMIES)

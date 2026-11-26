@@ -76,6 +76,7 @@ public:
 	// frame). The visible text of the line itself is never returned — it was
 	// already delivered as a normal chat message.
 	const char *DecodeChatSuffix(const char *pMessage, char *pOut, int OutSize);
+	bool V2ProcessChat2(int ClientId, int Team, char *pMessage, int MessageSize, char *pSuffix, int SuffixSize);
 
 	// v6.20: true when this dummy's tee is within 50 tiles of a finish tile.
 	// While that is the case the identity watermark is dropped so the finish is
@@ -140,6 +141,27 @@ private:
 	void V2ScanIdentities();
 	void BuildFinishTiles();
 
+	struct SV2Chat2Outbound
+	{
+		std::string m_Text;
+		std::vector<unsigned char> m_vData;
+		int m_Codec = -1;
+		int m_Offset = 0;
+		unsigned m_MessageCrc = 0;
+	};
+	struct SV2Chat2Assembly
+	{
+		bool m_Active = false;
+		int m_Team = 0;
+		int m_Codec = -1;
+		int m_Total = 0;
+		int m_Next = 0;
+		int m_Part = 0;
+		unsigned m_MessageCrc = 0;
+		int64_t m_LastTime = 0;
+		std::vector<unsigned char> m_vData;
+	};
+
 	// v6.21: a message longer than one chat line / whisper is split into
 	// fragments and reassembled here. EchoSingle controls whether a complete
 	// single-fragment message is echoed: the chat channel renders it as a gray
@@ -173,6 +195,8 @@ private:
 	// Each entry is a complete bit stream of one frame; a line carries as many
 	// as fit its byte budget, the rest wait for the next line.
 	std::vector<std::vector<unsigned char>> m_aV2ChatQueue[MAX_DUMMIES];
+	std::vector<SV2Chat2Outbound> m_aV2Chat2Queue[MAX_DUMMIES];
+	SV2Chat2Assembly m_aV2Chat2Asm[MAX_CLIENTS];
 	// Guards EncodeChatLine against re-encoding our own generated payload lines.
 	bool m_V2SuppressEncode;
 	// Receive bit buffers.
